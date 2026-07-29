@@ -14,7 +14,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
-import { getAccountDisplayName, logger, normalizeProfileLinks } from '@oxyhq/core';
+import { getNormalizedUserHandle, logger, normalizeProfileLinks } from '@oxyhq/core';
 import { extractErrorMessage } from '../utils/errorHandlers';
 
 interface ProfileScreenProps extends BaseScreenProps {
@@ -42,7 +42,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     } = useFollow(userId);
 
     const bloomTheme = useTheme();
-    const { t, locale } = useI18n();
+    const { t } = useI18n();
 
     // Check if current user is viewing their own profile
     // Normalize IDs by trimming whitespace to handle format mismatches
@@ -133,7 +133,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     // title (a stable "Profile" fallback before it resolves), so the banner +
     // overlapping avatar scroll as content UNDER the shared gradient nav bar.
     // `onImage` tone keeps the title + close legible over the colored banner.
-    const displayName = profile ? getAccountDisplayName(profile, locale) : username || '';
+    const displayName = profile
+        ? (profile.name?.displayName ?? getNormalizedUserHandle(profile))
+        : username || '';
     useSurfaceHeader({
         title: displayName || t('profile.title'),
         largeTitle: false,

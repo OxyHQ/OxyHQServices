@@ -19,7 +19,7 @@ import { Button } from '@oxyhq/bloom/button';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Admonition } from '@oxyhq/bloom/admonition';
-import { Dialog, useDialogControl , toast } from '@oxyhq/bloom';
+import { Dialog, useDialogControl, toast } from '@oxyhq/bloom';
 import {
   Pin_Stroke2_Corner0_Rounded,
   Pencil_Stroke2_Corner0_Rounded,

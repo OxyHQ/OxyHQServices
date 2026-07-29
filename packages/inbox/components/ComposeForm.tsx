@@ -15,7 +15,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Dialog, useDialogControl , toast } from '@oxyhq/bloom';
+import { Dialog, useDialogControl, toast } from '@oxyhq/bloom';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {

@@ -285,6 +285,25 @@ jobs:
       - run: bun run test
         working-directory: ./packages/inbox
 
+  # Accounts app tests (Jest — keyless account management)
+  accounts-test:
+    name: Accounts Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install
+      - run: |
+          bun run --filter @oxyhq/contracts build
+          bun run --filter @oxyhq/protocol build
+          bun run --filter @oxyhq/core build
+          bun run --filter @oxyhq/services build
+          bun run --filter @oxyhq/expo-splash build
+      - run: bun run test
+        working-directory: ./packages/accounts
+
   # Security audit
   security-audit:
     name: Security Audit

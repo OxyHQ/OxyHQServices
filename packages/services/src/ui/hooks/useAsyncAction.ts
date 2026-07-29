@@ -7,11 +7,11 @@ interface UseAsyncActionOptions<T> {
     /** Success message to display */
     successMessage?: string;
     /** Error message to display (or function to get message from error) */
-    errorMessage?: string | ((error: any) => string);
+    errorMessage?: string | ((error: unknown) => string);
     /** Callback on success */
     onSuccess?: (result: T) => void;
     /** Callback on error */
-    onError?: (error: any) => void;
+    onError?: (error: unknown) => void;
     /** Show loading toast */
     showLoadingToast?: boolean;
     /** Loading message */
