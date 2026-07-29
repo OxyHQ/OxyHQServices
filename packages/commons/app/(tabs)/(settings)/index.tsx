@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { Linking, Platform, View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Screen, StackHeader } from '@/components/ui';
 import { useColors } from '@/hooks/useColors';
