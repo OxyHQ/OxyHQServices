@@ -130,7 +130,7 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
     // Simulate what real auth flows do: they plant tokens on the provider's
     // instance through `setTokens`.
     act(() => {
-      providerInstance.setTokens('access-from-signin', 'refresh-from-signin');
+      providerInstance.setTokens('access-from-signin');
     });
 
     await waitFor(() => {

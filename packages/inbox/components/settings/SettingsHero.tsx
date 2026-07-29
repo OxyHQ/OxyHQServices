@@ -49,7 +49,7 @@ export function SettingsHero() {
     );
   }
 
-  const fullName = user?.name?.displayName || getNormalizedUserHandle(user) || '';
+  const fullName = user.name?.displayName ?? getNormalizedUserHandle(user) ?? '';
   const emailHandle = user.email || `${user.username}@oxy.so`;
 
   return (

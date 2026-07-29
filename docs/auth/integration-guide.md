@@ -38,7 +38,7 @@ sequenceDiagram
   end
   IdP->>RP: Redirect {redirectUri}?code=…&state=…
   RP->>API: POST /auth/oauth/token (code + codeVerifier or clientSecret)
-  API-->>RP: access_token, refresh_token, user
+  API-->>RP: access_token, deviceId, deviceSecret, user
   RP->>User: Logged in
 ```
 
@@ -109,10 +109,11 @@ async function startSignInWithOxy(): Promise<void> {
 interface OxyTokenResponse {
   data: {
     access_token: string;
-    refresh_token: string;
     token_type: 'Bearer';
     expires_in: number; // seconds (access token; currently 900)
     session_id: string;
+    deviceId: string;
+    deviceSecret: string;
     user: { id: string; username?: string; name?: { displayName?: string } };
   };
 }
@@ -146,8 +147,10 @@ async function handleOAuthCallback(): Promise<OxyTokenResponse['data']> {
   }
 
   const { data } = (await response.json()) as OxyTokenResponse;
-  // Store data.access_token / data.refresh_token in your app's own storage
-  // (localStorage, memory, etc.) and call your APIs with
+  // Persist data.access_token plus the device credential pair
+  // (data.deviceId + data.deviceSecret) in your app's own storage
+  // (localStorage, memory, etc.). Restore later via
+  // POST /session/device/token and call your APIs with
   // `Authorization: Bearer <access_token>`.
   return data;
 }
@@ -209,7 +212,7 @@ async function completeOAuth({ redirectUrl, state, codeVerifier }: OxyOAuthResul
     }),
   });
   const { data } = await response.json();
-  // Persist data.access_token / data.refresh_token in SecureStore.
+  // Persist data.access_token plus data.deviceId / data.deviceSecret in SecureStore.
 }
 
 export function App() {
@@ -350,7 +353,7 @@ Third-party integration is **standard OAuth only**. Do not expect — or try to 
 |--------|----------|------|---------|
 | GET | `https://auth.oxy.so/authorize` | — (browser) | Authorization + consent UI. Query: `client_id`, `redirect_uri`, `response_type=code`, `state`, `scope`, `code_challenge`, `code_challenge_method=S256`, optional `response_mode=web_message` to request popup delivery (issue #691 Phase 2 — falls back to a redirect with no opener). **`prompt=none` is refused** with a visible terminal screen, never a silent redirect back (Phase 7b); `buildOAuthAuthorizeUrl` no longer accepts the value either. `prompt` has no other effect — this IdP does not implement `login`/`consent`, so do not build a flow that depends on them |
 | GET | `api.oxy.so/auth/oauth/client/:clientId` | none | Public, sanitized application metadata (name, icon, type, scopes, legal URLs). Generic 404 for unknown/revoked clients |
-| POST | `api.oxy.so/auth/oauth/token` | none (code-bound) | Exchange `{ code, clientId, redirectUri, codeVerifier \| clientSecret }` → `{ data: { access_token, refresh_token, token_type, expires_in, session_id, user } }` |
+| POST | `api.oxy.so/auth/oauth/token` | none (code-bound) | Exchange `{ code, clientId, redirectUri, codeVerifier \| clientSecret }` → `{ data: { access_token, token_type, expires_in, session_id, deviceId, deviceSecret, user } }` |
 | GET | `api.oxy.so/auth/grants` | Bearer | User's connected apps |
 | DELETE | `api.oxy.so/auth/grants/:applicationId` | Bearer | Revoke a grant (idempotent) |
 
