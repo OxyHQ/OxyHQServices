@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Image, StyleSheet, ActivityIndicator } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Dialog } from '@oxyhq/bloom/dialog';
 import type { PublicCard, CardTrustTier, RealLifeAttestationResult } from '@oxyhq/contracts';
 import { useColors } from '@/hooks/useColors';
