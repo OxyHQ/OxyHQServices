@@ -93,10 +93,9 @@ const OxyProvider: FC<OxyProviderProps> = ({
     authRedirectUri,
     authorizeBaseUrl,
     sessionMode = 'account',
-    webAuthMode = 'redirect',
+    webAuthMode = 'popup',
     queryClient: providedQueryClient,
     requireAuth = 'off',
-    hubSync = true,
 }) => {
 
     // Dynamic KeyboardProvider for native. Uses variable indirection
@@ -294,7 +293,6 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     clientId={clientId}
                     sessionMode={sessionMode}
                     webAuthMode={webAuthMode}
-                    hubSync={hubSync}
                     onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
                 >
                     <SurfaceProvider>

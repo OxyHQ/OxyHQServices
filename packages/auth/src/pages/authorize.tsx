@@ -96,7 +96,61 @@ function parseRequestedScopes(
   return Array.from(new Set(rawScopes));
 }
 
+/**
+ * Terminal surface for a refused `prompt=none` request. It is a plain statement
+ * to whoever is looking at the window: nothing was authorized, and nothing is
+ * pending. See {@link AuthorizePage} for why the request is refused at all.
+ */
+function SilentPromptRefused() {
+  const { t } = useTranslation();
+  return (
+    <AuthFormLayout>
+      <AuthFormHeader
+        title={t("authorize.silentUnsupportedTitle")}
+        description={t("authorize.silentUnsupportedDesc")}
+      />
+    </AuthFormLayout>
+  );
+}
+
+/**
+ * OIDC `prompt=none` (silent authentication) is NOT supported by this IdP, and a
+ * request that asks for it is refused before any of the authorization machinery
+ * runs.
+ *
+ * WHY IT IS ANSWERED AT ALL: every gesture-less lane was deleted, and
+ * `@oxyhq/core`'s `buildOAuthAuthorizeUrl` narrowed its `prompt` union to
+ * `'login' | 'consent'` so no first-party caller can construct such a request
+ * any more. But `prompt` is read off the query string, so an arbitrary caller
+ * can still send it. Ignoring it would be the accidental answer: a caller asking
+ * for silence is waiting in a surface it never intends to show, so it would get
+ * the visible consent screen rendered somewhere the user can neither see nor act
+ * on — a request that hangs until the caller times out.
+ *
+ * WHY THE REFUSAL IS LOCAL, and nothing is reported back to the relying party:
+ * bouncing the spec's `interaction_required` to `redirect_uri` would be the
+ * OAuth-shaped answer, but on this path the target has only passed
+ * `safeRedirectUrl`'s shape check — the exact match against the application's
+ * registered `redirectUris` is enforced server-side by `POST /auth/oauth/authorize`,
+ * which a refused request never reaches. Delivering there would make the page a
+ * zero-interaction redirector from auth.oxy.so to any https target the URL's
+ * author picks, i.e. exactly the gesture-less bounce this phase removed. So the
+ * request stops here: no code minted, nothing posted to an opener, no navigation.
+ *
+ * WHY IT IS DECIDED HERE, above every other hook: the refused request performs no
+ * work at all — no client lookup, no session read, no consent probe — so the
+ * answer is the same constant regardless of what is signed in on this origin. A
+ * third party learns nothing about this device from asking.
+ */
 export function AuthorizePage() {
+  const [searchParams] = useSearchParams();
+  if (searchParams.get("prompt") === "none") {
+    return <SilentPromptRefused />;
+  }
+  return <AuthorizeRequest />;
+}
+
+function AuthorizeRequest() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -113,7 +167,6 @@ export function AuthorizePage() {
   const codeChallenge = searchParams.get("code_challenge");
   const codeChallengeMethod = searchParams.get("code_challenge_method");
   const scope = searchParams.get("scope");
-  const prompt = searchParams.get("prompt");
   const statusParam = searchParams.get("status");
   const urlError = searchParams.get("error");
   // Popup sign-in: `response_mode=web_message` asks us to post the result to
@@ -174,8 +227,6 @@ export function AuthorizePage() {
   // dead consent screen.
   const [relayOutcome, setRelayOutcome] = useState<RelayOutcome | null>(null);
 
-  const isSilentPrompt = prompt === "none";
-
   // A usable session for OAuth consent requires an active bearer — switchable
   // device rows alone are not enough (stale accounts after a failed mint).
   const hasUsableBearer =
@@ -223,20 +274,6 @@ export function AuthorizePage() {
     }
   }
 
-  // OAuth `prompt=none`: silent cross-origin restore — never show login UI.
-  // Fail with standard OAuth errors back to the RP (posted to the opener in
-  // popup mode, otherwise redirected to `redirect_uri`). With no usable redirect
-  // target the error is surfaced on this page instead.
-  function deliverOAuthError(errorCode: string): void {
-    setAutoApproving(false);
-    const safeRedirect = safeRedirectUrl(redirectUri);
-    if (!safeRedirect) {
-      setData((prev) => ({ ...prev, error: errorCode }));
-      return;
-    }
-    deliverToRelyingParty({ kind: "error", error: errorCode, state }, safeRedirect);
-  }
-
   /**
    * The Commons lane settled. Both outcomes go through the SAME delivery funnel
    * the session-bearing path uses, so the popup relay and the redirect fallback
@@ -271,119 +308,6 @@ export function AuthorizePage() {
       safeRedirect
     );
   }
-
-  // Silent restore: when prompt=none and the IdP has no session, bounce
-  // `login_required` immediately (OAuth standard) instead of the login page.
-  // Wait until device-first cold boot finishes so we don't race a slow mint.
-  useEffect(() => {
-    if (!isSilentPrompt || !isAuthResolved || deviceAccountsLoading) return;
-    if (hasUsableBearer) return;
-    deliverOAuthError("login_required");
-  }, [
-    isSilentPrompt,
-    isAuthResolved,
-    hasUsableBearer,
-    deviceAccountsLoading,
-    redirectUri,
-    state,
-  ]);
-
-  // Silent restore: invalid/missing OAuth params must fail closed — never spin forever.
-  useEffect(() => {
-    if (!isSilentPrompt || !isAuthResolved || deviceAccountsLoading) return;
-    if (!hasUsableBearer) return;
-    if (!clientId) {
-      deliverOAuthError("invalid_request");
-      return;
-    }
-    if (!safeRedirectUrl(redirectUri)) {
-      deliverOAuthError("invalid_request");
-    }
-  }, [
-    isSilentPrompt,
-    isAuthResolved,
-    deviceAccountsLoading,
-    hasUsableBearer,
-    clientId,
-    redirectUri,
-    state,
-  ]);
-
-  // Silent restore with an IdP session: probe consent and auto-approve without UI.
-  useEffect(() => {
-    if (
-      !isSilentPrompt ||
-      !isAuthResolved ||
-      deviceAccountsLoading ||
-      !isAuthenticated ||
-      !clientId ||
-      !safeRedirectUrl(redirectUri) ||
-      autoApproveAttemptedRef.current
-    ) {
-      return;
-    }
-    autoApproveAttemptedRef.current = true;
-    void (async () => {
-      const token = oxyServices.getAccessToken();
-      if (!token) {
-        deliverOAuthError("login_required");
-        return;
-      }
-      const safeRedirect = safeRedirectUrl(redirectUri);
-      if (!safeRedirect) {
-        deliverOAuthError("invalid_request");
-        return;
-      }
-
-      setAutoApproving(true);
-      let body: unknown = null;
-      try {
-        const params = new URLSearchParams();
-        params.set("clientId", clientId);
-        params.set("redirectUri", safeRedirect);
-        if (scope) params.set("scope", scope);
-        const response = await fetch(
-          buildApiUrl(`/auth/oauth/consent?${params.toString()}`),
-          {
-            credentials: "include",
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        if (!response.ok) {
-          setAutoApproving(false);
-          if (response.status === 403 || response.status === 400) {
-            deliverOAuthError("invalid_request");
-          } else {
-            deliverOAuthError("server_error");
-          }
-          return;
-        }
-        body = await response.json().catch(() => null);
-      } catch {
-        setAutoApproving(false);
-        deliverOAuthError("server_error");
-        return;
-      }
-
-      if (consentRequiredFromBody(body)) {
-        setAutoApproving(false);
-        deliverOAuthError("consent_required");
-        return;
-      }
-
-      await runOAuthAuthorize(token, safeRedirect);
-    })();
-  }, [
-    isSilentPrompt,
-    isAuthResolved,
-    isAuthenticated,
-    clientId,
-    redirectUri,
-    scope,
-    state,
-    oxyServices,
-    deviceAccountsLoading,
-  ]);
 
   useEffect(() => {
     async function loadData() {
@@ -609,10 +533,6 @@ export function AuthorizePage() {
     });
 
     if (codeResponse.status === 401) {
-      if (isSilentPrompt) {
-        deliverOAuthError("login_required");
-        return;
-      }
       navigate(
         buildRelativeUrl("/login", {
           token: token || undefined,
@@ -630,14 +550,6 @@ export function AuthorizePage() {
     }
 
     if (!codeResponse.ok) {
-      if (isSilentPrompt) {
-        const oauthError =
-          codeResponse.status === 403 || codeResponse.status === 400
-            ? "invalid_request"
-            : "server_error";
-        deliverOAuthError(oauthError);
-        return;
-      }
       const errPayload = await codeResponse.json().catch(() => ({}));
       const message =
         typeof errPayload?.message === "string"
@@ -657,10 +569,6 @@ export function AuthorizePage() {
     if (typeof code !== "string" || code.length === 0) {
       // A 2xx without a code violates the authorize contract — fail closed
       // rather than handing the relying party an empty credential.
-      if (isSilentPrompt) {
-        deliverOAuthError("server_error");
-        return;
-      }
       setAutoApproving(false);
       setSubmitting(false);
       setData((prev) => ({ ...prev, error: "Authorization failed" }));
@@ -879,7 +787,7 @@ export function AuthorizePage() {
               ? t("authorize.completeTitle")
               : relayOutcome === "denied"
                 ? t("authorize.deniedTitle")
-                : t("authorize.silentFailedTitle")
+                : t("authorize.relayFailedTitle")
           }
           description={t("authorize.completeDesc")}
         />
@@ -889,35 +797,6 @@ export function AuthorizePage() {
 
   if (loading || deviceAccountsLoading) {
     return <LoadingSpinner />;
-  }
-
-  if (isSilentPrompt) {
-    if (data.error) {
-      return (
-        <AuthFormLayout>
-          <AuthFormHeader
-            title={t("authorize.silentFailedTitle")}
-            description={t("authorize.silentFailedDesc")}
-          />
-        </AuthFormLayout>
-      );
-    }
-    if (loading || deviceAccountsLoading || !isAuthResolved || autoApproving) {
-      return (
-        <AuthFormLayout>
-          <AuthFormHeader title={t("authorize.signingIn")} />
-          <LoadingSpinner />
-        </AuthFormLayout>
-      );
-    }
-    return (
-      <AuthFormLayout>
-        <AuthFormHeader
-          title={t("authorize.silentFailedTitle")}
-          description={t("authorize.silentFailedDesc")}
-        />
-      </AuthFormLayout>
-    );
   }
 
   // Trusted / already-granted OAuth request: authorizing + redirecting without
@@ -946,12 +825,7 @@ export function AuthorizePage() {
   }
 
   // No session on this device (cold boot has resolved and found none).
-  // Skipped for `prompt=none`, which must never show UI (handled above).
-  if (
-    !isSilentPrompt &&
-    isAuthResolved &&
-    !hasUsableBearer
-  ) {
+  if (isAuthResolved && !hasUsableBearer) {
     // FIRST the additional lane (issue #691): when the request carries a full
     // PKCE binding, its application resolved cleanly, and the request is still
     // actionable, the authorization can be approved directly in Commons and

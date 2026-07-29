@@ -9,7 +9,6 @@ import type { OxyServices } from '@oxyhq/core';
 import type { QueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from './queryClient';
 import { isWebBrowser } from '../utils/isWebBrowser';
-import { clearCrossOriginRestoreGuards } from '../utils/crossOriginRestore';
 import { resetSessionScopedStores } from '../stores/resetSessionScopedStores';
 
 export interface UseSessionManagementOptions {
@@ -197,7 +196,6 @@ export const useSessionManagement = ({
     }
     
     await clearSessionStorage();
-    clearCrossOriginRestoreGuards();
     onAuthStateChange?.(null);
   }, [clearSessionStorage, logoutStore, onAuthStateChange, oxyServices, queryClient, storage, logger]);
 

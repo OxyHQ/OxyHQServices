@@ -62,10 +62,18 @@ export interface BuildOAuthAuthorizeUrlParams {
   /** The PKCE `codeChallenge` from {@link generatePkcePair}. */
   codeChallenge: string;
   /**
-   * OAuth `prompt` parameter. Use `none` for silent cross-origin session restore
-   * (no UI when the IdP hub already has a session + grant).
+   * OAuth `prompt` parameter — `login` forces a fresh authentication even when
+   * the IdP already has a session, `consent` forces the consent screen even for
+   * an already-granted scope. Both are ordinary OAuth/OIDC and are here for
+   * third-party relying parties building their own authorize link.
+   *
+   * `'none'` is deliberately NOT in this union. It is the silent-SSO value, and
+   * it was the only value this SDK ever sent — from the cold-boot cross-origin
+   * restore deleted in #691 phase 7b. Accepting it again would hand consumers a
+   * one-line rebuild of the automatic, gesture-less full-page bounce to the IdP
+   * that the popup transport exists to eliminate.
    */
-  prompt?: 'none' | 'login' | 'consent';
+  prompt?: 'login' | 'consent';
   /**
    * How the IdP should deliver the authorization response. Omitted (the
    * default) means the ordinary top-level redirect back to `redirectUri`.
@@ -219,12 +227,6 @@ export const OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY = 'oxy_oauth_code_verifier';
 
 /** `sessionStorage` key — the exact `redirect_uri` sent on the authorize request. */
 export const OXY_OAUTH_REDIRECT_URI_STORAGE_KEY = 'oxy.oauth_redirect_uri';
-
-/** `sessionStorage` key — at most one silent OAuth attempt per navigation. */
-export const OXY_SILENT_OAUTH_ATTEMPTED_KEY = 'oxy.silent_oauth_attempted';
-
-/** `sessionStorage` key — blocks further cross-origin auto-restore in this tab. */
-export const OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY = 'oxy.cross_origin_restore_attempted';
 
 /**
  * `sessionStorage` key for the in-app path to return to after an authorize

@@ -131,7 +131,6 @@ async function run(): Promise<void> {
   await checkSpaPage(PRIMARY_TARGET, '/login');
   await checkSpaPage(PRIMARY_TARGET, '/signup');
   await checkSpaPage(PRIMARY_TARGET, '/authorize');
-  await checkSpaPage(PRIMARY_TARGET, '/sync?return=https://inbox.oxy.so');
   await checkWebIdentityGone(PRIMARY_TARGET);
 
   const failed = results.filter((r) => !r.ok);

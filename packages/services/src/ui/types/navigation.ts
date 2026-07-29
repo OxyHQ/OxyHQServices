@@ -74,11 +74,11 @@ export interface OxyProviderProps {
     authWebUrl?: string;
     authRedirectUri?: string;
     /**
-     * Authorize endpoint override for silent cross-origin session restore
-     * (web cross-app SSO on cold boot). Defaults to the production Oxy IdP
-     * (`https://auth.oxy.so/authorize`) when unset. Set this from an env var
-     * (e.g. Vite `VITE_OXY_AUTHORIZE_URL`, Expo `EXPO_PUBLIC_OXY_AUTHORIZE_URL`)
-     * so a local/staging deployment targets its own IdP instead of production.
+     * Authorize endpoint override for web "Sign in with Oxy". Defaults to the
+     * production Oxy IdP (`https://auth.oxy.so/authorize`) when unset. Set this
+     * from an env var (e.g. Vite `VITE_OXY_AUTHORIZE_URL`, Expo
+     * `EXPO_PUBLIC_OXY_AUTHORIZE_URL`) so a local/staging deployment targets its
+     * own IdP instead of production.
      */
     authorizeBaseUrl?: string;
     /**
@@ -98,9 +98,9 @@ export interface OxyProviderProps {
      * rather than hidden in the UI: `accounts` stays empty and is never fetched,
      * `switchToAccount` / `switchSession` reject with `IdentityBoundSessionError`,
      * `accountDialogController` is `null` and `openAccountDialog()` does nothing,
-     * and the two web OAuth cold-boot lanes (authorization-code return + silent
-     * cross-origin restore) are skipped — all of them commit whichever account
-     * the IdP resolves, which is not necessarily the local key's owner.
+     * and the web OAuth cold-boot lane (the authorization-code return leg) is
+     * skipped — it commits whichever account the IdP resolves, which is not
+     * necessarily the local key's owner.
      *
      * Read once at mount, like `baseURL` / `oxyServices`: changing it on a
      * mounted provider does not re-bind the session.
@@ -110,22 +110,23 @@ export interface OxyProviderProps {
     /**
      * How a WEB third-party "Sign in with Oxy" hands the user to the IdP.
      *
-     * - `'redirect'` (default) — a full-page navigation to `auth.oxy.so`, which
-     *   returns to the registered `redirect_uri` with `?code=`. The tab unmounts
-     *   and remounts, so route and unsaved state are lost.
-     * - `'popup'` — a small `auth.oxy.so` window opened from the user's click.
-     *   The app stays MOUNTED and becomes authenticated without a reload; the
-     *   IdP delivers only the authorization code + `state` back to the opener
-     *   via `postMessage` (never a token, device secret, or PKCE verifier). A
-     *   blocked popup falls back to the redirect automatically.
+     * - `'popup'` (default) — a small `auth.oxy.so` window opened from the
+     *   user's click. The app stays MOUNTED and becomes authenticated without a
+     *   reload; the IdP delivers only the authorization code + `state` back to
+     *   the opener via `postMessage` (never a token, device secret, or PKCE
+     *   verifier). A blocked popup falls back to the redirect automatically.
+     * - `'redirect'` — a full-page navigation to `auth.oxy.so`, which returns to
+     *   the registered `redirect_uri` with `?code=`. The tab unmounts and
+     *   remounts, so route and unsaved state are lost.
+     *
+     * Either way the navigation only ever happens from a real user gesture: the
+     * SDK never bounces the top-level window on its own (#691 phase 7b).
      *
      * Native is unaffected — it always uses an in-app auth session.
-     * @default 'redirect'
+     * @default 'popup'
      */
     webAuthMode?: WebAuthMode;
     queryClient?: QueryClient;
-    /** Sync device credentials to auth.oxy.so after interactive sign-in. @default true */
-    hubSync?: boolean;
     /**
      * Convenience: wrap the whole app subtree in `<RequireOxyAuth prompt=...>`.
      * `off` (default) renders children unconditionally; `soft` adds a dismissible

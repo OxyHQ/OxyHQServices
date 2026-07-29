@@ -17,8 +17,10 @@
  * }
  * ```
  *
- * Cross-domain session (zero cookies):
- * - Web: silent OAuth (`prompt=none`) on cold boot; hub-ticket sync to auth.oxy.so after sign-in
+ * Session restore (zero cookies):
+ * - Web: this origin's own persisted `{deviceId, deviceSecret}` — a signed-out
+ *   origin stays signed out until the user presses "Continue with Oxy". There is
+ *   no cross-origin silent SSO: the SDK never navigates the tab on its own.
  * - Native: shared Keychain / app-group identity (Commons)
  * - Realtime sync: Socket.IO `session_state` on `device:<deviceId>` once authenticated
  * - Manual sign-in: signIn() opens the in-app account dialog (web + native)

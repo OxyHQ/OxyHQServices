@@ -158,10 +158,9 @@ export interface OxyContextProviderProps {
   authWebUrl?: string;
   authRedirectUri?: string;
   /**
-   * Authorize endpoint override for silent cross-origin session restore
-   * (web cross-app SSO). Defaults to the production Oxy IdP when unset; a
-   * local/staging deployment points it at its own IdP so cold boot never
-   * bounces the tab to production `auth.oxy.so`.
+   * Authorize endpoint override for web "Sign in with Oxy". Defaults to the
+   * production Oxy IdP when unset; a local/staging deployment points it at its
+   * own IdP so sign-in never reaches production `auth.oxy.so`.
    */
   authorizeBaseUrl?: string;
   storageKeyPrefix?: string;
@@ -174,11 +173,9 @@ export interface OxyContextProviderProps {
   sessionMode?: SessionMode;
   /**
    * Transport for WEB third-party sign-in. See `OxyProviderProps.webAuthMode`.
-   * @default 'redirect'
+   * @default 'popup'
    */
   webAuthMode?: WebAuthMode;
-  /** Sync device credentials to auth.oxy.so after interactive sign-in. @default true */
-  hubSync?: boolean;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
 }
