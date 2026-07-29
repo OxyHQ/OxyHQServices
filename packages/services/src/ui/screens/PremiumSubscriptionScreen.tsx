@@ -741,9 +741,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 </View>
 
                 <BenefitList className="mb-space-24">
-                    {plan.features.map((feature, index) => (
+                    {plan.features.map((feature) => (
                         <BenefitRow
-                            key={index}
+                            key={feature}
                             icon={<Ionicons name="checkmark" size={18} color={colors.success} />}
                             label={feature}
                         />

@@ -29,7 +29,7 @@ const PODIUM_RANK = 3;
 
 const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ navigate }) => {
     const { oxyServices, user: currentUser } = useOxy();
-    const { t, locale } = useI18n();
+    const { t } = useI18n();
     const bloomTheme = useTheme();
 
     const [leaderboard, setLeaderboard] = useState<ReputationLeaderboardEntry[]>([]);
@@ -116,7 +116,7 @@ const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ navigate }) => {
                 </TouchableOpacity>
             );
         },
-        [oxyServices, locale, currentUserId, handleEntryPress, t],
+        [oxyServices, currentUserId, handleEntryPress, t],
     );
 
     const keyExtractor = useCallback(

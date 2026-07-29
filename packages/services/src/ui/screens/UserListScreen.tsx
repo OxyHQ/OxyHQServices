@@ -65,7 +65,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   const [hasMore, setHasMore] = useState(true);
 
   const bloomTheme = useTheme();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
 
   const currentUserId = currentUser ? resolveUserId(currentUser) : '';
 
@@ -199,7 +199,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         </TouchableOpacity>
       );
     },
-    [handleUserPress, currentUserId, oxyServices, locale]
+    [handleUserPress, currentUserId, oxyServices]
   );
 
   const renderEmpty = useCallback(() => {

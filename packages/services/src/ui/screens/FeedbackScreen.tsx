@@ -283,6 +283,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 		>
 			{Array.from({ length: TOTAL_STEPS }, (_, index) => (
 				<View
+					// biome-ignore lint/suspicious/noArrayIndexKey: fixed step indicators, order never changes
 					key={index}
 					className={
 						currentStep === index
