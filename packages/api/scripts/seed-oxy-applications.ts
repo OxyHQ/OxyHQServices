@@ -23,10 +23,17 @@
  * Run (inside the oxy-api image, working dir /app):
  *   bun run packages/api/scripts/seed-oxy-applications.ts
  *
+ * Register/reconcile ONE application, leaving every other record untouched:
+ *   ONLY_APPS='CrowdSource' bun run packages/api/scripts/seed-oxy-applications.ts
+ *
  * Env:
  *   MONGODB_URI   required (injected by ECS from SSM)
  *   OXY_USERNAME  owner username to resolve (default 'oxy')
  *   DRY_RUN=true  plan only, no writes
+ *   ONLY_APPS     comma-separated application names this run may touch. Unset
+ *                 seeds the whole list. Set-but-empty, or naming an application
+ *                 that is not in SEED_APPS, ABORTS before any write — see
+ *                 `src/scripts/seedApplicationSelection.ts`.
  */
 
 import crypto from 'crypto';
@@ -41,6 +48,7 @@ import {
   unionValidScopes,
   type ApplicationScope,
 } from '../src/utils/applicationScopes';
+import { selectSeedApplications } from '../src/scripts/seedApplicationSelection';
 
 // ── Mirror routes/applications.ts credential generation EXACTLY ──────────────
 const CREDENTIAL_PUBLIC_KEY_PREFIX = 'oxy_dk_';
@@ -238,6 +246,24 @@ const SEED_APPS: SeedAppSpec[] = [
       'https://hub.moovo.now',
     ],
   },
+  {
+    name: 'CrowdSource',
+    description:
+      'Official Oxy participatory moderation platform — reviewers are assigned cases by the server and review them blind.',
+    websiteUrl: 'https://crowdsource.oxy.so',
+    type: 'first_party',
+    // The reviewer app ships to the web only today (Cloudflare Pages project
+    // `crowdsource-frontend`). Its Expo `crowdsource://` deep-link scheme is
+    // registered here when a native build actually ships — an unused redirect
+    // surface is authority nobody asked for.
+    redirectUris: ['https://crowdsource.oxy.so'],
+    // Sign-in ONLY, so the default `['user:read']`. CrowdSource must never
+    // carry `reputation:write`: it never moves an Oxy Trust figure itself, it
+    // emits a decision and Oxy Trust's own consequence engine decides the
+    // effect. Granting it here would also widen every device sign-in grant,
+    // because a device sign-in's granted scopes ARE the application's scopes
+    // (`routes/auth.ts` — `scopes = appScopes` when there is no OAuth request).
+  },
 ];
 
 interface MappingRow {
@@ -274,13 +300,19 @@ async function retireLegacyApplication(
   return result.modifiedCount ?? 0;
 }
 
-async function seed(): Promise<void> {
+async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
   const dryRun = process.env.DRY_RUN === 'true';
   const ownerUsername = process.env.OXY_USERNAME || 'oxy';
 
   if (dryRun) {
     logger.info('DRY RUN — no writes will be performed');
   }
+
+  logger.info('Seeding applications', {
+    selected: seedApps.map((spec) => spec.name),
+    of: SEED_APPS.length,
+    filtered: seedApps.length !== SEED_APPS.length,
+  });
 
   const owner = await User.findOne({ username: ownerUsername }).select('_id username').lean();
   if (!owner?._id) {
@@ -359,7 +391,7 @@ async function seed(): Promise<void> {
   let legacyCredentialsRevoked = 0;
   let credentialsReused = 0;
 
-  for (const spec of SEED_APPS) {
+  for (const spec of seedApps) {
     let createdApplication = false;
     let createdCredential = false;
 
@@ -387,7 +419,6 @@ async function seed(): Promise<void> {
       status: 'active' as const,
       isOfficial: true,
       isInternal: spec.type === 'internal',
-      capabilities: [] as string[],
       redirectUris: spec.redirectUris,
       scopes: spec.scopes ?? (['user:read'] as ApplicationScope[]),
       ownerAccountId: oxyOrgId,
@@ -399,6 +430,9 @@ async function seed(): Promise<void> {
         application = await Application.create({
           name: spec.name,
           createdByUserId: oxyId,
+          // A brand-new official app holds no platform capabilities. Existing
+          // records are never reconciled on this field — see below.
+          capabilities: [],
           ...desiredAppFields,
         });
       }
@@ -412,7 +446,16 @@ async function seed(): Promise<void> {
       application.status = desiredAppFields.status;
       application.isOfficial = desiredAppFields.isOfficial;
       application.isInternal = desiredAppFields.isInternal;
-      application.capabilities = desiredAppFields.capabilities;
+      // `capabilities` is deliberately NOT reconciled. `SeedAppSpec` has no
+      // capabilities field, so this script declares no intent about them — an
+      // authoritative overwrite here would silently STRIP a staff grant made
+      // elsewhere. Concretely: `scripts/register-commons-clients.ts` unions
+      // `identity:approval` onto "Commons by Oxy", and
+      // `services/authSessionDelivery.service.ts` selects push-delivery targets
+      // by exactly that capability — so a re-run of this seed would leave a
+      // pending sign-in request with zero eligible devices. Removing a
+      // capability is an explicit staff operation, never a side effect of a
+      // rebuild (same reasoning as `unionValidScopes` for scopes).
       application.redirectUris = desiredAppFields.redirectUris;
       // Additive union: keep any valid already-granted scope so a re-run never
       // silently revokes an out-of-band grant (e.g. Mention's signals:write).
@@ -482,7 +525,9 @@ async function seed(): Promise<void> {
 
   logger.info('Seed summary', {
     dryRun,
-    apps: SEED_APPS.length,
+    // The apps this run actually touched, not the size of the canonical list —
+    // a bounded run must not report the blast radius it deliberately avoided.
+    apps: seedApps.length,
     appsCreated,
     appsUpdated,
     credentialsCreated,
@@ -507,11 +552,16 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Resolved BEFORE connecting: a misspelled ONLY_APPS should cost nothing and
+  // must never reach the database — not even to mint the Oxy organization
+  // account as a side effect of a run that was never going to be valid.
+  const seedApps = selectSeedApplications(SEED_APPS, process.env.ONLY_APPS);
+
   await mongoose.connect(uri);
   logger.info('Connected to MongoDB');
 
   try {
-    await seed();
+    await seed(seedApps);
   } finally {
     await mongoose.connection.close();
     logger.info('MongoDB connection closed');
