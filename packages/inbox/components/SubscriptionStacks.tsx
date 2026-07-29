@@ -24,7 +24,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Text } from '@oxyhq/bloom/typography';
 import { SPACING as BLOOM_SPACING } from '@oxyhq/bloom/design-tokens';
 

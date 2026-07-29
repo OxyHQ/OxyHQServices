@@ -8,7 +8,7 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { useOxy } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
 import type { AccountNode } from '@oxyhq/core';

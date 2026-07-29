@@ -39,6 +39,7 @@ module.exports = {
     // adapter, so no `expo-*` module is reachable from a test at all.
     '^react-native$': '<rootDir>/__mocks__/react-native.ts',
     '^@oxyhq/services$': '<rootDir>/__mocks__/oxyhq-services.ts',
+    '^@expo/vector-icons(/.*)?$': '<rootDir>/__mocks__/expo-vector-icons.tsx',
   },
   testTimeout: 10000,
 };

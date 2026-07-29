@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Loading } from '@oxyhq/bloom/loading';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { PencilEdit01Icon } from '@hugeicons/core-free-icons';
 import { useRouter, useNavigation } from 'expo-router';

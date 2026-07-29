@@ -14,7 +14,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { BottomSheet, type BottomSheetRef } from '@oxyhq/bloom/bottom-sheet';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useColors } from '@/constants/theme';
 
 type MaterialCommunityIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];

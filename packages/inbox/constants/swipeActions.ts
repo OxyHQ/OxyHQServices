@@ -8,7 +8,7 @@
  * purely visual so the component stays free of mutation knowledge.
  */
 
-import type { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { SwipeAction } from '@/contexts/inbox-prefs-context';
 
 type MciName = keyof typeof MaterialCommunityIcons.glyphMap;

@@ -16,7 +16,7 @@
 
 import React, { useCallback, useRef } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import ReanimatedSwipeable, {
   type SwipeableMethods,
   SwipeDirection,

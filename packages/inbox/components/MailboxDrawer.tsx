@@ -16,7 +16,7 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOxy, OxySignInButton, openAccountDialog, ProfileButton } from '@oxyhq/services';
 import { Dialog, useDialogControl } from '@oxyhq/bloom';

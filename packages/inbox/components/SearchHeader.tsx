@@ -16,7 +16,7 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Menu01Icon, ArrowLeft01Icon, Cancel01Icon } from '@hugeicons/core-free-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

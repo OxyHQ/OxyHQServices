@@ -23,7 +23,7 @@ import * as Print from 'expo-print';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Chip } from '@oxyhq/bloom/chip';
 import { Dialog, useDialogControl , toast } from '@oxyhq/bloom';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
   ArrowLeft01Icon,

@@ -14,7 +14,7 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useOxy } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
 

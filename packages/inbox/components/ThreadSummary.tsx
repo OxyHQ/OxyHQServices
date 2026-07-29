@@ -14,7 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
   AiChat02Icon,

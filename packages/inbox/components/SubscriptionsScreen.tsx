@@ -21,7 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { useFloatingHeader } from '@/hooks/useFloatingHeader';
 import { SubscriptionStacks } from '@/components/SubscriptionStacks';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
   ArrowLeft01Icon,

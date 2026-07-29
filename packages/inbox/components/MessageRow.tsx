@@ -20,7 +20,7 @@ import React, { useCallback, useState, useRef } from 'react';
 import { View, Pressable, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Text } from '@oxyhq/bloom/typography';
 import * as Haptics from 'expo-haptics';

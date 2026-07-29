@@ -7,7 +7,7 @@
 
 import React, { useMemo, useCallback } from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Slot, Stack, useRouter, usePathname } from 'expo-router';
 import { useDialogControl } from '@oxyhq/bloom';
 import { ContentPanel } from '@oxyhq/bloom/content-panel';

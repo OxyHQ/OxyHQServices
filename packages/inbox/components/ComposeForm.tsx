@@ -16,7 +16,7 @@ import {
   Platform,
 } from 'react-native';
 import { Dialog, useDialogControl , toast } from '@oxyhq/bloom';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
   Cancel01Icon,

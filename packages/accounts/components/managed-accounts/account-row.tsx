@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import type { AccountNode, AccountRole, OxyServices } from '@oxyhq/core';
 import { getAccountFallbackHandle, getAccountDisplayName } from '@oxyhq/core';

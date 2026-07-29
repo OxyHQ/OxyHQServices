@@ -5,7 +5,7 @@
 
 import React, { type ComponentProps } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Text } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
 import type { MessageCard } from '@/services/emailApi';

@@ -10,7 +10,7 @@
 
 import { useMemo } from 'react';
 import type { ComponentProps } from 'react';
-import type { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { Message } from '@/services/emailApi';
 
 export type SentimentType = 'urgent' | 'frustrated' | 'positive' | 'neutral' | 'formal' | 'request';
