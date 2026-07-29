@@ -117,7 +117,7 @@
     "@noble/hashes": "^1.8.0",
     "@oxyhq/contracts": "workspace:^",
     "@oxyhq/protocol": "workspace:^",
-    "bip39": "^3.1.0",
+    "@scure/bip39": "^1.6.0",
     "buffer": "^6.0.3",
     "elliptic": "^6.6.1",
     "invariant": "^2.2.4",
