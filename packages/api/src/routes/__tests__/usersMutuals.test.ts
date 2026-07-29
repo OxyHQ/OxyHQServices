@@ -174,7 +174,7 @@ describe('GET /users/:userId/mutuals', () => {
 
     expect(res.status).toBe(200);
     expect(mockGetUserMutuals).toHaveBeenCalledTimes(1);
-    expect(mockGetUserMutuals).toHaveBeenCalledWith(VIEWER, TARGET, { limit: 50, offset: 0 });
+    expect(mockGetUserMutuals).toHaveBeenCalledWith(VIEWER, TARGET, { limit: 50, offset: 0, sort: undefined });
     expect(res.body.data).toEqual([dto]);
     // Same envelope as GET /users/:userId/followers.
     expect(res.body.pagination).toEqual({ total: 1, limit: 50, offset: 0, hasMore: false });
@@ -190,7 +190,7 @@ describe('GET /users/:userId/mutuals', () => {
 
     expect(res.status).toBe(200);
     // The viewer is the server-derived one, NOT the attacker-supplied query.
-    expect(mockGetUserMutuals).toHaveBeenCalledWith(VIEWER, TARGET, { limit: 50, offset: 0 });
+    expect(mockGetUserMutuals).toHaveBeenCalledWith(VIEWER, TARGET, { limit: 50, offset: 0, sort: undefined });
   });
 
   it('does not 401 for an anonymous caller — still invokes the service with undefined', async () => {
@@ -202,7 +202,7 @@ describe('GET /users/:userId/mutuals', () => {
     const res = await getJson(server, `/users/${TARGET}/mutuals`);
 
     expect(res.status).toBe(200);
-    expect(mockGetUserMutuals).toHaveBeenCalledWith(undefined, TARGET, { limit: 50, offset: 0 });
+    expect(mockGetUserMutuals).toHaveBeenCalledWith(undefined, TARGET, { limit: 50, offset: 0, sort: undefined });
     expect(res.body.data).toEqual([]);
     expect(res.body.pagination).toEqual({ total: 0, limit: 50, offset: 0, hasMore: false });
   });
@@ -217,6 +217,6 @@ describe('GET /users/:userId/mutuals', () => {
 
     expect(res.status).toBe(200);
     // limit clamps to PAGINATION.MAX_LIMIT (100).
-    expect(mockGetUserMutuals).toHaveBeenCalledWith(VIEWER, TARGET, { limit: 100, offset: 20 });
+    expect(mockGetUserMutuals).toHaveBeenCalledWith(VIEWER, TARGET, { limit: 100, offset: 20, sort: undefined });
   });
 });

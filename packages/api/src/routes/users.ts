@@ -19,6 +19,11 @@ import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler';
 import {
+  FOLLOW_GRAPH_SORTS,
+  isFollowGraphSort,
+  type FollowGraphSort,
+} from '../types/user.types';
+import {
   NotFoundError,
   UnauthorizedError,
   ForbiddenError,
@@ -67,6 +72,11 @@ interface AuthRequest extends Request {
 interface PaginationQuery {
   limit?: string;
   offset?: string;
+}
+
+/** Pagination plus the follow-graph `sort` accepted by the list endpoints. */
+interface FollowGraphQuery extends PaginationQuery {
+  sort?: string;
 }
 
 // Maximum number of users that can be followed in a single bulk request.
@@ -173,6 +183,33 @@ const validatePagination = (req: Request, res: Response, next: NextFunction): vo
   }
 
   next();
+};
+
+/**
+ * Validates the optional `sort` query parameter on the follow-graph list
+ * endpoints. Absent ⇒ the server default (`recent`); anything outside the
+ * supported vocabulary is rejected rather than silently coerced, so a client
+ * asking for an ordering we do not implement finds out instead of quietly
+ * receiving a different one.
+ */
+const validateFollowGraphSort = (req: Request, res: Response, next: NextFunction): void => {
+  const { sort } = req.query as FollowGraphQuery;
+
+  if (sort !== undefined && !isFollowGraphSort(sort)) {
+    res.status(400).json({
+      error: 'INVALID_SORT',
+      message: `sort must be one of: ${FOLLOW_GRAPH_SORTS.join(', ')}`,
+    });
+    return;
+  }
+
+  next();
+};
+
+/** Read the validated `sort` off a request. Undefined ⇒ the service default. */
+const readFollowGraphSort = (req: Request): FollowGraphSort | undefined => {
+  const { sort } = req.query as FollowGraphQuery;
+  return isFollowGraphSort(sort) ? sort : undefined;
 };
 
 /**
@@ -812,15 +849,18 @@ router.get(
  * @param {string} userId - User ID
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
+ * @query {string} sort - `recent` (default) or `oldest`
  * @returns {PaginatedResponse<PublicUserProfile>} Paginated list of followers
  */
 router.get(
   '/:userId/followers',
   resolveUserId,
   validatePagination,
+  validateFollowGraphSort,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
-    const { limit, offset } = req.query as PaginationQuery;
+    const { limit, offset } = req.query as FollowGraphQuery;
+    const sort = readFollowGraphSort(req);
 
     const parsedLimit = limit
       ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
@@ -832,12 +872,14 @@ router.get(
     const result = await userService.getUserFollowers(userId, {
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
     });
 
     logger.debug('GET /users/:userId/followers', {
       userId,
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
       total: result.total,
     });
 
@@ -853,15 +895,18 @@ router.get(
  * @param {string} userId - User ID
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
+ * @query {string} sort - `recent` (default) or `oldest`
  * @returns {PaginatedResponse<PublicUserProfile>} Paginated list of following
  */
 router.get(
   '/:userId/following',
   resolveUserId,
   validatePagination,
+  validateFollowGraphSort,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
-    const { limit, offset } = req.query as PaginationQuery;
+    const { limit, offset } = req.query as FollowGraphQuery;
+    const sort = readFollowGraphSort(req);
 
     const parsedLimit = limit
       ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
@@ -873,12 +918,14 @@ router.get(
     const result = await userService.getUserFollowing(userId, {
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
     });
 
     logger.debug('GET /users/:userId/following', {
       userId,
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
       total: result.total,
     });
 
@@ -904,6 +951,7 @@ router.get(
  * @param {string} userId - Target user ID (ObjectId or publicKey; resolved first)
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
+ * @query {string} sort - `recent` (default) or `oldest`
  * @returns {PaginatedResponse<PublicUserProfile>} Paginated list of mutual followers
  */
 router.get(
@@ -911,9 +959,11 @@ router.get(
   optionalUserOrServiceAuth,
   resolveUserId,
   validatePagination,
+  validateFollowGraphSort,
   asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
     const { userId } = req.params;
-    const { limit, offset } = req.query as PaginationQuery;
+    const { limit, offset } = req.query as FollowGraphQuery;
+    const sort = readFollowGraphSort(req);
 
     // Viewer is always the authenticated principal — never a client param.
     const viewerId = resolveViewerId(req);
@@ -928,6 +978,7 @@ router.get(
     const result = await userService.getUserMutuals(viewerId, userId, {
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
     });
 
     logger.debug('GET /users/:userId/mutuals', {
@@ -935,6 +986,7 @@ router.get(
       userId,
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
       total: result.total,
     });
 

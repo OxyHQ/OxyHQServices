@@ -31,6 +31,9 @@ import {
   UserStatistics,
   FollowActionResult,
   ViewerGraph,
+  FollowGraphParams,
+  FollowGraphSort,
+  DEFAULT_FOLLOW_GRAPH_SORT,
 } from '../types/user.types';
 import {
   PUBLIC_USER_PROFILE_SELECT,
@@ -85,6 +88,21 @@ interface FollowsOfFollowsRow {
 type FollowUserEdgeField = 'followerUserId' | 'followedId';
 
 /**
+ * Mongo sort spec per ordering.
+ *
+ * `_id` is a REQUIRED tiebreak, not decoration: `createdAt` alone is not unique
+ * (follows landing in the same millisecond tie), and an unstable sort under
+ * `$skip`/`$limit` paging lets a tied document appear on two consecutive pages
+ * while another is skipped entirely. `_id` is unique, so the composite key is
+ * total and paging is deterministic. It is mirrored with the primary key so
+ * `oldest` is the exact reverse of `recent`.
+ */
+const FOLLOW_GRAPH_SORT_STAGES: Record<FollowGraphSort, Record<string, 1 | -1>> = {
+  recent: { createdAt: -1, _id: -1 },
+  oldest: { createdAt: 1, _id: 1 },
+};
+
+/**
  * Paginate follow edges whose counterparty user is not archived or in the
  * punitive `restricted` reputation tier. Counts and pages on visible users
  * only so `total` / `hasMore` stay accurate after tombstoned/restricted
@@ -95,6 +113,7 @@ async function paginateActiveFollowUserIds(
   userIdField: FollowUserEdgeField,
   limit: number,
   offset: number,
+  sort: FollowGraphSort = DEFAULT_FOLLOW_GRAPH_SORT,
 ): Promise<{ userIds: string[]; total: number }> {
   const joinedStages = [
     { $match: match },
@@ -126,7 +145,7 @@ async function paginateActiveFollowUserIds(
 
   const pageRows = await Follow.aggregate<{ userId: Types.ObjectId }>([
     ...joinedStages,
-    { $sort: { createdAt: -1 } },
+    { $sort: FOLLOW_GRAPH_SORT_STAGES[sort] },
     { $skip: offset },
     { $limit: limit },
     { $project: { _id: 0, userId: `$${userIdField}` } },
@@ -584,11 +603,11 @@ export class UserService {
   }
 
   /**
-   * Get user followers with pagination
+   * Get user followers with pagination and ordering
    */
   async getUserFollowers(
     userId: string,
-    params: PaginationParams = {}
+    params: FollowGraphParams = {}
   ): Promise<PaginatedResponse<PublicUserProfile>> {
     const limit = Math.min(
       params.limit || PAGINATION.DEFAULT_LIMIT,
@@ -601,6 +620,7 @@ export class UserService {
       'followerUserId',
       limit,
       offset,
+      params.sort,
     );
 
     // Fetch users directly (returns plain objects, not Mongoose documents)
@@ -630,11 +650,11 @@ export class UserService {
   }
 
   /**
-   * Get user following with pagination
+   * Get user following with pagination and ordering
    */
   async getUserFollowing(
     userId: string,
-    params: PaginationParams = {}
+    params: FollowGraphParams = {}
   ): Promise<PaginatedResponse<PublicUserProfile>> {
     const limit = Math.min(
       params.limit || PAGINATION.DEFAULT_LIMIT,
@@ -647,6 +667,7 @@ export class UserService {
       'followedId',
       limit,
       offset,
+      params.sort,
     );
 
     // Fetch users directly (returns plain objects, not Mongoose documents)
@@ -688,14 +709,15 @@ export class UserService {
    *
    * The viewer's following set is bounded to the same window the recommendation
    * pipeline uses (`MAX_FOLLOWING_FOR_MUTUALS`) so the `$in` stays small. The
-   * returned page mirrors `getUserFollowers`: most-recent mutual first, public
-   * DTOs via `formatUserResponse`, and the same `{ data, total, hasMore, limit,
-   * offset }` shape.
+   * returned page mirrors `getUserFollowers`: ordered by `params.sort`
+   * (most-recent mutual first by default), public DTOs via
+   * `formatUserResponse`, and the same `{ data, total, hasMore, limit, offset }`
+   * shape.
    */
   async getUserMutuals(
     viewerId: string | undefined,
     targetUserId: string,
-    params: PaginationParams = {}
+    params: FollowGraphParams = {}
   ): Promise<PaginatedResponse<PublicUserProfile>> {
     const limit = Math.min(
       params.limit || PAGINATION.DEFAULT_LIMIT,
@@ -746,6 +768,7 @@ export class UserService {
       'followerUserId',
       limit,
       offset,
+      params.sort,
     );
     if (total === 0) {
       return empty();
