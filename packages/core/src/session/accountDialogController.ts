@@ -302,21 +302,17 @@ export interface AccountDialogControllerOptions {
    * `SessionClient.registerAndActivate` (registration + activation only — no
    * provider-side durable persist/hydration).
    *
-   * This is the SIGN-IN commit: on an official web origin it may run the
-   * cross-origin hub-sync (a full-page redirect to `auth.oxy.so/sync`) that
-   * bootstraps silent OAuth restore on OTHER origins. A first sign-in on a web
-   * origin legitimately needs that. An account SWITCH does NOT — see
-   * {@link commitSwitchedSession}.
+   * This is the SIGN-IN commit: registers the session into the host's device
+   * set with durable persist + profile hydration. An account SWITCH uses
+   * {@link commitSwitchedSession} instead — see below.
    */
   commitSession?: (session: SessionLoginResponse) => Promise<void>;
   /**
    * Commit a minted graph SWITCH session into the host's session set — same
    * device-first registration + durable persist + profile hydration as
-   * {@link commitSession}, but IN-PLACE: it must NOT trigger the cross-origin
-   * hub-sync redirect. Switching into an account you already operate reuses the
-   * device credential that was already hub-synced at the original sign-in, so
-   * re-syncing is redundant and a full-page redirect on switch is the exact
-   * regression this separation prevents. Cross-tab/app propagation of the switch
+   * {@link commitSession}, but IN-PLACE: it must NOT re-run sign-in side effects
+   * that belong only to a fresh authorization (for example, a redundant full
+   * device-set reconcile on switch). Cross-tab/app propagation of the switch
    * still happens instantly via the server's device-scoped `session_state` /
    * `session_accounts_changed` socket broadcast — no navigation required.
    *
@@ -811,9 +807,9 @@ export class AccountDialogController {
             accessToken: result.accessToken,
           },
           result.user,
-          // A switch is IN-PLACE: commit without the hub-sync redirect (the
-          // device is already known/synced). Cross-tab/app propagation rides the
-          // server's `session_state` socket broadcast, not a navigation.
+          // A switch is IN-PLACE: use the switch commit funnel (not sign-in).
+          // Cross-tab/app propagation rides the server's `session_state` socket
+          // broadcast, not a navigation.
           { fromSwitch: true },
         );
       }
@@ -1349,11 +1345,9 @@ export class AccountDialogController {
    * consumer's commit funnel (durable persist + hydration); falls back to
    * `SessionClient.registerAndActivate` (registration + activation only).
    *
-   * A SWITCH (`opts.fromSwitch`) uses the IN-PLACE `commitSwitchedSession` funnel
-   * so it never runs the cross-origin hub-sync redirect; a SIGN-IN uses
-   * `commitSession` (which may hub-sync on an official web origin). When the
-   * switch funnel is not wired it falls back to the sign-in funnel, then to
-   * `registerAndActivate`.
+   * A SWITCH (`opts.fromSwitch`) uses the IN-PLACE `commitSwitchedSession` funnel;
+   * a SIGN-IN uses `commitSession`. When the switch funnel is not wired it falls
+   * back to the sign-in funnel, then to `registerAndActivate`.
    */
   private async commitAuthorizedSession(
     session: SessionLoginResponse,

@@ -8,7 +8,7 @@ import {
     TouchableOpacity,
 } from 'react-native';
 import type { ReputationLeaderboardEntry } from '@oxyhq/core';
-import { getAccountDisplayName, logger } from '@oxyhq/core';
+import { getNormalizedUserHandle, logger } from '@oxyhq/core';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H6, Text } from '@oxyhq/bloom/typography';
 import { Chip } from '@oxyhq/bloom/chip';
@@ -72,7 +72,8 @@ const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ navigate }) => {
 
     const renderEntry = useCallback(
         ({ item }: { item: ReputationLeaderboardEntry }) => {
-            const displayName = getAccountDisplayName(item.user, locale);
+            const displayName =
+                item.user.name?.displayName ?? getNormalizedUserHandle(item.user) ?? '';
             const isViewer = currentUserId !== '' && item.user.id === currentUserId;
             const isPodium = item.rank <= PODIUM_RANK;
             // Viewer's own row and podium ranks get a subtle highlighted surface.

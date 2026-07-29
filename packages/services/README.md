@@ -455,7 +455,7 @@ function LoginScreen() {
 ```
 
 - **Official Oxy apps** (`isOfficial` / first-party types): opens the in-app account dialog.
-- **Third-party apps** (`type: 'third_party'`): starts the standard OAuth 2.0 Authorization Code + PKCE flow against `auth.oxy.so` (the SDK generates `state` + PKCE via `@oxyhq/core`). On web the transport is `OxyProvider` prop `webAuthMode: 'popup' | 'redirect'` (default `'redirect'`; issue #691 Phase 2) — `'popup'` opens a small window and relays the result via `postMessage` without navigating your app's tab, falling back to a redirect if the browser blocks it. Pass `oauthRedirectUri`; on native handle `onOAuthResult` to complete the token exchange.
+- **Third-party apps** (`type: 'third_party'`): starts the standard OAuth 2.0 Authorization Code + PKCE flow against `auth.oxy.so` (the SDK generates `state` + PKCE via `@oxyhq/core`). On web the transport is `OxyProvider` prop `webAuthMode: 'popup' | 'redirect'` (default `'popup'`; issue #691 Phases 2/7b) — `'popup'` opens a small window and relays the result via `postMessage` without navigating your app's tab, falling back to a redirect if the browser blocks it. Pass `oauthRedirectUri`; on native handle `onOAuthResult` to complete the token exchange.
 
 See the [integration guide](../../docs/auth/integration-guide.md) for Console registration, OAuth endpoints, and backend verification, and [AUTHENTICATION.md](../../docs/AUTHENTICATION.md) for the full model.
 

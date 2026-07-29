@@ -18,7 +18,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
-import { logger, getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
+import { logger, getNormalizedUserHandle, getAccountFallbackHandle } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 
 type ListMode = 'followers' | 'following';
@@ -147,7 +147,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
       const itemUserId = resolveUserId(item);
       const isCurrentUser = itemUserId === currentUserId;
       const description = typeof item.description === 'string' ? item.description : '';
-      const displayName = getAccountDisplayName(item, locale);
+      const displayName = item.name?.displayName ?? getNormalizedUserHandle(item) ?? '';
       const handle = getAccountFallbackHandle(item);
 
       return (

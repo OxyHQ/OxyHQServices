@@ -433,11 +433,9 @@ describe('AccountDialogController — switchTo (uniform switch)', () => {
     expect(commitSession.mock.calls[0][0]).toMatchObject({ sessionId: 'sess-org', accessToken: 'access-org' });
   });
 
-  it('commits a graph switch via the IN-PLACE commitSwitchedSession — never the hub-syncing commitSession', async () => {
-    // PROBLEM 2: an account switch must not run the cross-origin hub-sync
-    // full-page redirect. When both funnels are wired, the mint-switch must use
-    // commitSwitchedSession (in-place) and NEVER commitSession (which may
-    // redirect on an official web origin).
+  it('commits a graph switch via the IN-PLACE commitSwitchedSession — never commitSession', async () => {
+    // An account switch must use commitSwitchedSession (in-place) and NEVER
+    // commitSession when both funnels are wired.
     const oxy = makeOxy();
     const sc = new TestSessionClient(host());
     sc.set(state([{ accountId: 'a1', sessionId: 's1' }], 'a1'));
