@@ -26,10 +26,12 @@ const BARREL = join(SRC, 'index.ts');
 /**
  * Specifiers that must not be reachable from the root barrel.
  *
- * Scoped to the two the notifications adapter owns. The other optional expo
- * peers (`expo-image-picker`, `expo-document-picker`, …) ARE legitimately
- * reachable from the barrel today because the UI screens that use them are core
- * to the SDK, so listing them here would fail for a different, unrelated reason.
+ * Scoped to the two the notifications adapter owns, so this file fails for one
+ * reason only. The other expo peers that used to be optional and barrel-reachable
+ * (`expo-image-picker`, `expo-document-picker`, …) back core SDK screens, so they
+ * were made REQUIRED peers rather than moved behind subpaths — they are still
+ * legitimately reachable from the barrel, and `packaging/peerDeclarations.test.ts`
+ * is what keeps them installable.
  */
 const FORBIDDEN = ['expo-notifications', 'expo-constants'] as const;
 
