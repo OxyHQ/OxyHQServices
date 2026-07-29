@@ -60,6 +60,18 @@
       },
       "default": "./lib/module/ui/server.js"
     },
+    "./notifications": {
+      "react-native": "./src/notifications/deviceNotifications.ts",
+      "import": {
+        "types": "./lib/typescript/module/notifications/deviceNotifications.d.ts",
+        "default": "./lib/module/notifications/deviceNotifications.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/notifications/deviceNotifications.d.ts",
+        "default": "./lib/commonjs/notifications/deviceNotifications.js"
+      },
+      "default": "./lib/module/notifications/deviceNotifications.js"
+    },
     "./plugins/*": "./plugins/*.js",
     "./expo-module.config.json": "./expo-module.config.json",
     "./package.json": "./package.json"
