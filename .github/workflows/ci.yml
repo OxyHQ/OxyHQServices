@@ -137,6 +137,24 @@ jobs:
         run: bun run build
         working-directory: ./packages/api
 
+  # bun.lock must match the package.json files (see scripts/check-lockfile-sync.mjs).
+  #
+  # Deliberately NOT `bun install --frozen-lockfile`: measured on bun 1.3.14
+  # against this repo, that flag exits 0 on both shapes of desync we actually
+  # shipped (a workspace `version` bump, and a widened-but-satisfiable dependency
+  # range). It would have caught none of the three incidents while reading like
+  # enforcement. The script regenerates the lockfile and asks git whether the
+  # file moved, which is the same question without bun's judgement in the middle.
+  lockfile-sync:
+    name: Lockfile Sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun scripts/check-lockfile-sync.mjs
+
   # Contracts package tests (Jest — no MongoDB)
   contracts-test:
     name: Contracts Tests
