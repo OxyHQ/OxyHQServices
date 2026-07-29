@@ -19,7 +19,12 @@ import type {
 } from '@oxyhq/contracts';
 import { recommendationRequestSchema } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
+import {
+  buildQueryParams,
+  buildPaginationParams,
+  type PaginationParams,
+  type FollowGraphParams,
+} from '../utils/apiUtils';
 import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
 import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
@@ -198,14 +203,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async searchProfiles(query: string, pagination?: PaginationParams): Promise<SearchProfilesResponse> {
       try {
-        const params = { query, ...pagination };
-        const searchParams = buildSearchParams(params);
-        const paramsObj = Object.fromEntries(searchParams.entries());
-
         const response = await this.makeRequest<SearchProfilesResponse>(
           'GET',
           '/profiles/search',
-          paramsObj,
+          buildQueryParams({ query, ...pagination }),
           {
             cache: true,
             cacheTTL: 2 * 60 * 1000, // 2 minutes cache
@@ -728,6 +729,42 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
 
 
     /**
+     * Invalidate every cached read a follow/unfollow write invalidates.
+     *
+     * Shared by the four mutation entry points (`followUser`, `unfollowUser`,
+     * `followUsers`, `unfollowUsers`) so they can never drift on which caches a
+     * write busts.
+     *
+     * The follower/following/mutuals LISTS are cleared by PREFIX rather than by
+     * exact key. Those reads are paginated and ordered, so one logical list is
+     * spread across many content-addressed keys
+     * (`GET:/users/<id>/followers:{"limit":"20","offset":"40","sort":"oldest"}`);
+     * an exact-key clear would only bust whichever page/sort variant happened to
+     * be read last and would leave every other page stale. `clearCacheByPrefix`
+     * deletes all of them, and all identity-scoped variants of each.
+     */
+    invalidateFollowGraphCaches(targetUserIds: string[]): void {
+      for (const id of targetUserIds) {
+        this.clearCacheEntry(`GET:/users/${id}/follow-status`);
+        // Profile fetches embed viewer-relative `relationship` — bust so a
+        // remount doesn't serve a stale isFollowing for up to 5 minutes.
+        this.clearCacheEntry(`GET:/users/${id}`);
+        // The target gained/lost a follower, and the viewer's presence in the
+        // target's "followers you know" set changed with it.
+        this.clearCacheByPrefix(`GET:/users/${id}/followers`);
+        this.clearCacheByPrefix(`GET:/users/${id}/mutuals`);
+      }
+      this.clearCacheByPrefix('GET:/profiles/username/');
+      this.clearCacheByPrefix('GET:/profiles/resolve');
+      // The write changed the viewer's OWN following list and graph.
+      const viewerId = this.getCurrentUserId();
+      if (viewerId) {
+        this.clearCacheByPrefix(`GET:/users/${viewerId}/following`);
+      }
+      this.clearCacheEntry('GET:/users/me/graph');
+    }
+
+    /**
      * Follow a user.
      *
      * Invalidates the cached `GET /users/<id>/follow-status` response after
@@ -740,16 +777,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     async followUser(userId: string): Promise<FollowMutationResult> {
       try {
         const result = await this.makeRequest<FollowMutationResult>('POST', `/users/${userId}/follow`, undefined, { cache: false });
-        this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
-        // Profile fetches embed viewer-relative `relationship` — bust so a
-        // remount doesn't serve a stale isFollowing for up to 5 minutes.
-        this.clearCacheEntry(`GET:/users/${userId}`);
-        this.clearCacheByPrefix('GET:/profiles/username/');
-        this.clearCacheByPrefix('GET:/profiles/resolve');
-        // The follow changed the viewer's graph — bust the cached consolidated
-        // `GET /users/me/graph` so the next read reflects the new following/
-        // mutual set instead of the stale pre-write snapshot.
-        this.clearCacheEntry('GET:/users/me/graph');
+        this.invalidateFollowGraphCaches([userId]);
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -770,15 +798,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       }
       try {
         const result = await this.makeRequest<BulkFollowResult>('POST', '/users/follow/bulk', { userIds }, { cache: false });
-        // Bust each affected user's cached follow-status (see `followUser`).
-        for (const id of userIds) {
-          this.clearCacheEntry(`GET:/users/${id}/follow-status`);
-          this.clearCacheEntry(`GET:/users/${id}`);
-        }
-        this.clearCacheByPrefix('GET:/profiles/username/');
-        this.clearCacheByPrefix('GET:/profiles/resolve');
-        // The batch changed the viewer's graph — bust the consolidated cache.
-        this.clearCacheEntry('GET:/users/me/graph');
+        this.invalidateFollowGraphCaches(userIds);
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -799,15 +819,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       }
       try {
         const result = await this.makeRequest<BulkUnfollowResult>('POST', '/users/unfollow/bulk', { userIds }, { cache: false });
-        // Bust each affected user's cached follow-status (see `followUser`).
-        for (const id of userIds) {
-          this.clearCacheEntry(`GET:/users/${id}/follow-status`);
-          this.clearCacheEntry(`GET:/users/${id}`);
-        }
-        this.clearCacheByPrefix('GET:/profiles/username/');
-        this.clearCacheByPrefix('GET:/profiles/resolve');
-        // The batch changed the viewer's graph — bust the consolidated cache.
-        this.clearCacheEntry('GET:/users/me/graph');
+        this.invalidateFollowGraphCaches(userIds);
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -820,13 +832,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     async unfollowUser(userId: string): Promise<FollowMutationResult> {
       try {
         const result = await this.makeRequest<FollowMutationResult>('DELETE', `/users/${userId}/follow`, undefined, { cache: false });
-        // Bust the cached follow-status so a remount reads fresh truth (see `followUser`).
-        this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
-        this.clearCacheEntry(`GET:/users/${userId}`);
-        this.clearCacheByPrefix('GET:/profiles/username/');
-        this.clearCacheByPrefix('GET:/profiles/resolve');
-        // The unfollow changed the viewer's graph — bust the consolidated cache.
-        this.clearCacheEntry('GET:/users/me/graph');
+        this.invalidateFollowGraphCaches([userId]);
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -899,14 +905,19 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Get user followers
+     * Get user followers.
+     *
+     * `sort` orders the underlying follow edges — `recent` (newest first, the
+     * server default) or `oldest`. Because the response is cached and the cache
+     * key is content-addressed on the query params, each `limit`/`offset`/`sort`
+     * combination is its own entry.
      */
     async getUserFollowers(
       userId: string,
-      pagination?: PaginationParams
+      pagination?: FollowGraphParams
     ): Promise<{ followers: User[]; total: number; hasMore: boolean }> {
       try {
-        const params = buildPaginationParams(pagination || {});
+        const params = buildQueryParams(pagination || {});
         const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/users/${userId}/followers`, params, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
@@ -922,14 +933,14 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Get user following
+     * Get user following. `sort` behaves as in {@link getUserFollowers}.
      */
     async getUserFollowing(
       userId: string,
-      pagination?: PaginationParams
+      pagination?: FollowGraphParams
     ): Promise<{ following: User[]; total: number; hasMore: boolean }> {
       try {
-        const params = buildPaginationParams(pagination || {});
+        const params = buildQueryParams(pagination || {});
         const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/users/${userId}/following`, params, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
@@ -950,10 +961,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getUserMutuals(
       userId: string,
-      pagination?: PaginationParams
+      pagination?: FollowGraphParams
     ): Promise<{ mutuals: User[]; total: number; hasMore: boolean }> {
       try {
-        const params = buildPaginationParams(pagination || {});
+        const params = buildQueryParams(pagination || {});
         const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/users/${userId}/mutuals`, params, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache

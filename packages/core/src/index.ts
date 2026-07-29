@@ -468,6 +468,7 @@ export { translate } from './i18n';
 // API request / URL helpers
 // ---------------------------------------------------------------------------
 export {
+    buildQueryParams,
     buildSearchParams,
     buildUrl,
     buildPaginationParams,
@@ -475,6 +476,8 @@ export {
 } from './utils/apiUtils';
 export type {
     PaginationParams,
+    FollowGraphParams,
+    FollowGraphSort,
     ApiResponse,
     ErrorResponse,
 } from './utils/apiUtils';
