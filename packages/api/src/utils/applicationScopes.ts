@@ -28,6 +28,14 @@
  *   deliveries) belonging to ITS OWN Application. Non-privileged — same
  *   pattern as `files:write`/`updates:publish`: authority is scoped to the
  *   app's own tenant, never cross-tenant.
+ * - `reputation:moderation:apply` permits the participatory-moderation service to
+ *   submit a published DECISION for consequence derivation. It is deliberately
+ *   NARROWER than `reputation:write`, not additive to it — see
+ *   {@link PRIVILEGED_APPLICATION_SCOPES}.
+ * - `reputation:binding:register` permits an application to register the fact
+ *   that an Oxy user was present in it as a named local principal, PROVING it
+ *   with that user's own access token. PRIVILEGED — only Oxy platform staff may
+ *   grant it.
  */
 export const APPLICATION_SCOPES = [
   'files:read',
@@ -41,6 +49,8 @@ export const APPLICATION_SCOPES = [
   'federation:write',
   'signals:write',
   'reputation:write',
+  'reputation:moderation:apply',
+  'reputation:binding:register',
   'notifications:write',
   'payments:read',
   'payments:write',
@@ -70,6 +80,22 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
  *   notifications to arbitrary users and choose actor/entity metadata. A
  *   self-granting owner could otherwise spoof system or user activity to
  *   victims' connected clients.
+ * - `reputation:moderation:apply` lets the participatory-moderation service
+ *   submit a published decision for consequence derivation.
+ *
+ *   IT IS NOT A SUBSET OF `reputation:write`, AND IT IS NOT ADDITIVE TO IT.
+ *   `reputation:write` is the broad ledger-write authority every official app
+ *   already holds; it can mint arbitrary points for arbitrary users through
+ *   `POST /reputation/award`. This scope can do none of that: it can only submit
+ *   a DECISION, and the engine derives the figures itself from the versioned
+ *   policy. Deliberately separate so the moderation bridge does not inherit
+ *   ledger-write authority, and so the apps that hold ledger-write authority do
+ *   not inherit the ability to penalise conduct. Neither implies the other, and
+ *   holding both is a decision someone has to make explicitly.
+ * - `reputation:binding:register` lets an application assert that a named local
+ *   principal is a particular Oxy user. The assertion must be backed by that
+ *   user's own access token, but the scope is still privileged because a binding
+ *   is what makes a later conduct penalty possible at all.
  *
  * All non-privileged scopes in {@link APPLICATION_SCOPES} authorise an app only
  * over its OWN resources (files, models, webhooks, public user reads) and remain
@@ -79,6 +105,8 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
 export const PRIVILEGED_APPLICATION_SCOPES = [
   'federation:write',
   'reputation:write',
+  'reputation:moderation:apply',
+  'reputation:binding:register',
   'signals:write',
   'notifications:write',
 ] as const satisfies readonly ApplicationScope[];

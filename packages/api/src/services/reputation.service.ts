@@ -26,7 +26,14 @@ import {
   ReputationBalance,
   type IReputationBalance,
   type ReputationBreakdown,
+  type ReputationConductSnapshot,
+  type ReputationPersonhoodSnapshot,
+  type ReputationReviewingSnapshot,
 } from '../models/ReputationBalance';
+import { ConductStrike } from '../models/ConductStrike';
+import { PersonhoodStatus } from '../models/PersonhoodStatus';
+import { ReporterReputationProfile } from '../models/ReporterReputationProfile';
+import { ReviewerReputationProfile } from '../models/ReviewerReputationProfile';
 import { ReputationRule, type IReputationRule } from '../models/ReputationRule';
 import {
   ReputationDispute,
@@ -60,15 +67,49 @@ import {
   LEASE_DEFAULT_POINTS,
 
 } from '../utils/reputation.constants';
+import {
+  CONDUCT_ACTION_TYPES,
+  NEUTRAL_REVIEWER_RELIABILITY,
+  REPORT_ABUSE_ACTION_TYPES,
+} from '../utils/moderation.constants';
 import { attestAward } from './civic/attestation.service';
 import {
   computeReliability,
+  computeReporting,
+  deriveConductStanding,
+  deriveContextualInfluence,
+  deriveContributionTier,
   deriveInfluence,
   deriveTrustTier,
 } from '../utils/reputationDerive';
 import { BadRequestError, ConflictError, NotFoundError } from '../utils/error';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
+
+/**
+ * A points/category pair supplied by a VERSIONED policy instead of by a
+ * `ReputationRule` row.
+ *
+ * Exists for exactly one caller: the moderation reputation bridge. A conduct
+ * consequence's points come from the `ModerationPolicy` document of the version
+ * the decision was made under, because a consequence must be recomputable under
+ * the original policy — a mutable `ReputationRule` row cannot express that, and
+ * keeping one alongside the policy would be a second authority for the same
+ * number, free to drift.
+ *
+ * NOT reachable from HTTP: `awardReputationSchema` does not declare the field,
+ * and `POST /reputation/award` passes each input field explicitly rather than
+ * spreading the body, so a client cannot choose its own points.
+ */
+export interface AwardRuleOverride {
+  /** Signed points, already multiplied and capped by the policy engine. */
+  points: number;
+  category: ReputationCategory;
+  /** Human-readable reason recorded on the transaction. */
+  description: string;
+  /** The policy version the figures came from, recorded for provenance. */
+  policyVersion: string;
+}
 
 /** Input for `award`. `userId` is the subject whose reputation changes. */
 export interface AwardInput {
@@ -97,6 +138,19 @@ export interface AwardInput {
    * `emitAttestation` is `true`.
    */
   sourceEnvelopeIds?: string[];
+  /**
+   * Bridge-only: take the points and category from a versioned policy instead of
+   * from a `ReputationRule`. When present the rule lookup and the per-action
+   * cooldown are both skipped — a moderation consequence is governed by the
+   * decision's idempotency key, not by a rate limit on the action key.
+   */
+  ruleOverride?: AwardRuleOverride;
+  /**
+   * Run the ledger write inside a session the CALLER already opened, so the
+   * transaction, its strike and its effect record commit together or not at all.
+   * Without this the bridge could leave a ledger row with no strike behind it.
+   */
+  session?: ClientSession;
 }
 
 /** Input for a reversal or void review action. */
@@ -172,12 +226,36 @@ class ReputationService {
   async award(input: AwardInput): Promise<IReputationTransaction> {
     const subjectId = toObjectId(input.userId, 'userId');
 
-    const rule = await ReputationRule.findOne({
-      actionType: input.actionType,
-      isEnabled: true,
-    });
-    if (!rule) {
-      throw new BadRequestError('Unknown or disabled reputation action');
+    // The figures come from ONE of two authorities, never from both: a
+    // `ReputationRule` row (every ordinary award) or a versioned policy the
+    // bridge resolved (a moderation consequence, which must stay recomputable
+    // under the policy version it was decided under).
+    const override = input.ruleOverride;
+    let points: number;
+    let category: ReputationCategory;
+    let defaultReason: string;
+    let cooldownInMinutes: number;
+
+    if (override) {
+      points = override.points;
+      category = override.category;
+      defaultReason = override.description;
+      // No cooldown: a moderation consequence is bounded by the decision's
+      // idempotency key, and a cooldown here would silently drop the second
+      // legitimate incident of the same severity.
+      cooldownInMinutes = 0;
+    } else {
+      const rule = await ReputationRule.findOne({
+        actionType: input.actionType,
+        isEnabled: true,
+      });
+      if (!rule) {
+        throw new BadRequestError('Unknown or disabled reputation action');
+      }
+      points = rule.points;
+      category = rule.category;
+      defaultReason = rule.description;
+      cooldownInMinutes = rule.cooldownInMinutes;
     }
 
     const applicationId = input.applicationId
@@ -206,8 +284,8 @@ class ReputationService {
 
     // Cooldown: reject a repeat of the same action for the same subject within
     // the rule's window.
-    if (rule.cooldownInMinutes > 0) {
-      const threshold = new Date(Date.now() - rule.cooldownInMinutes * 60 * 1000);
+    if (cooldownInMinutes > 0) {
+      const threshold = new Date(Date.now() - cooldownInMinutes * 60 * 1000);
       const recent = await ReputationTransaction.findOne({
         userId: subjectId,
         actionType: input.actionType,
@@ -219,16 +297,25 @@ class ReputationService {
       }
     }
 
-    const transaction = await withTransaction(async (session) => {
+    // Provenance for a policy-derived award: the version the figures came from
+    // is recorded on the transaction itself, so the row explains itself without
+    // a join and stays explainable after the policy moves on.
+    const metadata = override
+      ? { ...(input.metadata ?? {}), policyVersion: override.policyVersion }
+      : input.metadata;
+
+    const writeTransaction = async (
+      session: ClientSession | undefined
+    ): Promise<IReputationTransaction> => {
       let created: IReputationTransaction;
       try {
         const docs = await ReputationTransaction.create(
           [
             {
               userId: subjectId,
-              points: rule.points,
+              points,
               actionType: input.actionType,
-              category: rule.category,
+              category,
               applicationId,
               credentialId,
               sourceActionId: input.sourceActionId,
@@ -236,8 +323,8 @@ class ReputationService {
               targetEntityId: input.targetEntityId,
               targetEntityType: input.targetEntityType,
               status: 'active',
-              reason: input.reason ?? rule.description,
-              metadata: input.metadata,
+              reason: input.reason ?? defaultReason,
+              metadata,
               createdByUserId,
             },
           ],
@@ -267,7 +354,14 @@ class ReputationService {
 
       await this.recalculateBalance(input.userId, session);
       return created;
-    });
+    };
+
+    // A caller-supplied session means the ledger write is one part of a larger
+    // atomic unit (the bridge commits the transaction, its strike and its effect
+    // record together). Without one, open a transaction as before.
+    const transaction = input.session
+      ? await writeTransaction(input.session)
+      : await withTransaction(writeTransaction);
 
     // Crypto-owned reputation (Fase 1): emit an Oxy-signed attestation onto the
     // subject's hash chain AFTER the award commits, so a signing/chain failure
@@ -452,7 +546,17 @@ class ReputationService {
     let penalties = 0;
     let accurateReports = 0;
     let rejectedReports = 0;
-    let penaltyCount = 0;
+    let reportAbuseCount = 0;
+    // Net of everything OUTSIDE the conduct axis. The legacy `restricted`
+    // trigger reads this instead of `total`, so a conduct penalty is judged on
+    // the conduct axis rather than also forcing a restriction through a negative
+    // total — a low-severity finding is worth `watch`, not a restriction.
+    let nonConductTotal = 0;
+    // Contribution counts only what was BUILT: positive points outside the
+    // conduct axis. Conduct penalties still land in `total`, so the ledger stays
+    // honest, but they neither lower the contribution tier nor can be offset by
+    // it.
+    let contributionPoints = 0;
     let lastTransactionId: mongoose.Types.ObjectId | undefined;
     let lastCreatedAt = 0;
 
@@ -466,6 +570,8 @@ class ReputationService {
     };
 
     for (const txn of transactions) {
+      const isConduct = CONDUCT_ACTION_TYPES.has(txn.actionType);
+
       // Monetary aggregation over the not-voided set.
       total += txn.points;
       if (txn.points > 0) {
@@ -473,6 +579,13 @@ class ReputationService {
       } else if (txn.points < 0) {
         negative += txn.points;
         penalties += Math.abs(txn.points);
+      }
+
+      if (!isConduct) {
+        nonConductTotal += txn.points;
+        if (txn.points > 0) {
+          contributionPoints += txn.points;
+        }
       }
 
       // Category breakdown carries the signed sum per named category. The
@@ -500,9 +613,14 @@ class ReputationService {
 
       // Reliability is derived from ACTIVE transactions only — cancelled
       // (reversed) or disputed reports do not count toward report accuracy.
+      //
+      // Only CONFIRMED REPORT ABUSE feeds the abuse signal. It used to be every
+      // negative transaction at double weight, which meant a penalty for
+      // unrelated conduct drove a report-abuse verdict — and that verdict forces
+      // the `restricted` tier. Conduct now lands on the conduct axis instead.
       if (txn.status === 'active') {
-        if (txn.category === 'penalty' || txn.points < 0) {
-          penaltyCount += 1;
+        if (REPORT_ABUSE_ACTION_TYPES.has(txn.actionType)) {
+          reportAbuseCount += 1;
         }
         if (txn.sourceActionType === REPORT_CONFIRMED_ACTION) {
           accurateReports += 1;
@@ -523,14 +641,41 @@ class ReputationService {
     const reliability = computeReliability({
       accurateReports,
       rejectedReports,
-      penaltyCount,
+      reportAbuseCount,
     });
 
     const user = await User.findById(subjectId).select('verified').lean();
     const verified = user?.verified === true;
 
-    const trustTier = deriveTrustTier(total, verified, reliability);
+    const conduct = await this.deriveConductSnapshot(subjectId, session);
+
+    const trustTier = deriveTrustTier({
+      total,
+      nonConductTotal,
+      verified,
+      reliability,
+      conductStanding: conduct.standing,
+    });
     const influence = deriveInfluence(total, trustTier, reliability);
+
+    const [personhood, reporting, reviewing] = await Promise.all([
+      this.derivePersonhoodSnapshot(subjectId, session),
+      this.deriveReportingSnapshot(subjectId, session),
+      this.deriveReviewingSnapshot(subjectId, session),
+    ]);
+
+    const contribution = {
+      points: contributionPoints,
+      tier: deriveContributionTier(contributionPoints),
+    };
+
+    const contextualInfluence = deriveContextualInfluence({
+      contributionPoints,
+      conductStanding: conduct.standing,
+      reportingReliability: reporting.reliability,
+      reportingConfidence: reporting.confidence,
+      reviewingReliability: reviewing.globalReliability,
+    });
 
     const update = {
       total,
@@ -540,6 +685,12 @@ class ReputationService {
       trustTier,
       influence,
       reliability,
+      personhood,
+      contribution,
+      conduct,
+      reporting,
+      reviewing,
+      contextualInfluence,
       lastTransactionId,
       recalculatedAt: new Date(),
     };
@@ -572,6 +723,117 @@ class ReputationService {
     userCache.invalidate(subjectId.toString());
 
     return balance;
+  }
+
+  /**
+   * The conduct snapshot: active risk, active strike count, and when the
+   * earliest-expiring strike lapses.
+   *
+   * Read from `ConductStrike` rather than from the ledger, because the ledger
+   * cannot express "still under consequence". A reversed or expired strike stops
+   * contributing immediately while its transaction stays in the ledger, which is
+   * how traceability survives forgiveness. Critical strikes carry no `expiresAt`
+   * and so never appear as a next expiry — they need a recovery review.
+   */
+  private async deriveConductSnapshot(
+    subjectId: mongoose.Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ReputationConductSnapshot> {
+    const query = ConductStrike.find({ userId: subjectId, status: 'active' });
+    const strikes = session ? await query.session(session) : await query;
+
+    let activeRisk = 0;
+    let nextExpiryAt: Date | undefined;
+    for (const strike of strikes) {
+      activeRisk += strike.riskPoints;
+      if (strike.expiresAt && (!nextExpiryAt || strike.expiresAt < nextExpiryAt)) {
+        nextExpiryAt = strike.expiresAt;
+      }
+    }
+
+    return {
+      standing: deriveConductStanding(activeRisk),
+      activeRisk,
+      activeStrikes: strikes.length,
+      nextExpiryAt,
+    };
+  }
+
+  /**
+   * The personhood snapshot, mirrored from the web-of-trust's own recomputable
+   * status. Its own axis: being a real person proves neither conduct nor
+   * competence, so it confers nothing on the others.
+   */
+  private async derivePersonhoodSnapshot(
+    subjectId: mongoose.Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ReputationPersonhoodSnapshot> {
+    // The session travels as a query OPTION rather than through `.session()`:
+    // these are single-document reads, and the options form keeps them
+    // expressible against any query implementation instead of requiring a
+    // chainable one.
+    const status = await PersonhoodStatus.findOne(
+      { userId: subjectId },
+      null,
+      session ? { session } : {}
+    );
+    if (!status) {
+      return { status: 'unknown', score: 0 };
+    }
+    return {
+      status: status.isRealPerson ? 'verified' : status.score > 0 ? 'probable' : 'unknown',
+      score: status.score,
+    };
+  }
+
+  /**
+   * The reporting snapshot, from the reporter profile only.
+   *
+   * Absent profile means no reporting history, which is a NEUTRAL prior rather
+   * than a zero — a person who has never filed a report is not an unreliable
+   * reporter.
+   */
+  private async deriveReportingSnapshot(
+    subjectId: mongoose.Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ReturnType<typeof computeReporting>> {
+    const profile = await ReporterReputationProfile.findOne(
+      { userId: subjectId },
+      null,
+      session ? { session } : {}
+    );
+    return computeReporting({
+      confirmed: profile?.confirmed ?? 0,
+      rejected: profile?.rejected ?? 0,
+      malicious: profile?.malicious ?? 0,
+    });
+  }
+
+  /**
+   * The reviewing snapshot, from the reviewer profile only. Per category and
+   * language, because competence in one category says little about another.
+   */
+  private async deriveReviewingSnapshot(
+    subjectId: mongoose.Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ReputationReviewingSnapshot> {
+    const profile = await ReviewerReputationProfile.findOne(
+      { userId: subjectId },
+      null,
+      session ? { session } : {}
+    );
+    if (!profile) {
+      return {
+        globalReliability: NEUTRAL_REVIEWER_RELIABILITY,
+        categoryReliability: new Map<string, number>(),
+        languageReliability: new Map<string, number>(),
+      };
+    }
+    return {
+      globalReliability: profile.globalReliability,
+      categoryReliability: profile.categoryReliability ?? new Map<string, number>(),
+      languageReliability: profile.languageReliability ?? new Map<string, number>(),
+    };
   }
 
   /** Return the cached balance, recomputing it when absent. */

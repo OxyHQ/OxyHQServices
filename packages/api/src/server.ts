@@ -17,6 +17,7 @@ import analyticsRoutes from "./routes/analytics.routes";
 import paymentRoutes from './routes/payment.routes';
 import walletRoutes from './routes/wallet.routes';
 import reputationRoutes from './routes/reputation.routes';
+import moderationReputationRoutes from './routes/moderationReputation.routes';
 import linkMetadataRoutes from './routes/linkMetadata';
 import linksRoutes from './routes/links';
 import locationSearchRoutes from './routes/locationSearch';
@@ -31,6 +32,17 @@ import securityRoutes from './routes/security';
 import subscriptionRoutes from './routes/subscription.routes';
 import authLinkingRoutes from './routes/authLinking';
 import reputationService from './services/reputation.service';
+import moderationReputationService from './services/moderationReputation.service';
+import {
+  BASELINE_CONDUCT_FAMILIES,
+  BASELINE_MULTI_FINDING_CAP,
+  BASELINE_MULTI_FINDING_SECONDARY_SHARE,
+  BASELINE_OXY_CONDUCT_POLICY_VERSION,
+  BASELINE_REPETITION_MULTIPLIERS,
+  BASELINE_REPETITION_WINDOW_DAYS,
+  BASELINE_SEVERITY_RULES,
+  BASELINE_STANDING_THRESHOLDS,
+} from './utils/moderation.constants';
 import emailRoutes from './routes/email';
 import emailProxyRoutes from './routes/emailProxy';
 import emailInboundRoutes, {
@@ -69,6 +81,10 @@ import {
   stopTransparencyCheckpointJobs,
 } from './queue/transparencyCheckpoint.queue';
 import { startLinkPreviewWarmJobs, stopLinkPreviewWarmJobs } from './queue/linkPreviewWarm.queue';
+import {
+  startConductRiskExpiryJobs,
+  stopConductRiskExpiryJobs,
+} from './queue/conductRiskExpiry.queue';
 import { getEnvBoolean, validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import { getDbName } from './config/db';
 import { logger } from './utils/logger';
@@ -443,6 +459,7 @@ async function gracefulShutdown(signal: string) {
   await stopNodeIngestJobs();
   await stopTransparencyCheckpointJobs();
   await stopLinkPreviewWarmJobs();
+  await stopConductRiskExpiryJobs();
   await stopSmtpInbound();
   smtpOutbound.shutdown();
   await closeRedis();
@@ -577,6 +594,10 @@ app.use("/privacy", userRateLimiter, csrfProtection, privacyRoutes);
 app.use("/analytics", userRateLimiter, authMiddleware, analyticsRoutes);
 app.use('/payments', userRateLimiter, csrfProtection, paymentRoutes);
 app.use('/notifications', userRateLimiter, csrfProtection, notificationsRouter);
+// Mounted BEFORE `/reputation` so the more specific prefix wins: the parent
+// router applies `authMiddleware` to everything after its own public reads, and
+// the bridge's service-credential routes must not pass through it.
+app.use('/reputation/moderation', csrfProtection, moderationReputationRoutes);
 app.use('/reputation', csrfProtection, reputationRoutes);
 app.use('/wallet', userRateLimiter, csrfProtection, walletRoutes);
 app.use('/link-metadata', userRateLimiter, linkMetadataRoutes);
@@ -816,6 +837,21 @@ if (require.main === module) {
       // cross-app `endorsement_received` rule awarded by /app-signals/ingest.
       await reputationService.seedDefaultRules();
 
+      // Seed the baseline Oxy Conduct Policy (idempotent, and NOT an upsert of
+      // the values — a published policy version is immutable, so an existing
+      // document is left untouched). Without it the bridge rejects every event
+      // naming that version rather than silently applying today's tuning.
+      await moderationReputationService.seedBaselinePolicy({
+        policyVersion: BASELINE_OXY_CONDUCT_POLICY_VERSION,
+        severityRules: BASELINE_SEVERITY_RULES,
+        conductFamilies: BASELINE_CONDUCT_FAMILIES,
+        repetitionMultipliers: BASELINE_REPETITION_MULTIPLIERS,
+        repetitionWindowDays: BASELINE_REPETITION_WINDOW_DAYS,
+        multiFindingSecondaryShare: BASELINE_MULTI_FINDING_SECONDARY_SHARE,
+        multiFindingCap: BASELINE_MULTI_FINDING_CAP,
+        standingThresholds: BASELINE_STANDING_THRESHOLDS,
+      });
+
       // Periodically re-tally / expire stale civic validation requests. Unref'd
       // so it never keeps the process alive; failures are logged, never thrown.
       const validationSweep = setInterval(() => {
@@ -877,6 +913,12 @@ if (require.main === module) {
       // resolves (BullMQ when REDIS_URL is set, else an in-process pending set).
       // All remote I/O is background-only — never on a request's read path.
       await startLinkPreviewWarmJobs();
+
+      // Let active moderation consequences lapse on schedule. The ledger row
+      // stays permanently; only the active risk decays, so a minor error does
+      // not become a life sentence. Idempotent — a missed tick only delays a
+      // recovery. Never throws.
+      await startConductRiskExpiryJobs();
 
       server.listen(PORT, '0.0.0.0', () => {
         logger.info(`Server running on port ${PORT}`, {

@@ -42,6 +42,20 @@
 
 import { z } from 'zod';
 import { type UserNameResponse, userNameSchema } from './userResponse';
+import {
+    type ReputationConduct,
+    type ReputationContextualInfluence,
+    type ReputationContribution,
+    type ReputationPersonhood,
+    type ReputationReporting,
+    type ReputationReviewing,
+    reputationConductSchema,
+    reputationContextualInfluenceSchema,
+    reputationContributionSchema,
+    reputationPersonhoodSchema,
+    reputationReportingSchema,
+    reputationReviewingSchema,
+} from './moderationReputation';
 
 /* -------------------------------------------------------------------------- */
 /*  Closed value sets                                                         */
@@ -355,6 +369,33 @@ export interface ReputationBalance extends ReputationBalanceSummary {
     recalculatedAt: string;
     /** ISO 8601 last-update timestamp. */
     updatedAt: string;
+
+    // ---------------------------------------------------------------------
+    // V2 — the multidimensional snapshot.
+    //
+    // OPTIONAL on the wire and additive by design: a client written against
+    // the single-score model keeps working, and a balance document written
+    // before the multidimensional recompute simply omits them. A current
+    // server always sends all six. Each block is a SEPARATE AXIS — the whole
+    // reason they exist is that a single `total` let contribution offset
+    // conduct, and let one small penalty restrict a new account outright.
+    // ---------------------------------------------------------------------
+
+    /** Whether Oxy believes this is a real, distinct person. Confers nothing else. */
+    personhood?: ReputationPersonhood;
+    /** What the person built. Excludes conduct penalties. */
+    contribution?: ReputationContribution;
+    /**
+     * The standing moderation outcomes move. Derived from ACTIVE RISK alone, so
+     * earning contribution points cannot cancel an active strike.
+     */
+    conduct?: ReputationConduct;
+    /** Reporting accuracy, smoothed with a neutral prior plus a confidence. */
+    reporting?: ReputationReporting;
+    /** Reviewer reliability, per category and language rather than global. */
+    reviewing?: ReputationReviewing;
+    /** Contextual weights: report priority, jury selection, ranking. Never vote weight. */
+    contextualInfluence?: ReputationContextualInfluence;
 }
 
 export const reputationBalanceSchema: z.ZodType<ReputationBalance> = z.object({
@@ -366,6 +407,12 @@ export const reputationBalanceSchema: z.ZodType<ReputationBalance> = z.object({
     reliability: reputationReliabilitySchema,
     recalculatedAt: z.string(),
     updatedAt: z.string(),
+    personhood: reputationPersonhoodSchema.optional(),
+    contribution: reputationContributionSchema.optional(),
+    conduct: reputationConductSchema.optional(),
+    reporting: reputationReportingSchema.optional(),
+    reviewing: reputationReviewingSchema.optional(),
+    contextualInfluence: reputationContextualInfluenceSchema.optional(),
 });
 
 /**
@@ -381,9 +428,14 @@ export const reputationBalanceSchema: z.ZodType<ReputationBalance> = z.object({
 export type ReputationBalanceView = ReputationBalance | ReputationBalanceSummary;
 
 /**
- * Every field the full {@link ReputationBalance} carries beyond the public
- * {@link ReputationBalanceSummary}. The runtime discriminant between the two
- * views — the API sends this set all-or-nothing.
+ * The fields the full {@link ReputationBalance} carries beyond the public
+ * {@link ReputationBalanceSummary} that the API sends ALL-OR-NOTHING. The
+ * runtime discriminant between the two views.
+ *
+ * The V2 blocks (`conduct`, `contribution`, …) are deliberately NOT listed:
+ * they are optional on the wire, so requiring them here would make a balance
+ * from a server that predates them fail to narrow, hiding the whole private
+ * view. Read a V2 block by checking that block.
  */
 const FULL_BALANCE_FIELDS = [
     'positive',
@@ -436,7 +488,15 @@ type _PrivateFieldsAreUnreachableOnTheView = AssertTrue<
             ? false
             : 'positive' extends keyof ReputationBalanceView
               ? false
-              : true
+              : // The V2 blocks are the most sensitive of the lot: `conduct`
+                // names a sanction and `reporting` names the abuse verdict.
+                'conduct' extends keyof ReputationBalanceView
+                ? false
+                : 'reporting' extends keyof ReputationBalanceView
+                  ? false
+                  : 'reviewing' extends keyof ReputationBalanceView
+                    ? false
+                    : true
 >;
 
 /**
