@@ -201,24 +201,25 @@ export { useFileFiltering } from './ui/hooks/useFileFiltering';
 export type { ViewMode, SortBy, SortOrder } from './ui/hooks/useFileFiltering';
 
 // ---------------------------------------------------------------------------
-// Device notifications (the ONE `expo-notifications` adapter)
+// Device notifications — DELIBERATELY NOT EXPORTED HERE
 // ---------------------------------------------------------------------------
-// The Expo-side half of push: permission, platform tag, and the EXPO push token
-// `@oxyhq/core`'s `registerPushToken` accepts (never a raw APNs/FCM token).
-// Native-only by construction — every entry point resolves its null/no-op result
-// from `Platform.OS` before `expo-notifications` is ever imported, and both
-// `expo-notifications` and `expo-constants` are OPTIONAL peers.
-export {
-    pushTokenPlatform,
-    hasNotificationPermission,
-    requestNotificationPermission,
-    getExpoPushToken,
-    takeLaunchNotificationData,
-    ensureNotificationChannel,
-    installForegroundNotificationHandler,
-    subscribeToNotificationResponses,
-} from './notifications/deviceNotifications';
-export type { NotificationChannelImportance, NotificationChannelSpec, ForegroundPresentation } from './notifications/deviceNotifications';
+// The `expo-notifications` adapter lives behind its own entry point:
+//
+//     import { getExpoPushToken } from '@oxyhq/services/notifications';
+//
+// It is the one module in this package whose dependencies (`expo-notifications`
+// and `expo-constants`) are optional peers that an app which does not use push
+// genuinely never installs. Re-exporting it from THIS barrel is what made that
+// optionality a lie: a barrel export puts the module in the import graph of
+// every consumer, and `tsc` must resolve the specifier of an `import()` even
+// when the call is lazy and wrapped in try/catch — so every consumer without
+// `expo-notifications` failed with TS2307 (plus TS7006 cascades) whether or not
+// it had ever heard of push. Behind a subpath the module is only ever pulled in
+// by an app that asked for it, which is what "optional peer" is supposed to
+// mean.
+//
+// Do NOT re-add these exports here. `__tests__/notifications/barrelIsolation.test.ts`
+// fails if you do.
 
 // ---------------------------------------------------------------------------
 // UI components

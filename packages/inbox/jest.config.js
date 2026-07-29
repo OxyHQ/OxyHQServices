@@ -39,6 +39,10 @@ module.exports = {
     // adapter, so no `expo-*` module is reachable from a test at all.
     '^react-native$': '<rootDir>/__mocks__/react-native.ts',
     '^@oxyhq/services$': '<rootDir>/__mocks__/oxyhq-services.ts',
+    // The push adapter ships behind its own entry point. It maps to the SAME
+    // stub as the barrel so a test asserting on a notification mock sees the one
+    // `jest.fn()` instance whichever specifier the code under test imported.
+    '^@oxyhq/services/notifications$': '<rootDir>/__mocks__/oxyhq-services.ts',
     '^@expo/vector-icons(/.*)?$': '<rootDir>/__mocks__/expo-vector-icons.tsx',
   },
   testTimeout: 10000,

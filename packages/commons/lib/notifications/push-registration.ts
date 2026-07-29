@@ -29,7 +29,7 @@ import {
   getExpoPushToken,
   hasNotificationPermission,
   pushTokenPlatform,
-} from '@oxyhq/services';
+} from '@oxyhq/services/notifications';
 import { OXY_CLIENT_ID } from '@/constants/oxy';
 
 /**

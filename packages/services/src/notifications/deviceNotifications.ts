@@ -8,6 +8,25 @@
  * already lives in `@oxyhq/core`; core may never import an `expo-*` module, and
  * this adapter is the Expo-side half that closes that gap.
  *
+ * ## Reached through its OWN entry point, never the root barrel
+ *
+ * ```ts
+ * import { getExpoPushToken } from '@oxyhq/services/notifications';
+ * ```
+ *
+ * This is the only module in the package that depends on peers an app which
+ * does not use push genuinely never installs, and a barrel export would put it
+ * in EVERY consumer's import graph. `tsc` resolves the specifier of an
+ * `import()` even when the call is lazy and inside a try/catch, so a barrel
+ * export turned "optional peer" into a hard requirement: consumers with no
+ * interest in push failed to type-check with TS2307. The subpath is what keeps
+ * the optionality honest — see the note in `src/index.ts`.
+ *
+ * Metro is the resolver that behaves differently here, and in the useful
+ * direction: an unresolvable DYNAMIC `import()` bundles fine (the `catch` below
+ * takes over at runtime), where a static import fails the build outright. That
+ * is why the runtime shape below must stay dynamic-and-guarded.
+ *
  * ## Native-only by construction
  *
  * Every entry point resolves its null/no-op result from `Platform.OS` BEFORE the
