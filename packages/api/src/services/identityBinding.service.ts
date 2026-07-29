@@ -116,9 +116,16 @@ export async function registerIdentityBinding(
   const bindingType = grant ? 'oauth_grant' : 'session_proof';
   const verifiedAt = grant?.firstGrantedAt ?? new Date();
 
+  // `localPrincipalId` is the one value here that arrives raw from the caller,
+  // so it is coerced before it reaches the filter. An operator object would match
+  // an arbitrary existing binding and this function would then REVOKE it — the
+  // worst outcome available on this path, since a revoked binding stops proving
+  // anything about the actions it already covered.
+  const localPrincipalId = String(params.localPrincipalId);
+
   const existing = await IdentityBinding.findOne({
     applicationId,
-    localPrincipalId: params.localPrincipalId,
+    localPrincipalId,
     status: 'active',
   });
 
@@ -147,7 +154,7 @@ export async function registerIdentityBinding(
   return IdentityBinding.create({
     applicationId,
     userId,
-    localPrincipalId: params.localPrincipalId,
+    localPrincipalId,
     bindingType,
     status: 'active',
     verifiedAt,

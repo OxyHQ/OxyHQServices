@@ -200,6 +200,71 @@ function scale(base: number, multiplier: number): number {
   return Math.round(base * multiplier);
 }
 
+/**
+ * The identifiers of a decision event, coerced to primitives.
+ *
+ * WHY THIS EXISTS RATHER THAN TRUSTING THE CALLER: every method on this service
+ * is exported, and a queue worker, a reconciliation script or a future caller is
+ * under no obligation to have passed a body through the route's schema. A Mongo
+ * filter handed `{ $ne: null }` where it expects an id matches EVERY document —
+ * for `findOne({ eventId })` that turns the transport idempotency check into
+ * "some effect exists", and for a reversal it would reverse an unrelated one. So
+ * the coercion lives where the query lives, not three layers up.
+ *
+ * The route's schema already rejects an object, which makes this defence in
+ * depth rather than the only guard. Both are wanted: the schema gives a clean
+ * 400 at the edge, this makes the service correct however it is reached.
+ */
+interface EventIdentifiers {
+  eventId: string;
+  incidentId: string;
+  caseId: string;
+  decisionId: string;
+  decisionRevision: number;
+  oxyConductVersion: string;
+  principalId: string;
+  bindingProofId: string;
+  reportedApplicationId: string;
+  occurredAt: Date;
+  proofHash: string;
+}
+
+/**
+ * Coerce a decision revision to a positive integer, or reject it.
+ *
+ * A silent `NaN` would be worse than an error: it matches no document, so a
+ * reversal would report "no effect exists for that revision" and an operator
+ * would go looking for a missing effect rather than a malformed request.
+ */
+function toDecisionRevision(value: unknown): number {
+  const revision = Number(value);
+  if (!Number.isInteger(revision) || revision < 1) {
+    throw new BadRequestError('decisionRevision must be a positive integer');
+  }
+  return revision;
+}
+
+/** Coerce every identifier of an event that reaches a query or a write. */
+function readEventIdentifiers(event: ModerationDecisionEvent): EventIdentifiers {
+  const occurredAt = new Date(String(event.occurredAt));
+  if (Number.isNaN(occurredAt.getTime())) {
+    throw new BadRequestError('occurredAt must be a valid ISO 8601 timestamp');
+  }
+  return {
+    eventId: String(event.eventId),
+    incidentId: String(event.incidentId),
+    caseId: String(event.caseId),
+    decisionId: String(event.decisionId),
+    decisionRevision: toDecisionRevision(event.decisionRevision),
+    oxyConductVersion: String(event.policyVersions.oxyConduct),
+    principalId: String(event.subject.principalId),
+    bindingProofId: String(event.subject.bindingProofId),
+    reportedApplicationId: String(event.reportedApplicationId),
+    occurredAt,
+    proofHash: String(event.proofHash),
+  };
+}
+
 class ModerationReputationService {
   /**
    * Validate a decision event and derive its consequence.
@@ -243,8 +308,13 @@ class ModerationReputationService {
       throw new BadRequestError('Moderation events require an emitting service credential');
     }
 
+    // Every identifier this method queries or writes with is coerced ONCE, here.
+    // See `readEventIdentifiers` for why the coercion belongs at the service
+    // boundary rather than being trusted from the route's schema.
+    const ids = readEventIdentifiers(event);
+
     // (2a) Transport-level replay: answer from the stored effect.
-    const alreadySeen = await ModerationEffect.findOne({ eventId: event.eventId });
+    const alreadySeen = await ModerationEffect.findOne({ eventId: ids.eventId });
     if (alreadySeen) {
       return { applied: true, effect: alreadySeen, idempotent: true };
     }
@@ -266,11 +336,11 @@ class ModerationReputationService {
     // would apply today's tuning to a decision made under another, which is
     // precisely what versioning exists to prevent.
     const policy = await ModerationPolicy.findOne({
-      policyVersion: event.policyVersions.oxyConduct,
+      policyVersion: ids.oxyConductVersion,
     });
     if (!policy) {
       throw new BadRequestError(
-        `Unknown Oxy conduct policy version: ${event.policyVersions.oxyConduct}`
+        `Unknown Oxy conduct policy version: ${ids.oxyConductVersion}`
       );
     }
 
@@ -284,22 +354,23 @@ class ModerationReputationService {
     // effects. An absent trust document is treated as `sandbox`: a newly
     // integrated application moderates locally and touches nothing global, so
     // forgetting to configure one fails safe.
+    const reportedApplicationId = this.resolveApplicationId(ids.reportedApplicationId);
     const trust = await ApplicationModerationTrust.findOne({
-      applicationId: this.resolveApplicationId(event.reportedApplicationId),
+      applicationId: reportedApplicationId,
     });
     if (!trust?.globalReputationEffectsAllowed) {
       return { applied: false, skipReason: 'application_not_permitted', idempotent: false };
     }
 
-    const principalObjectId = await resolveUserIdToObjectId(event.subject.principalId);
+    const principalObjectId = await resolveUserIdToObjectId(ids.principalId);
 
     // (4) THE binding check. Without it, this whole module would be an API for
     // penalising an arbitrary user id.
     const binding = await resolveBindingProof({
-      applicationId: event.reportedApplicationId,
-      bindingProofId: event.subject.bindingProofId,
+      applicationId: ids.reportedApplicationId,
+      bindingProofId: ids.bindingProofId,
       principalId: principalObjectId,
-      occurredAt: new Date(event.occurredAt),
+      occurredAt: ids.occurredAt,
     });
     if (!binding.ok) {
       return { applied: false, skipReason: binding.reason, idempotent: false };
@@ -315,8 +386,8 @@ class ModerationReputationService {
 
     const effectType = effectTypeForAttribution(primary);
     const idempotencyKey = buildIdempotencyKey(
-      event.incidentId,
-      event.decisionRevision,
+      ids.incidentId,
+      ids.decisionRevision,
       principalObjectId,
       effectType
     );
@@ -325,10 +396,10 @@ class ModerationReputationService {
     // makes the common retry cheap; the unique index is what makes it correct
     // under concurrency.
     const existing = await ModerationEffect.findOne({
-      incidentId: event.incidentId,
+      incidentId: ids.incidentId,
       principalId: principalObjectId,
       effectType,
-      decisionRevision: event.decisionRevision,
+      decisionRevision: ids.decisionRevision,
     });
     if (existing) {
       return { applied: true, effect: existing, idempotent: true };
@@ -337,7 +408,7 @@ class ModerationReputationService {
     const repetitionMultiplier = await this.resolveRepetitionMultiplier(
       principalObjectId,
       primary.family,
-      event.incidentId,
+      ids.incidentId,
       policy
     );
     const multiFindingMultiplier = Math.min(
@@ -349,11 +420,10 @@ class ModerationReputationService {
     const points = scale(rule.points, combined);
     const activeRisk = scale(rule.riskPoints, combined);
 
-    const reportedApplicationId = this.resolveApplicationId(event.reportedApplicationId);
-
     try {
       const effect = await this.writeEffect({
         event,
+        ids,
         context,
         policy,
         primary,
@@ -373,11 +443,11 @@ class ModerationReputationService {
       // A concurrent delivery won the race. Both unique indexes surface as
       // E11000; either way the winner is the answer, not an error.
       const duplicate = await this.findDuplicateWinner(error, {
-        eventId: event.eventId,
-        incidentId: event.incidentId,
+        eventId: ids.eventId,
+        incidentId: ids.incidentId,
         principalId: principalObjectId,
         effectType,
-        decisionRevision: event.decisionRevision,
+        decisionRevision: ids.decisionRevision,
       });
       if (duplicate) {
         return { applied: true, effect: duplicate, idempotent: true };
@@ -400,7 +470,13 @@ class ModerationReputationService {
     decisionId: string,
     decisionRevision: number
   ): Promise<IModerationEffect[]> {
-    const effects = await ModerationEffect.find({ decisionId, decisionRevision });
+    // Coerced for the same reason `readEventIdentifiers` exists: this method is
+    // exported, and a filter handed an operator object here would report on
+    // effects belonging to other decisions entirely.
+    const effects = await ModerationEffect.find({
+      decisionId: String(decisionId),
+      decisionRevision: toDecisionRevision(decisionRevision),
+    });
     if (effects.length === 0) {
       throw new NotFoundError('No moderation effect exists for that decision revision');
     }
@@ -435,7 +511,13 @@ class ModerationReputationService {
     decisionRevision: number,
     reason: string
   ): Promise<ReverseResult> {
-    const effects = await ModerationEffect.find({ decisionId, decisionRevision });
+    // Coerced before it reaches the filter: reversing on an operator object
+    // would compensate an unrelated decision's consequence, which is the worst
+    // failure available on this path.
+    const effects = await ModerationEffect.find({
+      decisionId: String(decisionId),
+      decisionRevision: toDecisionRevision(decisionRevision),
+    });
     if (effects.length === 0) {
       throw new NotFoundError('No moderation effect exists for that decision revision');
     }
@@ -481,7 +563,10 @@ class ModerationReputationService {
    * Idempotent: a healthy incident is examined and nothing is written.
    */
   async reconcileModerationIncident(incidentId: string): Promise<ReconcileResult> {
-    const effects = await ModerationEffect.find({ incidentId }).sort({ decisionRevision: 1 });
+    const incident = String(incidentId);
+    const effects = await ModerationEffect.find({ incidentId: incident }).sort({
+      decisionRevision: 1,
+    });
 
     const latestRevision = effects.reduce(
       (max, effect) => Math.max(max, effect.decisionRevision),
@@ -532,7 +617,7 @@ class ModerationReputationService {
     }
 
     return {
-      incidentId,
+      incidentId: incident,
       effectsExamined: effects.length,
       strikesRepaired,
       supersededReversed,
@@ -658,9 +743,15 @@ class ModerationReputationService {
 
     // The primary is the most severe recognised finding. Ties keep the emitter's
     // order, so the same event always derives the same effect.
-    const primary = recognised.reduce((worst, finding) =>
-      SEVERITY_RANK[finding.severity] > SEVERITY_RANK[worst.severity] ? finding : worst
+    //
+    // `family` is re-read as a primitive: it reaches a Mongo filter in the
+    // repetition lookup, and the same reasoning as `readEventIdentifiers`
+    // applies — a filter handed an operator object there would count every prior
+    // strike as similar and escalate the penalty.
+    const worst = recognised.reduce((current, finding) =>
+      SEVERITY_RANK[finding.severity] > SEVERITY_RANK[current.severity] ? finding : current
     );
+    const primary: ModerationFinding = { ...worst, family: String(worst.family) };
     const rule = policy.severityRules.find((entry) => entry.severity === primary.severity);
     if (!rule) {
       return { ok: false, reason: 'finding_not_in_policy' };
@@ -692,9 +783,9 @@ class ModerationReputationService {
     const since = new Date(Date.now() - policy.repetitionWindowDays * 24 * 60 * 60 * 1000);
     const priors = await ConductStrike.find({
       userId: new mongoose.Types.ObjectId(principalId),
-      family,
+      family: String(family),
       status: { $ne: 'reversed' },
-      incidentId: { $ne: incidentId },
+      incidentId: { $ne: String(incidentId) },
       createdAt: { $gte: since },
     }).select('incidentId');
 
@@ -714,6 +805,8 @@ class ModerationReputationService {
    */
   private async writeEffect(params: {
     event: ModerationDecisionEvent;
+    /** The event's identifiers, already coerced at the service boundary. */
+    ids: EventIdentifiers;
     context: ModerationEventContext;
     policy: IModerationPolicy;
     primary: ModerationFinding;
@@ -732,7 +825,7 @@ class ModerationReputationService {
     // whole `params` object, so destructuring the rest here would be a second,
     // drifting copy of the same values.
     const {
-      event,
+      ids,
       context,
       policy,
       primary,
@@ -783,7 +876,7 @@ class ModerationReputationService {
         subjectUserId: principalObjectId,
         severityBand: primary.severity,
         points,
-        decisionHash: event.proofHash,
+        decisionHash: ids.proofHash,
         policyVersion: policy.policyVersion,
         sourceActionId: idempotencyKey,
       });
@@ -797,8 +890,8 @@ class ModerationReputationService {
 
     logger.info('Moderation reputation effect applied', {
       component: 'moderationReputation',
-      incidentId: event.incidentId,
-      decisionRevision: event.decisionRevision,
+      incidentId: ids.incidentId,
+      decisionRevision: ids.decisionRevision,
       effectType,
       severity: primary.severity,
       points,
@@ -817,7 +910,7 @@ class ModerationReputationService {
     session: ClientSession | undefined
   ): Promise<IModerationEffect> {
     const {
-      event,
+      ids,
       context,
       policy,
       primary,
@@ -842,15 +935,15 @@ class ModerationReputationService {
       // against a double penalty. Reused rather than reinvented.
       sourceActionId: idempotencyKey,
       sourceActionType: MODERATION_CONDUCT_SOURCE_ACTION_TYPE,
-      targetEntityId: event.incidentId,
+      targetEntityId: ids.incidentId,
       targetEntityType: 'manual_review',
-      reason: `Moderation decision ${event.decisionId} revision ${event.decisionRevision}`,
+      reason: `Moderation decision ${ids.decisionId} revision ${ids.decisionRevision}`,
       // Metadata names no taxonomy code, no reporter and no content — the ledger
       // is readable by its subject, and a sanction row must explain itself
       // without becoming a dossier.
       metadata: {
-        incidentId: event.incidentId,
-        decisionRevision: event.decisionRevision,
+        incidentId: ids.incidentId,
+        decisionRevision: ids.decisionRevision,
         severity: primary.severity,
         family: primary.family,
       },
@@ -873,9 +966,9 @@ class ModerationReputationService {
         [
           {
             userId: new mongoose.Types.ObjectId(principalObjectId),
-            incidentId: event.incidentId,
-            decisionId: event.decisionId,
-            decisionRevision: event.decisionRevision,
+            incidentId: ids.incidentId,
+            decisionId: ids.decisionId,
+            decisionRevision: ids.decisionRevision,
             applicationId: reportedApplicationId,
             effectType,
             severity: primary.severity,
@@ -895,11 +988,11 @@ class ModerationReputationService {
     const createdEffect = await ModerationEffect.create(
       [
         {
-          eventId: event.eventId,
-          incidentId: event.incidentId,
-          caseId: event.caseId,
-          decisionId: event.decisionId,
-          decisionRevision: event.decisionRevision,
+          eventId: ids.eventId,
+          incidentId: ids.incidentId,
+          caseId: ids.caseId,
+          decisionId: ids.decisionId,
+          decisionRevision: ids.decisionRevision,
           principalId: new mongoose.Types.ObjectId(principalObjectId),
           bindingId,
           applicationId: reportedApplicationId,
@@ -917,8 +1010,12 @@ class ModerationReputationService {
           idempotencyKey,
           transactionId: transaction._id,
           strikeId: strike?._id,
-          policyVersions: event.policyVersions,
-          proofHash: event.proofHash,
+          policyVersions: {
+            universal: String(params.event.policyVersions.universal),
+            application: String(params.event.policyVersions.application),
+            oxyConduct: ids.oxyConductVersion,
+          },
+          proofHash: ids.proofHash,
           appliedAt: new Date(),
         },
       ],
@@ -957,15 +1054,15 @@ class ModerationReputationService {
     if (code !== 11000) {
       return null;
     }
-    const byEvent = await ModerationEffect.findOne({ eventId: key.eventId });
+    const byEvent = await ModerationEffect.findOne({ eventId: String(key.eventId) });
     if (byEvent) {
       return byEvent;
     }
     return ModerationEffect.findOne({
-      incidentId: key.incidentId,
+      incidentId: String(key.incidentId),
       principalId: new mongoose.Types.ObjectId(key.principalId),
       effectType: key.effectType,
-      decisionRevision: key.decisionRevision,
+      decisionRevision: Number(key.decisionRevision),
     });
   }
 

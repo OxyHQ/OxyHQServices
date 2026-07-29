@@ -1348,6 +1348,106 @@ describe('finalizeModerationDecision', () => {
 });
 
 // ===========================================================================
+// THE SERVICE DOES NOT TRUST ITS CALLER
+// ===========================================================================
+
+describe('query inputs are coerced at the service boundary', () => {
+  /*
+   * The route validates the body with zod, so an object where a string belongs is
+   * already rejected there. These cases exist because every method here is
+   * EXPORTED: a queue worker, a reconciliation script or a future caller is under
+   * no obligation to have passed through that gate, and a Mongo filter handed
+   * `{ $ne: null }` where it expects an id matches EVERY document. The coercion
+   * therefore lives where the query lives.
+   *
+   * `as never` is how a test reaches a shape the type system exists to forbid —
+   * that is the point: the runtime must hold even when the types were bypassed.
+   */
+
+  it('an operator object in eventId cannot make the replay check match an unrelated effect', async () => {
+    await moderationReputationService.applyModerationDecision(makeEvent(), CONTEXT);
+    expect(effectStore.docs).toHaveLength(1);
+
+    // Uncoerced, `findOne({ eventId: { $ne: null } })` would match the effect
+    // above and report a successful idempotent replay of a DIFFERENT incident.
+    const result = await moderationReputationService.applyModerationDecision(
+      makeEvent({
+        eventId: { $ne: null } as never,
+        incidentId: 'inc_unrelated',
+        decisionId: 'dec_unrelated',
+      }),
+      CONTEXT
+    );
+    expect(result.idempotent).toBe(false);
+  });
+
+  it('a malformed decisionRevision is rejected rather than silently matching nothing', async () => {
+    // A `NaN` revision would match no document, so a reversal would report "no
+    // effect exists" and send an operator looking for a missing effect instead of
+    // a malformed request.
+    await expect(
+      moderationReputationService.applyModerationDecision(
+        makeEvent({ decisionRevision: 'not-a-number' as never }),
+        CONTEXT
+      )
+    ).rejects.toThrow(/decisionRevision must be a positive integer/);
+    expect(txnStore.docs).toHaveLength(0);
+  });
+
+  it('a malformed occurredAt is rejected rather than defeating the binding time check', async () => {
+    // An invalid date yields `NaN`, and every comparison against `NaN` is false —
+    // which would make `verifiedAt > occurredAt` false and wave a late binding
+    // straight through the one check that proves presence.
+    await expect(
+      moderationReputationService.applyModerationDecision(
+        makeEvent({ occurredAt: 'not-a-date' }),
+        CONTEXT
+      )
+    ).rejects.toThrow(/occurredAt must be a valid ISO 8601 timestamp/);
+    expect(txnStore.docs).toHaveLength(0);
+  });
+
+  it('an operator object in decisionId cannot reverse an unrelated decision', async () => {
+    await moderationReputationService.applyModerationDecision(makeEvent(), CONTEXT);
+
+    await expect(
+      moderationReputationService.reverseModerationDecision(
+        { $ne: null } as never,
+        1,
+        'Appeal accepted'
+      )
+    ).rejects.toThrow(/No moderation effect/);
+
+    // The real effect is untouched: nothing was compensated.
+    expect(effectStore.docs[0].status).toBe('applied');
+    expect(strikeStore.docs[0].status).toBe('active');
+    expect(txnStore.docs).toHaveLength(1);
+  });
+
+  it('an operator object in the conduct family cannot inflate the repetition multiplier', async () => {
+    // Uncoerced, `find({ family: { $ne: null } })` would count EVERY prior strike
+    // as a similar incident and escalate the penalty for an unrelated family.
+    await moderationReputationService.applyModerationDecision(makeEvent(), CONTEXT);
+
+    const second = await moderationReputationService.applyModerationDecision(
+      makeEvent({
+        eventId: 'evt_2',
+        incidentId: 'inc_2',
+        decisionId: 'dec_2',
+        findings: [{ ...HARASSMENT_MEDIUM, family: { $ne: null } as never }],
+      }),
+      CONTEXT
+    );
+
+    // The family is not one the policy recognises, so it produces nothing at all
+    // — and in particular it does not reach the repetition lookup.
+    expect(second.applied).toBe(false);
+    expect(second.skipReason).toBe('finding_not_in_policy');
+    expect(effectStore.docs).toHaveLength(1);
+  });
+});
+
+// ===========================================================================
 // PRIVACY OF THE LEDGER ROW (§11.17, §11.18)
 // ===========================================================================
 
@@ -1411,6 +1511,23 @@ describe('what a conduct transaction is allowed to know', () => {
  *
  *       Tests: 5 failed, 44 passed, 49 total
  *
- *     All five cases in the block fail, each naming the guard. With the guard in
- *     place: 49 passed, 49 total.
+ *     All five cases in the block fail, each naming the guard.
+ *
+ * (3) THE BOUNDARY COERCION — `readEventIdentifiers` mutated to pass identifiers
+ *     through raw, the `occurredAt` validity check deleted, and the `family` /
+ *     `decisionId` coercions removed, i.e. exactly what a trusting implementation
+ *     looks like:
+ *
+ *       ● query inputs are coerced … › an operator object in eventId cannot make
+ *         the replay check match an unrelated effect
+ *       ● query inputs are coerced … › a malformed decisionRevision is rejected
+ *         rather than silently matching nothing
+ *       ● query inputs are coerced … › a malformed occurredAt is rejected rather
+ *         than defeating the binding time check
+ *       ● query inputs are coerced … › an operator object in decisionId cannot
+ *         reverse an unrelated decision
+ *
+ *       Tests: 4 failed, 50 passed, 54 total
+ *
+ * With all three guards in place: 54 passed, 54 total.
  */
