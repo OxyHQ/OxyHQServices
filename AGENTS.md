@@ -508,6 +508,41 @@ Threat model: state-actor harassment of users. The platform must **never persist
 - `queryFn` must be pure — never call `useAuthStore.setUser()` inside a `queryFn`.
 - Side effects on fresh query data belong in a `useEffect` on `query.data` outside the queryFn.
 
+## Published Version Notes — breaking changes not signalled by the version number
+
+Durable record of releases whose version number does NOT tell you what changed.
+Check here before assuming a range is safe.
+
+### `@oxyhq/core@13.2.0` — a BREAKING change shipped under a MINOR (deprecated)
+
+`13.2.0` changed **`buildPaginationParams`'s return type from `URLSearchParams`
+to `Record<string, string>`** — a runtime-breaking change to a function exported
+from the package root — and shipped it as a MINOR, so a `^13.0.0` range could
+pick it up silently.
+
+- **Affected:** anyone calling `.toString()`, `.get()`, `.append()`, `.set()`,
+  `.has()`, `.entries()`, `.forEach()` or `for...of` on the result. Those throw a
+  `TypeError` — a runtime failure, not a compile error. Migration: use
+  `buildSearchParams`, which is unchanged and still returns a `URLSearchParams`.
+- **NOT affected:** anyone passing the result to `makeRequest`/`HttpService` —
+  the common case, and the one the change exists to repair. `HttpService` reads
+  GET params with `Object.keys(...)`, and `Object.keys(new URLSearchParams(...))`
+  is `[]`, so that path was silently dropping the entire query string and
+  collapsing every page onto one cache key. Those callers are fixed, not broken.
+- **Status:** `13.2.0` is deprecated on npm. npm now resolves `^13.0.0` to
+  `13.0.0` rather than `13.2.0`; an explicit `13.2.0` install still works but
+  warns. The identical content is published as **`14.0.0`** under the correct
+  major — **prefer `^14.0.0`**. `@oxyhq/services@23.1.0` pinned `core@^13.2.0`
+  and is deprecated in favour of `23.2.0`, which pins `^14.0.0`.
+
+Full detail: `packages/core/CHANGELOG.md`.
+
+**The rule this cost us:** a publicly exported function's signature is public API
+even when you can prove no consumer in this org uses it — the package is on
+public npm, and semver exists precisely so consumers you cannot enumerate do not
+have to trust your grep. When a change is runtime-breaking rather than type-only,
+take the major.
+
 ## SDK Cache Sweep on Profile Writes (core)
 
 `oxyServices.updateProfile()` calls `clearCacheByPrefix()` for:
