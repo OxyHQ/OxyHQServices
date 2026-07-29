@@ -97,7 +97,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = () => {
             return;
         }
         setIsLoading(true);
-        oxyServices.getReputationBalance(user.id)
+        oxyServices.getMyReputationBalance()
             .then((balance) => {
                 setReputationTotal(balance.total || 0);
             })

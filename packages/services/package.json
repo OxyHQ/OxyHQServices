@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "23.2.0",
+  "version": "23.3.0",
   "description": "OxyHQ Expo/React Native SDK — UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -139,7 +139,7 @@
   },
   "dependencies": {
     "@oxyhq/contracts": "workspace:*",
-    "@oxyhq/core": "^14.0.0",
+    "@oxyhq/core": "^15.0.0",
     "@simplewebauthn/browser": "^13.3.0",
     "color": "^4.2.3"
   },
@@ -190,7 +190,7 @@
   "peerDependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@oxyhq/bloom": ">=0.59.0",
-    "@oxyhq/core": "^14.0.0",
+    "@oxyhq/core": "^15.0.0",
     "@react-native-async-storage/async-storage": "^2.0.0",
     "@react-native-community/netinfo": ">=11.4.1",
     "@tanstack/query-async-storage-persister": "^5.101",

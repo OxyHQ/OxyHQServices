@@ -37,7 +37,7 @@ export interface ReputationSource {
 /**
  * Re-bucket a reputation `breakdown` into the four ordered civic sources.
  *
- * @param breakdown - The per-category sums from `getReputationBalance()`.
+ * @param breakdown - The per-category sums from `getMyReputationBalance()`.
  * @returns Four sources in strongest → weakest order (`realLife`, `peerCivic`,
  *   `apps`, `penalties`).
  */
