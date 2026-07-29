@@ -586,7 +586,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     };
     handleTokenChange(oxyServices.getAccessToken());
     return oxyServices.onTokensChanged(handleTokenChange);
-  }, [logger, oxyServices]);
+  }, [logger, oxyServices, sessionClient]);
 
   // Unified in-session refresh (SDK-owned; every RP inherits it). Installs the
   // ONE core refresh handler (re-mint from the persisted zero-cookie device

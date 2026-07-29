@@ -7,7 +7,7 @@
 import type React from 'react';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import { Text } from '@oxyhq/bloom/typography';
 import { BloomColorScope } from '@oxyhq/bloom/theme';

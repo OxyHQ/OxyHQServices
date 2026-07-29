@@ -114,6 +114,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     }, [user?.id, oxyServices, t, setValues]);
 
     // Load blocked and restricted users
+    // biome-ignore lint/correctness/useExhaustiveDependencies: reload when active account switches
     useEffect(() => {
         const loadUsers = async () => {
             if (!oxyServices) return;

@@ -16,7 +16,7 @@ import {
     SegmentedControlItem,
     SegmentedControlItemText,
 } from '@oxyhq/bloom/segmented-control';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
@@ -343,7 +343,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         if (currentAppPackage) {
             loadSubscriptionData();
         }
-    }, [currentAppPackage, user?.isPremium]);
+    }, [currentAppPackage]);
 
     const detectCurrentApp = () => {
         const detectedApp = 'mention';
