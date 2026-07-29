@@ -226,6 +226,16 @@ class ReputationService {
   async award(input: AwardInput): Promise<IReputationTransaction> {
     const subjectId = toObjectId(input.userId, 'userId');
 
+    // Coerced once, here, because `award` has fourteen call sites and is exported:
+    // most of them never pass through an HTTP schema at all. A Mongo filter handed
+    // `{ $ne: null }` where it expects an action key matches EVERY rule, which
+    // would resolve the wrong points and category — and in the idempotency
+    // short-circuit it would return an unrelated transaction and silently swallow
+    // a legitimate award.
+    const actionType = String(input.actionType);
+    const sourceActionId =
+      input.sourceActionId === undefined ? undefined : String(input.sourceActionId);
+
     // The figures come from ONE of two authorities, never from both: a
     // `ReputationRule` row (every ordinary award) or a versioned policy the
     // bridge resolved (a moderation consequence, which must stay recomputable
@@ -246,7 +256,7 @@ class ReputationService {
       cooldownInMinutes = 0;
     } else {
       const rule = await ReputationRule.findOne({
-        actionType: input.actionType,
+        actionType,
         isEnabled: true,
       });
       if (!rule) {
@@ -272,10 +282,10 @@ class ReputationService {
     // once. Short-circuit BEFORE the cooldown check so a retried delivery of
     // the same source action returns the original transaction rather than a
     // cooldown conflict.
-    if (applicationId && input.sourceActionId) {
+    if (applicationId && sourceActionId) {
       const existing = await ReputationTransaction.findOne({
         applicationId,
-        sourceActionId: input.sourceActionId,
+        sourceActionId,
       });
       if (existing) {
         return existing;
@@ -288,7 +298,7 @@ class ReputationService {
       const threshold = new Date(Date.now() - cooldownInMinutes * 60 * 1000);
       const recent = await ReputationTransaction.findOne({
         userId: subjectId,
-        actionType: input.actionType,
+        actionType,
         status: 'active',
         createdAt: { $gt: threshold },
       });
@@ -314,11 +324,11 @@ class ReputationService {
             {
               userId: subjectId,
               points,
-              actionType: input.actionType,
+              actionType,
               category,
               applicationId,
               credentialId,
-              sourceActionId: input.sourceActionId,
+              sourceActionId,
               sourceActionType: input.sourceActionType,
               targetEntityId: input.targetEntityId,
               targetEntityType: input.targetEntityType,
@@ -339,11 +349,11 @@ class ReputationService {
           'code' in error &&
           (error as { code?: number }).code === 11000 &&
           applicationId &&
-          input.sourceActionId
+          sourceActionId
         ) {
           const winner = await ReputationTransaction.findOne({
             applicationId,
-            sourceActionId: input.sourceActionId,
+            sourceActionId,
           });
           if (winner) {
             return winner;
@@ -372,7 +382,7 @@ class ReputationService {
       } catch (error) {
         logger.warn('Reputation attestation emission failed (non-fatal)', {
           component: 'reputation.service',
-          actionType: input.actionType,
+          actionType,
           userId: input.userId,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -1170,8 +1180,11 @@ class ReputationService {
 
   /** Create or update a rule keyed by `actionType`. */
   async upsertRule(input: UpsertRuleInput): Promise<IReputationRule> {
+    // Same reasoning as `award`: an operator object here would match an arbitrary
+    // existing rule and this upsert would then REWRITE its points and category.
+    const actionType = String(input.actionType);
     const rule = await ReputationRule.findOneAndUpdate(
-      { actionType: input.actionType },
+      { actionType },
       {
         $set: {
           points: input.points,
@@ -1180,7 +1193,7 @@ class ReputationService {
           cooldownInMinutes: input.cooldownInMinutes ?? 0,
           isEnabled: input.isEnabled ?? true,
         },
-        $setOnInsert: { actionType: input.actionType },
+        $setOnInsert: { actionType },
       },
       { new: true, upsert: true }
     );
