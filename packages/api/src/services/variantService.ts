@@ -24,8 +24,17 @@ import { applyCanonicalMediaMetadata, resolveFileMediaMetadata } from '../utils/
  * pixels they actually receive: an 800x400 stored / 400x800 rendered image
  * would advertise 2.0 against a real 0.5.
  *
- * `metadata.autoOrient` is sharp's own post-rotation pair, so it agrees with
- * the variants by construction rather than by a duplicated rotation rule here.
+ * Read `metadata.autoOrient` — sharp's OWN post-rotation pair — rather than
+ * deriving the transpose here from `metadata.orientation`. It agrees with the
+ * variants BY CONSTRUCTION: both come out of the same library applying the same
+ * rule to the same bytes. A local `orientation >= 5 ? swap : keep` would be a
+ * SECOND implementation of that rule, and a second implementation is a second
+ * thing that can drift — silently, because the two only disagree on the subset
+ * of images that carry a rotating EXIF tag.
+ *
+ * Do NOT "simplify" this to `meta.width` / `meta.height`. Those are the STORED
+ * pixels; sharp documents them as ignoring the Orientation header, so for
+ * orientations 5-8 they are the transpose of what every client actually draws.
  */
 function displayDimensions(meta: sharp.Metadata): { width?: number; height?: number } {
   const width = meta.autoOrient?.width ?? meta.width;
