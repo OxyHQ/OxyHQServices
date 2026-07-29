@@ -119,3 +119,74 @@ export const sessionAccountsChangedEventSchema = z.object({
 
 export type SessionAccountsChangedReason = z.infer<typeof sessionAccountsChangedReasonSchema>;
 export type SessionAccountsChangedEvent = z.infer<typeof sessionAccountsChangedEventSchema>;
+
+/* -------------------------------------------------------------------------- */
+/*  Background credential — native background code with no JS runtime         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Response from `POST /session/device/background-credential` — provisioned by
+ * the SDK WHILE THE APP IS RUNNING (bearer required, `deviceId` and account
+ * derived server-side from it) and consumed afterwards only by native
+ * background code, which has no JS runtime to mint a token for itself.
+ *
+ * Deliberately a SEPARATE credential from the rotating `deviceSecret`: that one
+ * rotates on every mint, so background code presenting it would become a second
+ * writer of a value the JS runtime depends on, and background code killed
+ * mid-rotation would silently sign the user out on the next cold start. Against
+ * this credential background code is the sole writer, and it can never rotate
+ * anything JS reads.
+ *
+ * The raw `secret` is returned exactly once, at provision time — never stored
+ * retrievably, never logged, never re-read. A caller that loses it provisions
+ * a new one.
+ *
+ * `expiresAt` is an unvalidated string, like every other expiry in this file:
+ * no consumer on the JS path interprets it (native background code parses it
+ * itself), and a `.datetime()` here alone would leave one strict field beside
+ * two lax ones. If expiry is ever validated it goes on all three at once, with
+ * the API's serializers checked against it — the producer is the same server.
+ */
+export const deviceBackgroundCredentialResponseSchema = z.object({
+  deviceId: z.string().min(1),
+  secret: z.string().min(1),
+  accountId: z.string().min(1),
+  expiresAt: z.string(),
+});
+
+/**
+ * Request body for `POST /session/device/background-token` — presented by
+ * native background code with NO bearer and NO cookies: possession of the
+ * background `secret` IS the proof, as it is for the device-secret mint.
+ *
+ * Unlike that mint this one NEVER rotates the presented secret (hence no
+ * `next…` field to persist in the response), so background code interrupted
+ * anywhere between request and response leaves the credential intact and
+ * usable on its next run.
+ */
+export const deviceBackgroundTokenRequestSchema = z.object({
+  deviceId: z.string().min(1),
+  secret: z.string().min(1),
+});
+
+/**
+ * Wire shape of a successful `POST /session/device/background-token`: the short
+ * access token, its expiry, and the account the token belongs to — the last so
+ * a caller can key cached data per account and drop data belonging to a
+ * foreign one.
+ *
+ * Carries NO device state — no account list, no `activeAccountId`, no
+ * `revision`, unlike {@link deviceTokenMintResponseSchema} — deliberately, to
+ * cap what a compromised credential record yields.
+ */
+export const deviceBackgroundTokenResponseSchema = z.object({
+  accessToken: z.string(),
+  expiresAt: z.string(),
+  accountId: z.string().min(1),
+});
+
+export type DeviceBackgroundCredentialResponse = z.infer<
+  typeof deviceBackgroundCredentialResponseSchema
+>;
+export type DeviceBackgroundTokenRequest = z.infer<typeof deviceBackgroundTokenRequestSchema>;
+export type DeviceBackgroundTokenResponse = z.infer<typeof deviceBackgroundTokenResponseSchema>;
