@@ -300,7 +300,7 @@ async function retireLegacyApplication(
   return result.modifiedCount ?? 0;
 }
 
-async function seed(): Promise<void> {
+async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
   const dryRun = process.env.DRY_RUN === 'true';
   const ownerUsername = process.env.OXY_USERNAME || 'oxy';
 
@@ -308,10 +308,6 @@ async function seed(): Promise<void> {
     logger.info('DRY RUN — no writes will be performed');
   }
 
-  // Resolved BEFORE anything is read or minted, so an unknown/empty ONLY_APPS
-  // aborts without having created the Oxy organization account or its owner
-  // membership as a side effect of a run that was never going to be valid.
-  const seedApps = selectSeedApplications(SEED_APPS, process.env.ONLY_APPS);
   logger.info('Seeding applications', {
     selected: seedApps.map((spec) => spec.name),
     of: SEED_APPS.length,
@@ -556,11 +552,16 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Resolved BEFORE connecting: a misspelled ONLY_APPS should cost nothing and
+  // must never reach the database — not even to mint the Oxy organization
+  // account as a side effect of a run that was never going to be valid.
+  const seedApps = selectSeedApplications(SEED_APPS, process.env.ONLY_APPS);
+
   await mongoose.connect(uri);
   logger.info('Connected to MongoDB');
 
   try {
-    await seed();
+    await seed(seedApps);
   } finally {
     await mongoose.connection.close();
     logger.info('MongoDB connection closed');
