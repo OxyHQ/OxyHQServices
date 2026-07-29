@@ -86,33 +86,44 @@ The transport that carries "which device is this?" across reloads is **`deviceId
 3. **Revocation** — sign-out-all (`POST /session/device/signout { all: true }`) clears
    `secretHash` so a retained secret can never mint again. A theft divergence is detected
    at the next mint (the loser's secret no longer matches → `invalid_device_secret`).
-4. **Cross-origin sync via IdP hub (zero cookies).** Each web origin still persists
-   its own `{ deviceId, deviceSecret }` copy in `localStorage`, but all official apps
+4. **Cross-origin convergence is USER-INITIATED (zero cookies).** Each web origin
+   persists its own `{ deviceId, deviceSecret }` copy in `localStorage`. Official apps
    (including custom domains like `mention.earth`) and third-party RPs converge on the
-   **same** server-side `DeviceSession` through two mechanisms:
-   - **Hub ticket sync** — after an interactive sign-in on an official satellite app,
-     the SDK POSTs `POST /session/device/hub-ticket` (bearer) and redirects once to
-     `auth.oxy.so/sync?ticket=…` so the IdP hub origin persists the same credentials
-     (no secrets in URL fragments).
-   - **Silent OAuth (`prompt=none`)** — on cold boot, when local mint fails, the SDK
-     redirects to `auth.oxy.so/authorize?prompt=none` + PKCE; the IdP auto-approves when
-     it already has a session + grant, exchanges the code for tokens on the **same**
-     `deviceId`, and persists locally. Realtime changes propagate over Socket.IO
-     `session_state` on `device:<deviceId>` once each app holds a bearer.
+   **same** server-side `DeviceSession` only when the user actually signs in on that
+   origin: the authorize round trip threads the same `deviceId`, so the origin ends up
+   holding a credential for the device session it just joined. Once each app holds a
+   bearer, realtime changes propagate over Socket.IO `session_state` on
+   `device:<deviceId>`.
 
-   Both hops are FULL-PAGE, non-gesture navigations, so both are gated on
-   `webAuthMode: 'redirect'` (`OxyProvider` prop, default; issue #691 Phases 2/7a) —
-   `webAuthMode: 'popup'` disables both (`allowsAutomaticIdpRedirect`), trading
-   cross-domain silent sync for a tab that never leaves the relying party's route. See
-   "Cold boot" below.
+   There is **no automatic convergence**. An origin the user has never signed in on
+   cold-boots SIGNED OUT and stays there until the user's next explicit "Continue with
+   Oxy" — the SDK never navigates the top-level window by itself. Both mechanisms that
+   used to do it were removed in issue #691 phase 7b, in every `webAuthMode`:
+
+   - **Silent OAuth restore** (`prompt=none` cold-boot bounce to
+     `auth.oxy.so/authorize`) — gone, on both ends. `crossOriginRestore.ts` and the
+     `allowsAutomaticIdpRedirect` gate were deleted; `'none'` was removed from the
+     `prompt` union of `buildOAuthAuthorizeUrl` so it cannot be rebuilt in one line;
+     and the IdP refuses an `authorize?prompt=none` it receives anyway with a visible
+     terminal screen instead of a silent redirect back, so it cannot be hidden in an
+     iframe or a background tab.
+   - **Hub-ticket sync** (`POST /session/device/hub-ticket` +
+     `/session/device/redeem-ticket` → a one-time redirect to `auth.oxy.so/sync`) —
+     gone, including the server routes, service, model, rate limiters, and the
+     `@oxyhq/contracts` ticket schemas.
+
+   Do not reintroduce either. The accepted trade is explicit: a signed-out first visit
+   on a new origin, in exchange for a tab that never leaves the relying party's route
+   without the user asking.
 
 ## Cold boot
 
 `runSessionColdBoot` (`packages/core/src/boot/sessionColdBoot.ts`, exported from
 `@oxyhq/core`) is a pure ordered short-circuit: the first step that yields a session
 wins. `@oxyhq/services`' `runProviderColdBoot` (`packages/services/src/ui/boot/`) wraps
-it with the web-only OAuth-return and silent-restore lanes described below. It is
-invoked by `OxyProvider` on mount — apps never implement restore themselves.
+it with the web-only OAuth-return lane described below. It is invoked by `OxyProvider`
+on mount — apps never implement restore themselves, and the boot never navigates the
+top-level window.
 
 **Two session modes** (`OxyProvider` prop `sessionMode: 'account' | 'identity'`, default
 `'account'`; issue #691 Phase 1): `'account'` is every ordinary Oxy app — the device's
@@ -147,23 +158,24 @@ PRIMARY identity key owns the session PERMANENTLY, independent of the device's m
    best-effort offline hint as step 2, and both run with `{ retry: false }` (the proactive
    refresh scheduler and the reactive 401 lane own retries).
 
-If nothing yields a session, `runSessionColdBoot` resolves signed out. Two more lanes run
-around it, in `@oxyhq/services`, for WEB apps in `'account'` mode only (both are inert in
-`sessionMode: 'identity'`, and gated on the transport described below):
+If nothing yields a session, `runSessionColdBoot` resolves signed out — silently, with no
+navigation and no dialog. One more lane runs around it, in `@oxyhq/services`, for WEB
+apps in `'account'` mode only (it is inert in `sessionMode: 'identity'`, which would
+otherwise commit whichever account the IdP resolves rather than the local key's owner):
 
 4. **OAuth authorization-code return** (`tryCompleteOAuthReturn`) — consumes a `?code=`
-   already on the URL from a redirect-mode third-party sign-in return trip, BEFORE
-   `runSessionColdBoot` runs. Always enabled — this is the user's own explicit sign-in
-   completing, not an automatic navigation.
-5. **Silent cross-origin OAuth restore** (`maybeStartSilentOAuthRestore`) — when
-   `runSessionColdBoot` found no session, a full-page `prompt=none` bounce to
-   `auth.oxy.so/authorize` + PKCE lets an official web origin pick up a session another
-   official origin already established. **Gated on `webAuthMode`** (`OxyProvider` prop,
-   default `'redirect'`; issue #691 Phases 2/7a): `'redirect'` reaches this lane
-   unchanged; `'popup'` FORBIDS it (`allowsAutomaticIdpRedirect`) — it is a top-level
-   navigation with no user gesture behind it, exactly what popup mode exists to
-   eliminate. A popup-mode domain with no local credential simply resolves signed out;
-   the user's next explicit "Continue with Oxy" click opens the popup instead.
+   **already on the URL**, BEFORE `runSessionColdBoot` runs. Always enabled in both
+   `webAuthMode`s: this is not a navigation the SDK started, it is the return leg of a
+   full-page authorize the user themselves triggered — either an explicit
+   `webAuthMode: 'redirect'` sign-in or a `'popup'` sign-in whose window the browser
+   blocked and which fell back to a redirect. It is also the single cleanup path for an
+   OAuth `?error=` landing on the URL (the params and the stale PKCE handshake are
+   stripped, and the boot continues).
+
+There is no fifth lane. The `prompt=none` silent cross-origin restore that used to run
+here was deleted in issue #691 phase 7b, in **both** transports — not gated, removed.
+A web origin with no local device credential resolves signed out and waits for the
+user's next explicit "Continue with Oxy".
 
 The proactive scheduler + the reactive 401 handler both re-mint via the same
 `deviceSecret` path (`refreshPersistedSession`), so a long-lived session stays alive past
@@ -171,7 +183,7 @@ the short access-token TTL without any refresh token.
 
 ```mermaid
 flowchart TD
-  Mount["OxyProvider mount"] --> Return{"?code= on URL? (redirect-mode OAuth return)"}
+  Mount["OxyProvider mount"] --> Return{"?code= already on URL? (authorize return leg)"}
   Return -->|yes| Exchange["Exchange code -> commit session"] --> In["Authenticated — no UI"]
   Return -->|no| Warm{"warm access token still valid?"}
   Warm -->|yes| In
@@ -183,10 +195,10 @@ flowchart TD
   Secret -->|no| Native{"account mode: native + Commons key? / identity mode: primary key"}
   Native -->|yes| Shared["shared-key-signin (account) / identity-key-signin (identity)"]
   Shared --> In
-  Native -->|"no / web"| Out["Signed out — silent"]
-  Out --> Popup{"account mode + webAuthMode=redirect + official web origin?"}
-  Popup -->|yes| Silent["prompt=none silent restore"] --> In
-  Popup -->|no| Btn["User taps Continue with Oxy -> OxyAccountDialog / OxySignInButton"]
+  Native -->|"no / web"| Out["Signed out — silent, no navigation"]
+  Out --> Btn["User taps Continue with Oxy -> OxyAccountDialog / OxySignInButton"]
+  Btn --> Gesture["Popup (default) or full-page redirect — from a real user gesture"]
+  Gesture --> In
 ```
 
 ## `SessionClient` (`@oxyhq/core`)
@@ -318,10 +330,12 @@ function Home() {
   `GET /auth/oauth/client/:clientId`: official apps open the dialog in-app;
   `third_party` apps sign in via OAuth + PKCE (`generatePkcePair`, `generateOAuthState`,
   `buildOAuthAuthorizeUrl` from `@oxyhq/core`). On web the transport is `OxyProvider`
-  prop `webAuthMode: 'popup' | 'redirect'` (default `'redirect'`; issue #691 Phase 2) —
+  prop `webAuthMode: 'popup' | 'redirect'` (default `'popup'`; issue #691 Phases 2/7b) —
   `'popup'` opens a small `auth.oxy.so` window and relays the result via `postMessage`
   instead of navigating the relying party's tab, falling back to a full-page redirect if
-  the browser blocks it. See the [integration guide](./auth/integration-guide.md).
+  the browser blocks it; `'redirect'` always does the full-page navigation. Either way
+  the hop only ever starts from a real user gesture. See the
+  [integration guide](./auth/integration-guide.md).
 - **`OxyConsentScreen`** — the IdP's OAuth consent surface, exported from
   `@oxyhq/services` and mounted by auth.oxy.so.
 
@@ -345,6 +359,18 @@ then deleted the entire cookie/refresh transport: the `oxy_device` cookie
 family (`/auth/refresh-token`, `/auth/logout`), and the opaque device-attribution token
 (the `POST /auth/device/token` native mint, the shared-keychain device token, and the
 anonymous device socket). Sockets are **bearer-only** — a signed-out client opens no
-socket. Cold boot is the two-step device-secret chain above — nothing else. Do not
-reintroduce cookies, a refresh-token family, a boot-fragment hop, an anonymous device
-socket, or per-app session restore.
+socket.
+
+Issue #691 phase 7b then removed the last two SDK-initiated, gesture-less full-page
+navigations to the IdP: the cold-boot **`prompt=none` silent restore**
+(`crossOriginRestore.ts`, `legacyRedirectLanes.ts`, and `'none'` as an accepted `prompt`
+value on `buildOAuthAuthorizeUrl`) and the post-sign-in **hub-ticket sync**
+(`hubSync.ts`, the `auth.oxy.so/sync` page, `POST /session/device/hub-ticket` +
+`/session/device/redeem-ticket`, the `DeviceHubTicket` model, and the ticket schemas in
+`@oxyhq/contracts`). `webAuthMode` now defaults to `'popup'` and only picks the transport
+for a sign-in the user actually asked for.
+
+Cold boot is the device-secret chain above plus the `?code=` return leg — nothing else.
+Do not reintroduce cookies, a refresh-token family, a boot-fragment hop, an anonymous
+device socket, per-app session restore, a silent `prompt=none` bounce, or a hub-sync
+redirect.

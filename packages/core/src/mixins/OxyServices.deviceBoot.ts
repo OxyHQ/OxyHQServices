@@ -15,12 +15,8 @@
  */
 import {
   deviceTokenMintResponseSchema,
-  deviceHubTicketIssueResponseSchema,
-  deviceHubTicketRedeemResponseSchema,
   safeParseContract,
   type DeviceTokenMintResponse,
-  type DeviceHubTicketIssueResponse,
-  type DeviceHubTicketRedeemResponse,
 } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
 
@@ -122,49 +118,6 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
           throw new AccountNotOnDeviceError(accountId, normalized);
         }
         throw normalized;
-      }
-    }
-
-    /** Mint a one-time hub sync ticket (bearer required). */
-    async issueHubTicket(returnOrigin: string): Promise<DeviceHubTicketIssueResponse> {
-      try {
-        const res = await this.makeRequest<unknown>(
-          'POST',
-          '/session/device/hub-ticket',
-          { returnOrigin },
-          { cache: false },
-        );
-        const parsed = safeParseContract(deviceHubTicketIssueResponseSchema, res);
-        if (!parsed) {
-          throw new Error('session/device/hub-ticket returned an unexpected response shape');
-        }
-        return parsed;
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }
-
-    /** Redeem a hub sync ticket for a fresh device secret (public). */
-    async redeemHubTicket(
-      ticket: string,
-      returnOrigin: string,
-    ): Promise<DeviceHubTicketRedeemResponse> {
-      try {
-        const res = await this.makeRequest<unknown>(
-          'POST',
-          '/session/device/redeem-ticket',
-          { ticket, returnOrigin },
-          // Public device-hub sync mint (bearer-less). Same control-plane class as
-          // the device-secret mint — bypassQueue so it never waits for a slot.
-          { cache: false, skipAuth: true, bypassQueue: true },
-        );
-        const parsed = safeParseContract(deviceHubTicketRedeemResponseSchema, res);
-        if (!parsed) {
-          throw new Error('session/device/redeem-ticket returned an unexpected response shape');
-        }
-        return parsed;
-      } catch (error) {
-        throw this.handleError(error);
       }
     }
   };

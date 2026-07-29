@@ -62,16 +62,18 @@ Key props (`OxyProviderProps`):
 
 | Prop | Default | Purpose |
 |------|---------|---------|
-| `clientId` | — | The app's registered OAuth client id (`ApplicationCredential.publicKey`, `oxy_dk_…`). Required for silent OAuth restore and the cross-app device sign-in flow (`POST /auth/session/create` identifies the requesting app by it). |
-| `authRedirectUri` | origin | OAuth redirect URI for silent restore and third-party sign-in. Defaults to the current web origin (origin-only, e.g. `https://mention.earth`). Optional `/oauth/callback` path for new apps — mount `OxyOAuthCallback` on that route. |
-| `hubSync` | `true` | After interactive sign-in on an official web app, redirect once to `auth.oxy.so/sync` to plant credentials on the IdP hub. Set `false` on the IdP itself (`auth.oxy.so`). |
+| `clientId` | — | The app's registered OAuth client id (`ApplicationCredential.publicKey`, `oxy_dk_…`). Required for the cross-app device sign-in flow (`POST /auth/session/create` identifies the requesting app by it). |
+| `authRedirectUri` | origin | OAuth redirect URI for third-party sign-in. Defaults to the current web origin (origin-only, e.g. `https://mention.earth`). Optional `/oauth/callback` path for new apps — mount `OxyOAuthCallback` on that route. |
+| `webAuthMode` | `'popup'` | How a web sign-in reaches the IdP. `'popup'` keeps the tab on its route; `'redirect'` navigates it. The popup transport falls back to a redirect on its own when the browser blocks the window, so the callback route must keep working in either mode. |
 | `baseURL` | — | Oxy API origin (`https://api.oxy.so`). |
 | `requireAuth` | `'off'` | Convenience wrapper: `'soft'` / `'hard'` wraps children in `<RequireOxyAuth prompt=…>`. |
 | `storageKeyPrefix`, `queryClient`, `oxyServices`, `onAuthStateChange` | — | Advanced overrides. |
 
 ### Device-first cold boot
 
-On mount every app runs `runProviderColdBoot` → `runSessionColdBoot` from `@oxyhq/core` — a two-step short-circuit: `device-secret-mint` (persisted `{deviceId, deviceSecret}` → `POST /session/device/token`, web + native) then `shared-key-signin` (native). Cold boot never auto-redirects to a login page; web apps without a local credential attempt **silent OAuth** (`auth.oxy.so/authorize?prompt=none` + PKCE) once per navigation. After interactive sign-in on an official app, `syncHubAfterSignIn` redirects to `auth.oxy.so/sync` so the IdP hub holds the same credentials.
+On mount every app runs `runProviderColdBoot` → `runSessionColdBoot` from `@oxyhq/core` — an ordered step chain: `warm-token-plant` (replay a still-valid persisted access token, no network), then `device-secret-mint` (persisted `{deviceId, deviceSecret}` → `POST /session/device/token`, web + native), then `shared-key-signin` (native; `identity-key-signin` instead under `sessionMode: 'identity'`).
+
+**Cold boot never navigates the top-level window.** An origin with no local credential resolves signed OUT and waits for the user's "Continue with Oxy" — there is no silent `prompt=none` restore and no post-login hub sync in any mode. Both were removed (issue #691 phase 7b) precisely because they moved the tab without a gesture, destroying in-page state on every cold boot. Do not reintroduce either, nor a `hubSync` prop.
 
 ## Session model (consumed from `@oxyhq/core`)
 

@@ -22,7 +22,7 @@ interface UseOxyAccountGraphParams {
   oxyServices: OxyServices;
   sessionClient: SessionClient;
   syncFromClient: () => Promise<void>;
-  commitSession: (input: CommitInput, options: { activate: boolean; hubSync?: boolean }) => Promise<void>;
+  commitSession: (input: CommitInput, options: { activate: boolean }) => Promise<void>;
   queryClient: QueryClient;
   accountDialogControllerRef: RefObject<AccountDialogController | null>;
   clearSessionStateRef: RefObject<() => Promise<void>>;
@@ -110,9 +110,9 @@ export function useOxyAccountGraph({
           userId: result.user.id,
           user: result.user,
         },
-        // A switch is IN-PLACE: never run the cross-origin hub-sync full-page
-        // redirect. Cross-tab/app propagation rides the `session_state` socket.
-        { activate: true, hubSync: false },
+        // A switch is IN-PLACE. Cross-tab/app propagation rides the
+        // `session_state` socket.
+        { activate: true },
       );
       await runPostAccountSwitchSideEffects();
     },

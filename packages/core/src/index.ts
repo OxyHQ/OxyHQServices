@@ -606,8 +606,6 @@ export {
     OXY_OAUTH_STATE_STORAGE_KEY,
     OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
     OXY_OAUTH_REDIRECT_URI_STORAGE_KEY,
-    OXY_SILENT_OAUTH_ATTEMPTED_KEY,
-    OXY_CROSS_ORIGIN_RESTORE_ATTEMPTED_KEY,
     OXY_OAUTH_RETURN_PATH_STORAGE_KEY,
     normalizeOAuthRedirectUri,
     canonicalizeOAuthRedirectUri,
@@ -620,21 +618,10 @@ export {
 export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
 
 export {
-    buildIdpHubOrigin,
-    buildHubSyncUrl,
-    isIdpHubOrigin,
     isLoopbackOrigin,
     isOfficialWebOrigin,
     isAllowedDeviceJoinOrigin,
-    normalizeOfficialReturnOrigin,
-    parseHubSyncReturnUrl,
 } from './utils/officialOrigins';
-
-export {
-    syncHubAfterSignIn,
-    redeemHubTicketOnHub,
-} from './session/hubSync';
-export type { SyncHubAfterSignInOptions } from './session/hubSync';
 
 // ---------------------------------------------------------------------------
 // Session sync (device-scoped multi-account session client)

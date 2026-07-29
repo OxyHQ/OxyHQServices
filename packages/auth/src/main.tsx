@@ -14,7 +14,6 @@ import { AuthLayout } from "@/src/pages/layout"
 import { LoginPage } from "@/src/pages/login"
 import { SignUpPage } from "@/src/pages/signup"
 import { AuthorizePage } from "@/src/pages/authorize"
-import { HubSyncPage } from "@/src/pages/hub-sync"
 import { HubPasskeyPage } from "@/src/pages/hub-passkey"
 import "@/app/globals.css"
 
@@ -52,7 +51,6 @@ function App() {
                 <OxyProvider
                     baseURL={getApiBaseUrl()}
                     clientId={OXY_CLIENT_ID}
-                    hubSync={false}
                 >
                     <BrowserRouter>
                         <Routes>
@@ -73,9 +71,6 @@ function App() {
                             <Route path="/settings/password" element={<ExternalRedirect url="https://accounts.oxy.so/security" />} />
                             <Route path="/settings/linked-accounts" element={<ExternalRedirect url="https://accounts.oxy.so/security" />} />
                             <Route path="/settings/sessions" element={<ExternalRedirect url="https://accounts.oxy.so/sessions" />} />
-
-                            {/* Callback routes (no layout) */}
-                            <Route path="/sync" element={<HubSyncPage />} />
 
                             <Route path="/" element={<ExternalRedirect url="https://oxy.so" />} />
                             <Route path="*" element={<Navigate to="/login" replace />} />

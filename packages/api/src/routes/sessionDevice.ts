@@ -1,11 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import type { DeviceSessionState } from '@oxyhq/contracts';
-import {
-  deviceTokenMintRequestSchema,
-  deviceHubTicketIssueRequestSchema,
-  deviceHubTicketRedeemRequestSchema,
-} from '@oxyhq/contracts';
-import { isOfficialWebOrigin, normalizeOfficialReturnOrigin } from '@oxyhq/core/server';
+import { deviceTokenMintRequestSchema } from '@oxyhq/contracts';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { decodeToken, extractTokenFromRequest } from '../middleware/authUtils';
@@ -24,18 +19,6 @@ const DEVICE_TOKEN_LOCKOUT_SCOPE = 'device-token';
 
 const deviceTokenLimiter = rateLimit({
   prefix: 'rl:session:device-token:',
-  windowMs: 60_000,
-  max: 30,
-});
-
-const hubTicketIssueLimiter = rateLimit({
-  prefix: 'rl:session:hub-ticket:',
-  windowMs: 60_000,
-  max: 30,
-});
-
-const hubTicketRedeemLimiter = rateLimit({
-  prefix: 'rl:session:redeem-ticket:',
   windowMs: 60_000,
   max: 30,
 });
@@ -132,77 +115,6 @@ router.post(
         // The device's TRUE state — a pin never rewrites `activeAccountId`, and
         // the response must not pretend otherwise.
         state,
-      },
-    });
-  }),
-);
-
-/**
- * POST /session/device/hub-ticket — mint a one-time ticket to sync device
- * credentials onto another official origin (typically auth.oxy.so).
- *
- * Bearer required; `deviceId` comes from the validated JWT claim.
- */
-router.post(
-  '/hub-ticket',
-  hubTicketIssueLimiter,
-  authMiddleware,
-  asyncHandler(async (req: AuthRequest, res: Response) => {
-    const parsed = deviceHubTicketIssueRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: 'returnOrigin is required' });
-      return;
-    }
-
-    const returnOrigin = normalizeOfficialReturnOrigin(parsed.data.returnOrigin);
-    if (!returnOrigin || !isOfficialWebOrigin(returnOrigin)) {
-      res.status(400).json({ error: 'invalid_return_origin' });
-      return;
-    }
-
-    const deviceId = resolveCallerDeviceId(req);
-    if (!deviceId) {
-      res.status(401).json({ error: 'No device' });
-      return;
-    }
-
-    const { issueHubTicket } = await import('../services/deviceHubTicket.service.js');
-    const issued = await issueHubTicket({ deviceId, returnOrigin });
-    res.json({ data: issued });
-  }),
-);
-
-/**
- * POST /session/device/redeem-ticket — exchange a one-time hub ticket for a
- * fresh device secret. PUBLIC: ticket possession is the proof.
- */
-router.post(
-  '/redeem-ticket',
-  hubTicketRedeemLimiter,
-  asyncHandler(async (req: Request, res: Response) => {
-    const parsed = deviceHubTicketRedeemRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: 'ticket and returnOrigin are required' });
-      return;
-    }
-
-    const returnOrigin = normalizeOfficialReturnOrigin(parsed.data.returnOrigin);
-    if (!returnOrigin || !isOfficialWebOrigin(returnOrigin)) {
-      res.status(400).json({ error: 'invalid_return_origin' });
-      return;
-    }
-
-    const { redeemHubTicket } = await import('../services/deviceHubTicket.service.js');
-    const outcome = await redeemHubTicket(parsed.data.ticket, returnOrigin);
-    if (!outcome.ok) {
-      res.status(401).json({ error: 'invalid_ticket' });
-      return;
-    }
-
-    res.json({
-      data: {
-        deviceId: outcome.deviceId,
-        deviceSecret: outcome.deviceSecret,
       },
     });
   }),
