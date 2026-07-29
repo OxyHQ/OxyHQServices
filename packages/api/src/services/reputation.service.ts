@@ -840,7 +840,7 @@ class ReputationService {
     await this.upsertRule({
       actionType: VALIDATION_CORRECT_ACTION,
       points: VALIDATION_CORRECT_POINTS,
-      category: 'moderation',
+      category: 'trust',
       description: 'Voted with the resolving majority on a peer validation',
       cooldownInMinutes: 0,
       isEnabled: true,

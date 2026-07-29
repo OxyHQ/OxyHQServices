@@ -10,6 +10,7 @@
     "clean": "rm -rf dist",
     "migrate:locations": "bun run src/utils/migrateLocations.ts",
     "register:commons-clients": "bun run scripts/register-commons-clients.ts",
+    "seed:oxy-applications": "bun run scripts/seed-oxy-applications.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",

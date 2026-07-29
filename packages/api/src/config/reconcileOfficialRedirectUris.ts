@@ -8,22 +8,9 @@
  */
 
 import mongoose from 'mongoose';
+import { computeOfficialRedirectUriRepair } from '../utils/redirectUris';
 import { logger } from '../utils/logger';
 import { isTrustedApplication } from '../utils/trustedApplication';
-
-function originOfWebsiteUrl(websiteUrl: string): string | null {
-  try {
-    return new URL(websiteUrl.trim()).origin;
-  } catch {
-    return null;
-  }
-}
-
-/** Exact-match helper — redirect URIs are compared literally, not by prefix. */
-function includesRedirectUri(allowlist: string[] | undefined, origin: string): boolean {
-  if (!allowlist?.length) return false;
-  return allowlist.some((entry) => entry === origin);
-}
 
 export async function reconcileOfficialRedirectUris(): Promise<number> {
   if (mongoose.connection.readyState !== 1) {
@@ -38,26 +25,15 @@ export async function reconcileOfficialRedirectUris(): Promise<number> {
   for (const app of apps) {
     if (!isTrustedApplication(app)) continue;
 
-    const websiteUrl = app.websiteUrl?.trim();
-    if (!websiteUrl) continue;
+    const repairedUris = computeOfficialRedirectUriRepair(app.redirectUris, app.websiteUrl);
+    if (!repairedUris) continue;
 
-    const origin = originOfWebsiteUrl(websiteUrl);
-    if (!origin) {
-      logger.warn('[reconcileOfficialRedirectUris] invalid websiteUrl', {
-        name: app.name,
-        websiteUrl,
-      });
-      continue;
-    }
-
-    if (includesRedirectUri(app.redirectUris, origin)) continue;
-
-    app.redirectUris = [origin];
+    app.redirectUris = repairedUris;
     await app.save();
     repaired += 1;
     logger.info('[reconcileOfficialRedirectUris] restored redirectUris', {
       name: app.name,
-      redirectUris: [origin],
+      redirectUris: repairedUris,
     });
   }
 

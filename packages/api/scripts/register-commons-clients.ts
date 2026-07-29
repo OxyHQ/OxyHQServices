@@ -31,9 +31,8 @@
  * The "Oxy Auth" app is the SAME record seeded by
  * `scripts/seed-oxy-applications.ts` (idempotency key is name + owner). This
  * script reuses that record and its credential; the only delta is that it UNIONS
- * the auth-RP redirect origins into `redirectUris` (the seed currently sets them
- * to `[]` because historically the IdP did not consume its own callback — see
- * the report note about keeping the seed in sync).
+ * the auth-RP redirect origins into `redirectUris` (the seed already registers
+ * `https://auth.oxy.so`; this script is idempotent if that origin is present).
  *
  * Safety:
  *   - No deletes, no drops. Existing redirectUris/scopes are UNIONed, never

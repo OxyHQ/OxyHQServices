@@ -29,7 +29,7 @@
  * Env:
  *   MONGODB_URI   required (injected by ECS from SSM)
  *   OXY_USERNAME  owner username to resolve (default 'oxy')
- *   DRY_RUN=true  plan only, no writes
+ *   DRY_RUN=1|true  plan only, no writes
  *   ONLY_APPS     comma-separated application names this run may touch. Unset
  *                 seeds the whole list. Set-but-empty, or naming an application
  *                 that is not in SEED_APPS, ABORTS before any write — see
@@ -49,6 +49,7 @@ import {
   type ApplicationScope,
 } from '../src/utils/applicationScopes';
 import { selectSeedApplications } from '../src/scripts/seedApplicationSelection';
+import { unionRedirectUris } from '../src/utils/redirectUris';
 
 // ── Mirror routes/applications.ts credential generation EXACTLY ──────────────
 const CREDENTIAL_PUBLIC_KEY_PREFIX = 'oxy_dk_';
@@ -301,7 +302,7 @@ async function retireLegacyApplication(
 }
 
 async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
-  const dryRun = process.env.DRY_RUN === 'true';
+  const dryRun = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
   const ownerUsername = process.env.OXY_USERNAME || 'oxy';
 
   if (dryRun) {
@@ -456,7 +457,12 @@ async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
       // pending sign-in request with zero eligible devices. Removing a
       // capability is an explicit staff operation, never a side effect of a
       // rebuild (same reasoning as `unionValidScopes` for scopes).
-      application.redirectUris = desiredAppFields.redirectUris;
+      // Additive union: keep any staff-added callback URI (e.g. a staging origin
+      // or a deep link unioned by `register-commons-clients.ts`).
+      application.redirectUris = unionRedirectUris(
+        application.redirectUris,
+        desiredAppFields.redirectUris,
+      );
       // Additive union: keep any valid already-granted scope so a re-run never
       // silently revokes an out-of-band grant (e.g. Mention's signals:write).
       application.scopes = unionValidScopes(desiredAppFields.scopes, application.scopes);
