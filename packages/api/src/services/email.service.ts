@@ -28,6 +28,7 @@ import {
 import { logger } from '../utils/logger';
 import { NotFoundError, BadRequestError } from '../utils/error';
 import userCache from '../utils/userCache';
+import { resolveEmailFromName } from '../utils/displayName';
 import { v4 as uuidv4 } from 'uuid';
 import { Reminder } from '../models/Reminder';
 import { Contact } from '../models/Contact';
@@ -167,8 +168,9 @@ class EmailService {
     const user = await User.findById(userId);
     if (!user) return;
 
-    const displayName = user.name?.first || user.username || 'there';
-    const recipientName = [user.name?.first, user.name?.last].filter(Boolean).join(' ') || user.username || '';
+    const emailName = resolveEmailFromName({ name: user.name, username: user.username });
+    const displayName = emailName || 'there';
+    const recipientName = emailName;
     const recipientAddress = user.username ? resolveEmailAddress(user.username) : `${userId}@${EMAIL_DOMAIN}`;
 
     const subject = 'Welcome to Inbox by Oxy';
@@ -957,9 +959,7 @@ class EmailService {
     if (!user || !user.username) throw new BadRequestError('User must have a username');
 
     const fromAddress = resolveEmailAddress(user.username);
-    const fromName = user.name?.first
-      ? `${user.name.first} ${user.name.last || ''}`.trim()
-      : user.username;
+    const fromName = resolveEmailFromName({ name: user.name, username: user.username });
 
     // Build and send the MDN message (RFC 3798)
     const originalMessageId = message.messageId;
@@ -1040,7 +1040,7 @@ class EmailService {
       userId: new mongoose.Types.ObjectId(userId),
       mailboxId: draftsMailbox._id,
       messageId: `<${uuidv4()}@${EMAIL_DOMAIN}>`,
-      from: { name: user.name?.first ? `${user.name.first} ${user.name.last || ''}`.trim() : user.username, address: fromAddress },
+      from: { name: resolveEmailFromName({ name: user.name, username: user.username }), address: fromAddress },
       to: draft.to ?? [],
       cc: draft.cc ?? [],
       bcc: draft.bcc ?? [],
@@ -1727,9 +1727,7 @@ class EmailService {
     }
 
     const fromAddress = resolveEmailAddress(user.username);
-    const fromName = user.name?.first
-      ? `${user.name.first} ${user.name.last || ''}`.trim()
-      : user.username;
+    const fromName = resolveEmailFromName({ name: user.name, username: user.username });
 
     // Build forwarded subject
     const subject = message.subject?.startsWith('Fwd:')
@@ -2490,9 +2488,7 @@ class EmailService {
                 await smtpOutbound.send({
                   userId,
                   from: {
-                    name: user.name?.first
-                      ? `${user.name.first} ${user.name.last || ''}`.trim()
-                      : user.username,
+                    name: resolveEmailFromName({ name: user.name, username: user.username }),
                     address: resolveEmailAddress(user.username),
                   },
                   to: [{ address, name: '' }],

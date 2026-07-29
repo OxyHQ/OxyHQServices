@@ -19,6 +19,7 @@ import {
   NotFoundError,
 } from '../utils/error';
 import { logger } from '../utils/logger';
+import { resolveEmailFromName } from '../utils/displayName';
 import type { RecipientInput, AttachmentInput } from '../schemas/email.schemas';
 
 /**
@@ -418,9 +419,7 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
   }
 
   const fromAddress = resolveEmailAddress(user.username);
-  const fromName = user.name?.first
-    ? `${user.name.first} ${user.name.last || ''}`.trim()
-    : user.username;
+  const fromName = resolveEmailFromName({ name: user.name, username: user.username });
 
   const allRecipients = [...to, ...(cc ?? []), ...(bcc ?? [])];
 

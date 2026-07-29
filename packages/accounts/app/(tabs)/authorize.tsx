@@ -15,7 +15,7 @@ import { useColors } from '@/hooks/useColors';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Button } from '@/components/ui';
-import { getAccountDisplayName } from '@oxyhq/core';
+import { getAccountDisplayName, getNormalizedUserHandle } from '@oxyhq/core';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useTranslation } from '@/lib/i18n';
 
@@ -135,7 +135,10 @@ export default function AuthorizeScreen() {
   }, [params.token, oxyServices, router]);
 
   // Get user display name via the canonical helper.
-  const displayName = useMemo(() => getAccountDisplayName(user, locale), [user, locale]);
+  const displayName = useMemo(
+    () => user?.name?.displayName ?? getNormalizedUserHandle(user) ?? getAccountDisplayName(null, locale),
+    [user, locale],
+  );
 
   // Get avatar URL
   const avatarUrl = useAvatarUrl(user);
