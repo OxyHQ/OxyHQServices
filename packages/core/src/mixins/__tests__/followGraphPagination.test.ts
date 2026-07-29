@@ -213,6 +213,21 @@ describe('follow-graph pagination and ordering', () => {
       expect(after.following).toEqual([{ id: 'target-1' }]);
     });
 
+    it('re-fetches the followers list after unfollowUser', async () => {
+      fetchMock.mockResolvedValueOnce(pageResponse([{ id: 'a' }, { id: 'me' }], 2, false));
+      await oxy.getUserFollowers('target-1', { limit: 10, offset: 0 });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, message: 'ok' }));
+      await oxy.unfollowUser('target-1');
+
+      fetchMock.mockResolvedValueOnce(pageResponse([{ id: 'a' }], 1, false));
+      const after = await oxy.getUserFollowers('target-1', { limit: 10, offset: 0 });
+
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(after.followers).toHaveLength(1);
+    });
+
     it('invalidates every page and sort variant, not just the one that was read', async () => {
       const clearPrefixSpy = jest.spyOn(oxy, 'clearCacheByPrefix');
       fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, message: 'ok' }));

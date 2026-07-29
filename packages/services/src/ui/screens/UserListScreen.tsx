@@ -199,7 +199,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         </TouchableOpacity>
       );
     },
-    [handleUserPress, currentUserId, oxyServices, locale]
+    [handleUserPress, currentUserId, oxyServices]
   );
 
   const renderEmpty = useCallback(() => {
