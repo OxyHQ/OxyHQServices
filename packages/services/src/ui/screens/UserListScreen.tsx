@@ -19,7 +19,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { logger, getNormalizedUserHandle, getAccountFallbackHandle } from '@oxyhq/core';
-import type { User } from '@oxyhq/core';
+import type { User, FollowGraphSort } from '@oxyhq/core';
 
 type ListMode = 'followers' | 'following';
 
@@ -27,6 +27,12 @@ interface UserListScreenProps extends BaseScreenProps {
   userId: string;
   mode: ListMode;
   initialCount?: number;
+  /**
+   * Ordering of the list — `recent` (newest follow first) or `oldest`.
+   * Omitted ⇒ the server default (`recent`). Changing it re-fetches from
+   * offset 0, since a page boundary is meaningless across two orderings.
+   */
+  sort?: FollowGraphSort;
 }
 
 const PAGE_SIZE = 20;
@@ -46,6 +52,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   userId,
   mode,
   initialCount,
+  sort,
   navigate,
 }) => {
   const { oxyServices, user: currentUser } = useOxy();
@@ -85,12 +92,12 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         let hasMore: boolean;
 
         if (mode === 'followers') {
-          const result = await oxyServices.getUserFollowers(userId, { limit: PAGE_SIZE, offset });
+          const result = await oxyServices.getUserFollowers(userId, { limit: PAGE_SIZE, offset, sort });
           newUsers = result.followers;
           total = result.total;
           hasMore = result.hasMore;
         } else {
-          const result = await oxyServices.getUserFollowing(userId, { limit: PAGE_SIZE, offset });
+          const result = await oxyServices.getUserFollowing(userId, { limit: PAGE_SIZE, offset, sort });
           newUsers = result.following;
           total = result.total;
           hasMore = result.hasMore;
@@ -115,7 +122,10 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         setIsRefreshing(false);
       }
     },
-    [userId, mode, oxyServices]
+    // `sort` belongs here: without it the callback would close over the first
+    // ordering forever, and the mount effect below (keyed on `fetchUsers`)
+    // would never re-run — flipping the control would change nothing.
+    [userId, mode, sort, oxyServices]
   );
 
   useEffect(() => {
