@@ -70,6 +70,7 @@ import {
   activeUserOf,
   accountIdsOf,
   IdentityBoundSessionError,
+  useBackgroundSessionSync,
   type IdentitySessionBinding,
 } from '../session';
 import type {
@@ -103,6 +104,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   clientId: clientIdProp,
   sessionMode = 'account',
   webAuthMode = 'popup',
+  backgroundSession = false,
   onAuthStateChange,
   onError,
 }) => {
@@ -1194,6 +1196,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const canUsePrivateApi = authResolved && isAuthenticated && tokenReady && hasAccessToken;
   const isPrivateApiPending = !authResolved || (isAuthenticated && (!tokenReady || !hasAccessToken));
+
+  // Keep the native background credential in step with this session, so native
+  // background code (a widget worker) can authenticate with no JS runtime. Inert
+  // unless the app opted in. Placed AFTER `canUsePrivateApi` because provisioning
+  // needs a bearer, and keyed on the signed-in account so a sign-out or an
+  // account switch revokes the credential before anything else happens.
+  useBackgroundSessionSync({
+    enabled: backgroundSession,
+    oxyServices,
+    userId: user?.id ?? null,
+    canUsePrivateApi,
+  });
 
   const contextValue: OxyContextState = useMemo(
     () => ({

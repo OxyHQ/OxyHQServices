@@ -42,6 +42,7 @@ module.exports = {
     '^@oxyhq/core$': '<rootDir>/../core/src/index.ts',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^react-native$': '<rootDir>/__tests__/__mocks__/react-native.ts',
+    '^expo-modules-core$': '<rootDir>/__tests__/__mocks__/expo-modules-core.ts',
     '^react-native-reanimated$': '<rootDir>/__tests__/__mocks__/reanimated.ts',
     '^react-native-svg$': '<rootDir>/__tests__/__mocks__/react-native-svg.ts',
     '^@oxyhq/bloom$': '<rootDir>/__tests__/__mocks__/bloom.ts',

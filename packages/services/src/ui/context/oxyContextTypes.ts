@@ -176,6 +176,28 @@ export interface OxyContextProviderProps {
    * @default 'popup'
    */
   webAuthMode?: WebAuthMode;
+  /**
+   * Let NATIVE background code (a home-screen widget's WorkManager worker, a sync
+   * job) authenticate while the app process is dead and there is no JS runtime.
+   *
+   * With this on, the SDK provisions a purpose-built background credential
+   * whenever the app runs and stores it where `so.oxy.session.OxyBackgroundSession`
+   * can read it; Kotlin then exchanges it for a short access token on demand. The
+   * app writes no session code — this prop is the whole integration.
+   *
+   * OFF by default, because a credential that nobody needs is exposure that
+   * nobody needs. Turn it on only in an app that actually has background code to
+   * authenticate. Android-only today; inert on web and iOS.
+   *
+   * The credential cannot create a session (only the running app can provision
+   * one), cannot rotate or otherwise disturb the app's own device credential, and
+   * is re-authorized server-side on every use so it can never outlive a sign-out.
+   * It does NOT reduce authority: the token it mints is a full user access token,
+   * exactly like the device credential's.
+   *
+   * @default false
+   */
+  backgroundSession?: boolean;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
 }
