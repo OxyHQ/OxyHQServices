@@ -19,7 +19,7 @@
 import { useMemo } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
-import type { ReputationBalance } from '@oxyhq/core';
+import type { ReputationBalance } from '@oxyhq/contracts';
 import {
   deriveReputationSources,
   type ReputationSource,

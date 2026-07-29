@@ -2,7 +2,7 @@ import mongoose, { type Document, Schema } from 'mongoose';
 import {
   REPUTATION_CATEGORIES,
   type ReputationCategory,
-} from '../utils/reputation.constants';
+} from '@oxyhq/contracts';
 
 /**
  * A configurable reputation award/penalty rule.

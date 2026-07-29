@@ -167,35 +167,12 @@ export type {
 export { ORGANIZATION_CATEGORIES } from './mixins/OxyServices.accounts';
 
 // ---------------------------------------------------------------------------
-// Reputation (Oxy Trust: ledger, balances, disputes, rules, influence)
+// Reputation (Oxy Trust: ledger, balances, disputes, rules, influence).
+// The whole type family — the closed value sets, the two balance views and the
+// `isFullReputationBalance` narrowing guard, the ledger/dispute/rule/leaderboard
+// shapes, and the write-endpoint inputs — is owned by `@oxyhq/contracts`, which
+// the API's serializers are validated against. Import them from there.
 // ---------------------------------------------------------------------------
-export type {
-    ReputationCategory,
-    TrustTier,
-    ReputationTransactionStatus,
-    ReputationTargetEntityType,
-    ReputationDisputeStatus,
-    ReputationInfluenceContext,
-    ReputationTransaction,
-    ReputationBalanceBreakdown,
-    ReputationInfluence,
-    ReputationReliability,
-    ReputationBalanceSummary,
-    ReputationBalance,
-    ReputationBalanceView,
-    ReputationDispute,
-    ReputationRule,
-    ReputationLeaderboardEntry,
-    ReputationInfluenceResult,
-    ReverseReputationTransactionResult,
-    AwardReputationInput,
-    CreateReputationDisputeInput,
-    ResolveReputationDisputeInput,
-    UpsertReputationRuleInput,
-    ReverseReputationTransactionInput,
-} from './mixins/OxyServices.reputation';
-
-export { isFullReputationBalance } from './mixins/OxyServices.reputation';
 
 // ---------------------------------------------------------------------------
 // Self-sovereign identity (DID, signed records, auth-method ↔ VM mapping,

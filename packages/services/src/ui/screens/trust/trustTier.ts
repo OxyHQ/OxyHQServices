@@ -1,4 +1,4 @@
-import type { TrustTier } from '@oxyhq/core';
+import type { TrustTier } from '@oxyhq/contracts';
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
 

@@ -4,7 +4,7 @@ import { View, Text } from 'react-native';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Chip } from '@oxyhq/bloom/chip';
 import { useTheme } from '@oxyhq/bloom/theme';
-import type { ReputationRule, ReputationCategory } from '@oxyhq/core';
+import type { ReputationRule, ReputationCategory } from '@oxyhq/contracts';
 import type { BaseScreenProps } from '../../types/navigation';
 import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
 import { Loading } from '@oxyhq/bloom/loading';

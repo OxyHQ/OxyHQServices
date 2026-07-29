@@ -1,5 +1,5 @@
 import mongoose, { type Document, Schema } from 'mongoose';
-import { TRUST_TIERS, type TrustTier } from '../utils/reputation.constants';
+import { TRUST_TIERS, type TrustTier } from '@oxyhq/contracts';
 
 /**
  * Per-category sums of ACTIVE transactions for a user. `penalties` is the

@@ -1,13 +1,14 @@
 import mongoose, { Document, Schema } from "mongoose";
-import { ORGANIZATION_CATEGORIES, type OrganizationCategory } from "@oxyhq/contracts";
+import {
+  ORGANIZATION_CATEGORIES,
+  TRUST_TIERS,
+  type OrganizationCategory,
+  type TrustTier,
+} from "@oxyhq/contracts";
 import { maybeHashEmail, maybeHashPhone } from "../utils/contactHash";
 import { composeDisplayName } from "../utils/displayName";
 import { buildUserDid } from "../services/did.service";
-import {
-  TRUST_TIERS,
-  INFLUENCE_MIN,
-  type TrustTier,
-} from "../utils/reputation.constants";
+import { INFLUENCE_MIN } from "../utils/reputation.constants";
 
 /**
  * Methods by which a user can prove ownership of a custom domain for the

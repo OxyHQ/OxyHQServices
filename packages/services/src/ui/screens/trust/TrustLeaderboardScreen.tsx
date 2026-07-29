@@ -7,7 +7,7 @@ import {
     FlatList,
     TouchableOpacity,
 } from 'react-native';
-import type { ReputationLeaderboardEntry } from '@oxyhq/core';
+import type { ReputationLeaderboardEntry } from '@oxyhq/contracts';
 import { getNormalizedUserHandle, logger } from '@oxyhq/core';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H6, Text } from '@oxyhq/bloom/typography';

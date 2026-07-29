@@ -215,6 +215,74 @@ export type {
 } from './civic';
 
 export {
+    // Closed value sets — shared by the API's mongoose enums, the API's request
+    // validation, and the SDK's unions, so a new category/tier/status cannot be
+    // added on one side only.
+    REPUTATION_CATEGORIES,
+    REPUTATION_TRANSACTION_STATUSES,
+    TRUST_TIERS,
+    REPUTATION_TARGET_ENTITY_TYPES,
+    REPUTATION_DISPUTE_STATUSES,
+    REPUTATION_INFLUENCE_CONTEXTS,
+    // Schemas — closed value sets
+    reputationCategorySchema,
+    reputationTransactionStatusSchema,
+    trustTierSchema,
+    reputationTargetEntityTypeSchema,
+    reputationDisputeStatusSchema,
+    reputationInfluenceContextSchema,
+    // Schemas — responses
+    reputationTransactionSchema,
+    reputationBalanceBreakdownSchema,
+    reputationInfluenceSchema,
+    reputationReliabilitySchema,
+    reputationBalanceSummarySchema,
+    reputationBalanceSchema,
+    reputationDisputeSchema,
+    reputationRuleSchema,
+    reputationLeaderboardUserSchema,
+    reputationLeaderboardEntrySchema,
+    reputationInfluenceResultSchema,
+    reverseReputationTransactionResultSchema,
+    // Schemas — request bodies
+    awardReputationSchema,
+    createReputationDisputeSchema,
+    resolveReputationDisputeSchema,
+    upsertReputationRuleSchema,
+    reverseReputationTransactionSchema,
+    // Narrows the two balance views apart at runtime.
+    isFullReputationBalance,
+} from './reputation';
+
+export type {
+    ReputationCategory,
+    ReputationTransactionStatus,
+    TrustTier,
+    ReputationTargetEntityType,
+    ReputationDisputeStatus,
+    ReputationInfluenceContext,
+    ReputationTransaction,
+    ReputationBalanceBreakdown,
+    ReputationInfluence,
+    ReputationReliability,
+    ReputationBalanceSummary,
+    ReputationBalance,
+    ReputationBalanceView,
+    ReputationDispute,
+    ReputationRule,
+    ReputationLeaderboardUser,
+    ReputationLeaderboardEntry,
+    ReputationInfluenceResult,
+    ReverseReputationTransactionResult,
+    AwardReputationInput,
+    CreateReputationDisputeInput,
+    ResolveReputationDisputeInput,
+    UpsertReputationRuleInput,
+    UpsertReputationRuleRequest,
+    ReverseReputationTransactionInput,
+} from './reputation';
+
+export {
     // Schemas
     linkPreviewSchema,
     linkPreviewBatchRequestSchema,

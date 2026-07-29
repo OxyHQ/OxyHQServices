@@ -24,8 +24,8 @@ import {
   REPORT_WEIGHT_ACCURACY_OFFSET,
   TRUST_TIER_HIGH_TRUST_MIN,
   TRUST_TIER_TRUSTED_MIN,
-  type TrustTier,
 } from './reputation.constants';
+import type { TrustTier } from '@oxyhq/contracts';
 import type {
   ReputationInfluence,
   ReputationReliability,
