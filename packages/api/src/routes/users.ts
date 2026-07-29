@@ -1173,7 +1173,10 @@ router.put(
 
     logger.info('User privacy settings updated', { userId });
 
-    sendSuccess(res, updatedUser);
+    sendSuccess(
+      res,
+      userService.formatUserResponse(updatedUser, undefined, { includePrivateFields: true }),
+    );
   })
 );
 

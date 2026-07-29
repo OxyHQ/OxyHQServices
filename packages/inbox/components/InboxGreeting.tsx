@@ -11,6 +11,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { SPACING as BLOOM_SPACING } from '@oxyhq/bloom/design-tokens';
 
 import { useColors } from '@/constants/theme';
@@ -60,7 +61,7 @@ export function InboxGreeting({ messages }: { messages: Message[] }) {
     [today],
   );
 
-  const greetingName = user?.name?.displayName ?? '';
+  const greetingName = user?.name?.displayName ?? getNormalizedUserHandle(user) ?? '';
   const greetingLine = greetingName ? `${getGreeting()} ${greetingName}` : getGreeting();
 
   /**

@@ -73,6 +73,70 @@ describe('Alia proxy route', () => {
     }
   });
 
+  it('proxies voice token requests to the Alia API with the server key', async () => {
+    mockedAxios.post.mockResolvedValueOnce({
+      data: { token: 'lk-token', url: 'wss://livekit.example', roomName: 'room', sessionId: 'sess' },
+    });
+
+    const { default: aliaRouter } = await import('../alia');
+    const app = express();
+    app.use(express.json());
+    app.use('/v1', aliaRouter);
+
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const payload = JSON.stringify({ model: 'alia-v1-voice', voice: 'nova' });
+      const response = await new Promise<RawResponse>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: '127.0.0.1',
+            port,
+            path: '/v1/voice/token',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(payload),
+            },
+          },
+          (res) => {
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+            res.on('end', () => {
+              resolve({
+                status: res.statusCode ?? 0,
+                body: Buffer.concat(chunks).toString('utf8'),
+              });
+            });
+          },
+        );
+        req.on('error', reject);
+        req.end(payload);
+      });
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'https://api.alia.onl/v1/voice/token',
+        { model: 'alia-v1-voice', voice: 'nova' },
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer test-alia-key',
+          }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({
+        token: 'lk-token',
+        url: 'wss://livekit.example',
+        roomName: 'room',
+        sessionId: 'sess',
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it('returns a safe JSON error when an upstream streaming request fails with a stream body', async () => {
     const streamBody = new IncomingMessage(null as never);
 

@@ -246,6 +246,7 @@ export interface BlockedUser {
     _id: string;
     username: string;
     avatar?: string;
+    name?: { displayName?: string };
   };
   userId: string;
   createdAt?: string;
@@ -260,6 +261,7 @@ export interface RestrictedUser {
     _id: string;
     username: string;
     avatar?: string;
+    name?: { displayName?: string };
   };
   userId: string;
   createdAt?: string;

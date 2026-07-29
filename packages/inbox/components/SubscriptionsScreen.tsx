@@ -102,26 +102,18 @@ export function SubscriptionsScreen() {
     (subscriptionId: string) => {
       const index = subscriptions.findIndex((s) => s._id === subscriptionId);
       if (index < 0) return;
-      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
-    },
-    [subscriptions],
-  );
-
-  const handleScrollToIndexFailed = useCallback(
-    (info: { index: number; averageItemLength: number }) => {
+      // FlashList 2 removed onScrollToIndexFailed — approximate offset first when
+      // the target row may not be measured yet (e.g. after pagination).
+      const estimatedRowHeight = 72;
       listRef.current?.scrollToOffset({
-        offset: info.averageItemLength * info.index,
+        offset: estimatedRowHeight * index,
         animated: false,
       });
       requestAnimationFrame(() => {
-        listRef.current?.scrollToIndex({
-          index: info.index,
-          animated: true,
-          viewPosition: 0,
-        });
+        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0 });
       });
     },
-    [],
+    [subscriptions],
   );
 
   const renderItem = useCallback(
@@ -243,7 +235,6 @@ export function SubscriptionsScreen() {
           ref={listRef}
           data={subscriptions}
           renderItem={renderItem}
-          onScrollToIndexFailed={handleScrollToIndexFailed}
           ItemSeparatorComponent={renderSeparator}
           ListHeaderComponent={
             <>

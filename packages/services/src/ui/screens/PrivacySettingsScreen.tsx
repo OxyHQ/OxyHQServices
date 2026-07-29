@@ -14,7 +14,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useSettingToggles } from '../hooks/useSettingToggle';
 import type { BlockedUser, RestrictedUser } from '@oxyhq/core';
-import { getAccountDisplayName } from '@oxyhq/core';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 
 interface PrivacySettings {
@@ -68,7 +68,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     // Privacy settings belong to the ACTIVE account (the org/project/bot when
     // switched, else the personal user).
     const { oxyServices, user } = useOxy();
-    const { t, locale } = useI18n();
+    const { t } = useI18n();
 
     useSurfaceHeader({ title: t('privacySettings.title') || 'Privacy Settings' });
     const bloomTheme = useTheme();
@@ -176,35 +176,37 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     }, [oxyServices, t]);
 
     // Helper to extract user info from blocked/restricted objects.
-    // Display names go through the canonical helper so the fallback chain is
-    // identical across every UI surface (name → username → publicKey → "Unnamed").
     const extractUserInfo = useCallback((
         item: BlockedUser | RestrictedUser,
         idField: 'blockedId' | 'restrictedId'
     ) => {
-        let userIdField: string | { _id: string; username?: string; avatar?: string };
-        let userShape: { username?: string };
+        let userIdField: string | { _id: string; username?: string; avatar?: string; name?: { displayName?: string } };
+        let userShape: { username?: string; name?: { displayName?: string } };
         let avatar: string | undefined;
 
         if (idField === 'blockedId' && 'blockedId' in item) {
             userIdField = item.blockedId;
             userShape = typeof item.blockedId === 'string'
                 ? { username: item.username }
-                : { username: item.blockedId.username };
+                : { username: item.blockedId.username, name: item.blockedId.name };
             avatar = typeof item.blockedId === 'string' ? item.avatar : item.blockedId.avatar;
         } else if (idField === 'restrictedId' && 'restrictedId' in item) {
             userIdField = item.restrictedId;
             userShape = typeof item.restrictedId === 'string'
                 ? { username: item.username }
-                : { username: item.restrictedId.username };
+                : { username: item.restrictedId.username, name: item.restrictedId.name };
             avatar = typeof item.restrictedId === 'string' ? item.avatar : item.restrictedId.avatar;
         } else {
-            return { userId: '', displayName: getAccountDisplayName(null, locale), avatar: undefined };
+            return { userId: '', displayName: getNormalizedUserHandle(null) ?? '', avatar: undefined };
         }
 
         const userId = typeof userIdField === 'string' ? userIdField : userIdField._id;
-        return { userId, displayName: getAccountDisplayName(userShape, locale), avatar };
-    }, [locale]);
+        return {
+            userId,
+            displayName: userShape.name?.displayName ?? getNormalizedUserHandle(userShape) ?? '',
+            avatar,
+        };
+    }, []);
 
     if (isLoading) {
         return (

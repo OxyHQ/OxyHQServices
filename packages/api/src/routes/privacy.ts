@@ -93,7 +93,7 @@ const createUserListHandler = <T extends Document>(
   return asyncHandler(async (req: Request, res: Response) => {
     const authUser = (req as AuthenticatedRequest).user;
     const users = await UserModel.find({ userId: authUser?.id })
-      .populate(fieldName, 'username avatar')
+      .populate(fieldName, 'username avatar name')
       .lean();
     res.json(users);
   });

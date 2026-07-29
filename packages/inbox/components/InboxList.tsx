@@ -29,6 +29,7 @@ import { SPACING, CONTENT_MAX_WIDTH } from '@/constants/layout';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useTabBarClearance } from '@/hooks/useTabBarClearance';
+import { useTranslation } from '@/lib/i18n';
 import { useInboxPrefs, type SwipeAction } from '@/contexts/inbox-prefs-context';
 import { useInboxDisplayPrefs } from '@/hooks/useInboxDisplayPrefs';
 import { useMessageActions } from '@/hooks/useMessageActions';
@@ -142,7 +143,28 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const tabBarFootprint = useTabBarFootprint();
   const tabBarClearance = useTabBarClearance();
   const colors = useColors();
+  const { t } = useTranslation();
   const aliaChatRef = useRef<AliaChatSheetRef>(null);
+  const aliaWelcomeSuggestions = useMemo(
+    () => [
+      {
+        id: 'unread',
+        title: t('inbox.aliaSuggestions.unread.label'),
+        description: t('inbox.aliaSuggestions.unread.prompt'),
+      },
+      {
+        id: 'today-summary',
+        title: t('inbox.aliaSuggestions.todaysSummary.label'),
+        description: t('inbox.aliaSuggestions.todaysSummary.prompt'),
+      },
+      {
+        id: 'with-attachments',
+        title: t('inbox.aliaSuggestions.withAttachments.label'),
+        description: t('inbox.aliaSuggestions.withAttachments.prompt'),
+      },
+    ],
+    [t],
+  );
   const { isAuthenticated } = useOxy();
   const { prefs } = useInboxPrefs();
   const { conversationView, density, showAvatars, showPreviews } = useInboxDisplayPrefs();
@@ -803,14 +825,10 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           <AliaChatSheet
             ref={aliaChatRef}
             apiUrl={ALIA_PROXY_API_URL}
+            model="alia-lite"
             voiceSession={VoiceSession}
-            clientContext="User is in the Inbox app viewing their email. Use oxy_inbox tools to access their emails."
-            // AliaChatSheet's welcome suggestions are {id, title, description}; per-item icons are no longer supported upstream.
-            welcomeSuggestions={[
-              { id: 'unread', title: 'Unread emails', description: 'What emails need my attention?' },
-              { id: 'today-summary', title: "Today's summary", description: 'Summarize my emails from today' },
-              { id: 'with-attachments', title: 'With attachments', description: 'Find emails with attachments' },
-            ]}
+            clientContext={t('inbox.aliaClientContext')}
+            welcomeSuggestions={aliaWelcomeSuggestions}
           />
         </>
       )}

@@ -34,6 +34,29 @@ const toSafeErrorMessage = (data: unknown): unknown => {
   }
 };
 
+const proxyAliaJson = async (req: Request, res: Response, path: string) => {
+  const apiKey = ALIA_API_KEY;
+  if (!apiKey) {
+    res.status(500).json({ error: 'ALIA_API_KEY not configured on server' });
+    return;
+  }
+
+  try {
+    const response = await axios.post(`${ALIA_BASE_URL}${path}`, req.body, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      responseType: 'json',
+    });
+    res.json(response.data);
+  } catch (err: any) {
+    const status = err.response?.status ?? 502;
+    const message = toSafeErrorMessage(err.response?.data);
+    res.status(status).json({ error: 'ALIA_PROXY_ERROR', message });
+  }
+};
+
 /**
  * POST /api/alia/chat/completions
  * Proxies chat completion requests to the Alia API.
@@ -71,5 +94,13 @@ router.post('/chat/completions', authMiddleware, async (req: Request, res: Respo
     res.status(status).json({ error: 'ALIA_PROXY_ERROR', message });
   }
 });
+
+/** POST /v1/voice/token — LiveKit session mint for Alia voice (inbox, etc.). */
+router.post('/voice/token', authMiddleware, (req, res) => proxyAliaJson(req, res, '/voice/token'));
+
+/** POST /v1/voice/transcribe — speech-to-text for Alia chat input. */
+router.post('/voice/transcribe', authMiddleware, (req, res) =>
+  proxyAliaJson(req, res, '/voice/transcribe'),
+);
 
 export default router;
