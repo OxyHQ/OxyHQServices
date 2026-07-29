@@ -49,12 +49,7 @@ jest.mock('../../src/ui/context/OxyContext', () => ({
   useOxy: () => ({ oxyServices: { listUserFiles }, activeSessionId: 's1' }),
 }));
 
-// The error state renders vector icons, which don't parse under ts-jest.
-jest.mock('@expo/vector-icons', () => ({
-  __esModule: true,
-  Ionicons: () => null,
-  MaterialCommunityIcons: () => null,
-}));
+// Vector icons are stubbed globally via jest.config.js moduleNameMapper.
 
 import { useFileUploadState } from '../../src/ui/screens/fileManagement/hooks/useFileUploadState';
 

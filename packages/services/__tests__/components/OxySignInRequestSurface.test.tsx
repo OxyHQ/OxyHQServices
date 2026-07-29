@@ -40,12 +40,6 @@ jest.mock('react-native-qrcode-svg', () => ({
     require('react').createElement('span', { 'data-testid': 'qrcode' }, value),
 }));
 
-jest.mock('@expo/vector-icons', () => ({
-  __esModule: true,
-  MaterialCommunityIcons: () => null,
-  Ionicons: () => null,
-}));
-
 // eslint-disable-next-line import/first
 import { OxySignInRequestSurface } from '../../src/ui/components/OxySignInRequestSurface';
 

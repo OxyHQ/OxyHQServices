@@ -46,6 +46,7 @@ module.exports = {
     '^react-native-svg$': '<rootDir>/__tests__/__mocks__/react-native-svg.ts',
     '^@oxyhq/bloom$': '<rootDir>/__tests__/__mocks__/bloom.ts',
     '^@oxyhq/bloom/(.*)$': '<rootDir>/__tests__/__mocks__/bloom.ts',
+    '^@expo/vector-icons(/.*)?$': '<rootDir>/__tests__/__mocks__/expo-vector-icons.tsx',
   },
   testTimeout: 10000,
 };

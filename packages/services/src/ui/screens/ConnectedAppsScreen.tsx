@@ -108,7 +108,7 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                 </Text>
             </View>
         ),
-        [t, bloomTheme.colors.textSecondary],
+        [t],
     );
 
     const renderItem = useCallback(

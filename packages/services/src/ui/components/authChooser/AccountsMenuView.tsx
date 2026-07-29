@@ -33,7 +33,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import { AvatarGroup, type AvatarGroupItem } from '@oxyhq/bloom/avatar-group';
 import { Button } from '@oxyhq/bloom/button';
