@@ -430,8 +430,8 @@ Content-Type: application/json
 }
 ```
 
-6. Respuesta: `{ access_token, refresh_token, sessionId, user }` — **tokens nunca en la URL**.
-7. RP guarda tokens en storage local; opcionalmente monta `OxyProvider` solo para refresh/UI account menu.
+6. Respuesta: `{ access_token, deviceId, deviceSecret, session_id, user }` — **tokens nunca en la URL**.
+7. RP guarda `access_token` y el par `deviceId` + `deviceSecret` en storage local; restaura la sesión vía `POST /session/device/token`.
 
 **Backend propio del third party** (Node/Express):
 
@@ -542,7 +542,7 @@ sequenceDiagram
   IdP->>API: POST /auth/oauth/authorize
   IdP->>RP: Redirect callback?code&state
   RP->>API: POST /auth/oauth/token + codeVerifier
-  API-->>RP: access_token refresh_token user
+  API-->>RP: access_token deviceId deviceSecret user
   RP->>User: Logged in
 ```
 

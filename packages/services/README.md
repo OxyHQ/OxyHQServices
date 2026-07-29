@@ -694,7 +694,7 @@ Typed returns are defined in `ui/hooks/queries/paymentTypes.ts` (`Subscription`,
 
 ## Sign-In Token Planting
 
-`@oxyhq/core` `OxyServices.verifyChallenge()` plants `setTokens(accessToken, refreshToken ?? '')` internally before returning. `useAuthOperations.performSignIn` no longer needs to hand-plant the token or call a session-token fallback — just await `verifyChallenge` and proceed.
+`@oxyhq/core` `OxyServices.verifyChallenge()` plants `setTokens(accessToken)` internally before returning. `useAuthOperations.performSignIn` no longer needs to hand-plant the token or call a session-token fallback — just await `verifyChallenge` and proceed.
 
 ## Requirements
 
