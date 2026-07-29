@@ -3,7 +3,7 @@
  * workspace build.
  *
  * Auth component tests import `@oxyhq/core` at runtime (`login-form.tsx` →
- * `isOxyRpOrigin`, `hub-passkey.tsx` → `getAccountDisplayName`, i18n helpers,
+ * `isOxyRpOrigin`, `hub-passkey.tsx` → `getNormalizedUserHandle`, i18n helpers,
  * etc.). The package `exports` point at `dist/`, so an unbuilt workspace fails
  * with `Cannot find module '@oxyhq/core'`.
  *
@@ -11,19 +11,26 @@
  * transitively pulls optional RN modules. Instead, re-export only the small
  * pure helpers auth actually uses, via relative paths into `packages/core/src`.
  *
+ * THIS IS AN ALLOWLIST, and an allowlist silently rots: adding a `@oxyhq/core`
+ * value import to app source without adding it here makes `bun test` abort the
+ * WHOLE importing test file with `SyntaxError: Export named '…' not found`, so
+ * its cases vanish from the run rather than failing loudly — that is how
+ * `getNormalizedUserHandle` took four `hub-passkey` cases out of CI. Keep it in
+ * step with app source; `core-mock-surface.test.ts` fails the build if it drifts.
+ *
  * TEST-ONLY: never affects the Vite app build.
  */
 import { mock } from "bun:test"
 import { getCommonsApprovalBlockingReason } from "../../../core/src/utils/commonsApproval"
 import { isOxyRpOrigin } from "../../../core/src/utils/webauthnOrigin"
-import { getAccountDisplayName } from "../../../core/src/utils/accountUtils"
+import { getNormalizedUserHandle } from "../../../core/src/utils/userHandle"
 import { translate } from "../../../core/src/i18n"
 import { getBaseLanguage, normalizeLocale } from "../../../core/src/utils/languageUtils"
 import { selectCommonsDelivery } from "../../../core/src/utils/commonsDelivery"
 
 mock.module("@oxyhq/core", () => ({
     isOxyRpOrigin,
-    getAccountDisplayName,
+    getNormalizedUserHandle,
     getCommonsApprovalBlockingReason,
     translate,
     getBaseLanguage,
