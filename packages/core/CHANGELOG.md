@@ -1,5 +1,31 @@
 # Changelog — `@oxyhq/core`
 
+## 15.0.0
+
+### BREAKING — reputation balance view split
+
+`GET /reputation/:userId/balance` has always served two shapes (subject/staff vs
+public), but the SDK type still declared the full `ReputationBalance` for every
+caller. That let `balance.reliability.*` type-check on a stranger's balance and
+throw at runtime.
+
+- **`getReputationBalance(userId)`** now returns **`ReputationBalanceView`**
+  (`ReputationBalance | ReputationBalanceSummary`). Only `userId`, `total`, and
+  `trustTier` are reachable without narrowing.
+- **`getMyReputationBalance()`** — new ergonomic path for the signed-in user's
+  own balance; returns **`ReputationBalance`** directly and throws
+  `OxyAuthenticationError` when the server answers with the public view (absent
+  or lapsed token).
+- **`isFullReputationBalance(balance)`** — type guard to narrow
+  `ReputationBalanceView` to `ReputationBalance`.
+- New types: **`ReputationBalanceSummary`**, **`ReputationBalanceView`**.
+
+**Migration:** for your own balance, call `getMyReputationBalance()`. For a
+third party's `total` / `trustTier`, keep `getReputationBalance(userId)`. For
+private fields on an arbitrary id (subject or staff only), narrow with
+`isFullReputationBalance()` before reading `breakdown`, `influence`, or
+`reliability`.
+
 ## 14.0.0
 
 Same content as 13.2.0, republished under a correct major. See the 13.2.0 entry

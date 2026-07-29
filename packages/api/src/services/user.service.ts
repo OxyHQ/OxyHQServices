@@ -24,7 +24,6 @@ import { INVALID_USERNAME_MESSAGE, USERNAME_PATTERN, normalizeUsername } from '.
 import { BadRequestError } from '../utils/error';
 import { Request } from 'express';
 import {
-  PaginationParams,
   PaginatedResponse,
   PublicUserProfile,
   ProfileUpdateInput,

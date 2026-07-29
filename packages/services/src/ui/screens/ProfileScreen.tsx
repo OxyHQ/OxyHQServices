@@ -78,7 +78,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     );
                     throw err;
                 }),
-                oxyServices.getReputationBalance(userId)
+                (isOwnProfile
+                    ? oxyServices.getMyReputationBalance()
+                    : oxyServices.getReputationBalance(userId))
                     .then((balance): { total: number | undefined } => ({ total: balance.total }))
                     .catch((): { total: number | undefined } => ({ total: undefined })),
                 oxyServices.getUserStats

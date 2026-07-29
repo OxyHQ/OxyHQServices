@@ -36,7 +36,7 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
         setIsLoading(true);
         setError(null);
         Promise.all([
-            oxyServices.getReputationBalance(user.id),
+            oxyServices.getMyReputationBalance(),
             oxyServices.getReputationTransactions(user.id, 20, 0),
         ])
             .then(([balance, txns]) => {
