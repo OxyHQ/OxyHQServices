@@ -393,9 +393,13 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     /**
      * Get profiles similar to a given user, based on co-follower overlap.
      */
-    async getSimilarProfiles(userId: string, limit?: number): Promise<User[]> {
-      const params: Record<string, string> = {};
-      if (limit) params.limit = String(limit);
+    async getSimilarProfiles(
+      userId: string,
+      limitOrParams?: number | { limit?: number; offset?: number },
+    ): Promise<User[]> {
+      const pagination =
+        typeof limitOrParams === 'number' ? { limit: limitOrParams } : limitOrParams ?? {};
+      const params = buildQueryParams(pagination);
       const users = await this.makeRequest<User[]>('GET', `/profiles/${userId}/similar`, params, {
         cache: true,
         cacheTTL: 5 * 60 * 1000, // 5 min cache

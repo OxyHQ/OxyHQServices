@@ -247,4 +247,25 @@ describe('follow-graph pagination and ordering', () => {
       clearPrefixSpy.mockRestore();
     });
   });
+
+  describe('getSimilarProfiles forwards pagination params', () => {
+    it('sends limit and offset on getSimilarProfiles', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse([]));
+      await oxy.getSimilarProfiles('target-1', { limit: 15, offset: 30 });
+
+      const url = new URL(requestedUrl(0));
+      expect(url.pathname).toBe('/profiles/target-1/similar');
+      expect(url.searchParams.get('limit')).toBe('15');
+      expect(url.searchParams.get('offset')).toBe('30');
+    });
+
+    it('still accepts a bare limit number for backward compatibility', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse([]));
+      await oxy.getSimilarProfiles('target-1', 5);
+
+      const url = new URL(requestedUrl(0));
+      expect(url.searchParams.get('limit')).toBe('5');
+      expect(url.searchParams.has('offset')).toBe(false);
+    });
+  });
 });
