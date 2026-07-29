@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/core",
-  "version": "13.0.0",
+  "version": "13.1.0",
   "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -131,7 +131,8 @@
     "expo-crypto": "*",
     "expo-secure-store": "*",
     "express": "^4.0.0",
-    "express-rate-limit": "^7.0.0"
+    "express-rate-limit": "^7.0.0",
+    "helmet": "^8.0.0"
   },
   "peerDependenciesMeta": {
     "@react-native-async-storage/async-storage": {
@@ -144,6 +145,9 @@
       "optional": true
     },
     "express": {
+      "optional": true
+    },
+    "helmet": {
       "optional": true
     }
   },
@@ -160,6 +164,7 @@
     "express-rate-limit": "^8.6.0",
     "regexpu-core": "^6.4.0",
     "release-it": "^19.0.6",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "helmet": "^8.3.0"
   }
 }
