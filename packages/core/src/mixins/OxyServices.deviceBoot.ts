@@ -157,6 +157,24 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
      * method would be dead code plus a second implementation of the failure
      * rules. The asymmetry is the design.
      *
+     * **Call this from NATIVE only.** There is no background worker on web to
+     * consume the credential, and handing a browser origin a long-lived
+     * non-rotating secret to persist is strictly weaker than the rotating device
+     * secret it already holds. The 404 degrade below is also native-shaped: a
+     * browser attaches `Origin`, which a server predating this route answers
+     * `403 BAD_ORIGIN` from its router-wide same-site guard rather than 404, so
+     * the quiet degrade would not fire there. A native client sends no `Origin`
+     * and gets the 404. Gate the caller by platform; do not widen the degrade to
+     * 403, which would also swallow a genuine origin misconfiguration.
+     *
+     * That paragraph is LOAD-BEARING, not belt-and-braces: the route sits above
+     * oxy-api's router-wide origin guard (deliberately, so a native client with
+     * no `Origin` is not rejected), so as of this writing NOTHING server-side
+     * refuses a browser caller that presents a valid bearer. Until a server-side
+     * check lands, caller discipline is the only control — which is also why a
+     * doc note cannot be the whole answer to browser XSS minting a long-lived
+     * credential with the victim's bearer.
+     *
      * @returns the provisioned credential, or `null` when the endpoint is absent
      * (404). The API deploy leads the SDK release, so a client on a newer SDK
      * than the server degrades to "no background session" quietly instead of
