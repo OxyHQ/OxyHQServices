@@ -153,13 +153,18 @@ describe('syncBackgroundSession', () => {
     });
 
     expect(provision).toHaveBeenCalledTimes(1);
-    expect(native.put).toHaveBeenCalledWith({
-      baseUrl: 'https://api.oxy.so',
-      deviceId: 'device-1',
-      secret: 'bg-secret',
-      accountId: 'user-1',
-      expiresAt: Date.parse(expiresAt),
-    });
+    // Positional scalars, and the ORDER is the contract: the native signature is
+    // five parameters, not one object, because an Expo Modules `Record` does not
+    // convert in a consumer build of this package and every call was rejected. A
+    // silently reordered argument would store a credential that no mint can use, so
+    // this assertion is what pins the order — see `OxyBackgroundSessionModule.kt`.
+    expect(native.put).toHaveBeenCalledWith(
+      'https://api.oxy.so',
+      'device-1',
+      'bg-secret',
+      'user-1',
+      Date.parse(expiresAt),
+    );
     // Same account, so nothing was revoked on the way.
     expect(native.clear).not.toHaveBeenCalled();
   });

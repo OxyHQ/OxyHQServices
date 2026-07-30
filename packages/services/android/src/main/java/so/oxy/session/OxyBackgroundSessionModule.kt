@@ -4,8 +4,6 @@ import android.content.Context
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import expo.modules.kotlin.records.Field
-import expo.modules.kotlin.records.Record
 
 /**
  * JS side of the background session credential.
@@ -25,35 +23,52 @@ class OxyBackgroundSessionModule : Module() {
   private val context: Context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
 
-  /**
-   * The provisioned credential as it crosses the bridge.
-   *
-   * `expiresAt` is epoch MILLIS, already parsed from the server's ISO-8601 string
-   * on the JS side — JS has a `Date`, so there is no reason to hand native a
-   * string to re-parse.
-   */
-  data class CredentialInput(
-    @Field val baseUrl: String = "",
-    @Field val deviceId: String = "",
-    @Field val secret: String = "",
-    @Field val accountId: String = "",
-    @Field val expiresAt: Double = 0.0,
-  ) : Record
-
   override fun definition() = ModuleDefinition {
     Name("OxyBackgroundSession")
 
     /**
      * Store (replacing) the credential. Rejects an incomplete or already-expired
      * one rather than persisting something no mint could ever use.
+     *
+     * ## Five scalars, not a `Record`, and that is not a style choice
+     *
+     * This took a `Record` and it did not work on a device: every call was rejected
+     * with `The 1st argument cannot be cast to type CredentialInput (received class
+     * ReadableNativeMap)`, preceded by `Introspectable data is missing for class
+     * CredentialInput. Falling back to reflection-based conversion`. The fallback
+     * then failed too, so nothing was ever stored — the provision succeeded, the
+     * server issued a credential, and the widget stayed signed out forever with only
+     * a warning in the log to show for it.
+     *
+     * The reason is where this package's Kotlin lives: it ships as SOURCE that each
+     * consuming app compiles, so the annotation processing that generates a `Record`'s
+     * introspection metadata does not necessarily run in the consumer's build. The
+     * sibling module in this same library, `OxyIdentityModule`, has always passed
+     * plain scalars (`putShared(privateKey, publicKey)`) and has always worked — so
+     * scalars are the proven shape here and `CredentialInput` was the only `Record`
+     * in the package, i.e. the one untested path.
+     *
+     * Do not "tidy" these five parameters back into a `Record` without first proving
+     * on a real device that a `Record` converts at all in a consumer build. The
+     * failure is silent from JS's side: it surfaces as a widget that never signs in.
+     *
+     * `expiresAt` is epoch MILLIS as a `Double`, already parsed from the server's
+     * ISO-8601 string on the JS side — JS has a `Date`, so there is no reason to hand
+     * native a string to re-parse. `Double` because that is what a JS number crosses
+     * the bridge as; a `Long` parameter would fail to convert for the same family of
+     * reason this comment exists.
      */
-    AsyncFunction("put") { credential: CredentialInput ->
-      val expiresAt = credential.expiresAt.toLong()
+    AsyncFunction("put") { baseUrl: String,
+      deviceId: String,
+      secret: String,
+      accountId: String,
+      expiresAtMs: Double ->
+      val expiresAt = expiresAtMs.toLong()
       if (
-        credential.baseUrl.isEmpty() ||
-        credential.deviceId.isEmpty() ||
-        credential.secret.isEmpty() ||
-        credential.accountId.isEmpty() ||
+        baseUrl.isEmpty() ||
+        deviceId.isEmpty() ||
+        secret.isEmpty() ||
+        accountId.isEmpty() ||
         expiresAt <= System.currentTimeMillis()
       ) {
         return@AsyncFunction false
@@ -62,10 +77,10 @@ class OxyBackgroundSessionModule : Module() {
         OxyBackgroundSessionStore.writeCredential(
           context,
           OxyBackgroundSessionStore.Credential(
-            baseUrl = credential.baseUrl,
-            deviceId = credential.deviceId,
-            secret = credential.secret,
-            accountId = credential.accountId,
+            baseUrl = baseUrl,
+            deviceId = deviceId,
+            secret = secret,
+            accountId = accountId,
             expiresAt = expiresAt,
           ),
         )

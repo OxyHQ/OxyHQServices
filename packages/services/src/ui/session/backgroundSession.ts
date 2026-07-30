@@ -44,15 +44,29 @@ import { logger } from '@oxyhq/core';
  * secret's only reader is one less place it can leak from.
  */
 interface OxyBackgroundSessionNativeModule {
-  /** Store (replacing) the credential. Resolves `false` when it was rejected or storage failed. */
-  put(credential: {
-    baseUrl: string;
-    deviceId: string;
-    secret: string;
-    accountId: string;
-    /** Epoch millis — parsed from the server's ISO-8601 string here, not natively. */
-    expiresAt: number;
-  }): Promise<boolean>;
+  /**
+   * Store (replacing) the credential. Resolves `false` when it was rejected or
+   * storage failed.
+   *
+   * Positional scalars rather than one object, matching the native signature — and
+   * that shape is load-bearing, not a preference. Passing an object made this an
+   * Expo Modules `Record`, and a `Record` does not convert in a consumer build of
+   * this package: every call was rejected with `The 1st argument cannot be cast to
+   * type CredentialInput (received class ReadableNativeMap)`, so the credential was
+   * never stored and background refreshes stayed signed out. See the comment on
+   * `AsyncFunction("put")` in `OxyBackgroundSessionModule.kt` for why, and do not
+   * restore the object form without proving on a device that a `Record` converts.
+   *
+   * `expiresAtMs` is epoch millis, parsed from the server's ISO-8601 string here
+   * rather than natively.
+   */
+  put(
+    baseUrl: string,
+    deviceId: string,
+    secret: string,
+    accountId: string,
+    expiresAtMs: number,
+  ): Promise<boolean>;
   /** Drop the credential and any cached access token. */
   clear(): Promise<boolean>;
   /** What is stored: the owning account and its expiry (epoch millis), or `null`. */
@@ -277,13 +291,13 @@ export async function syncBackgroundSession(input: BackgroundSessionSyncInput): 
       return;
     }
 
-    const persisted = await native.put({
-      baseUrl: oxyServices.getBaseURL(),
-      deviceId: provisioned.deviceId,
-      secret: provisioned.secret,
-      accountId: provisioned.accountId,
+    const persisted = await native.put(
+      oxyServices.getBaseURL(),
+      provisioned.deviceId,
+      provisioned.secret,
+      provisioned.accountId,
       expiresAt,
-    });
+    );
     if (!persisted) {
       logger.warn(
         '[backgroundSession] the native store did not retain the background credential; background refreshes stay signed out until the next attempt',
