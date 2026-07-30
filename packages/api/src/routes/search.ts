@@ -9,7 +9,7 @@ import {
 } from '../utils/profileQuery';
 import { validate } from '../middleware/validate';
 import { searchQuerySchema } from '../schemas/search.schemas';
-import { PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
+import { PUBLIC_USER_PROFILE_PROJECTION } from '../utils/publicUserProjection';
 import { formatUserResponse } from '../utils/userTransform';
 
 const router = express.Router();
@@ -48,14 +48,11 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
         ...buildPeopleSearchNativeFirstStages(),
         { $skip: skip },
         { $limit: limit },
-        {
-          $project: {
-            password: 0,
-            refreshToken: 0,
-            _nativePriority: 0,
-            _reputationRank: 0,
-          },
-        },
+        // INCLUSION-ONLY — see PUBLIC_USER_PROFILE_PROJECTION. This row is
+        // returned by an endpoint with no auth and no CSRF, so it must name the
+        // fields it emits rather than name the fields it drops. It also strips
+        // the pipeline's own `_nativePriority`/`_reputationRank` sort keys.
+        { $project: PUBLIC_USER_PROFILE_PROJECTION },
       ]);
 
       results.users = users

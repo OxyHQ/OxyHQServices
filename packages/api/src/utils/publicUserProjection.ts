@@ -59,6 +59,28 @@ const PUBLIC_USER_PROFILE_PATHS = [
 export const PUBLIC_USER_PROFILE_SELECT = PUBLIC_USER_PROFILE_PATHS.join(' ');
 
 /**
+ * `$project` stage for a public user row, for the surfaces that read through an
+ * aggregation pipeline rather than a query (`GET /search`).
+ *
+ * Derived from the SAME {@link PUBLIC_USER_PROFILE_PATHS} as
+ * {@link PUBLIC_USER_PROFILE_SELECT} so the two forms cannot drift, and
+ * INCLUSION-ONLY for the same reason: an exclusion `$project` listing the
+ * private fields to drop is one forgotten field away from leaking, and every
+ * field later added to the `User` model defaults to exposed. `GET /search`
+ * shipped exactly that bug — a `{ password: 0, refreshToken: 0 }` denylist put
+ * `email`, `publicKey` and the full `privacySettings` on an unauthenticated
+ * response.
+ *
+ * `_id` is included implicitly by MongoDB, which is what `formatUserResponse`
+ * anchors the DTO `id` on. The sort-only fields a native-first pipeline adds
+ * (`_nativePriority`, `_reputationRank`) are dropped for free — an inclusion
+ * projection emits nothing it does not name.
+ */
+export const PUBLIC_USER_PROFILE_PROJECTION: Record<string, 1> = Object.fromEntries(
+  PUBLIC_USER_PROFILE_PATHS.map((path) => [path, 1]),
+);
+
+/**
  * The lean document shape {@link PUBLIC_USER_PROFILE_SELECT} yields. Declared
  * from `IUser` so the projection and the type cannot drift: a path added to the
  * projection is a compile error here until it is a real `User` field.
