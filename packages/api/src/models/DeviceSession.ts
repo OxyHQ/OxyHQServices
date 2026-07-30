@@ -30,6 +30,18 @@ export interface IDeviceSession extends Document {
   prevSecretHash?: string;
   /** Epoch after which `prevSecretHash` is no longer accepted. Transient. */
   prevSecretExpiresAt?: Date;
+  /**
+   * SHA-256 hex of the non-rotating background credential secret. Issued only
+   * while the app is running (bearer-provisioned) and presented by native
+   * background code at `POST /session/device/background-token` — never by JS.
+   * Separate from `secretHash` so widget workers never contend with the
+   * rotating device secret the JS runtime depends on.
+   */
+  backgroundSecretHash?: string;
+  /** Account the background credential is scoped to. */
+  backgroundSecretAccountId?: mongoose.Types.ObjectId | null;
+  /** Epoch after which the background credential is no longer accepted. */
+  backgroundSecretExpiresAt?: Date;
   revision: number;
   createdAt: Date;
   updatedAt: Date;
@@ -58,6 +70,9 @@ const DeviceSessionSchema = new Schema<IDeviceSession>(
     // Transient grace fields — never indexed (they churn on every rotation).
     prevSecretHash: { type: String, default: undefined },
     prevSecretExpiresAt: { type: Date, default: undefined },
+    backgroundSecretHash: { type: String, default: undefined },
+    backgroundSecretAccountId: { type: Schema.Types.ObjectId, ref: 'User', default: undefined },
+    backgroundSecretExpiresAt: { type: Date, default: undefined },
     revision: { type: Number, default: 0 },
   },
   { timestamps: true },

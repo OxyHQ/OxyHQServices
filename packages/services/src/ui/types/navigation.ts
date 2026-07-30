@@ -136,4 +136,11 @@ export interface OxyProviderProps {
      * @default 'off'
      */
     requireAuth?: 'off' | 'soft' | 'hard';
+    /**
+     * When true, provisions a non-rotating background credential for native code
+     * (Android widgets) that runs without a JS runtime. Android-only today; inert
+     * on web and iOS.
+     * @default false
+     */
+    backgroundSession?: boolean;
 }
