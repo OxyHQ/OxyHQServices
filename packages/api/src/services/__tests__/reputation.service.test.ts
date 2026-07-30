@@ -29,6 +29,10 @@ const balanceStore = makeStore();
 const ruleStore = makeStore();
 const disputeStore = makeStore();
 const userStore = makeStore();
+const strikeStore = makeStore();
+const personhoodStore = makeStore();
+const reporterStore = makeStore();
+const reviewerStore = makeStore();
 
 function clearStores(): void {
   txnStore.docs = [];
@@ -36,6 +40,10 @@ function clearStores(): void {
   ruleStore.docs = [];
   disputeStore.docs = [];
   userStore.docs = [];
+  strikeStore.docs = [];
+  personhoodStore.docs = [];
+  reporterStore.docs = [];
+  reviewerStore.docs = [];
 }
 
 /** Does the document match every key in the (flat) query? */
@@ -246,6 +254,35 @@ jest.mock('../../models/User', () => ({
   __esModule: true,
   User: makeModel(userStore),
   default: makeModel(userStore),
+}));
+
+/*
+ * The four collections `recalculateBalance` reads for the multidimensional axes.
+ * Each is EMPTY here, which is the state that matters for these tests: a subject
+ * with no strikes, no personhood record and no moderation profiles must derive a
+ * neutral conduct / reporting / reviewing snapshot rather than hanging on an
+ * unmocked model. The axes themselves are covered in
+ * `moderationReputation.service.test.ts` and `utils/__tests__/reputationDerive.test.ts`.
+ */
+jest.mock('../../models/ConductStrike', () => ({
+  __esModule: true,
+  ConductStrike: makeModel(strikeStore),
+  default: makeModel(strikeStore),
+}));
+jest.mock('../../models/PersonhoodStatus', () => ({
+  __esModule: true,
+  PersonhoodStatus: makeModel(personhoodStore),
+  default: makeModel(personhoodStore),
+}));
+jest.mock('../../models/ReporterReputationProfile', () => ({
+  __esModule: true,
+  ReporterReputationProfile: makeModel(reporterStore),
+  default: makeModel(reporterStore),
+}));
+jest.mock('../../models/ReviewerReputationProfile', () => ({
+  __esModule: true,
+  ReviewerReputationProfile: makeModel(reviewerStore),
+  default: makeModel(reviewerStore),
 }));
 
 // Mongoose: keep real Types/ObjectId/isValid, but stub startSession so the

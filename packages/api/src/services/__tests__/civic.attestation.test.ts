@@ -68,6 +68,32 @@ jest.mock('../../models/User', () => ({
   },
 }));
 
+/*
+ * The four collections `recalculateBalance` reads for the multidimensional axes.
+ * Each answers EMPTY, which is the state that matters here: a subject with no
+ * strikes, no personhood record and no moderation profiles must derive a neutral
+ * conduct / reporting / reviewing snapshot rather than hanging on an unmocked
+ * model. The axes themselves are covered in
+ * `moderationReputation.service.test.ts` and `utils/__tests__/reputationDerive.test.ts`.
+ */
+const emptyFindOne = { __esModule: true as const };
+jest.mock('../../models/ConductStrike', () => ({
+  ...emptyFindOne,
+  ConductStrike: { find: () => ({ session: async () => [], then: (r: (v: unknown[]) => unknown) => r([]) }) },
+}));
+jest.mock('../../models/PersonhoodStatus', () => ({
+  ...emptyFindOne,
+  PersonhoodStatus: { findOne: () => ({ session: async () => null, then: (r: (v: unknown) => unknown) => r(null) }) },
+}));
+jest.mock('../../models/ReporterReputationProfile', () => ({
+  ...emptyFindOne,
+  ReporterReputationProfile: { findOne: () => ({ session: async () => null, then: (r: (v: unknown) => unknown) => r(null) }) },
+}));
+jest.mock('../../models/ReviewerReputationProfile', () => ({
+  ...emptyFindOne,
+  ReviewerReputationProfile: { findOne: () => ({ session: async () => null, then: (r: (v: unknown) => unknown) => r(null) }) },
+}));
+
 jest.mock('mongoose', () => {
   const actual = jest.requireActual('mongoose');
   const startSession = jest.fn(async () => ({
