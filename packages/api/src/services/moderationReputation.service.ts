@@ -600,11 +600,7 @@ class ModerationReputationService {
         ? await ConductStrike.findById(effect.strikeId)
         : null;
       if (!strike) {
-        const repaired = await this.createStrike({
-          effect,
-          family: effect.family,
-          expiresAt: undefined,
-        });
+        const repaired = await this.repairStrike(effect);
         effect.strikeId = repaired._id;
         await effect.save();
         strikesRepaired += 1;
@@ -1066,13 +1062,40 @@ class ModerationReputationService {
     });
   }
 
-  /** Repair a missing strike from its effect, preserving the original figures. */
-  private async createStrike(params: {
-    effect: IModerationEffect;
-    family: string;
-    expiresAt: Date | undefined;
-  }): Promise<IConductStrike> {
-    const { effect, family, expiresAt } = params;
+  /**
+   * Rebuild a missing strike from its effect, reconstructing the consequence the
+   * subject SHOULD have been under — not a fresh one.
+   *
+   * Two things here are easy to get wrong and both make the repair harsher than
+   * the original, which is the worst direction for a repair to err in:
+   *
+   *  - The expiry is measured from the effect's `appliedAt`, NOT from now.
+   *    Measuring from now would silently extend a 90-day consequence by however
+   *    long the strike was missing, so a reconciliation pass would punish the
+   *    subject for an operational failure.
+   *  - An expiry that has ALREADY passed produces an `expired` strike, not an
+   *    active one. Otherwise reconciliation resurrects a consequence that had
+   *    lapsed, and — because the sweep only selects strikes whose `expiresAt` is
+   *    due — a resurrected one with no expiry would never lapse again.
+   *
+   * The figures come from the effect and the expiry from the effect's OWN policy
+   * version, so a repair is bounded by what was already recorded and cannot
+   * invent a consequence. A `null` expiry (critical severity) stays absent, which
+   * is the one case where a permanent strike is correct.
+   */
+  private async repairStrike(effect: IModerationEffect): Promise<IConductStrike> {
+    const policy = await ModerationPolicy.findOne({
+      policyVersion: effect.policyVersions.oxyConduct,
+    });
+    const rule = policy?.severityRules.find((entry) => entry.severity === effect.severity);
+    const expiryDays = rule?.riskExpiryDays ?? null;
+
+    const expiresAt =
+      expiryDays === null
+        ? undefined
+        : new Date(effect.appliedAt.getTime() + expiryDays * 24 * 60 * 60 * 1000);
+    const hasLapsed = expiresAt !== undefined && expiresAt.getTime() <= Date.now();
+
     return ConductStrike.create({
       userId: effect.principalId,
       incidentId: effect.incidentId,
@@ -1082,11 +1105,12 @@ class ModerationReputationService {
       effectType: effect.effectType,
       severity: effect.severity,
       riskPoints: effect.activeRisk,
-      family,
-      status: 'active',
+      family: effect.family,
+      status: hasLapsed ? 'expired' : 'active',
       expiresAt,
       policyVersion: effect.policyVersions.oxyConduct,
       transactionId: effect.transactionId,
+      resolvedAt: hasLapsed ? new Date() : undefined,
     });
   }
 

@@ -1308,6 +1308,64 @@ describe('reconcileModerationIncident', () => {
     expect(conduct.activeRisk).toBe(3);
   });
 
+  /*
+   * A REPAIR MUST NOT BE HARSHER THAN THE ORIGINAL. These three cases exist
+   * because the first version of the repair passed `expiresAt: undefined` — and
+   * since the expiry sweep only selects strikes that HAVE an `expiresAt`, that
+   * silently converted a 90-day medium consequence into a permanent one. Nothing
+   * would have surfaced it: the strike looks correct in every other respect.
+   */
+
+  it('a repaired strike keeps the ORIGINAL expiry window', async () => {
+    await moderationReputationService.applyModerationDecision(makeEvent(), CONTEXT);
+    const originalExpiry = strikeStore.docs[0].expiresAt as Date;
+    expect(originalExpiry).toBeInstanceOf(Date);
+    strikeStore.docs = [];
+
+    await moderationReputationService.reconcileModerationIncident('inc_1');
+
+    // Measured from the effect's `appliedAt`, not from the repair — otherwise the
+    // subject is punished for however long the strike was missing.
+    const repaired = strikeStore.docs[0].expiresAt as Date;
+    expect(repaired).toBeInstanceOf(Date);
+    expect(Math.abs(repaired.getTime() - originalExpiry.getTime())).toBeLessThan(2000);
+    expect(strikeStore.docs[0].status).toBe('active');
+  });
+
+  it('a repaired strike whose window has already passed is created EXPIRED', async () => {
+    // Otherwise reconciliation resurrects a consequence that had lapsed — and one
+    // resurrected as `active` would carry risk indefinitely.
+    await moderationReputationService.applyModerationDecision(makeEvent(), CONTEXT);
+    strikeStore.docs = [];
+    // The effect was applied a year ago; a medium strike lapses after 90 days.
+    effectStore.docs[0].appliedAt = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+
+    await moderationReputationService.reconcileModerationIncident('inc_1');
+
+    expect(strikeStore.docs[0].status).toBe('expired');
+    expect(strikeStore.docs[0].resolvedAt).toBeDefined();
+    const conduct = balanceStore.docs[0].conduct as { activeRisk: number; standing: string };
+    expect(conduct.activeRisk).toBe(0);
+    expect(conduct.standing).toBe('good');
+  });
+
+  it('a repaired CRITICAL strike stays permanent, because that one is correct', async () => {
+    await moderationReputationService.applyModerationDecision(
+      makeEvent({
+        findings: [
+          { ...HARASSMENT_MEDIUM, severity: 'critical', family: 'child_safety', code: 'child_safety.csam' },
+        ],
+      }),
+      CONTEXT
+    );
+    strikeStore.docs = [];
+
+    await moderationReputationService.reconcileModerationIncident('inc_1');
+
+    expect(strikeStore.docs[0].expiresAt).toBeUndefined();
+    expect(strikeStore.docs[0].status).toBe('active');
+  });
+
   it('reverses a consequence a later revision superseded', async () => {
     await moderationReputationService.applyModerationDecision(makeEvent(), CONTEXT);
     await moderationReputationService.applyModerationDecision(
@@ -1608,5 +1666,17 @@ describe('what a conduct transaction is allowed to know', () => {
  *
  *       Tests: 2 failed, 55 passed, 57 total
  *
- * With all four guards in place: 57 passed, 57 total.
+ * (5) THE REPAIR EXPIRY — `repairStrike` reverted to the defect it was written to
+ *     fix (`expiresAt = undefined`, `hasLapsed = false`), which silently turns a
+ *     90-day consequence permanent because the sweep only selects strikes that
+ *     HAVE an `expiresAt`:
+ *
+ *       ● reconcileModerationIncident › a repaired strike keeps the ORIGINAL
+ *         expiry window
+ *       ● reconcileModerationIncident › a repaired strike whose window has
+ *         already passed is created EXPIRED
+ *
+ *       Tests: 2 failed, 58 passed, 60 total
+ *
+ * With all five guards in place: 60 passed, 60 total.
  */
