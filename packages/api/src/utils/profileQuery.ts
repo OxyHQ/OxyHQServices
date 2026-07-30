@@ -1,3 +1,5 @@
+import type { PipelineStage } from 'mongoose';
+
 import { INFLUENCE_MIN } from './reputation.constants';
 
 /**
@@ -44,21 +46,20 @@ export interface PeopleSearchOrClauseOptions {
 }
 
 /**
- * Shared `$or` clause for username/name people-search surfaces
- * (`GET /profiles/search`, `GET /search`, `POST /users/search`).
- *
- * Matches persisted fields only — `name.displayName` is a Mongoose virtual
- * derived from `first`/`last`, not a MongoDB column.
- */
-/**
  * Shared native-first ordering for people-search surfaces.
  *
  * Applied BEFORE paging so offset/limit pagination stays deterministic:
  *   1. native before federated
  *   2. higher reputation rank first
  *   3. `_id` ascending as the final tiebreaker
+ *
+ * Returned as the concrete `$addFields`/`$sort` stage tuple rather than a loose
+ * `Record<string, unknown>[]`: callers spread it into typed `Model.aggregate`
+ * pipelines, and both stages are members of `PipelineStage` AND of the narrower
+ * `PipelineStage.FacetPipelineStage`, so the same tuple type-checks inside a
+ * `$facet` branch (`GET /profiles/search`) and at the top level (`GET /search`).
  */
-export function buildPeopleSearchNativeFirstStages(): Record<string, unknown>[] {
+export function buildPeopleSearchNativeFirstStages(): [PipelineStage.AddFields, PipelineStage.Sort] {
   return [
     {
       $addFields: {
@@ -70,6 +71,13 @@ export function buildPeopleSearchNativeFirstStages(): Record<string, unknown>[] 
   ];
 }
 
+/**
+ * Shared `$or` clause for username/name people-search surfaces
+ * (`GET /profiles/search`, `GET /search`, `POST /users/search`).
+ *
+ * Matches persisted fields only — `name.displayName` is a Mongoose virtual
+ * derived from `first`/`last`, not a MongoDB column.
+ */
 export function buildPeopleSearchOrClause(
   pattern: PeopleSearchPattern,
   options: PeopleSearchOrClauseOptions = {},
