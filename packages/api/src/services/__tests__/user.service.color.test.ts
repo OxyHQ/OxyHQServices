@@ -1,7 +1,7 @@
 // The global jest.setup.cjs mocks `mongoose` wholesale, stripping `Schema.Types`.
 // `user.service.ts` imports the real `Follow` model (not mocked here), whose
 // schema references `Schema.Types.ObjectId` at module load — so restore the
-// actual mongoose module. The User/Subscription models ARE mocked below.
+// actual mongoose module. The User model IS mocked below.
 jest.mock('mongoose', () => {
   const actual = jest.requireActual('mongoose');
   return { __esModule: true, ...actual, default: actual };
@@ -15,11 +15,10 @@ jest.mock('../../models/User', () => ({
   },
 }));
 
-jest.mock('../../models/Subscription', () => ({
+jest.mock('../../utils/subscriptionPlan', () => ({
   __esModule: true,
-  default: {
-    findOne: jest.fn(),
-  },
+  resolveUserSubscriptionPlan: jest.fn(),
+  isPremiumSubscriptionPlan: jest.fn((plan: string) => plan === 'pro' || plan === 'business'),
 }));
 
 jest.mock('../../utils/userCache', () => ({
@@ -33,15 +32,26 @@ jest.mock('../securityActivityService', () => ({
 }));
 
 import User from '../../models/User';
-import Subscription from '../../models/Subscription';
+import {
+  isPremiumSubscriptionPlan,
+  resolveUserSubscriptionPlan,
+} from '../../utils/subscriptionPlan';
 import { userService } from '../user.service';
 
 const mockUser = User as jest.Mocked<typeof User>;
-const mockSubscription = Subscription as jest.Mocked<typeof Subscription>;
+const mockResolveUserSubscriptionPlan = resolveUserSubscriptionPlan as jest.MockedFunction<
+  typeof resolveUserSubscriptionPlan
+>;
+const mockIsPremiumSubscriptionPlan = isPremiumSubscriptionPlan as jest.MockedFunction<
+  typeof isPremiumSubscriptionPlan
+>;
 
 describe('UserService.updateUserProfile color authorization', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsPremiumSubscriptionPlan.mockImplementation(
+      (plan) => plan === 'pro' || plan === 'business',
+    );
   });
 
   it.each(['oxy', 'OXY', 'OxY', ' oxy '])(
@@ -52,19 +62,13 @@ describe('UserService.updateUserProfile color authorization', () => {
           lean: jest.fn().mockResolvedValue({ username: 'regular-user' }),
         }),
       });
-      (mockSubscription.findOne as jest.Mock).mockReturnValue({
-        lean: jest.fn().mockResolvedValue(null),
-      });
+      mockResolveUserSubscriptionPlan.mockResolvedValue('basic');
 
       await expect(userService.updateUserProfile('user-1', { color })).rejects.toThrow(
         'The oxy color is exclusive to premium subscribers'
       );
 
-      expect(mockSubscription.findOne).toHaveBeenCalledWith({
-        userId: 'user-1',
-        status: 'active',
-        plan: { $in: ['pro', 'business'] },
-      });
+      expect(mockResolveUserSubscriptionPlan).toHaveBeenCalledWith('user-1');
       expect(mockUser.findById).toHaveBeenCalledTimes(1);
     }
   );
@@ -82,6 +86,6 @@ describe('UserService.updateUserProfile color authorization', () => {
 
     expect(set).toHaveBeenCalledWith('color', 'blue');
     expect(save).toHaveBeenCalled();
-    expect(mockSubscription.findOne).not.toHaveBeenCalled();
+    expect(mockResolveUserSubscriptionPlan).not.toHaveBeenCalled();
   });
 });

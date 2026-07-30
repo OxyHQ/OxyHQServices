@@ -1,7 +1,6 @@
 import type { Response } from 'express';
-import mongoose from 'mongoose';
 import { File } from '../models/File';
-import Subscription from '../models/Subscription';
+import { resolveUserSubscriptionPlan } from '../utils/subscriptionPlan';
 import type { AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
 
@@ -29,15 +28,7 @@ export const getStorageUsage = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ message: 'Authentication required' });
     }
 
-    // Subscription is keyed by ObjectId; tolerate non-ObjectId (shouldn’t happen, but keep it safe)
-    let subscriptionPlan: 'basic' | 'pro' | 'business' | undefined;
-    try {
-      const subscription = await Subscription.findOne({ userId: new mongoose.Types.ObjectId(userId) }).lean();
-      subscriptionPlan = subscription?.plan || 'basic';
-    } catch {
-      subscriptionPlan = 'basic';
-    }
-
+    const subscriptionPlan = await resolveUserSubscriptionPlan(userId);
     const totalLimitBytes = getPlanStorageLimitBytes(subscriptionPlan);
 
     const results = await File.aggregate<{

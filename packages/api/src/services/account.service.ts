@@ -415,7 +415,12 @@ export class AccountService {
     if (input.username !== undefined) {
       account.username = await this.resolveUniqueUsername(input.username, account._id);
     }
-    if (input.name !== undefined) account.name = input.name;
+    if (input.name !== undefined) {
+      account.name = {
+        ...(account.name ?? {}),
+        ...input.name,
+      };
+    }
     if (input.bio !== undefined) account.bio = input.bio;
     if (input.avatar !== undefined) account.avatar = input.avatar;
     if (input.description !== undefined) account.description = input.description;

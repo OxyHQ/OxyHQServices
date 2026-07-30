@@ -38,7 +38,10 @@ import {
   PUBLIC_USER_PROFILE_SELECT,
   type PublicUserDocument,
 } from '../utils/publicUserProjection';
-import Subscription from '../models/Subscription';
+import {
+  isPremiumSubscriptionPlan,
+  resolveUserSubscriptionPlan,
+} from '../utils/subscriptionPlan';
 import { userIdentityFields, deriveIsFederated, toThemePreference } from '../utils/userTransform';
 import { isValidDisplayName, normalizeLocale } from '@oxyhq/core';
 import type { UserRelationship } from '@oxyhq/contracts';
@@ -403,12 +406,8 @@ export class UserService {
         const user = await User.findById(userId).select('username').lean();
         const isOxyUser = user?.username?.toLowerCase() === 'oxy';
         if (!isOxyUser) {
-          const subscription = await Subscription.findOne({
-            userId,
-            status: 'active',
-            plan: { $in: ['pro', 'business'] },
-          }).lean();
-          if (!subscription) {
+          const plan = await resolveUserSubscriptionPlan(userId);
+          if (!isPremiumSubscriptionPlan(plan)) {
             throw new Error('The oxy color is exclusive to premium subscribers');
           }
         }
