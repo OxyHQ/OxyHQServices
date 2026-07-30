@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import mongoose from 'mongoose';
-import Stripe from 'stripe';
+import type Stripe from 'stripe';
+import { getStripe } from '../utils/stripeClient';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { UserCredits } from '../models/UserCredits';
 import BillingSubscription from '../models/BillingSubscription';
@@ -28,18 +29,6 @@ const INVALID_RETURN_URL_RESPONSE = {
 } as const;
 
 const router = Router();
-
-let stripeInstance: Stripe | null = null;
-
-function getStripe(): Stripe {
-  if (!stripeInstance) {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      throw new Error('STRIPE_SECRET_KEY is not defined');
-    }
-    stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY);
-  }
-  return stripeInstance;
-}
 
 function getWebhookSecret(): string {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;

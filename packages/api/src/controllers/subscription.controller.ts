@@ -1,12 +1,13 @@
-import type { Response } from "express";
-import type { AuthRequest } from "../middleware/auth";
-import Subscription from "../models/Subscription";
-import BillingSubscription from "../models/BillingSubscription";
-import User from "../models/User";
+import type { Response } from 'express';
+import type { AuthRequest } from '../middleware/auth';
+import Subscription from '../models/Subscription';
+import BillingSubscription from '../models/BillingSubscription';
+import User from '../models/User';
 import { logger } from '../utils/logger';
 import { ForbiddenError, UnauthorizedError } from '../utils/error';
 import userCache from '../utils/userCache';
 import { formatSubscriptionResponse } from '../utils/subscriptionResponse';
+import { getStripe } from '../utils/stripeClient';
 
 function assertOwnership(req: AuthRequest, userId: string): void {
   if (!req.user) {
@@ -35,8 +36,8 @@ export const getSubscription = async (req: AuthRequest, res: Response) => {
     }
     logger.error('Error fetching subscription:', error);
     res.status(500).json({
-      message: "Error fetching subscription",
-      error: error instanceof Error ? error.message : "Unknown error"
+      message: 'Error fetching subscription',
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 };
@@ -45,14 +46,28 @@ export const cancelSubscription = async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
     assertOwnership(req, userId);
-    const subscription = await Subscription.findOneAndUpdate(
-      { userId },
-      { status: "canceled" },
-      { new: true }
+
+    const billingSubscription = await BillingSubscription.findOne({
+      userId,
+      status: { $in: ['active', 'trialing'] },
+    });
+
+    if (billingSubscription) {
+      await getStripe().subscriptions.update(billingSubscription.stripeSubscriptionId, {
+        cancel_at_period_end: true,
+      });
+      billingSubscription.cancelAtPeriodEnd = true;
+      await billingSubscription.save();
+    }
+
+    const legacySubscription = await Subscription.findOneAndUpdate(
+      { userId, status: { $ne: 'canceled' } },
+      { status: 'canceled' },
+      { new: true },
     );
 
-    if (!subscription) {
-      return res.status(404).json({ message: "Subscription not found" });
+    if (!billingSubscription && !legacySubscription) {
+      return res.status(404).json({ message: 'Subscription not found' });
     }
 
     await User.findByIdAndUpdate(userId, {
@@ -60,15 +75,20 @@ export const cancelSubscription = async (req: AuthRequest, res: Response) => {
     });
     userCache.invalidate(userId);
 
-    res.json(subscription);
+    res.json(
+      formatSubscriptionResponse(
+        billingSubscription,
+        legacySubscription,
+      ),
+    );
   } catch (error) {
     if (error instanceof ForbiddenError || error instanceof UnauthorizedError) {
       throw error;
     }
     logger.error('Error canceling subscription:', error);
     res.status(500).json({
-      message: "Error canceling subscription",
-      error: error instanceof Error ? error.message : "Unknown error"
+      message: 'Error canceling subscription',
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 };
