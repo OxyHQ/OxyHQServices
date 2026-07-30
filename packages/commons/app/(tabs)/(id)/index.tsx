@@ -75,7 +75,9 @@ export default function IdScreen() {
     isSynced: identitySyncState.isSynced,
   });
 
-  const displayName = getDisplayNameOrNull(user);
+  // `getDisplayNameOrNull` answers `null` for intentional absence; card faces take
+  // `displayName?: string` (`undefined`, not `null`).
+  const displayName = getDisplayNameOrNull(user) ?? undefined;
   const avatarUrl = useAvatarUrl(user);
 
   // The public key lives in local secure storage — load it directly so the card
