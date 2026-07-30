@@ -59,7 +59,10 @@ export interface RequiredEnvVars {
  * Optional environment variables with defaults
  */
 export const ENV_DEFAULTS = {
-  PORT: '3001',
+  // Local dev default only — ECS injects PORT explicitly (oxy-infra
+  // terraform-uswest2/app-services.tf sets it to 8080). 4100 is oxy-api's slot
+  // in the per-app port map so several Oxy backends can run side by side.
+  PORT: '4100',
   NODE_ENV: 'development',
   AWS_REGION: 'us-east-1',
 } as const;

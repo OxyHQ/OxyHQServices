@@ -238,7 +238,7 @@ The API includes Socket.IO for real-time features:
 
 ```javascript
 // Connect to Socket.IO
-const socket = io('http://localhost:3001', {
+const socket = io('http://localhost:4100', {
   auth: {
     token: 'your_jwt_token'
   }
@@ -271,7 +271,7 @@ For detailed integration examples, see the **[examples directory](./docs/example
 
 Health check endpoint:
 ```bash
-curl http://localhost:3001/health
+curl http://localhost:4100/health
 ```
 
 ## Storage Usage

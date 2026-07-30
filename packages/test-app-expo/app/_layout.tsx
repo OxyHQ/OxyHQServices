@@ -9,7 +9,7 @@ import { OxyProvider } from '@oxyhq/services';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 import { ConnectionStatusToasts } from '@oxyhq/bloom/connection-status';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4100';
 const AUTH_REDIRECT_URI = Linking.createURL('/');
 // Public OAuth client id (the registered `ApplicationCredential` publicKey) —
 // drives the app-identity flow when passed to `OxyProvider`. Env-with-default

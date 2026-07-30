@@ -45,7 +45,7 @@ export default defineConfig(({ mode }) => ({
     "process.env.NODE_ENV": JSON.stringify(mode),
   },
   server: {
-    port: 3002,
+    port: 8105,
     strictPort: true,
   },
   build: {

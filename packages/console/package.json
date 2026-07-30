@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "vite dev --port 8106",
     "build": "bun ../core/scripts/writePagesHeaders.ts public && vite build",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",

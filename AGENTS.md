@@ -973,14 +973,14 @@ Local dev is a **Bun workspace monorepo** (`bun@1.3.14`, on `PATH` via `/usr/loc
 **Build shared libs before running apps:** the API and the web apps resolve `@oxyhq/contracts`, `@oxyhq/protocol`, `@oxyhq/core`, and `@oxyhq/services` from their built output (`dist/` / `lib/`), NOT from source. Built output persists in the VM snapshot, but after changing any of those packages' source you must rebuild them (e.g. `bun run core:build`, `bun run services:build`, or `bun run build:all`) or downstream `bun --watch`/Vite dev servers fail to resolve the workspace dep (Vite reports `@oxyhq/services ... could not be resolved`). The API dev server needs contracts+protocol+core built; the web apps additionally need `@oxyhq/services` built.
 
 **Run the stack (dev mode):**
-- API: `bun run api:dev` → Express + Socket.IO on **:3001** (`GET /health` → `{"status":"operational"}`). Hot-reloads via `bun --watch`.
-- Auth IdP web app: `VITE_OXY_API_URL=http://localhost:3001 bun run --filter auth dev` → Vite on **:3002**. Point every web/Expo frontend at the local API via its own env var (`auth`: `VITE_OXY_API_URL`; `console`: `VITE_OXY_URL`; Expo apps: `EXPO_PUBLIC_API_URL`). Loopback origins are trusted on the credentialed CORS lane, so `http://localhost:*` can hit the local API directly.
+- API: `bun run api:dev` → Express + Socket.IO on **:4100** (`GET /health` → `{"status":"operational"}`). Hot-reloads via `bun --watch`.
+- Auth IdP web app: `VITE_OXY_API_URL=http://localhost:4100 bun run --filter auth dev` → Vite on **:8105**. Point every web/Expo frontend at the local API via its own env var (`auth`: `VITE_OXY_API_URL`; `console`: `VITE_OXY_URL`; Expo apps: `EXPO_PUBLIC_API_URL`). Loopback origins are trusted on the credentialed CORS lane, so `http://localhost:*` can hit the local API directly.
 
 **Hello-world sanity check (auth end-to-end, no S3/Redis needed):**
 ```bash
-curl -s -X POST http://localhost:3001/auth/signup -H 'Content-Type: application/json' \
+curl -s -X POST http://localhost:4100/auth/signup -H 'Content-Type: application/json' \
   -d '{"email":"devtest@example.com","username":"devtester","password":"HelloWorld123!","name":{"first":"Dev","last":"Tester"}}'
-curl -s -X POST http://localhost:3001/auth/login -H 'Content-Type: application/json' \
+curl -s -X POST http://localhost:4100/auth/login -H 'Content-Type: application/json' \
   -d '{"identifier":"devtester","password":"HelloWorld123!"}'
 ```
 Signup passwords must include a special character (server-enforced, beyond the Zod `min(8)`). Both return a device-first session (`accessToken` + `deviceSecret`); use the token as `Authorization: Bearer` against `GET /users/me`. The `auth` web app drives the same flow through its multi-step login form.
