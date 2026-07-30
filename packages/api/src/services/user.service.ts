@@ -1878,7 +1878,7 @@ export class UserService {
       accountStatus: { $ne: 'archived' },
       reputationTier: { $ne: 'restricted' },
     })
-      .select('-password -refreshToken')
+      .select(PUBLIC_USER_PROFILE_SELECT)
       .lean<IUser[]>({ virtuals: true });
 
     if (users.length === 0) {

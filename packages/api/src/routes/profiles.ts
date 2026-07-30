@@ -28,6 +28,7 @@ import { validate } from '../middleware/validate';
 import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.schemas';
 import { type NameParts } from '../utils/displayName';
 import { userIdentityFields, deriveIsFederated } from '../utils/userTransform';
+import { PUBLIC_USER_PROFILE_PROJECTION } from '../utils/publicUserProjection';
 import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
 import {
   eligibleUserMatch,
@@ -486,7 +487,10 @@ router.get(
               ...buildPeopleSearchNativeFirstStages(),
               { $skip: parsedOffset },
               { $limit: parsedLimit },
-              { $project: { password: 0, refreshToken: 0, _nativePriority: 0, _reputationRank: 0 } },
+              // INCLUSION-ONLY — see PUBLIC_USER_PROFILE_PROJECTION. This row is
+              // world-readable (GET, no auth); an exclusion denylist is one
+              // forgotten field away from leaking — same class of bug as GET /search.
+              { $project: PUBLIC_USER_PROFILE_PROJECTION },
             ],
             totalCount: [{ $count: 'count' }],
           },
