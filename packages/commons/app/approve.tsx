@@ -12,6 +12,7 @@ import { useCommonsApproval } from '@/hooks/commons-signin/useCommonsApproval';
 import { ApprovalRequest } from '@/components/commons-signin/approval-request';
 import { resolveApprovedAction } from '@/lib/commons-signin/approval-return';
 import { ErrorFallback } from '@/components/error-fallback';
+import { getDisplayNameOrNull } from '@/utils/date-utils';
 
 /** How long the success confirmation lingers before we return / close. */
 const APPROVED_RETURN_DELAY_MS = 1000;
@@ -125,7 +126,7 @@ export default function ApproveSignInScreen() {
   // The LOCAL vault identity that would approve. Read from this device's own
   // session — never from the request — because Commons stays the identity no
   // matter which account the requesting app ends up acting as.
-  const identityName = user?.name?.displayName?.trim() || user?.username?.trim() || null;
+  const identityName = user ? getDisplayNameOrNull(user) : null;
 
   let content: React.ReactNode;
   if (state === 'approved' || state === 'denied') {

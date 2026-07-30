@@ -1,4 +1,4 @@
-import { formatDate, getDisplayName } from '@/utils/date-utils';
+import { formatDate, getDisplayName, getDisplayNameOrNull } from '@/utils/date-utils';
 
 describe('formatDate', () => {
   it('returns empty string for undefined input', () => {
@@ -59,5 +59,23 @@ describe('getDisplayName', () => {
     expect(
       getDisplayName({ name: { displayName: 'Jane', first: 'Jane', last: 'Doe' }, username: 'janed' }),
     ).toBe('Jane');
+  });
+
+  it('reads displayName when name is a structured object', () => {
+    expect(getDisplayName({ name: { displayName: 'Renée' } })).toBe('Renée');
+  });
+
+  it('ignores string-shaped name values for displayName access', () => {
+    expect(getDisplayName({ name: 'Legacy String', username: 'janed' })).toBe('janed');
+  });
+});
+
+describe('getDisplayNameOrNull', () => {
+  it('returns null when no identifying fields are present', () => {
+    expect(getDisplayNameOrNull({})).toBeNull();
+  });
+
+  it('returns the normalized handle without an Unnamed fallback', () => {
+    expect(getDisplayNameOrNull({ username: 'janed' })).toBe('janed');
   });
 });
