@@ -22,7 +22,16 @@ import so.oxy.storage.RecoveryPolicy
  * Neither ever rotates the credential — the server does not rotate it either.
  */
 internal object OxyBackgroundSessionStore {
-  private const val PREFS_NAME = "oxy_background_session"
+  /**
+   * Suffix is the hosting app's package name. Oxy apps share the `so.oxy.shared`
+   * Android UID (and therefore one data directory), so a single global prefs name
+   * would let one app that leaves `backgroundSession` off wipe another app's
+   * live credential on launch. Scoping by package keeps each app's widget/sync
+   * store independent.
+   */
+  private const val PREFS_NAME_PREFIX = "oxy_background_session_"
+
+  private fun prefsName(context: Context): String = PREFS_NAME_PREFIX + context.packageName
 
   private const val KEY_BASE_URL = "baseUrl"
   private const val KEY_DEVICE_ID = "deviceId"
@@ -63,7 +72,7 @@ internal object OxyBackgroundSessionStore {
    * escalation is not merely discouraged here, it is unreachable.
    */
   private fun prefs(context: Context): SharedPreferences =
-    OxyEncryptedPrefs.open(context, PREFS_NAME, RecoveryPolicy.RebuildFileOnly)
+    OxyEncryptedPrefs.open(context, prefsName(context), RecoveryPolicy.RebuildFileOnly)
 
   /**
    * The stored credential, or null when absent, incomplete, or expired.

@@ -734,7 +734,7 @@ describe('getStateBySecret', () => {
 });
 
 describe('signout — device-secret cleanup (2c)', () => {
-  it('signout-ALL unsets secretHash/prevSecretHash/prevSecretExpiresAt', async () => {
+  it('signout-ALL unsets device + background credential fields', async () => {
     mockFindOne.mockReturnValueOnce(lean({
       deviceId: 'd1',
       accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
@@ -746,7 +746,14 @@ describe('signout — device-secret cleanup (2c)', () => {
     await deviceSessionService.signout('d1', { all: true });
 
     const [, update] = mockFindOneAndUpdate.mock.calls[0];
-    expect(update.$unset).toEqual({ secretHash: '', prevSecretHash: '', prevSecretExpiresAt: '' });
+    expect(update.$unset).toEqual({
+      secretHash: '',
+      prevSecretHash: '',
+      prevSecretExpiresAt: '',
+      backgroundSecretHash: '',
+      backgroundSecretAccountId: '',
+      backgroundSecretExpiresAt: '',
+    });
   });
 
   it('single-account signout does NOT unset the device secret (other accounts on the device still use it)', async () => {
@@ -757,6 +764,59 @@ describe('signout — device-secret cleanup (2c)', () => {
         { accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 },
       ],
       activeAccountId: { toString: () => 'a1' },
+      revision: 2,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 }],
+      activeAccountId: { toString: () => 'a2' },
+      revision: 3,
+    }));
+
+    await deviceSessionService.signout('d1', { accountId: 'a1' });
+
+    const [, update] = mockFindOneAndUpdate.mock.calls[0];
+    expect(update.$unset).toBeUndefined();
+  });
+
+  it('single-account signout unsets background credential when bound to removed account', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [
+        { accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 },
+        { accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 },
+      ],
+      activeAccountId: { toString: () => 'a1' },
+      backgroundSecretAccountId: { toString: () => 'a1' },
+      revision: 2,
+    }));
+    mockFindOneAndUpdate.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [{ accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 }],
+      activeAccountId: { toString: () => 'a2' },
+      revision: 3,
+    }));
+
+    await deviceSessionService.signout('d1', { accountId: 'a1' });
+
+    const [, update] = mockFindOneAndUpdate.mock.calls[0];
+    expect(update.$unset).toEqual({
+      backgroundSecretHash: '',
+      backgroundSecretAccountId: '',
+      backgroundSecretExpiresAt: '',
+    });
+    expect(update.$unset.secretHash).toBeUndefined();
+  });
+
+  it('single-account signout keeps background credential when bound to a remaining account', async () => {
+    mockFindOne.mockReturnValueOnce(lean({
+      deviceId: 'd1',
+      accounts: [
+        { accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 },
+        { accountId: { toString: () => 'a2' }, sessionId: 's2', authuser: 1 },
+      ],
+      activeAccountId: { toString: () => 'a1' },
+      backgroundSecretAccountId: { toString: () => 'a2' },
       revision: 2,
     }));
     mockFindOneAndUpdate.mockReturnValueOnce(lean({

@@ -11,6 +11,9 @@ import { hashedIpKey } from "../utils/ipKey";
 
 const isProd = process.env.NODE_ENV !== 'development';
 
+/** hashedIpKey already buckets IPv6 before HMAC; silence express-rate-limit v8's false-positive scan. */
+const rateLimitValidate = { validate: { keyGeneratorIpFallback: false } } as const;
+
 // Build Redis-backed store options if available, otherwise fall back to in-memory.
 // Each limiter MUST pass a unique `prefix` so that hits land in distinct Redis
 // keys; otherwise a request that flows through both the global limiter and a
@@ -136,6 +139,7 @@ export function isServiceToServiceBulkRequest(req: Request): boolean {
 // isIdpServiceToServicePath) so shared-egress traffic never exhausts this budget.
 const rateLimiter = rateLimit({
   ...makeStore('rl:general:'),
+  ...rateLimitValidate,
   windowMs: 15 * 60 * 1000,
   max: isProd ? 1000 : 2000,
   message: "Too many requests from this IP, please try again later.",
@@ -166,6 +170,7 @@ const rateLimiter = rateLimit({
 // other limiter (no ERR_ERL_DOUBLE_COUNT).
 const federationServiceLimiter = rateLimit({
   ...makeStore('rl:federation:service:'),
+  ...rateLimitValidate,
   windowMs: 15 * 60 * 1000,
   max: isProd ? 60000 : 120000,
   message: "Too many federation signing requests, please slow down.",
@@ -185,6 +190,7 @@ const federationServiceLimiter = rateLimit({
 // READ budget distinct from every other limiter (no ERR_ERL_DOUBLE_COUNT).
 const idpServiceLimiter = rateLimit({
   ...makeStore('rl:idp:service:'),
+  ...rateLimitValidate,
   windowMs: 15 * 60 * 1000,
   max: isProd ? 20000 : 40000,
   message: "Too many requests, please try again later.",
@@ -203,6 +209,7 @@ const idpServiceLimiter = rateLimit({
 // /auth/refresh roughly every 15 minutes.
 const authRateLimiter = rateLimit({
   ...makeStore('rl:auth:'),
+  ...rateLimitValidate,
   windowMs: 15 * 60 * 1000,
   max: isProd ? 300 : 2000,
   message: "Too many authentication attempts from this IP, please try again later.",
@@ -215,6 +222,7 @@ const authRateLimiter = rateLimit({
 // Per-user rate limiting for authenticated requests
 const userRateLimiter = rateLimit({
   ...makeStore('rl:user:'),
+  ...rateLimitValidate,
   windowMs: 15 * 60 * 1000,
   max: isProd ? 200 : 2000,
   message: "Too many requests, please try again later.",

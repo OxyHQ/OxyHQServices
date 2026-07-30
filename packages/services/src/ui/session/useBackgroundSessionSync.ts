@@ -48,11 +48,10 @@ export function useBackgroundSessionSync({
     }
 
     if (!enabled) {
-      // An app that turns the feature OFF must not leave a live credential at
-      // rest for the rest of its 30-day lifetime. The cost is one local store
-      // open per launch on Android apps that never use the feature, which is
-      // accepted deliberately: correct revocation is worth more than skipping a
-      // memoized keystore open.
+      // An app that leaves the feature off must not keep a credential THIS app
+      // provisioned earlier. The store is package-scoped (see
+      // OxyBackgroundSessionStore), so this cannot revoke a sibling Oxy app's
+      // credential under the shared UID.
       void clearBackgroundSession();
       return;
     }
