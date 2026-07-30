@@ -135,8 +135,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     // title (a stable "Profile" fallback before it resolves), so the banner +
     // overlapping avatar scroll as content UNDER the shared gradient nav bar.
     // `onImage` tone keeps the title + close legible over the colored banner.
+    // Ends in a string, deliberately: `getNormalizedUserHandle` answers `null` for a
+    // user it cannot normalise, and letting that null travel makes this `string | null`
+    // — which does not satisfy `Avatar.name` and does not typecheck. Empty is the honest
+    // bottom of the chain and every reader below already treats it as falsy
+    // (`displayName || t('profile.title')`), so nothing renders a literal "null".
     const displayName = profile
-        ? (profile.name?.displayName ?? getNormalizedUserHandle(profile))
+        ? (profile.name?.displayName ?? getNormalizedUserHandle(profile) ?? '')
         : username || '';
     useSurfaceHeader({
         title: displayName || t('profile.title'),
@@ -191,7 +196,16 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 <View style={styles.avatarRow} className="px-screen-margin">
                     <View style={styles.avatarWrapper} className="border-bg bg-bg rounded-radius-max">
                         <Avatar
-                            source={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar, 'thumb') : undefined}
+                            // `getFileDownloadUrl` answers `null` for a reference it cannot
+                            // resolve, and `Avatar.source` takes `undefined` for "no picture" —
+                            // the two spellings of absent do not meet, so the coalesce is the
+                            // whole fix. Without it this file does not typecheck, which blocks
+                            // `bun run build` and therefore every publish of this package.
+                            source={
+                                profile?.avatar
+                                    ? (oxyServices.getFileDownloadUrl(profile.avatar, 'thumb') ?? undefined)
+                                    : undefined
+                            }
                             name={displayName}
                             size={AVATAR_SIZE}
                         />
