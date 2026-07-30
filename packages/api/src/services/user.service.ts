@@ -322,6 +322,15 @@ export class UserService {
   }
 
   /**
+   * Load a single public profile row by id — inclusion-only projection.
+   */
+  async getPublicUserById(userId: string): Promise<PublicUserDocument | null> {
+    return await User.findById(userId)
+      .select(PUBLIC_USER_PROFILE_SELECT)
+      .lean({ virtuals: true }) as PublicUserDocument | null;
+  }
+
+  /**
    * Get current authenticated user
    */
   async getCurrentUser(userId: string): Promise<IUser | null> {

@@ -1,5 +1,20 @@
 # Changelog — `@oxyhq/core`
 
+## 16.0.0
+
+### BREAKING — `getServiceAssetMetadataByIds` fails closed by default
+
+Failed chunks now throw `ServiceAssetMetadataError` instead of being swallowed.
+A throttled or errored bulk lookup is no longer indistinguishable from “these ids
+do not exist”. Pass `{ partial: true }` to keep the previous swallow behaviour as
+an explicit opt-in.
+
+### BREAKING — `express-rate-limit` peer range is `^8.0.0`
+
+`server/rateLimit.ts` passes `validate: { keyGeneratorIpFallback: false }`, which
+requires v8. The peer previously admitted v7, so nested installs could shadow the
+root v8 devDependency and fail `tsc`.
+
 ## 15.0.0
 
 ### BREAKING — the reputation types moved to `@oxyhq/contracts`

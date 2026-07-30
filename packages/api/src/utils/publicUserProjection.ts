@@ -55,8 +55,23 @@ const PUBLIC_USER_PROFILE_PATHS = [
   'updatedAt',
 ] as const;
 
+/**
+ * Gate-only paths: read by route handlers / `isPublicGraphTarget` to decide
+ * whether a row is discoverable. Never serialized on public DTOs.
+ */
+const PUBLIC_USER_PROFILE_GATE_PATHS = [
+  'accountStatus',
+  'reputationTier',
+  'privacySettings.isPrivateAccount',
+] as const;
+
+const ALL_PUBLIC_USER_PROFILE_PATHS = [
+  ...PUBLIC_USER_PROFILE_PATHS,
+  ...PUBLIC_USER_PROFILE_GATE_PATHS,
+] as const;
+
 /** `.select(...)` argument for a public user row. */
-export const PUBLIC_USER_PROFILE_SELECT = PUBLIC_USER_PROFILE_PATHS.join(' ');
+export const PUBLIC_USER_PROFILE_SELECT = ALL_PUBLIC_USER_PROFILE_PATHS.join(' ');
 
 /**
  * `$project` stage for a public user row, for the surfaces that read through an
@@ -77,7 +92,7 @@ export const PUBLIC_USER_PROFILE_SELECT = PUBLIC_USER_PROFILE_PATHS.join(' ');
  * projection emits nothing it does not name.
  */
 export const PUBLIC_USER_PROFILE_PROJECTION: Record<string, 1> = Object.fromEntries(
-  PUBLIC_USER_PROFILE_PATHS.map((path) => [path, 1]),
+  ALL_PUBLIC_USER_PROFILE_PATHS.map((path) => [path, 1]),
 );
 
 /**
@@ -99,9 +114,11 @@ export type PublicUserDocument = Pick<
   | 'verified'
   | 'type'
   | 'federation'
+  | 'accountStatus'
+  | 'reputationTier'
   | 'createdAt'
   | 'updatedAt'
 > & {
-  /** Only the projected leaf — see {@link PUBLIC_USER_PROFILE_SELECT}. */
-  privacySettings?: Pick<IUser['privacySettings'], 'fediverseSharing'>;
+  /** Only the projected leaves — see {@link PUBLIC_USER_PROFILE_SELECT}. */
+  privacySettings?: Pick<IUser['privacySettings'], 'fediverseSharing' | 'isPrivateAccount'>;
 };

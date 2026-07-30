@@ -110,7 +110,7 @@ const usersController = new UsersController();
  */
 /** 404 when the target user is archived, restricted, or private — same gate as /similar. */
 async function assertDiscoverableTargetUser(userId: string): Promise<void> {
-  const user = await userService.getUserById(userId);
+  const user = await userService.getPublicUserById(userId);
   if (!isPublicGraphTarget(user)) {
     throw new NotFoundError('User not found');
   }
@@ -811,7 +811,7 @@ router.get(
   asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
     const { userId } = req.params;
 
-    const user = await userService.getUserById(userId);
+    const user = await userService.getPublicUserById(userId);
 
     if (
       !user ||

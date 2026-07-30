@@ -28,7 +28,7 @@ import { validate } from '../middleware/validate';
 import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.schemas';
 import { type NameParts } from '../utils/displayName';
 import { userIdentityFields, deriveIsFederated } from '../utils/userTransform';
-import { PUBLIC_USER_PROFILE_PROJECTION } from '../utils/publicUserProjection';
+import { PUBLIC_USER_PROFILE_PROJECTION, PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
 import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
 import {
   eligibleUserMatch,
@@ -379,7 +379,7 @@ router.get(
     let user = await User.findOne(
       isFedHandle ? { username } : { username: exactCaseInsensitiveUsernameRegex(username) },
     )
-      .select('-password -refreshToken')
+      .select(PUBLIC_USER_PROFILE_SELECT)
       .lean({ virtuals: true });
 
     // If not found and it's a fediverse handle, resolve via WebFinger
@@ -387,7 +387,7 @@ router.get(
       const resolved = await federationService.resolveAndUpsert(username).catch(() => null);
       if (resolved) {
         user = await User.findById(resolved._id)
-          .select('-password -refreshToken')
+          .select(PUBLIC_USER_PROFILE_SELECT)
           .lean({ virtuals: true });
       }
     }
@@ -610,7 +610,7 @@ router.get(
 
     // Local-first: resolve an already-known user by exact username.
     const localUser = await User.findOne({ username: handle })
-      .select('-password -refreshToken')
+      .select(PUBLIC_USER_PROFILE_SELECT)
       .lean({ virtuals: true });
 
     if (localUser) {
@@ -702,7 +702,7 @@ router.get(
 
     // Same target gate as GET /users/:userId/{followers,following,mutuals}:
     // archived/restricted/private accounts must not seed a discovery surface.
-    const targetUser = await userService.getUserById(targetUserId);
+    const targetUser = await userService.getPublicUserById(targetUserId);
     if (!isPublicGraphTarget(targetUser)) {
       throw new NotFoundError('User not found');
     }
