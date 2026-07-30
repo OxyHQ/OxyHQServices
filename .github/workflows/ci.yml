@@ -227,6 +227,7 @@ jobs:
       - run: bun install
       - run: |
           bun run --filter @oxyhq/contracts build
+          bun run --filter @oxyhq/protocol build
           bun run --filter @oxyhq/core build
       - run: bun run test
         working-directory: ./packages/ship
