@@ -23,7 +23,7 @@ import './crypto/polyfill';
 // ---------------------------------------------------------------------------
 // API client
 // ---------------------------------------------------------------------------
-export { OxyServices, AssetUrlResolutionError, OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices';
+export { OxyServices, AssetUrlResolutionError, OxyAuthenticationError, OxyAuthenticationTimeoutError, ServiceAssetMetadataError } from './OxyServices';
 export { OXY_CLOUD_URL, oxyClient } from './OxyServices';
 export type { LinkedHttpClient } from './OxyServices.base';
 // Auth-refresh handler surface — consumed by `@oxyhq/services`'s OxyContext to
