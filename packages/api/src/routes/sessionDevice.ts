@@ -1,6 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import type { DeviceSessionState } from '@oxyhq/contracts';
-import { deviceTokenMintRequestSchema } from '@oxyhq/contracts';
+import {
+  deviceBackgroundTokenRequestSchema,
+  deviceTokenMintRequestSchema,
+} from '@oxyhq/contracts';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { decodeToken, extractTokenFromRequest } from '../middleware/authUtils';
@@ -22,6 +25,15 @@ const deviceTokenLimiter = rateLimit({
   windowMs: 60_000,
   max: 30,
 });
+
+const backgroundTokenLimiter = rateLimit({
+  prefix: 'rl:session:background-token:',
+  windowMs: 60_000,
+  max: 30,
+});
+
+/** Lockout scope for the public background-credential mint (per-deviceId). */
+const BACKGROUND_TOKEN_LOCKOUT_SCOPE = 'background-token';
 
 /**
  * POST /session/device/token — the phase-2c zero-cookie mint.
@@ -120,6 +132,57 @@ router.post(
   }),
 );
 
+/**
+ * POST /session/device/background-token — bearer-less mint for native background
+ * code. Possession of the provisioned background secret IS the proof; the secret
+ * is NEVER rotated (unlike `POST /token`). Returns only the short access token,
+ * its expiry, and the account it belongs to — no device state.
+ */
+router.post(
+  '/background-token',
+  backgroundTokenLimiter,
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = deviceBackgroundTokenRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'deviceId and secret are required' });
+      return;
+    }
+    const { deviceId, secret } = parsed.data;
+
+    const lockout = await isLockedOut({ scope: BACKGROUND_TOKEN_LOCKOUT_SCOPE, identifier: deviceId });
+    if (lockout.locked) {
+      if (typeof lockout.retryAfterSeconds === 'number') {
+        res.setHeader('Retry-After', String(lockout.retryAfterSeconds));
+      }
+      res.status(429).json({ error: 'Too many attempts' });
+      return;
+    }
+
+    const outcome = await deviceSessionService.mintFromBackgroundSecret(deviceId, secret);
+    if (!outcome.ok) {
+      if (outcome.reason === 'background_credential_invalid') {
+        await recordFailure({ scope: BACKGROUND_TOKEN_LOCKOUT_SCOPE, identifier: deviceId });
+      } else {
+        // The credential was proven — a dead bound account must not count as
+        // secret guessing.
+        await clearFailures({ scope: BACKGROUND_TOKEN_LOCKOUT_SCOPE, identifier: deviceId });
+      }
+      res.status(401).json({ error: outcome.reason });
+      return;
+    }
+
+    await clearFailures({ scope: BACKGROUND_TOKEN_LOCKOUT_SCOPE, identifier: deviceId });
+    logger.info('device.token.mint', { mint_source: 'background', deviceId });
+    res.json({
+      data: {
+        accessToken: outcome.accessToken,
+        expiresAt: outcome.expiresAt,
+        accountId: outcome.accountId,
+      },
+    });
+  }),
+);
+
 async function withActiveToken(state: DeviceSessionState) {
   const activeToken = await deviceSessionService.resolveActiveToken(state);
   return { state, activeToken };
@@ -139,6 +202,33 @@ function resolveCallerSession(req: AuthRequest): { deviceId: string; sessionId: 
 }
 
 router.use(requireSameSiteOrigin, authMiddleware);
+
+/**
+ * POST /session/device/background-credential — provision a non-rotating
+ * background credential for the caller's account on this device. Bearer required;
+ * NO body. The raw secret is returned exactly once for native background code to
+ * store — JS never mints from it.
+ */
+router.post(
+  '/background-credential',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const deviceId = resolveCallerDeviceId(req);
+    const accountId = req.user?._id?.toString();
+    if (!deviceId || !accountId) {
+      res.status(401).json({ error: 'No device' });
+      return;
+    }
+
+    const credential = await deviceSessionService.issueBackgroundCredential(deviceId, accountId);
+    if (!credential) {
+      res.status(401).json({ error: 'account_not_on_device' });
+      return;
+    }
+
+    logger.info('device.background.credential.issued', { deviceId });
+    res.json({ data: credential });
+  }),
+);
 
 // GET /state returns the DEVICE subset (this device's registered accounts). The
 // RP client additionally unions the org/shared account graph from `GET /accounts`;

@@ -7,6 +7,8 @@ import { logger } from '../utils/logger';
 
 /** Number of random bytes in a raw `deviceSecret` (256-bit). */
 const DEVICE_SECRET_BYTES = 32;
+/** Lifetime of a provisioned background credential (30 days). */
+const BACKGROUND_CREDENTIAL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 /**
  * Grace window during which the just-superseded `deviceSecret` is still accepted
  * after a rotation, so a multi-tab race presenting the previous secret is not
@@ -48,6 +50,11 @@ export type SwitchActiveResult =
   | { ok: true; state: DeviceSessionState }
   | { ok: false; reason: 'not_found' }
   | { ok: false; reason: 'unauthorized'; state: DeviceSessionState };
+
+export type BackgroundMintResult =
+  | { ok: true; accessToken: string; expiresAt: string; accountId: string }
+  | { ok: false; reason: 'background_credential_invalid' }
+  | { ok: false; reason: 'account_not_on_device' };
 
 // `changed` is false only for an idempotent re-register (same account, same
 // session) — the cold-boot reload handoff. The route uses it to skip the
@@ -258,6 +265,19 @@ class DeviceSessionService {
     const remaining = allAccounts.filter((a) => !removingIds.has(idToString(a.accountId) ?? ''));
     const activeStillPresent = remaining.some((a) => idToString(a.accountId) === idToString(current.activeAccountId));
     const nextActive = activeStillPresent ? idToString(current.activeAccountId) : (remaining[0] ? idToString(remaining[0].accountId) : null);
+    const boundBackgroundAccountId = idToString(current.backgroundSecretAccountId);
+    const shouldClearBackground =
+      'all' in target ||
+      (boundBackgroundAccountId !== null && removingIds.has(boundBackgroundAccountId));
+    const unsetFields: Record<string, string> = {};
+    if ('all' in target) {
+      unsetFields.secretHash = '';
+      unsetFields.prevSecretHash = '';
+      unsetFields.prevSecretExpiresAt = '';
+    }
+    if (shouldClearBackground) {
+      Object.assign(unsetFields, this.clearBackgroundCredentialFields());
+    }
     // Signout-ALL also revokes the device's `deviceSecret`: clear the secret
     // hashes so a retained secret can never later mint a token for the now-empty
     // set. Single-account signout leaves the secret alone — other accounts on the
@@ -267,7 +287,7 @@ class DeviceSessionService {
       {
         $set: { accounts: remaining, activeAccountId: nextActive },
         $inc: { revision: 1 },
-        ...('all' in target ? { $unset: { secretHash: '', prevSecretHash: '', prevSecretExpiresAt: '' } } : {}),
+        ...(Object.keys(unsetFields).length > 0 ? { $unset: unsetFields } : {}),
       },
       { new: true, upsert: true },
     ).lean<IDeviceSession>();
@@ -387,6 +407,99 @@ class DeviceSessionService {
       return projectState(doc);
     }
     return null;
+  }
+
+  /**
+   * Provision (or replace) the non-rotating background credential for ONE
+   * account on a device. Bearer-gated at the route; the raw secret is returned
+   * exactly once and only its hash is stored. Returns null when the device is
+   * unknown or the account is not a live member of the device set.
+   */
+  async issueBackgroundCredential(
+    deviceId: string,
+    accountId: string,
+  ): Promise<{ deviceId: string; secret: string; accountId: string; expiresAt: string } | null> {
+    const state = await this.getState(deviceId);
+    const token = await this.resolveTokenForAccount(state, accountId);
+    if (!token) return null;
+
+    const rawSecret = base64UrlEncode(crypto.randomBytes(DEVICE_SECRET_BYTES));
+    const secretHash = sha256Hex(rawSecret);
+    const expiresAt = new Date(Date.now() + BACKGROUND_CREDENTIAL_TTL_MS);
+
+    const updated = await DeviceSession.findOneAndUpdate(
+      { deviceId },
+      {
+        $set: {
+          backgroundSecretHash: secretHash,
+          backgroundSecretAccountId: accountId,
+          backgroundSecretExpiresAt: expiresAt,
+        },
+      },
+      { new: true },
+    ).lean<IDeviceSession>();
+    if (!updated) return null;
+
+    return {
+      deviceId,
+      secret: rawSecret,
+      accountId,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * Mint a short access token from a background credential. NEVER rotates the
+   * presented secret. Distinguishes an invalid/expired credential from a live
+   * credential whose bound account is no longer on the device.
+   */
+  async mintFromBackgroundSecret(deviceId: string, rawSecret: string): Promise<BackgroundMintResult> {
+    if (typeof deviceId !== 'string' || deviceId.length === 0) {
+      return { ok: false, reason: 'background_credential_invalid' };
+    }
+    if (typeof rawSecret !== 'string' || rawSecret.length === 0) {
+      return { ok: false, reason: 'background_credential_invalid' };
+    }
+
+    const doc = await DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
+    if (!doc) return { ok: false, reason: 'background_credential_invalid' };
+
+    const hash = sha256Hex(rawSecret);
+    const storedHash = doc.backgroundSecretHash;
+    const expiresAt = doc.backgroundSecretExpiresAt;
+    const boundAccountId = idToString(doc.backgroundSecretAccountId);
+
+    if (
+      typeof storedHash !== 'string' ||
+      storedHash.length === 0 ||
+      !(expiresAt instanceof Date) ||
+      expiresAt.getTime() <= Date.now() ||
+      !boundAccountId ||
+      !timingSafeStringEqual(hash, storedHash)
+    ) {
+      return { ok: false, reason: 'background_credential_invalid' };
+    }
+
+    const state = projectState(doc);
+    const token = await this.resolveTokenForAccount(state, boundAccountId);
+    if (!token) {
+      return { ok: false, reason: 'account_not_on_device' };
+    }
+
+    return {
+      ok: true,
+      accessToken: token.accessToken,
+      expiresAt: token.expiresAt,
+      accountId: boundAccountId,
+    };
+  }
+
+  private clearBackgroundCredentialFields(): Record<string, string> {
+    return {
+      backgroundSecretHash: '',
+      backgroundSecretAccountId: '',
+      backgroundSecretExpiresAt: '',
+    };
   }
 
   /**

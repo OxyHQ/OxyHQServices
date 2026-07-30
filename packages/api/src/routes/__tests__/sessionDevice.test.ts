@@ -15,6 +15,8 @@ const mockDecodeToken = jest.fn();
 const mockGetSession = jest.fn();
 const mockGetStateBySecret = jest.fn();
 const mockIssueDeviceSecret = jest.fn();
+const mockIssueBackgroundCredential = jest.fn();
+const mockMintFromBackgroundSecret = jest.fn();
 const mockIsLockedOut = jest.fn();
 const mockRecordFailure = jest.fn();
 const mockClearFailures = jest.fn();
@@ -41,6 +43,8 @@ jest.mock('../../services/deviceSession.service', () => ({
     resolveTokenForAccount: (...a: unknown[]) => mockResolveTokenForAccount(...a),
     getStateBySecret: (...a: unknown[]) => mockGetStateBySecret(...a),
     issueDeviceSecret: (...a: unknown[]) => mockIssueDeviceSecret(...a),
+    issueBackgroundCredential: (...a: unknown[]) => mockIssueBackgroundCredential(...a),
+    mintFromBackgroundSecret: (...a: unknown[]) => mockMintFromBackgroundSecret(...a),
   },
 }));
 jest.mock('../../services/session.service', () => ({
@@ -418,5 +422,106 @@ describe('POST /session/device/token — pinned mint (identity-bound clients)', 
     const res = await requestJson(server, 'POST', '/session/device/token', { deviceId: 'd1', deviceSecret: 'raw-secret', accountId: '' });
     expect(res.status).toBe(400);
     expect(mockGetStateBySecret).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /session/device/background-credential', () => {
+  it('provisions a background credential for the caller account on this device', async () => {
+    const credential = {
+      deviceId: 'd1',
+      secret: 'bg-secret',
+      accountId: '64b0000000000000000000aa',
+      expiresAt: '2026-10-07T00:00:00.000Z',
+    };
+    mockIssueBackgroundCredential.mockResolvedValueOnce(credential);
+
+    const res = await requestJson(server, 'POST', '/session/device/background-credential');
+
+    expect(res.status).toBe(200);
+    expect(mockIssueBackgroundCredential).toHaveBeenCalledWith('d1', '64b0000000000000000000aa');
+    expect(res.body.data).toEqual(credential);
+  });
+
+  it('401 account_not_on_device when the caller is not a live member of the device', async () => {
+    mockIssueBackgroundCredential.mockResolvedValueOnce(null);
+
+    const res = await requestJson(server, 'POST', '/session/device/background-credential');
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('account_not_on_device');
+  });
+});
+
+describe('POST /session/device/background-token', () => {
+  it('mints a short access token without rotating the background secret', async () => {
+    mockMintFromBackgroundSecret.mockResolvedValueOnce({
+      ok: true,
+      accessToken: 'jwt-bg',
+      expiresAt: '2026-07-07T00:00:00.000Z',
+      accountId: 'a1',
+    });
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/session/device/background-token',
+      { deviceId: 'd1', secret: 'bg-secret' },
+      { Authorization: '' },
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockMintFromBackgroundSecret).toHaveBeenCalledWith('d1', 'bg-secret');
+    expect(mockClearFailures).toHaveBeenCalledWith({ scope: 'background-token', identifier: 'd1' });
+    expect(res.body.data).toEqual({
+      accessToken: 'jwt-bg',
+      expiresAt: '2026-07-07T00:00:00.000Z',
+      accountId: 'a1',
+    });
+    expect(logger.info).toHaveBeenCalledWith('device.token.mint', { mint_source: 'background', deviceId: 'd1' });
+  });
+
+  it('401 background_credential_invalid and records a failure on a bad secret', async () => {
+    mockMintFromBackgroundSecret.mockResolvedValueOnce({ ok: false, reason: 'background_credential_invalid' });
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/session/device/background-token',
+      { deviceId: 'd1', secret: 'bad' },
+      { Authorization: '' },
+    );
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('background_credential_invalid');
+    expect(mockRecordFailure).toHaveBeenCalledWith({ scope: 'background-token', identifier: 'd1' });
+  });
+
+  it('401 account_not_on_device without recording a lockout failure when the credential is valid but the account is gone', async () => {
+    mockMintFromBackgroundSecret.mockResolvedValueOnce({ ok: false, reason: 'account_not_on_device' });
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/session/device/background-token',
+      { deviceId: 'd1', secret: 'bg-secret' },
+      { Authorization: '' },
+    );
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('account_not_on_device');
+    expect(mockRecordFailure).not.toHaveBeenCalled();
+    expect(mockClearFailures).toHaveBeenCalledWith({ scope: 'background-token', identifier: 'd1' });
+  });
+
+  it('400 when the body shape is invalid', async () => {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/session/device/background-token',
+      { deviceId: 'd1' },
+      { Authorization: '' },
+    );
+    expect(res.status).toBe(400);
+    expect(mockMintFromBackgroundSecret).not.toHaveBeenCalled();
   });
 });
