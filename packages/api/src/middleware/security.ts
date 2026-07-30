@@ -92,6 +92,8 @@ export function isFederationServiceToServicePath(path: string): boolean {
  *   - POST /assets/service/cache      (mirror remote media into the cache ns)
  *   - POST /assets/service/federation (persist durable federated media)
  *   - POST /assets/service/user-media (persist media for a local user; MCP)
+ *   - POST /assets/service/by-ids     (resolve asset metadata for a batch of ids)
+ *   - POST /assets/service/by-sha256  (reverse-resolve assets by content hash)
  *
  * Because these share a prefix with genuine browser/user routes (`/users/*`,
  * `/assets/*`), a PURE path match — as used for the IdP worker / federation
@@ -108,6 +110,13 @@ const SERVICE_TO_SERVICE_BULK_PATHS: ReadonlySet<string> = new Set([
   '/assets/service/cache',
   '/assets/service/federation',
   '/assets/service/user-media',
+  // The two bulk READ lookups. Omitting them was not a judgement call — they
+  // were introduced after this set and never added, so a relying app's metadata
+  // backfill ran under the 1000/15min browser budget and absorbed 24,423
+  // consecutive 429s in one run. Both carry `assetServiceLookupLimiter`, which
+  // is what the MOUNT-ORDER INVARIANT below requires of every entry here.
+  '/assets/service/by-ids',
+  '/assets/service/by-sha256',
 ]);
 
 /**
@@ -120,8 +129,12 @@ const SERVICE_TO_SERVICE_BULK_PATHS: ReadonlySet<string> = new Set([
  *
  * MOUNT-ORDER INVARIANT: every exempt path MUST carry its own dedicated service
  * limiter at its route — `/users/resolve` → `userResolveServiceLimiter`
- * (routes/users.ts), `/assets/service/*` → `cacheUploadLimiter` (routes/assets.ts).
- * The path set here and those route limiters must be kept in sync.
+ * (routes/users.ts), `/assets/service/{cache,federation,user-media}` →
+ * `cacheUploadLimiter`, `/assets/service/{by-ids,by-sha256}` →
+ * `assetServiceLookupLimiter` (both routes/assets.ts). The path set here and
+ * those route limiters must be kept in sync: an entry added here WITHOUT a route
+ * limiter is not a smaller fix, it is a regression — it removes the only ceiling
+ * that authenticated service traffic on that path has.
  */
 export function isServiceToServiceBulkRequest(req: Request): boolean {
   if (!SERVICE_TO_SERVICE_BULK_PATHS.has(req.path)) return false;
