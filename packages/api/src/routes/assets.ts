@@ -557,6 +557,8 @@ router.post('/upload', authMiddleware, upload.single('file'), asyncHandler(async
 const CACHE_RATE_WINDOW_MS = 60 * 1000;
 const CACHE_UPLOAD_MAX_PER_MINUTE = 30;
 const CACHE_DELETE_MAX_PER_MINUTE = 240;
+/** See {@link assetServiceLookupLimiter} for how this ceiling was chosen. */
+const SERVICE_LOOKUP_MAX_PER_MINUTE = 600;
 
 function requireServiceScope(req: ServiceAuthRequest, scope: string): void {
   const scopes = req.serviceApp?.scopes ?? [];
@@ -587,6 +589,39 @@ const cacheUploadLimiter = rateLimit({
       return `asset-cache:upload:${serviceApp.appId}`;
     }
     return `asset-cache:upload:ip:${hashedIpKey(req)}`;
+  },
+});
+
+/**
+ * Per-app rate limit for the two bulk service LOOKUPS (`/service/by-ids`,
+ * `/service/by-sha256`). Both are exempt from the general per-IP browser budget
+ * via `SERVICE_TO_SERVICE_BULK_PATHS`, so this is their SOLE ceiling for
+ * authenticated service traffic and the invariant that exemption depends on.
+ * (Requests WITHOUT a valid service token are never exempted, so they remain
+ * under `rl:general` — this limiter bounds the authenticated path.)
+ *
+ * Sized for the workload that exposed the gap: a relying app's media-metadata
+ * backfill resolves up to {@link SERVICE_ASSET_METADATA cap} 100 ids per request,
+ * so 600/min per app is 60,000 ids/min — comfortably above any backfill sweep
+ * while still bounding a runaway loop or a compromised credential. Deliberately
+ * far above `cacheUploadLimiter`'s 30/min: that guards an S3 write, this is a
+ * projected read of documents by `_id`.
+ *
+ * Unique redis prefix per the rate-limiter convention — a duplicated prefix on a
+ * shared store makes a request increment the same counter twice
+ * (`ERR_ERL_DOUBLE_COUNT`) and silently halves the budget.
+ */
+const assetServiceLookupLimiter = rateLimit({
+  prefix: 'rl:asset-lookup:',
+  windowMs: CACHE_RATE_WINDOW_MS,
+  max: SERVICE_LOOKUP_MAX_PER_MINUTE,
+  message: 'Too many asset metadata lookups. Please slow down.',
+  keyGenerator: (req: express.Request) => {
+    const serviceApp = (req as ServiceAuthRequest).serviceApp;
+    if (serviceApp?.appId) {
+      return `asset-lookup:${serviceApp.appId}`;
+    }
+    return `asset-lookup:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -963,6 +998,7 @@ router.delete(
 router.post(
   '/service/by-ids',
   serviceAuthMiddleware,
+  assetServiceLookupLimiter,
   validate({ body: assetsByIdsBodySchema }),
   asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
     requireServiceScope(req, 'files:read');
@@ -1074,6 +1110,7 @@ router.post(
 router.post(
   '/service/by-sha256',
   serviceAuthMiddleware,
+  assetServiceLookupLimiter,
   validate({ body: assetsBySha256BodySchema }),
   asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
     requireServiceScope(req, 'files:read');
