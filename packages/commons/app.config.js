@@ -28,7 +28,7 @@ module.exports = {
         backgroundImage: './assets/images/android-icon-background.png',
         monochromeImage: './assets/images/android-icon-monochrome.png',
       },
-      versionCode: 2,
+      versionCode: 3,
       predictiveBackGestureEnabled: true,
       softwareKeyboardLayoutMode: 'resize',
       permissions: [
