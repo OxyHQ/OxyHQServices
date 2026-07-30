@@ -687,7 +687,7 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "24.0.2",
+      "version": "25.0.0",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "@oxyhq/core": "^16.0.0",
