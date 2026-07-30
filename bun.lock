@@ -416,7 +416,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "15.0.1",
+      "version": "16.0.0",
       "dependencies": {
         "@noble/ciphers": "^1.3.0",
         "@noble/hashes": "^1.8.0",
@@ -452,7 +452,7 @@
         "expo-crypto": "*",
         "expo-secure-store": "*",
         "express": "^4.0.0",
-        "express-rate-limit": "^7.0.0",
+        "express-rate-limit": "^8.0.0",
         "helmet": "^8.0.0",
       },
       "optionalPeers": [
@@ -5560,8 +5560,6 @@
     "@oxyhq/contracts/@types/node": ["@types/node@20.19.43", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA=="],
 
     "@oxyhq/core/@types/node": ["@types/node@20.19.43", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA=="],
-
-    "@oxyhq/core/express-rate-limit": ["express-rate-limit@7.5.1", "", { "peerDependencies": { "express": ">= 4.11" } }, ""],
 
     "@oxyhq/services/@types/jest": ["@types/jest@29.5.14", "", { "dependencies": { "expect": "^29.0.0", "pretty-format": "^29.0.0" } }, ""],
 

@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/core",
-  "version": "15.0.1",
+  "version": "16.0.0",
   "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -131,7 +131,7 @@
     "expo-crypto": "*",
     "expo-secure-store": "*",
     "express": "^4.0.0",
-    "express-rate-limit": "^7.0.0",
+    "express-rate-limit": "^8.0.0",
     "helmet": "^8.0.0"
   },
   "peerDependenciesMeta": {
