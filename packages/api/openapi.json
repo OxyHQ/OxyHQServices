@@ -11,7 +11,7 @@
       "description": "Production"
     },
     {
-      "url": "http://localhost:3001",
+      "url": "http://localhost:4100",
       "description": "Local development"
     }
   ],

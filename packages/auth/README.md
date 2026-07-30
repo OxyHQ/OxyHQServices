@@ -14,9 +14,9 @@ There is no landing page at `/`.
 ## API Base URL
 
 The web app calls the API directly. In development it defaults to
-`http://localhost:3001`. Override with:
+`http://localhost:4100`. Override with:
 
-- `VITE_OXY_API_URL` (preferred) — Example: `http://localhost:3001`
+- `VITE_OXY_API_URL` (preferred) — Example: `http://localhost:4100`
 - `VITE_OXY_AUTH_URL` (legacy alias)
 
 ## Development
@@ -32,8 +32,8 @@ bun run dev
 ```
 
 Default ports:
-- Auth web: http://localhost:3002
-- API: http://localhost:3001
+- Auth web: http://localhost:8105
+- API: http://localhost:4100
 
 ## Flow Overview
 

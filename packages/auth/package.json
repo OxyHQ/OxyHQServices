@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --port 3002",
+    "dev": "vite --port 8105",
     "dev:pages": "wrangler pages dev dist",
     "build": "bun ../core/scripts/writePagesHeaders.ts public && vite build",
     "test": "bun test lib/__tests__ components/__tests__",

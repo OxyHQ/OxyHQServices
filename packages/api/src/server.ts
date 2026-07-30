@@ -818,8 +818,12 @@ app.use((_req: express.Request, res: express.Response) => {
 // Must be registered last so it catches errors from all routes and middleware above
 app.use(errorHandler);
 
-// Only call listen if this module is run directly
-const PORT = getEnvNumber('PORT', 3001);
+// Only call listen if this module is run directly.
+// The 4100 default is a LOCAL DEV default only — ECS injects PORT explicitly
+// (oxy-infra terraform-uswest2/app-services.tf sets it to 8080). 4100 is
+// oxy-api's slot in the per-app port map so several Oxy backends can run
+// side by side on one machine.
+const PORT = getEnvNumber('PORT', 4100);
 if (require.main === module) {
   // Wait for MongoDB connection before starting server
   // This prevents queries from executing before the database is ready
