@@ -25,12 +25,16 @@
  * live in different stores with one writer each, so there is nothing to keep in
  * lockstep and no state that can disagree.
  *
- * Android only. `requireOptionalNativeModule` resolves `null` on web and on any
- * app that does not ship the native module, and every function here degrades to a
- * no-op in that case — so an app can enable this and lose nothing on other
- * platforms.
+ * ## Android only, and web is refused rather than merely unsupported
+ *
+ * Web is gated off by an explicit platform check, not by the native module being
+ * absent — provisioning in a browser origin would be a security downgrade, so it
+ * must not depend on an incidental fact. See {@link loadNativeModule}. iOS has no
+ * implementation yet and resolves to no module, so every function here degrades to
+ * a no-op: an app can enable this and lose nothing on other platforms.
  */
 import { requireOptionalNativeModule } from 'expo-modules-core';
+import { Platform } from 'react-native';
 import type { OxyServices } from '@oxyhq/core';
 import { logger } from '@oxyhq/core';
 
@@ -67,7 +71,30 @@ const RENEW_WHEN_REMAINING_MS = 7 * 24 * 60 * 60 * 1000;
 let nativeModule: OxyBackgroundSessionNativeModule | null | undefined;
 
 /**
- * Resolve the native module once.
+ * Resolve the native module once — and refuse outright on web.
+ *
+ * ## Web is excluded on purpose, and not merely because the module is absent
+ *
+ * The credential is deliberately NON-ROTATING and long-lived, which is safe only
+ * because native background code is its sole consumer and nobody rotates it. A
+ * browser origin already holds the ROTATING `deviceSecret`, and it has no
+ * background worker to serve — so provisioning there would add a strictly weaker
+ * long-lived secret alongside a stronger short-lived one. That is a downgrade, not
+ * a harmless no-op, and the harm lands at the PROVISION CALL (which mints a live
+ * server-side credential) regardless of whether anything manages to store it.
+ *
+ * That property must not rest on `requireOptionalNativeModule` happening to return
+ * `null` on web. It does today — the module is registered for android only — but
+ * that is an incidental fact a future web shim or a web-build native-module mock
+ * would quietly reverse. So the platform is checked FIRST, before we even ask the
+ * registry, and every entry point in this module inherits the gate.
+ *
+ * (A pre-deploy server makes this visible too: oxy-api's `sessionDevice` router
+ * applies `requireSameSiteOrigin` path-agnostically, so an unmatched path answers
+ * `404` to a native caller but `403 BAD_ORIGIN` to a browser one. Core's degrade is
+ * deliberately narrow — `404 → null` only — because a real origin misconfiguration
+ * on a CURRENT server also returns 403, and swallowing that would hide a genuine
+ * bug. Platform gating belongs here, where the platform is actually known.)
  *
  * `requireOptionalNativeModule` (a static import Metro always resolves) rather
  * than a dynamic `import(moduleName)`: the latter compiles to `require(variable)`
@@ -77,6 +104,10 @@ let nativeModule: OxyBackgroundSessionNativeModule | null | undefined;
  */
 function loadNativeModule(): OxyBackgroundSessionNativeModule | null {
   if (nativeModule === undefined) {
+    if (Platform.OS === 'web') {
+      nativeModule = null;
+      return nativeModule;
+    }
     const native = requireOptionalNativeModule<Partial<OxyBackgroundSessionNativeModule>>(
       'OxyBackgroundSession',
     );

@@ -56,12 +56,20 @@ function fakeOxy(
  * Re-import the module per test: it memoises the resolved native module, which is
  * correct in production (one resolution per process) and must not leak between
  * cases here.
+ *
+ * `platform` is explicit because the react-native stub defaults `Platform.OS` to
+ * `'web'`, where this feature is gated OFF by design. Every case therefore has to
+ * say which platform it is describing — defaulting to `'android'` here, since that
+ * is the only platform the feature ships on.
  */
-async function loadModule(native: NativeCalls | null) {
+async function loadModule(native: NativeCalls | null, platform: 'android' | 'web' = 'android') {
   jest.resetModules();
+  requireOptionalNativeModule.mockClear();
   requireOptionalNativeModule.mockReturnValue(
     native ? { put: native.put, clear: native.clear, peek: native.peek } : null,
   );
+  const { Platform } = await import('react-native');
+  Platform.OS = platform;
   return import('../backgroundSession');
 }
 
@@ -313,6 +321,48 @@ describe('a @oxyhq/core too old to provision', () => {
       }),
     ).resolves.toBeUndefined();
     expect(native.clear).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('on web', () => {
+  /**
+   * Web must never provision. The credential is non-rotating and long-lived, which
+   * is only safe because native background code is its sole consumer; a browser
+   * origin already holds the ROTATING deviceSecret and has no background worker, so
+   * a successful provision there is a security DOWNGRADE. The harm lands at the
+   * network call, which mints a live server-side credential, so "storage failed
+   * anyway" is not a defence.
+   *
+   * These tests present a native module that IS available, which is the whole
+   * point: they fail if the gate ever relies on `requireOptionalNativeModule`
+   * returning null on web rather than on the platform check.
+   */
+  test('does not provision even when a native module IS present', async () => {
+    const native = fakeNative(null);
+    const { syncBackgroundSession, isBackgroundSessionSupported } = await loadModule(native, 'web');
+    const provision = jest.fn(async () => provisioned());
+
+    expect(isBackgroundSessionSupported()).toBe(false);
+    await syncBackgroundSession({
+      oxyServices: fakeOxy(provision),
+      userId: 'user-1',
+      canUsePrivateApi: true,
+      isCurrent: () => true,
+    });
+
+    expect(provision).not.toHaveBeenCalled();
+    expect(native.put).not.toHaveBeenCalled();
+    // Not even a read, so nothing in a browser origin is touched at all.
+    expect(native.peek).not.toHaveBeenCalled();
+    expect(native.clear).not.toHaveBeenCalled();
+  });
+
+  test('never asks the native registry on web', async () => {
+    const { isBackgroundSessionSupported } = await loadModule(fakeNative(null), 'web');
+    expect(isBackgroundSessionSupported()).toBe(false);
+    // The platform decides BEFORE the registry is consulted, so a web-build
+    // native-module mock or a future web shim cannot reopen the gate.
+    expect(requireOptionalNativeModule).not.toHaveBeenCalled();
   });
 });
 
