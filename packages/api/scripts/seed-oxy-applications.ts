@@ -253,11 +253,21 @@ const SEED_APPS: SeedAppSpec[] = [
       'Official Oxy participatory moderation platform — reviewers are assigned cases by the server and review them blind.',
     websiteUrl: 'https://crowdsource.oxy.so',
     type: 'first_party',
-    // The reviewer app ships to the web only today (Cloudflare Pages project
-    // `crowdsource-frontend`). Its Expo `crowdsource://` deep-link scheme is
-    // registered here when a native build actually ships — an unused redirect
-    // surface is authority nobody asked for.
-    redirectUris: ['https://crowdsource.oxy.so'],
+    // Two web surfaces share this client, so each origin is listed: the
+    // reviewer app, and the Trust & Safety / developer console. Trust
+    // derivation (`dynamicOriginRegistry`) keys on the ORIGIN of each redirect
+    // URI, and the console is a distinct origin — without its own entry it
+    // gets neither the credentialed CORS lane nor an exact-match redirect,
+    // however official the parent application is.
+    //
+    // The console origin is registered ahead of its first deploy on purpose:
+    // it is already built and merged, and a redirect surface that only exists
+    // after a second round trip blocks the deploy rather than the reverse.
+    //
+    // Both frontends ship to the web only today. The Expo `crowdsource://`
+    // deep-link scheme is registered here when a native build actually ships —
+    // an unused redirect surface is authority nobody asked for.
+    redirectUris: ['https://crowdsource.oxy.so', 'https://console.crowdsource.oxy.so'],
     // Sign-in ONLY, so the default `['user:read']`. CrowdSource must never
     // carry `reputation:write`: it never moves an Oxy Trust figure itself, it
     // emits a decision and Oxy Trust's own consequence engine decides the
