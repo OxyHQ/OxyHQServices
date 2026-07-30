@@ -192,7 +192,7 @@ ACCESS_TOKEN_SECRET=your_64_char_secret_here
 REFRESH_TOKEN_SECRET=your_64_char_secret_here
 
 # Server
-PORT=3001
+PORT=4100
 NODE_ENV=development
 
 # File Storage

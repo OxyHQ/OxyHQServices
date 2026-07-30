@@ -215,6 +215,22 @@ jobs:
       - run: bun run test
         working-directory: ./packages/core
 
+  # Ship CLI tests (bun test — build workspace deps first)
+  ship-test:
+    name: Ship Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install
+      - run: |
+          bun run --filter @oxyhq/contracts build
+          bun run --filter @oxyhq/core build
+      - run: bun run test
+        working-directory: ./packages/ship
+
   # Node package tests (Jest — build workspace deps first)
   node-test:
     name: Node Tests

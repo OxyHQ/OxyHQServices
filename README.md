@@ -77,7 +77,7 @@ function MyComponent() {
 }
 ```
 
-`signIn()` opens the in-app sign-in surface (`OxyAccountDialog`: Commons QR, or password under "Sign in without the app"). Cold boot is silent — the provider never redirects to a login page.
+`signIn()` opens the in-app sign-in surface (`OxyAccountDialog`: existing device accounts, then one primary "Continue with Oxy" action — Commons QR, push delivery, or same-device deep link; scan-QR / passkey / "Get Commons" sit behind "Having trouble?"). Cold boot is silent — the provider never redirects to a login page.
 
 ### Node.js
 

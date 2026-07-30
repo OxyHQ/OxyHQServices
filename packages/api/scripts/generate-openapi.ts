@@ -480,7 +480,7 @@ const SCHEMA_MODULE_MAP: Record<string, string> = {
   'assets.ts': 'assets.schemas.ts',
   'contacts.ts': 'contacts.schemas.ts',
   'credits.ts': 'credits.schemas.ts',
-  'developer.ts': 'developer.schemas.ts',
+  'applications.ts': 'application.schemas.ts',
   'devices.ts': 'devices.schemas.ts',
   'email.ts': 'email.schemas.ts',
   'reputation.routes.ts': 'reputation.schemas.ts',

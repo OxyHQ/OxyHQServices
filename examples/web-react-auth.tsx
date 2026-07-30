@@ -4,7 +4,8 @@
  * The whole flow is owned by the SDK. You mount one provider, read auth state
  * from one hook, and drop in one button. There is NO cookie plumbing, no FedCM,
  * no `/sso` bounce, and no per-app session restore — `OxyProvider`'s device-first
- * cold boot (durable `oxy_device` cookie → mint) restores an existing session on
+ * cold boot (persisted `{deviceId, deviceSecret}` → `POST /session/device/token`)
+ * restores an existing session on
  * its own and NEVER redirects to a login page.
  *
  * Runs on the web via react-native-web (the same SDK powers Expo/native — see
