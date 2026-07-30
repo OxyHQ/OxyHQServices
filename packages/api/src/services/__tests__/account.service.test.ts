@@ -363,6 +363,25 @@ describe('account tree pure helpers', () => {
 });
 
 // ===========================================================================
+// updateAccount
+// ===========================================================================
+
+describe('updateAccount', () => {
+  test('merges partial name updates without clobbering existing fields', async () => {
+    const account = seedAccount({
+      kind: 'personal',
+      name: { first: 'Ada', last: 'Lovelace' },
+    });
+
+    const updated = await accountService.updateAccount(account._id.toString(), {
+      name: { first: 'Augusta' },
+    });
+
+    expect(updated.name).toEqual({ first: 'Augusta', last: 'Lovelace' });
+  });
+});
+
+// ===========================================================================
 // createChildAccount
 // ===========================================================================
 

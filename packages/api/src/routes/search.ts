@@ -2,7 +2,11 @@ import express, { type Request, type Response } from "express";
 import User from "../models/User";
 import { logger } from '../utils/logger';
 import { sanitizeSearchQuery } from '../utils/sanitize';
-import { buildPeopleSearchOrClause, peopleSearchMongoMatch } from '../utils/profileQuery';
+import {
+  buildPeopleSearchNativeFirstStages,
+  buildPeopleSearchOrClause,
+  peopleSearchMongoMatch,
+} from '../utils/profileQuery';
 import { validate } from '../middleware/validate';
 import { searchQuerySchema } from '../schemas/search.schemas';
 import { PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
@@ -34,14 +38,25 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
     } = { users: [], pagination: { page, limit, hasMore: false } };
 
     if (type === "all" || type === "users") {
-      const users = await User.find({
-        ...peopleSearchMongoMatch,
-        $or: buildPeopleSearchOrClause(searchQuery, { includeLocations: true }),
-      })
-      .select(PUBLIC_USER_PROFILE_SELECT)
-      .sort({ _id: 1 })
-      .skip(skip)
-      .limit(limit);
+      const users = await User.aggregate([
+        {
+          $match: {
+            ...peopleSearchMongoMatch,
+            $or: buildPeopleSearchOrClause(searchQuery, { includeLocations: true }),
+          },
+        },
+        ...buildPeopleSearchNativeFirstStages(),
+        { $skip: skip },
+        { $limit: limit },
+        {
+          $project: {
+            password: 0,
+            refreshToken: 0,
+            _nativePriority: 0,
+            _reputationRank: 0,
+          },
+        },
+      ]);
 
       results.users = users
         .map((user) => formatUserResponse(user))

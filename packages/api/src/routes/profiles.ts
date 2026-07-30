@@ -33,6 +33,7 @@ import {
   eligibleUserMatch,
   FEDERATED_RECOMMENDATION_MAX_AGE_MS,
   isPublicGraphTarget,
+  buildPeopleSearchNativeFirstStages,
   buildPeopleSearchOrClause,
   peopleSearchMongoMatch,
 } from '../utils/profileQuery';
@@ -482,13 +483,7 @@ router.get(
               // The sort precedes $skip/$limit, so it orders the full match set,
               // not just the page. The two sort-only fields are stripped by the
               // $project below so they never leak into the DTO.
-              {
-                $addFields: {
-                  _nativePriority: { $cond: [{ $eq: ['$type', 'federated'] }, 1, 0] },
-                  _reputationRank: { $ifNull: ['$reputationRankWeight', INFLUENCE_MIN] },
-                },
-              },
-              { $sort: { _nativePriority: 1, _reputationRank: -1, _id: 1 } },
+              ...buildPeopleSearchNativeFirstStages(),
               { $skip: parsedOffset },
               { $limit: parsedLimit },
               { $project: { password: 0, refreshToken: 0, _nativePriority: 0, _reputationRank: 0 } },

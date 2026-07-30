@@ -1,10 +1,12 @@
 import type { Response } from "express";
 import type { AuthRequest } from "../middleware/auth";
 import Subscription from "../models/Subscription";
+import BillingSubscription from "../models/BillingSubscription";
 import User from "../models/User";
 import { logger } from '../utils/logger';
 import { ForbiddenError, UnauthorizedError } from '../utils/error';
 import userCache from '../utils/userCache';
+import { formatSubscriptionResponse } from '../utils/subscriptionResponse';
 
 function assertOwnership(req: AuthRequest, userId: string): void {
   if (!req.user) {
@@ -19,8 +21,14 @@ export const getSubscription = async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
     assertOwnership(req, userId);
-    const subscription = await Subscription.findOne({ userId });
-    res.json(subscription || { plan: "basic" });
+    const [billingSubscription, legacySubscription] = await Promise.all([
+      BillingSubscription.findOne({
+        userId,
+        status: { $in: ['active', 'trialing'] },
+      }).lean(),
+      Subscription.findOne({ userId }),
+    ]);
+    res.json(formatSubscriptionResponse(billingSubscription, legacySubscription));
   } catch (error) {
     if (error instanceof ForbiddenError || error instanceof UnauthorizedError) {
       throw error;

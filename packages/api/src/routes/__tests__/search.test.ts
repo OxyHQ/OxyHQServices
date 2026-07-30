@@ -6,8 +6,9 @@ import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
 import { Types } from 'mongoose';
+import { INFLUENCE_MIN } from '../../utils/reputation.constants';
 
-const mockUserFind = jest.fn();
+const mockUserAggregate = jest.fn();
 
 jest.mock('../../middleware/validate', () => ({
   validate: () => (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -23,7 +24,7 @@ jest.mock('../../utils/userTransform', () => ({
 jest.mock('../../models/User', () => ({
   __esModule: true,
   default: {
-    find: (...args: unknown[]) => mockUserFind(...args),
+    aggregate: (...args: unknown[]) => mockUserAggregate(...args),
   },
 }));
 
@@ -35,6 +36,8 @@ interface PoolUser {
   username?: string;
   accountStatus?: string;
   reputationTier?: string;
+  type?: string;
+  reputationRankWeight?: number;
   privacySettings?: { isPrivateAccount?: boolean };
 }
 
@@ -78,7 +81,12 @@ function matchesFindFilter(user: PoolUser, filter: Record<string, unknown>): boo
   if (!Array.isArray(or)) return true;
   return or.some((clause) => {
     const [field, pattern] = Object.entries(clause)[0];
-    const value = field === 'username' ? user.username : undefined;
+    const value =
+      field === 'username' ? user.username
+        : field === 'name.first' ? (user as { name?: { first?: string } }).name?.first
+          : field === 'name.last' ? (user as { name?: { last?: string } }).name?.last
+            : field === 'description' ? (user as { description?: string }).description
+              : undefined;
     if (typeof value !== 'string') return false;
     if (pattern instanceof RegExp) {
       return pattern.test(value);
@@ -91,10 +99,57 @@ function matchesFindFilter(user: PoolUser, filter: Record<string, unknown>): boo
   });
 }
 
+function sortKeyValue(user: PoolUser, key: string): number | string {
+  if (key === '_nativePriority') return user.type === 'federated' ? 1 : 0;
+  if (key === '_reputationRank') {
+    return typeof user.reputationRankWeight === 'number' ? user.reputationRankWeight : INFLUENCE_MIN;
+  }
+  if (key === '_id') return user._id.toString();
+  return 0;
+}
+
+function aggregateSearchPaged(pool: PoolUser[]): (pipeline: unknown) => Promise<unknown[]> {
+  return (pipeline: unknown) => {
+    const stages = pipeline as Array<Record<string, unknown>>;
+    const matchStage = stages.find((stage) => '$match' in stage)?.$match as Record<string, unknown> | undefined;
+    const matched = pool.filter((user) => matchesFindFilter(user, matchStage ?? {}));
+
+    const sortSpec = stages.find((stage) => '$sort' in stage)?.$sort as Record<string, 1 | -1> | undefined;
+    const skip = (stages.find((stage) => '$skip' in stage)?.$skip as number | undefined) ?? 0;
+    const limit = (stages.find((stage) => '$limit' in stage)?.$limit as number | undefined) ?? matched.length;
+
+    const ordered = sortSpec
+      ? [...matched].sort((a, b) => {
+          for (const [key, dir] of Object.entries(sortSpec)) {
+            const av = sortKeyValue(a, key);
+            const bv = sortKeyValue(b, key);
+            let cmp = 0;
+            if (typeof av === 'string' && typeof bv === 'string') cmp = av.localeCompare(bv);
+            else cmp = (av as number) - (bv as number);
+            if (cmp !== 0) return dir === -1 ? -cmp : cmp;
+          }
+          return 0;
+        })
+      : matched;
+
+    return Promise.resolve(ordered.slice(skip, skip + limit).map((user) => ({
+      _id: user._id,
+      username: user.username,
+      accountStatus: user.accountStatus,
+      reputationTier: user.reputationTier,
+      privacySettings: user.privacySettings,
+      type: user.type,
+      reputationRankWeight: user.reputationRankWeight,
+    })));
+  };
+}
+
 const activeUser = new Types.ObjectId();
 const archivedUser = new Types.ObjectId();
 const restrictedUser = new Types.ObjectId();
 const privateUser = new Types.ObjectId();
+const nativeMatch = new Types.ObjectId();
+const federatedMatch = new Types.ObjectId();
 
 let server: http.Server;
 
@@ -114,19 +169,14 @@ beforeEach(() => {
 });
 
 describe('GET /search archived exclusion', () => {
-  it('adds accountStatus: { $ne: "archived" } to the User.find filter', async () => {
-    const chain = {
-      select: jest.fn().mockReturnThis(),
-      sort: jest.fn().mockReturnThis(),
-      skip: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockResolvedValue([]),
-    };
-    mockUserFind.mockReturnValue(chain);
+  it('adds accountStatus: { $ne: "archived" } to the User.aggregate $match', async () => {
+    mockUserAggregate.mockResolvedValue([]);
 
-    const res = await requestJson(server, '/?query=test&type=users');
+    const res = await requestJson(server, '/?query=test&type=users&page=1&limit=10');
     expect(res.status).toBe(200);
 
-    const filter = mockUserFind.mock.calls[0][0] as Record<string, unknown>;
+    const pipeline = mockUserAggregate.mock.calls[0][0] as Array<Record<string, unknown>>;
+    const filter = pipeline.find((stage) => '$match' in stage)?.$match as Record<string, unknown>;
     expect(filter.accountStatus).toEqual({ $ne: 'archived' });
     expect(filter.reputationTier).toEqual({ $ne: 'restricted' });
     expect(filter['privacySettings.isPrivateAccount']).toEqual({ $ne: true });
@@ -137,24 +187,9 @@ describe('GET /search archived exclusion', () => {
       { _id: activeUser, username: 'active_match', accountStatus: 'active' },
       { _id: archivedUser, username: 'archived_match', accountStatus: 'archived' },
     ];
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
 
-    mockUserFind.mockImplementation((filter: Record<string, unknown>) => {
-      const matched = pool.filter((user) => matchesFindFilter(user, filter));
-      return {
-        select: jest.fn().mockReturnThis(),
-        sort: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue(
-          matched.map((user) => ({
-            _id: user._id,
-            username: user.username,
-            accountStatus: user.accountStatus,
-          })),
-        ),
-      };
-    });
-
-    const res = await requestJson(server, '/?query=match&type=users');
+    const res = await requestJson(server, '/?query=match&type=users&page=1&limit=10');
     expect(res.status).toBe(200);
 
     const ids = (res.body.users ?? []).map((user) => String(user.id));
@@ -167,25 +202,9 @@ describe('GET /search archived exclusion', () => {
       { _id: activeUser, username: 'active_match', accountStatus: 'active' },
       { _id: restrictedUser, username: 'restricted_match', accountStatus: 'active', reputationTier: 'restricted' },
     ];
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
 
-    mockUserFind.mockImplementation((filter: Record<string, unknown>) => {
-      const matched = pool.filter((user) => matchesFindFilter(user, filter));
-      return {
-        select: jest.fn().mockReturnThis(),
-        sort: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue(
-          matched.map((user) => ({
-            _id: user._id,
-            username: user.username,
-            accountStatus: user.accountStatus,
-            reputationTier: user.reputationTier,
-          })),
-        ),
-      };
-    });
-
-    const res = await requestJson(server, '/?query=match&type=users');
+    const res = await requestJson(server, '/?query=match&type=users&page=1&limit=10');
     expect(res.status).toBe(200);
 
     const ids = (res.body.users ?? []).map((user) => String(user.id));
@@ -203,25 +222,9 @@ describe('GET /search archived exclusion', () => {
         privacySettings: { isPrivateAccount: true },
       },
     ];
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
 
-    mockUserFind.mockImplementation((filter: Record<string, unknown>) => {
-      const matched = pool.filter((user) => matchesFindFilter(user, filter));
-      return {
-        select: jest.fn().mockReturnThis(),
-        sort: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue(
-          matched.map((user) => ({
-            _id: user._id,
-            username: user.username,
-            accountStatus: user.accountStatus,
-            privacySettings: user.privacySettings,
-          })),
-        ),
-      };
-    });
-
-    const res = await requestJson(server, '/?query=match&type=users');
+    const res = await requestJson(server, '/?query=match&type=users&page=1&limit=10');
     expect(res.status).toBe(200);
 
     const ids = (res.body.users ?? []).map((user) => String(user.id));
@@ -230,27 +233,33 @@ describe('GET /search archived exclusion', () => {
   });
 });
 
+describe('GET /search native-first ordering', () => {
+  it('orders native accounts before federated matches with the same query', async () => {
+    const pool: PoolUser[] = [
+      { _id: federatedMatch, username: 'shared_match', accountStatus: 'active', type: 'federated', reputationRankWeight: 9 },
+      { _id: nativeMatch, username: 'shared_match_native', accountStatus: 'active', type: 'agent', reputationRankWeight: 1 },
+    ];
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
+
+    const res = await requestJson(server, '/?query=match&type=users&page=1&limit=10');
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.users ?? []).map((user) => String(user.id));
+    expect(ids[0]).toBe(nativeMatch.toString());
+    expect(ids).toContain(federatedMatch.toString());
+  });
+});
+
 describe('GET /search leading-@ handling', () => {
   it('strips a single leading @ so a Bluesky handle matches the stored username', async () => {
     const pool: PoolUser[] = [
       { _id: activeUser, username: 'adamrbjack.bsky.social@bsky.social', accountStatus: 'active' },
     ];
-
-    mockUserFind.mockImplementation((filter: Record<string, unknown>) => {
-      const matched = pool.filter((user) => matchesFindFilter(user, filter));
-      return {
-        select: jest.fn().mockReturnThis(),
-        sort: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue(
-          matched.map((user) => ({ _id: user._id, username: user.username })),
-        ),
-      };
-    });
+    mockUserAggregate.mockImplementation(aggregateSearchPaged(pool));
 
     const res = await requestJson(
       server,
-      `/?query=${encodeURIComponent('@adamrbjack.bsky.social@bsky.social')}&type=users`,
+      `/?query=${encodeURIComponent('@adamrbjack.bsky.social@bsky.social')}&type=users&page=1&limit=10`,
     );
     expect(res.status).toBe(200);
     expect((res.body.users ?? []).map((user) => user.id)).toContain(activeUser.toString());

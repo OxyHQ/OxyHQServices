@@ -1,3 +1,5 @@
+import { INFLUENCE_MIN } from './reputation.constants';
+
 /**
  * Profile-discovery query builders.
  *
@@ -48,6 +50,26 @@ export interface PeopleSearchOrClauseOptions {
  * Matches persisted fields only — `name.displayName` is a Mongoose virtual
  * derived from `first`/`last`, not a MongoDB column.
  */
+/**
+ * Shared native-first ordering for people-search surfaces.
+ *
+ * Applied BEFORE paging so offset/limit pagination stays deterministic:
+ *   1. native before federated
+ *   2. higher reputation rank first
+ *   3. `_id` ascending as the final tiebreaker
+ */
+export function buildPeopleSearchNativeFirstStages(): Record<string, unknown>[] {
+  return [
+    {
+      $addFields: {
+        _nativePriority: { $cond: [{ $eq: ['$type', 'federated'] }, 1, 0] },
+        _reputationRank: { $ifNull: ['$reputationRankWeight', INFLUENCE_MIN] },
+      },
+    },
+    { $sort: { _nativePriority: 1, _reputationRank: -1, _id: 1 } },
+  ];
+}
+
 export function buildPeopleSearchOrClause(
   pattern: PeopleSearchPattern,
   options: PeopleSearchOrClauseOptions = {},
