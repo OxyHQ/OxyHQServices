@@ -28,7 +28,7 @@ interface HeaderProps {
 
 const DOUBLE_PRESS_DELAY = 300;
 
-export function Header({ }: HeaderProps) {
+export function Header(_props: HeaderProps) {
     const navigation = useNavigation<DrawerNavigation>();
     const router = useRouter();
     const colors = useColors();

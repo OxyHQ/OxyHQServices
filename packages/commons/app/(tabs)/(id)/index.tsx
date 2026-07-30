@@ -27,7 +27,7 @@ import { useIdentity } from '@/hooks/useIdentity';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
 import { useAttestedEvent, type AttestedEventPayload } from '@/hooks/civic/useAttestedEvent';
-import { getDisplayName } from '@/utils/date-utils';
+import { getDisplayNameOrNull } from '@/utils/date-utils';
 import { useTranslation } from '@/lib/i18n';
 
 const CARD_WIDTH = 240;
@@ -75,7 +75,7 @@ export default function IdScreen() {
     isSynced: identitySyncState.isSynced,
   });
 
-  const displayName = getDisplayName(user);
+  const displayName = getDisplayNameOrNull(user);
   const avatarUrl = useAvatarUrl(user);
 
   // The public key lives in local secure storage — load it directly so the card

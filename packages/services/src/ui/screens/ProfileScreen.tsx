@@ -192,7 +192,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     <View style={styles.avatarWrapper} className="border-bg bg-bg rounded-radius-max">
                         <Avatar
                             source={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar, 'thumb') : undefined}
-                            name={displayName || username}
+                            name={displayName}
                             size={AVATAR_SIZE}
                         />
                     </View>

@@ -34,7 +34,7 @@ import { userService } from '../services/user.service';
 import graphCache from '../utils/graphCache';
 import { assetService } from '../services/assetServiceSingleton';
 import { UsersController } from '../controllers/users.controller';
-import { resolveUserIdToObjectId } from '../utils/validation';
+import { resolveUserIdToObjectId, isValidObjectId } from '../utils/validation';
 import userCache from '../utils/userCache';
 import SignatureService from '../services/signature.service';
 import { emailService } from '../services/email.service';
@@ -1730,6 +1730,11 @@ router.put(
     }
     if (!username || typeof username !== 'string') {
       throw new BadRequestError('username is required');
+    }
+    if (type !== 'federated' && ownerId !== undefined && ownerId !== null) {
+      if (typeof ownerId !== 'string' || !isValidObjectId(ownerId)) {
+        throw new BadRequestError('ownerId must be a valid user id');
+      }
     }
 
     // Build the upsert filter and $set payload — never touch auth fields

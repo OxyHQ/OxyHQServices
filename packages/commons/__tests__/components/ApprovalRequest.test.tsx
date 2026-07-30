@@ -214,6 +214,16 @@ describe('ApprovalRequest', () => {
     expect(getByTestId('approval-acting-as').textContent).toBe('@oxycollective');
   });
 
+  it('does not double-prefix a federated delegated account handle', () => {
+    const { getByTestId } = renderRequest({
+      info: makeInfo({
+        subjectAccount: { id: 'acct-9', username: 'alice@mastodon.social' },
+      }),
+    });
+
+    expect(getByTestId('approval-acting-as').textContent).toBe('alice@mastodon.social');
+  });
+
   it('names the identity generically when the vault identity has no name yet', () => {
     const { getByTestId } = renderRequest({
       info: makeInfo({

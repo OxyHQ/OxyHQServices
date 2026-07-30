@@ -84,6 +84,7 @@ jest.mock('../../utils/userCache', () => ({
 }));
 jest.mock('../../utils/validation', () => ({
   resolveUserIdToObjectId: jest.fn(),
+  isValidObjectId: (id: string) => /^[a-f0-9]{24}$/i.test(id),
 }));
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
@@ -185,6 +186,8 @@ beforeEach(() => {
 });
 
 describe('PUT /users/resolve (C4)', () => {
+  const VALID_OWNER_ID = '507f1f77bcf86cd799439011';
+
   it('rejects when the service token lacks federation:write scope', async () => {
     // Override the default mock so this caller has no scopes.
     mockServiceAuthMiddleware.mockImplementationOnce(
@@ -230,6 +233,18 @@ describe('PUT /users/resolve (C4)', () => {
     expect(mockUserFindOneAndUpdate).not.toHaveBeenCalled();
   });
 
+  it('rejects a malformed ownerId for agent/automated users', async () => {
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'agent',
+      username: 'bot1',
+      ownerId: 'owner-1',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/ownerId must be a valid user id/i);
+    expect(mockUserFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('rejects agent username that collides with an existing local user', async () => {
     const leanResult = jest.fn().mockResolvedValue({ _id: 'local-id', type: 'local' });
     const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
@@ -238,7 +253,7 @@ describe('PUT /users/resolve (C4)', () => {
     const res = await requestJson(server, 'PUT', '/users/resolve', {
       type: 'agent',
       username: 'alice',
-      ownerId: 'owner-1',
+      ownerId: VALID_OWNER_ID,
     });
 
     expect(res.status).toBe(409);
@@ -259,7 +274,7 @@ describe('PUT /users/resolve (C4)', () => {
     const res = await requestJson(server, 'PUT', '/users/resolve', {
       type: 'agent',
       username: 'bot1',
-      ownerId: 'owner-1',
+      ownerId: VALID_OWNER_ID,
     });
 
     expect(res.status).toBe(409);

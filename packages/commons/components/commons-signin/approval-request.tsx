@@ -2,10 +2,11 @@ import React from 'react';
 import { View, Image, Pressable, StyleSheet } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LogoIcon } from '@oxyhq/services';
-import type {
-  CommonsApprovalInfo,
-  CommonsApprovalSubjectAccount,
-  PublicApplication,
+import {
+  getNormalizedUserHandle,
+  type CommonsApprovalInfo,
+  type CommonsApprovalSubjectAccount,
+  type PublicApplication,
 } from '@oxyhq/core';
 import type { CommonsDenyReason } from '@oxyhq/contracts';
 import { useColors } from '@/hooks/useColors';
@@ -63,7 +64,10 @@ export interface ApprovalRequestProps {
 /** How the delegated account is named: its display name, else its handle. */
 function subjectLabel(subject: CommonsApprovalSubjectAccount): string {
   const displayName = subject.displayName?.trim();
-  return displayName ? displayName : `@${subject.username}`;
+  if (displayName) return displayName;
+  const handle = getNormalizedUserHandle(subject);
+  if (!handle) return '—';
+  return handle.includes('@') ? handle : `@${handle}`;
 }
 
 /**
