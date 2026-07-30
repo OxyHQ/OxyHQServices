@@ -218,7 +218,12 @@ function RootLayoutInner() {
               This replaces the app-local boot auto-connect Commons used to run;
               do NOT re-add an app-local session-restore path. */}
           <ConnectionStatusToasts />
-          <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID} sessionMode="identity">
+          <OxyProvider
+            baseURL={API_URL}
+            clientId={OXY_CLIENT_ID}
+            sessionMode="identity"
+            backgroundSession
+          >
             <LocaleProvider>
               <AppHead />
               <AppStackContent />

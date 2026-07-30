@@ -2,16 +2,11 @@
  * User display name and date formatting utilities.
  *
  * Display-name helpers follow the API contract: prefer `name.displayName` when
- * present, otherwise fall back to the normalized handle. The legacy
- * `getAccountDisplayName` chain is only used as a last resort for local
- * account-switcher surfaces without a handle.
+ * present, otherwise fall back to the normalized handle via
+ * `getNormalizedUserHandle`.
  */
 
-import {
-  getAccountDisplayName as coreGetAccountDisplayName,
-  getNormalizedUserHandle,
-  type DisplayNameUserShape,
-} from '@oxyhq/core';
+import { getNormalizedUserHandle, type DisplayNameUserShape } from '@oxyhq/core';
 
 /**
  * Formats a date string to a readable format (e.g., "Feb 21, 2025")
@@ -42,20 +37,14 @@ function readDisplayName(user: DisplayNameUserShape | null | undefined): string 
 /**
  * Gets a display name from user data.
  *
- * Prefers API `name.displayName`, then the normalized handle, then the local
- * account-switcher fallback chain.
+ * Prefers API `name.displayName`, then the normalized handle.
  */
 export const getDisplayName = (
   user: DisplayNameUserShape | null | undefined,
-  locale?: string,
 ): string => {
   const displayName = readDisplayName(user);
   if (displayName) return displayName;
-
-  const handle = getNormalizedUserHandle(user);
-  if (handle) return handle;
-
-  return coreGetAccountDisplayName(user, locale);
+  return getNormalizedUserHandle(user) ?? '';
 };
 
 /**
@@ -63,7 +52,6 @@ export const getDisplayName = (
  */
 export const getShortDisplayName = (
   user: DisplayNameUserShape | null | undefined,
-  locale?: string,
 ): string => {
   const displayName = readDisplayName(user);
   if (displayName) {
@@ -71,18 +59,11 @@ export const getShortDisplayName = (
     if (firstToken) return firstToken;
   }
 
-  const name = user?.name;
-  if (name && typeof name === 'object') {
-    const first = typeof name.first === 'string' ? name.first.trim() : '';
-    if (first) return first.split(/\s+/)[0] ?? first;
-    const full = typeof name.full === 'string' ? name.full.trim() : '';
-    if (full) return full.split(/\s+/)[0] ?? full;
-  } else if (typeof name === 'string' && name.trim()) {
-    return name.trim().split(/\s+/)[0] ?? name.trim();
+  const handle = getNormalizedUserHandle(user);
+  if (handle) {
+    const firstToken = handle.split(/\s+/).find(Boolean);
+    return firstToken ?? handle;
   }
 
-  const handle = getNormalizedUserHandle(user);
-  if (handle) return handle;
-
-  return coreGetAccountDisplayName(user, locale);
+  return '';
 };

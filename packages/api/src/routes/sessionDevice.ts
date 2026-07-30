@@ -14,6 +14,8 @@ import sessionService from '../services/session.service';
 import { broadcastDeviceState, broadcastSessionAccountsChanged } from '../utils/socket';
 import { asyncHandler } from '../utils/asyncHandler';
 import { logger } from '../utils/logger';
+import { isBrowserClient } from '../utils/origin';
+import { hashedIpKey } from '../utils/ipKey';
 
 const router = Router();
 
@@ -32,7 +34,7 @@ const backgroundTokenLimiter = rateLimit({
   max: 30,
 });
 
-/** Lockout scope for the public background-credential mint (per-deviceId). */
+/** Lockout scope for the public background-token mint (per-deviceId). */
 const BACKGROUND_TOKEN_LOCKOUT_SCOPE = 'background-token';
 
 /**
@@ -201,17 +203,40 @@ function resolveCallerSession(req: AuthRequest): { deviceId: string; sessionId: 
   return { deviceId: decoded.deviceId, sessionId: decoded.sessionId };
 }
 
+const backgroundCredentialLimiter = rateLimit({
+  prefix: 'rl:session:background-credential:',
+  windowMs: 60_000,
+  max: 10,
+  keyGenerator: (req) => {
+    const deviceId = resolveCallerDeviceId(req as AuthRequest);
+    const userId = (req as AuthRequest).user?._id?.toString();
+    if (deviceId && userId) {
+      return `bg-cred:${deviceId}:${userId}`;
+    }
+    return `bg-cred:ip:${hashedIpKey(req)}`;
+  },
+});
+
 router.use(requireSameSiteOrigin, authMiddleware);
 
 /**
  * POST /session/device/background-credential — provision a non-rotating
  * background credential for the caller's account on this device. Bearer required;
  * NO body. The raw secret is returned exactly once for native background code to
- * store — JS never mints from it.
+ * store — JS never mints from it. Browser callers are refused: native HTTP
+ * clients send no `Origin`/`Sec-Fetch-Site`; credentialed browser fetch always
+ * does, and a long-lived non-rotating secret must not be mintable from a web
+ * origin even with a valid bearer.
  */
 router.post(
   '/background-credential',
+  backgroundCredentialLimiter,
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (isBrowserClient(req.headers)) {
+      res.status(403).json({ error: 'browser_not_allowed' });
+      return;
+    }
+
     const deviceId = resolveCallerDeviceId(req);
     const accountId = req.user?._id?.toString();
     if (!deviceId || !accountId) {

@@ -169,11 +169,11 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
      *
      * That paragraph is LOAD-BEARING, not belt-and-braces: the route sits above
      * oxy-api's router-wide origin guard (deliberately, so a native client with
-     * no `Origin` is not rejected), so as of this writing NOTHING server-side
-     * refuses a browser caller that presents a valid bearer. Until a server-side
-     * check lands, caller discipline is the only control — which is also why a
-     * doc note cannot be the whole answer to browser XSS minting a long-lived
-     * credential with the victim's bearer.
+     * no `Origin` is not rejected). oxy-api additionally refuses callers that
+     * carry browser context signals (`Origin` or `Sec-Fetch-Site`) with
+     * `403 browser_not_allowed` — native HTTP clients send neither. Gate the
+     * caller by platform on the client as well; do not widen the 404 degrade to
+     * 403, which would also swallow a genuine origin misconfiguration.
      *
      * @returns the provisioned credential, or `null` when the endpoint is absent
      * (404). The API deploy leads the SDK release, so a client on a newer SDK

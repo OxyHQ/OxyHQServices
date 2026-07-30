@@ -450,6 +450,26 @@ describe('POST /session/device/background-credential', () => {
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('account_not_on_device');
   });
+
+  it('403 browser_not_allowed when Origin is present (native-only endpoint)', async () => {
+    const res = await requestJson(server, 'POST', '/session/device/background-credential', undefined, {
+      Origin: 'https://accounts.oxy.so',
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('browser_not_allowed');
+    expect(mockIssueBackgroundCredential).not.toHaveBeenCalled();
+  });
+
+  it('403 browser_not_allowed when Sec-Fetch-Site is present without Origin', async () => {
+    const res = await requestJson(server, 'POST', '/session/device/background-credential', undefined, {
+      'sec-fetch-site': 'same-origin',
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('browser_not_allowed');
+    expect(mockIssueBackgroundCredential).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /session/device/background-token', () => {
