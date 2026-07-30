@@ -734,7 +734,17 @@ describe('getStateBySecret', () => {
 });
 
 describe('signout — device-secret cleanup (2c)', () => {
-  it('signout-ALL unsets device + background credential fields', async () => {
+  /*
+   * These assertions are deliberately EXACT (`toEqual`, not `toMatchObject`).
+   *
+   * `$unset` on a device session is security-relevant: it is what stops retained
+   * secret material from minting a token after a signout. An exact assertion is
+   * the only kind that notices the set CHANGING — it fired the moment the
+   * background-session feature widened it, which is exactly the alarm wanted. Do
+   * not relax it to `toMatchObject`; when the set legitimately grows, update the
+   * expectation, and the two minutes that costs is the price of the alarm working.
+   */
+  it('signout-ALL unsets every secret field, including the background credential', async () => {
     mockFindOne.mockReturnValueOnce(lean({
       deviceId: 'd1',
       accounts: [{ accountId: { toString: () => 'a1' }, sessionId: 's1', authuser: 0 }],
@@ -750,6 +760,9 @@ describe('signout — device-secret cleanup (2c)', () => {
       secretHash: '',
       prevSecretHash: '',
       prevSecretExpiresAt: '',
+      // The background credential goes too: it is minting material of its own, so
+      // a signout-all that left it behind would revoke the device secret and keep
+      // the one a widget mints with.
       backgroundSecretHash: '',
       backgroundSecretAccountId: '',
       backgroundSecretExpiresAt: '',
@@ -779,7 +792,15 @@ describe('signout — device-secret cleanup (2c)', () => {
     expect(update.$unset).toBeUndefined();
   });
 
-  it('single-account signout unsets background credential when bound to removed account', async () => {
+  /*
+   * The case above only covers signing out an account the background credential is
+   * NOT bound to. On its own it reads as "single-account signout never clears
+   * anything", which is the wrong invariant — the two cases below are the halves
+   * that make the real rule visible: the background credential follows the ACCOUNT
+   * it is bound to, not the signout's breadth.
+   */
+
+  it('single-account signout DOES clear the background credential when it is bound to the removed account', async () => {
     mockFindOne.mockReturnValueOnce(lean({
       deviceId: 'd1',
       accounts: [
@@ -800,15 +821,16 @@ describe('signout — device-secret cleanup (2c)', () => {
     await deviceSessionService.signout('d1', { accountId: 'a1' });
 
     const [, update] = mockFindOneAndUpdate.mock.calls[0];
+    // Only the background fields: the DEVICE secret survives, because `a2` is
+    // still on this device and legitimately mints with it.
     expect(update.$unset).toEqual({
       backgroundSecretHash: '',
       backgroundSecretAccountId: '',
       backgroundSecretExpiresAt: '',
     });
-    expect(update.$unset.secretHash).toBeUndefined();
   });
 
-  it('single-account signout keeps background credential when bound to a remaining account', async () => {
+  it('single-account signout leaves a background credential bound to a DIFFERENT account alone', async () => {
     mockFindOne.mockReturnValueOnce(lean({
       deviceId: 'd1',
       accounts: [
