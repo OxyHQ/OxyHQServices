@@ -1,6 +1,30 @@
 import { formatSubscriptionResponse } from '../subscriptionResponse';
 import type { IBillingSubscription } from '../../models/BillingSubscription';
-import type { ISubscription } from '../../models/Subscription';
+import type { ISubscription, SubscriptionStatus } from '../../models/Subscription';
+
+/** Fixed clock so the derived-status cases never become time bombs. */
+const NOW = new Date('2026-01-15T00:00:00.000Z');
+
+function legacyRow(status: SubscriptionStatus, endDate: Date): ISubscription {
+  return {
+    plan: 'pro',
+    status,
+    userId: { toString: () => 'user-1' },
+    startDate: new Date('2025-12-01T00:00:00.000Z'),
+    endDate,
+    autoRenew: true,
+    toJSON() {
+      return {
+        plan: 'pro',
+        status,
+        userId: 'user-1',
+        startDate: new Date('2025-12-01T00:00:00.000Z'),
+        endDate,
+        autoRenew: true,
+      };
+    },
+  } as unknown as ISubscription;
+}
 
 describe('formatSubscriptionResponse', () => {
   it('prefers an active billing subscription over legacy rows', () => {
@@ -74,30 +98,32 @@ describe('formatSubscriptionResponse', () => {
   });
 
   it('falls back to legacy subscription rows when billing is absent', () => {
-    const legacy = {
-      plan: 'pro',
-      status: 'active',
-      userId: { toString: () => 'user-1' },
-      startDate: new Date('2025-12-01T00:00:00.000Z'),
-      endDate: new Date('2026-01-01T00:00:00.000Z'),
-      autoRenew: true,
-      toJSON() {
-        return {
-          plan: 'pro',
-          status: 'active',
-          userId: 'user-1',
-          startDate: this.startDate,
-          endDate: this.endDate,
-          autoRenew: true,
-        };
-      },
-    } as unknown as ISubscription;
+    const legacy = legacyRow('active', new Date('2026-02-01T00:00:00.000Z'));
 
-    expect(formatSubscriptionResponse(null, legacy)).toMatchObject({
+    expect(formatSubscriptionResponse(null, legacy, NOW)).toMatchObject({
       plan: 'pro',
       status: 'active',
       userId: 'user-1',
       autoRenew: true,
+    });
+  });
+
+  it('reports a lapsed legacy row as expired, not as its stored active status', () => {
+    // The row is still stored `active` — the lifecycle sweep has not reached it
+    // yet. The response must not tell the owner they still hold a paid plan.
+    const legacy = legacyRow('active', new Date('2025-12-01T00:00:00.000Z'));
+
+    expect(formatSubscriptionResponse(null, legacy, NOW)).toMatchObject({
+      plan: 'pro',
+      status: 'expired',
+    });
+  });
+
+  it('keeps a cancelled legacy row cancelled', () => {
+    const legacy = legacyRow('canceled', new Date('2026-02-01T00:00:00.000Z'));
+
+    expect(formatSubscriptionResponse(null, legacy, NOW)).toMatchObject({
+      status: 'canceled',
     });
   });
 

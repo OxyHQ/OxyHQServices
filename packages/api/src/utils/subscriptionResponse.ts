@@ -1,10 +1,11 @@
 import type { IBillingSubscription } from '../models/BillingSubscription';
-import type { ISubscription } from '../models/Subscription';
+import type { ISubscription, SubscriptionStatus } from '../models/Subscription';
 import type { SubscriptionPlanTier } from './subscriptionPlan';
+import { deriveSubscriptionStatus } from './subscriptionStatus';
 
 export interface SubscriptionResponse {
   plan: SubscriptionPlanTier;
-  status?: 'active' | 'canceled' | 'expired';
+  status?: SubscriptionStatus;
   userId?: string;
   startDate?: string;
   endDate?: string;
@@ -44,6 +45,10 @@ function toIsoString(value: Date | string | undefined): string | undefined {
  *
  * Stripe writes to `BillingSubscription`; the legacy `Subscription` collection
  * may still hold rows from before the billing cutover. Billing wins.
+ *
+ * A legacy row's reported `status` is DERIVED from its dates rather than echoed
+ * from storage, so a row that lapsed since the last lifecycle reconciliation is
+ * reported as `expired` rather than as still active.
  */
 export function formatSubscriptionResponse(
   billing: Pick<
@@ -58,6 +63,7 @@ export function formatSubscriptionResponse(
     | 'updatedAt'
   > | null,
   legacy: ISubscription | null,
+  now: Date = new Date(),
 ): SubscriptionResponse {
   if (billing) {
     return {
@@ -76,7 +82,10 @@ export function formatSubscriptionResponse(
     const json = typeof legacy.toJSON === 'function' ? legacy.toJSON() : legacy;
     return {
       plan: normalizePlanName(json.plan),
-      status: json.status,
+      status: deriveSubscriptionStatus(
+        { status: json.status, endDate: json.endDate },
+        now,
+      ),
       userId: json.userId?.toString?.() ?? String(json.userId),
       startDate: toIsoString(json.startDate),
       endDate: toIsoString(json.endDate),

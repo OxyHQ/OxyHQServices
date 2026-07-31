@@ -2,7 +2,7 @@ const mockFindOneAndUpdate = jest.fn();
 const mockFindByIdAndUpdate = jest.fn();
 const mockInvalidate = jest.fn();
 const mockBillingFindOne = jest.fn();
-const mockSubscriptionFindOne = jest.fn();
+const mockFindCurrentSubscription = jest.fn();
 const mockStripeSubscriptionsUpdate = jest.fn();
 
 jest.mock('../../models/BillingSubscription', () => ({
@@ -15,9 +15,15 @@ jest.mock('../../models/BillingSubscription', () => ({
 jest.mock('../../models/Subscription', () => ({
   __esModule: true,
   default: {
-    findOne: (...args: unknown[]) => mockSubscriptionFindOne(...args),
     findOneAndUpdate: (...args: unknown[]) => mockFindOneAndUpdate(...args),
   },
+}));
+
+// The "which row represents this user's standing" decision (and its lazy expiry)
+// belongs to the lifecycle service and is covered by its own suite.
+jest.mock('../../services/subscriptionLifecycle.service', () => ({
+  __esModule: true,
+  findCurrentSubscription: (...args: unknown[]) => mockFindCurrentSubscription(...args),
 }));
 
 jest.mock('../../models/User', () => ({
@@ -66,7 +72,7 @@ describe('getSubscription', () => {
         updatedAt: new Date('2026-01-01T00:00:00.000Z'),
       }),
     });
-    mockSubscriptionFindOne.mockResolvedValue(null);
+    mockFindCurrentSubscription.mockResolvedValue(null);
 
     const json = jest.fn();
     const req = {
@@ -86,6 +92,23 @@ describe('getSubscription', () => {
       status: 'active',
       userId: 'user-1',
     }));
+  });
+
+  it('reads the legacy row through the lifecycle service so history cannot masquerade as current', async () => {
+    mockBillingFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+    mockFindCurrentSubscription.mockResolvedValue(null);
+
+    const json = jest.fn();
+    const req = {
+      params: { userId: 'user-1' },
+      user: { _id: { toString: () => 'user-1' } },
+    } as unknown as AuthRequest;
+    const res = { json, status: jest.fn().mockReturnThis() } as unknown as Response;
+
+    await getSubscription(req, res);
+
+    expect(mockFindCurrentSubscription).toHaveBeenCalledWith('user-1');
+    expect(json).toHaveBeenCalledWith({ plan: 'basic' });
   });
 });
 
@@ -136,15 +159,18 @@ describe('cancelSubscription', () => {
   });
 
   it('cancels a legacy-only subscription and revokes analytics sharing', async () => {
+    const endDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     mockBillingFindOne.mockResolvedValue(null);
     mockFindOneAndUpdate.mockResolvedValue({
       userId: 'user-1',
       status: 'canceled',
       plan: 'pro',
+      endDate,
       toJSON: () => ({
         userId: 'user-1',
         status: 'canceled',
         plan: 'pro',
+        endDate,
       }),
     });
 
@@ -158,10 +184,12 @@ describe('cancelSubscription', () => {
     await cancelSubscription(req, res);
 
     expect(mockStripeSubscriptionsUpdate).not.toHaveBeenCalled();
+    // Only an IN-FORCE row can be cancelled: a row that already lapsed is
+    // history, and rewriting it to `canceled` would falsify why it ended.
     expect(mockFindOneAndUpdate).toHaveBeenCalledWith(
-      { userId: 'user-1', status: { $ne: 'canceled' } },
+      { userId: 'user-1', status: { $ne: 'canceled' }, endDate: { $gt: expect.any(Date) } },
       { status: 'canceled' },
-      { new: true },
+      { new: true, sort: { endDate: -1 } },
     );
     expect(mockFindByIdAndUpdate).toHaveBeenCalledWith('user-1', {
       $set: { 'privacySettings.analyticsSharing': false },

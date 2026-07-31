@@ -1,6 +1,7 @@
 import type { Types } from 'mongoose';
 import BillingSubscription from '../models/BillingSubscription';
 import Subscription from '../models/Subscription';
+import { inForceSubscriptionFilter } from './subscriptionStatus';
 
 export type SubscriptionPlanTier = 'basic' | 'pro' | 'business';
 
@@ -19,9 +20,15 @@ function normalizePlanName(planName: string | undefined | null): SubscriptionPla
  * Stripe writes to `BillingSubscription`; the legacy `Subscription` collection
  * may still hold rows from before the billing cutover. Check billing first, then
  * fall back to legacy so premium gates stay accurate for paying subscribers.
+ *
+ * The legacy lookup filters on DATES (`inForceSubscriptionFilter`), never on the
+ * stored `status`: a lapsed row keeps `status: 'active'` until the lifecycle sweep
+ * reconciles it, and trusting that value would grant paid entitlements — premium
+ * profile colour, the larger storage quota — inside that window.
  */
 export async function resolveUserSubscriptionPlan(
   userId: string | Types.ObjectId,
+  now: Date = new Date(),
 ): Promise<SubscriptionPlanTier> {
   const userIdString = String(userId);
 
@@ -39,7 +46,7 @@ export async function resolveUserSubscriptionPlan(
   try {
     const legacySubscription = await Subscription.findOne({
       userId,
-      status: 'active',
+      ...inForceSubscriptionFilter(now),
       plan: { $in: ['pro', 'business'] },
     })
       .select('plan')

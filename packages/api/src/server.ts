@@ -66,6 +66,10 @@ import nodeRoutes from './routes/nodes';
 import { sweepValidations } from './services/civic/validator.service';
 import { sweepPersonhoodAudits } from './services/civic/personhoodAudit.service';
 import { sweepNodeLiveness } from './services/nodeRegistry.service';
+import {
+  SUBSCRIPTION_SWEEP_INTERVAL_MS,
+  sweepSubscriptionStatuses,
+} from './services/subscriptionLifecycle.service';
 import { VALIDATION_SWEEP_INTERVAL_MS, PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS } from './utils/civic.constants';
 import { NODE_LIVENESS_SWEEP_INTERVAL_MS } from './utils/nodes.constants';
 import didRoutes from './routes/did';
@@ -886,6 +890,18 @@ if (require.main === module) {
         );
       }, NODE_LIVENESS_SWEEP_INTERVAL_MS);
       nodeLivenessSweep.unref();
+
+      // Reconcile the stored `status` of legacy subscription rows with what their
+      // dates say (active <-> expired). Entitlements never depend on this — every
+      // premium gate derives from `endDate` vs now — so a missed tick only delays
+      // a reporting value, never grants or revokes access. Unref'd + failures
+      // logged, like the sweeps above.
+      const subscriptionSweep = setInterval(() => {
+        sweepSubscriptionStatuses().catch((err) =>
+          logger.error('Subscription status sweep failed', err instanceof Error ? err : new Error(String(err))),
+        );
+      }, SUBSCRIPTION_SWEEP_INTERVAL_MS);
+      subscriptionSweep.unref();
 
       // Start SMTP inbound server if enabled
       if (getEnvBoolean('SMTP_ENABLED', false)) {

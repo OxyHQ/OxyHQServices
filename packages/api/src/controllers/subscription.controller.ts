@@ -7,6 +7,8 @@ import { logger } from '../utils/logger';
 import { ForbiddenError, UnauthorizedError } from '../utils/error';
 import userCache from '../utils/userCache';
 import { formatSubscriptionResponse } from '../utils/subscriptionResponse';
+import { inForceSubscriptionFilter } from '../utils/subscriptionStatus';
+import { findCurrentSubscription } from '../services/subscriptionLifecycle.service';
 import { getStripe } from '../utils/stripeClient';
 
 function assertOwnership(req: AuthRequest, userId: string): void {
@@ -27,7 +29,10 @@ export const getSubscription = async (req: AuthRequest, res: Response) => {
         userId,
         status: { $in: ['active', 'trialing'] },
       }).lean(),
-      Subscription.findOne({ userId }),
+      // Lapsed rows are retained as history now that nothing deletes them, so
+      // the current standing has to be picked deliberately rather than by
+      // whichever row `findOne` happens to return.
+      findCurrentSubscription(userId),
     ]);
     res.json(formatSubscriptionResponse(billingSubscription, legacySubscription));
   } catch (error) {
@@ -60,10 +65,13 @@ export const cancelSubscription = async (req: AuthRequest, res: Response) => {
       await billingSubscription.save();
     }
 
+    // Only a subscription that is still in force can be cancelled — an already
+    // lapsed row is history, and flipping it to `canceled` would rewrite why it
+    // ended.
     const legacySubscription = await Subscription.findOneAndUpdate(
-      { userId, status: { $ne: 'canceled' } },
+      { userId, ...inForceSubscriptionFilter() },
       { status: 'canceled' },
-      { new: true },
+      { new: true, sort: { endDate: -1 } },
     );
 
     if (!billingSubscription && !legacySubscription) {
