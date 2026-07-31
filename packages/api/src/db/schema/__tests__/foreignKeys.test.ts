@@ -124,8 +124,14 @@ describe('schema foreign keys', () => {
     ).map((fk) => describeColumn(fk.table, fk.column));
 
     expect(incomplete).toEqual([]);
-    // `onDelete` is a closed union, so tsc already refuses an unset one; the
-    // list being non-empty is what proves this ran against real entries.
-    expect(DEFERRED_FOREIGN_KEYS.length).toBeGreaterThan(0);
+    // `onDelete` is a closed union, so tsc already refuses an unset one.
+    //
+    // The vacuity floor sits on the PERMANENT list, not on
+    // `DEFERRED_FOREIGN_KEYS` being non-empty: an empty deferred ledger is the
+    // finish line the module's own doc comment describes, so asserting it stays
+    // populated would turn the goal into a failure. (It is non-empty today —
+    // three entries owed to `reputation_transactions` — but that is a fact about
+    // where the port has got to, not something to hold in place.)
+    expect(ID_COLUMNS_WITHOUT_FOREIGN_KEY.length).toBeGreaterThan(0);
   });
 });

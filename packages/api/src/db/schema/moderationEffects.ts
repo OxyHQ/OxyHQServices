@@ -61,6 +61,8 @@ import {
   MODERATION_EFFECT_TYPES,
   MODERATION_SEVERITIES,
 } from '@oxyhq/contracts';
+import { applicationCredentials } from './applicationCredentials';
+import { applications } from './applications';
 import { conductStrikes } from './conductStrikes';
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
 import { moderationPolicies } from './moderationPolicies';
@@ -101,11 +103,25 @@ export const moderationEffects = pgTable(
       .references(() => identityBindings.id, { onDelete: 'restrict' }),
     /**
      * The emitting application, resolved from its credential — never the body.
-     * FK to `applications` — see `deferredForeignKeys.ts`.
+     *
+     * `RESTRICT`, as the deferred-FK ledger decided before `applications`
+     * landed: the emitter is part of the provenance an effect exists to record,
+     * so deleting it must FAIL rather than erase or orphan the audit trail of
+     * what it caused.
      */
-    applicationId: text().notNull(),
-    /** The credential the event arrived on. FK to `application_credentials`. */
-    credentialId: text(),
+    applicationId: text()
+      .notNull()
+      .references(() => applications.id, { onDelete: 'restrict' }),
+    /**
+     * The credential the event arrived on. `SET NULL`: which credential is
+     * provenance DETAIL rather than the effect itself, NULL already means "not
+     * recorded" on rows predating the field, and — unlike `application_id` — a
+     * rotated-out credential may legitimately be removed without invalidating
+     * the effect.
+     */
+    credentialId: text().references(() => applicationCredentials.id, {
+      onDelete: 'set null',
+    }),
     effectType: text({ enum: MODERATION_EFFECT_TYPES }).notNull(),
     status: text({ enum: MODERATION_EFFECT_STATUSES }).notNull().default('applied'),
     /** Signed points written to the ledger, already multiplied and capped. */

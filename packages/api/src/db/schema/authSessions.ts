@@ -44,6 +44,7 @@
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { COMMONS_DENY_REASONS } from '@oxyhq/contracts';
+import { applications } from './applications';
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
 import { users } from './users';
 
@@ -111,8 +112,15 @@ export const authSessions = pgTable(
     requesterLabel: text(),
     /** Random nonce echoed in the QR payload. Audit only; not a binding check. */
     challengeNonce: text(),
-    /** FK to `applications` — see `deferredForeignKeys.ts`. */
-    applicationId: text().notNull(),
+    /**
+     * The application asking. `CASCADE`, as the deferred-FK ledger decided
+     * before `applications` landed: the whole approval screen — name, icon,
+     * scopes — is resolved from it, so a request that can no longer name who is
+     * asking must not be approvable.
+     */
+    applicationId: text()
+      .notNull()
+      .references(() => applications.id, { onDelete: 'cascade' }),
     /** Central device id of the browser that STARTED the request. Not a row id. */
     deviceId: text(),
     status: text({ enum: AUTH_SESSION_STATUSES }).notNull().default('pending'),

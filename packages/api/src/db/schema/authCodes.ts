@@ -29,6 +29,7 @@
 
 import { sql } from 'drizzle-orm';
 import { check, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
+import { applications } from './applications';
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
 import { users } from './users';
 
@@ -60,8 +61,15 @@ export const authCodes = pgTable(
      * lose the `account:act_as` binding that constrains it.
      */
     operatedByUserId: text().references(() => users.id, { onDelete: 'cascade' }),
-    /** FK to `applications` — see `deferredForeignKeys.ts`. */
-    applicationId: text().notNull(),
+    /**
+     * The application the code was issued TO. `CASCADE`, as the deferred-FK
+     * ledger decided before `applications` landed: with the application gone
+     * there is nobody to exchange the code, and it is unusable within five
+     * minutes anyway.
+     */
+    applicationId: text()
+      .notNull()
+      .references(() => applications.id, { onDelete: 'cascade' }),
     /** Bound at issue time, re-checked at exchange time. */
     redirectUri: text().notNull(),
     /** PKCE challenge. NULL only for a confidential client presenting a secret. */

@@ -22,6 +22,8 @@
 
 import type { PgColumn, PgTable, UpdateDeleteAction } from 'drizzle-orm/pg-core';
 import { appAffinitySeenEvents } from './appAffinitySeenEvents';
+import { appEndorsementEdges } from './appEndorsementEdges';
+import { appUpdates } from './appUpdates';
 import { authCodes } from './authCodes';
 import { authSessions } from './authSessions';
 import { billingSubscriptions } from './billingSubscriptions';
@@ -66,103 +68,24 @@ export interface IdColumnWithoutForeignKey {
 }
 
 /**
- * `users` landed, so every entry that owed it a constraint has been converted to
- * a real `.references()` and deleted from this list — `blocks.user_id`,
- * `blocks.blocked_id`, `bookmarks.user_id`, `push_tokens.user_id`,
- * `labels.user_id` and `webauthn_credentials.user_id`. What remains is owed to
- * `applications`, which has not landed yet.
+ * What is left is owed to `reputation_transactions`, which has not landed yet.
+ *
+ * `users` landed first and every entry owed to it became a real `.references()`:
+ * `blocks.user_id`, `blocks.blocked_id`, `bookmarks.user_id`,
+ * `push_tokens.user_id`, `labels.user_id`, `webauthn_credentials.user_id`.
+ *
+ * `applications` and `application_credentials` landed next and took NINE more
+ * with them, each declared with the exact `ON DELETE` this ledger had already
+ * decided — `push_tokens.application_id`, `app_affinity_seen_events.application_id`,
+ * `auth_codes.application_id`, `auth_sessions.application_id`,
+ * `identity_bindings.application_id` (all `CASCADE`),
+ * `moderation_effects.application_id` (`RESTRICT`),
+ * `conduct_strikes.application_id`, `identity_bindings.credential_id` and
+ * `moderation_effects.credential_id` (all `SET NULL`). That is the mechanism
+ * working: the gate went red naming exactly those columns the moment their
+ * parents appeared in the barrel.
  */
-
 export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
-  {
-    table: pushTokens,
-    column: pushTokens.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason:
-      'NULL here means "not scoped to any application", so SET NULL would ' +
-      'promote a dead app\'s install into the unscoped delivery set instead of ' +
-      'retiring it.',
-  },
-  {
-    table: appAffinitySeenEvents,
-    column: appAffinitySeenEvents.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason: 'The ledger only dedupes ingest for an application that still exists.',
-  },
-  {
-    table: authCodes,
-    column: authCodes.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason:
-      'An authorization code is a grant TO an application. With the ' +
-      'application gone there is nobody to exchange it, and the code is ' +
-      'unusable within five minutes anyway.',
-  },
-  {
-    table: authSessions,
-    column: authSessions.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason:
-      'The whole approval screen — name, icon, scopes — is resolved from the ' +
-      'application. A request that can no longer name who is asking must not ' +
-      'be approvable.',
-  },
-  {
-    table: identityBindings,
-    column: identityBindings.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason:
-      'A binding is scoped to one application and never cross-application, so ' +
-      'it proves nothing once that application is gone. Note applications are ' +
-      "SOFT-deleted (`status: 'deleted'`) on the normal path, so this fires " +
-      'only on a hard delete.',
-  },
-  {
-    table: identityBindings,
-    column: identityBindings.credentialId,
-    parentTable: 'application_credentials',
-    parentColumn: 'id',
-    onDelete: 'set null',
-    reason:
-      'AUDIT pointer only, deliberately not part of the binding check — a ' +
-      'credential rotation must not invalidate a binding the user consented ' +
-      'to. NULL already means "not recorded", so SET NULL loses the audit ' +
-      'trail and nothing else; CASCADE would delete the evidence a past ' +
-      'moderation effect rests on.',
-  },
-  {
-    table: moderationEffects,
-    column: moderationEffects.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'restrict',
-    reason:
-      'The emitting application is resolved from its credential and is part of ' +
-      'the provenance an effect exists to record. Deleting it must fail rather ' +
-      'than erase or orphan the audit trail of what it caused.',
-  },
-  {
-    table: moderationEffects,
-    column: moderationEffects.credentialId,
-    parentTable: 'application_credentials',
-    parentColumn: 'id',
-    onDelete: 'set null',
-    reason:
-      'Which credential the event arrived on is provenance detail, not the ' +
-      'effect itself; NULL already means "not recorded" on rows predating the ' +
-      'field. Unlike `application_id`, a rotated-out credential may legitimately ' +
-      'be removed without invalidating the effect.',
-  },
   {
     table: moderationEffects,
     column: moderationEffects.transactionId,
@@ -184,17 +107,6 @@ export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
       'The compensating entry an appeal produced. `SET NULL` would make a ' +
       'reversed effect read as never-reversed, which is a worse lie than a ' +
       'refused delete; the ledger never deletes anyway.',
-  },
-  {
-    table: conductStrikes,
-    column: conductStrikes.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'set null',
-    reason:
-      'Which application\'s report started the incident is attribution, and the ' +
-      'column is already nullable — a strike stands on its own decision, so an ' +
-      'unattributed one is a real state rather than a corrupted one.',
   },
   {
     table: conductStrikes,
@@ -236,6 +148,22 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
     reason:
       'An id minted by the CONSUMING application for its own event. Oxy stores ' +
       'it to dedupe and never resolves it to anything.',
+  },
+  {
+    table: appUpdates,
+    column: appUpdates.updateId,
+    reason:
+      "The update's OWN public handle — the UUID served as the expo-updates " +
+      'manifest `id`, not a reference to another row. It is the TARGET of ' +
+      '`app_updates.promoted_from_update_id`, which does carry a constraint.',
+  },
+  {
+    table: appEndorsementEdges,
+    column: appEndorsementEdges.sourceId,
+    reason:
+      "The consuming application's own key for the object the endorsement came " +
+      'from (a list id, a pack id). Opaque to Oxy, part of the idempotency key ' +
+      'only, and never dereferenced.',
   },
   {
     table: users,

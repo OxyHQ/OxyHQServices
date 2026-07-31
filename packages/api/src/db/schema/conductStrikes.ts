@@ -41,6 +41,7 @@ import {
   MODERATION_EFFECT_TYPES,
   MODERATION_SEVERITIES,
 } from '@oxyhq/contracts';
+import { applications } from './applications';
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
 import { moderationPolicies } from './moderationPolicies';
 import { users } from './users';
@@ -67,8 +68,14 @@ export const conductStrikes = pgTable(
     decisionId: text().notNull(),
     /** Revision of that decision. An appeal's revision creates its own strike. */
     decisionRevision: integer().notNull(),
-    /** FK to `applications` — see `deferredForeignKeys.ts`. */
-    applicationId: text(),
+    /**
+     * Which application's report started the incident. `SET NULL`, as the
+     * deferred-FK ledger decided before `applications` landed: this is
+     * attribution and the column is already nullable, so a strike stands on its
+     * own decision and an unattributed one is a real state rather than a
+     * corrupted one.
+     */
+    applicationId: text().references(() => applications.id, { onDelete: 'set null' }),
     /**
      * Which axis the strike came from. Part of the uniqueness key: a person who
      * is both the author of violating material and a colluding reviewer in one

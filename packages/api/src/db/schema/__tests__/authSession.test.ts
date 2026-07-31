@@ -18,6 +18,7 @@ import { getTableName } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../../../config/postgres';
 import { sqlColumnName } from '../../casing';
 import { EXPIRY_SWEEP_TARGETS, sweepExpiredRows } from '../../expiry';
+import { applications } from '../applications';
 import { authCodes } from '../authCodes';
 import { authSessions } from '../authSessions';
 import { civicNonces } from '../civicNonces';
@@ -120,6 +121,24 @@ async function owner(): Promise<string> {
   return row.id;
 }
 
+/**
+ * A real `applications` row.
+ *
+ * `auth_codes.application_id`, `auth_sessions.application_id` and
+ * `identity_bindings.application_id` took a fabricated string until
+ * `applications` landed; each now carries the foreign key this file's own
+ * deferred-FK ledger had already decided on, and that is the point of the
+ * constraint. Each call mints its own owning account and application, so no
+ * assertion depends on another test's rows.
+ */
+async function application(): Promise<string> {
+  const [row] = await getDb()
+    .insert(applications)
+    .values({ name: `App ${randomUUID()}`, ownerAccountId: await owner() })
+    .returning({ id: applications.id });
+  return row.id;
+}
+
 /** A minimal valid `sessions` row for `userId`. */
 async function session(userId: string, overrides: Record<string, unknown> = {}): Promise<string> {
   const [row] = await getDb()
@@ -147,7 +166,7 @@ async function deviceSignInRequest(
     .insert(authSessions)
     .values({
       sessionToken: `st-${randomUUID()}`,
-      applicationId: `app-${randomUUID()}`,
+      applicationId: await application(),
       expiresAt: new Date(Date.now() + 3_600_000),
       ...overrides,
     })
@@ -694,7 +713,7 @@ describe('expiry registry — every Mongo TTL index in this batch', () => {
       {
         codeHash: justExpired,
         userId,
-        applicationId: `app-${randomUUID()}`,
+        applicationId: await application(),
         redirectUri: 'https://rp.example/cb',
         usedAt: new Date(),
         expiresAt: new Date(Date.now() - 60_000),
@@ -702,7 +721,7 @@ describe('expiry registry — every Mongo TTL index in this batch', () => {
       {
         codeHash: longExpired,
         userId,
-        applicationId: `app-${randomUUID()}`,
+        applicationId: await application(),
         redirectUri: 'https://rp.example/cb',
         usedAt: new Date(),
         expiresAt: new Date(Date.now() - 600_000),
@@ -916,7 +935,7 @@ describe('identity_backups — two timestamps that are not the same thing', () =
 
 describe('identity_bindings — history survives a rebind', () => {
   it('permits many REVOKED rows for one local principal but only one active', async () => {
-    const applicationId = `app-${randomUUID()}`;
+    const applicationId = await application();
     const localPrincipalId = `principal-${randomUUID()}`;
     const base = { applicationId, localPrincipalId, bindingType: 'session_proof' as const };
 
@@ -938,7 +957,7 @@ describe('identity_bindings — history survives a rebind', () => {
 
   it('refuses a row whose status and revoked_at disagree', async () => {
     const base = {
-      applicationId: `app-${randomUUID()}`,
+      applicationId: await application(),
       localPrincipalId: `principal-${randomUUID()}`,
       bindingType: 'oauth_grant' as const,
       userId: await owner(),
@@ -1089,7 +1108,7 @@ describe('auth_codes', () => {
   it('refuses a PKCE challenge with no method, and a method with no challenge', async () => {
     const base = {
       userId: await owner(),
-      applicationId: `app-${randomUUID()}`,
+      applicationId: await application(),
       redirectUri: 'https://rp.example/cb',
       expiresAt: new Date(Date.now() + 60_000),
     };
@@ -1119,7 +1138,7 @@ describe('auth_codes', () => {
     await getDb().insert(authCodes).values({
       codeHash,
       userId,
-      applicationId: `app-${randomUUID()}`,
+      applicationId: await application(),
       redirectUri: 'https://rp.example/cb',
       expiresAt: new Date(Date.now() + 60_000),
     });

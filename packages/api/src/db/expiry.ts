@@ -57,6 +57,10 @@ import { getTableName, sql, type SQL } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { Database } from '../config/postgres';
 import { AFFINITY_EVENT_SEEN_TTL_SECONDS } from '../utils/recommendationWeights';
+import {
+  API_KEY_USAGE_RETENTION_SECONDS,
+  apiKeyUsageEvents,
+} from './schema/apiKeyUsageEvents';
 import { appAffinitySeenEvents } from './schema/appAffinitySeenEvents';
 import { authChallenges } from './schema/authChallenges';
 import { authCodes } from './schema/authCodes';
@@ -188,6 +192,16 @@ export const EXPIRY_SWEEP_TARGETS: readonly ExpirySweepTarget[] = [
       'Two-year audit retention measured from the EVENT, bounding growth ' +
       'while keeping enough history for the activity surface. No read filters ' +
       'on it — an old entry is stale, never unsafe.',
+  },
+  {
+    table: apiKeyUsageEvents,
+    column: apiKeyUsageEvents.createdAt,
+    retentionSeconds: API_KEY_USAGE_RETENTION_SECONDS,
+    reason:
+      'Ninety days of request telemetry, exactly as the Mongo TTL kept. The ' +
+      'two readers already bound their own window (`timestamp: { $gte: since }`, ' +
+      '`routes/credits.ts:59` and `routes/applications.ts:961`), so the sweep ' +
+      'is housekeeping and no reported figure depends on it running.',
   },
 ];
 
