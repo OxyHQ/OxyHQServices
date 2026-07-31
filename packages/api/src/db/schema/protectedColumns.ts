@@ -58,6 +58,7 @@
 import { getTableColumns, getTableName } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { authSessions } from './authSessions';
+import { messages } from './messages';
 import { sessions } from './sessions';
 import { users } from './users';
 
@@ -111,15 +112,32 @@ export const SESSIONS_PROTECTED_COLUMNS = [
 export const AUTH_SESSIONS_PROTECTED_COLUMNS = ['sessionToken'] as const;
 
 /**
- * The registry, keyed by SQL table name.
+ * `messages` columns that must not reach a client.
  *
- * `Message` adds four more entries when it lands; the shape is already here so
- * that port is one line and cannot invent a second mechanism.
+ * The first four were `select: false` in `models/Message.ts`. The fifth was
+ * not, and could not have been — Mongo's text index was a separate structure,
+ * not a field on the document. `search_vector` is GENERATED from `text`, and a
+ * `tsvector` stores every lexeme with its position, so returning it hands back a
+ * largely reconstructable copy of the very body the other four entries exist to
+ * withhold. A protection that covers the source but not its derivative is not a
+ * protection.
+ */
+export const MESSAGES_PROTECTED_COLUMNS = [
+  'text',
+  'html',
+  'headers',
+  'encryptedBody',
+  'searchVector',
+] as const;
+
+/**
+ * The registry, keyed by SQL table name.
  */
 export const PROTECTED_COLUMNS_BY_TABLE = {
   users: USERS_PROTECTED_COLUMNS,
   sessions: SESSIONS_PROTECTED_COLUMNS,
   auth_sessions: AUTH_SESSIONS_PROTECTED_COLUMNS,
+  messages: MESSAGES_PROTECTED_COLUMNS,
 } as const;
 
 /** A protected column, with the reason it is one. */
@@ -211,6 +229,39 @@ export const PROTECTED_COLUMNS: readonly ProtectedColumn[] = [
       'The secret claim credential for a pending authorization. ' +
       '`POST /auth/session/claim` requires no bearer, so this value alone ' +
       "exchanges an approved request for the approving account's access token.",
+  },
+  {
+    table: messages,
+    column: messages.text,
+    reason:
+      'The plain-text body. A list view returns hundreds of rows and needs ' +
+      'none of it; shipping it turns every inbox page into a full mail export.',
+  },
+  {
+    table: messages,
+    column: messages.html,
+    reason: 'The HTML body — same exposure as the plain-text one, same size problem.',
+  },
+  {
+    table: messages,
+    column: messages.headers,
+    reason:
+      'Every header as received, including the third-party SMTP `Received:` ' +
+      'IPs this column is the one sanctioned place to retain. Never a default read.',
+  },
+  {
+    table: messages,
+    column: messages.encryptedBody,
+    reason:
+      'Body ciphertext. Handing it out gives an offline target to anyone who ' +
+      'later obtains the recipient key.',
+  },
+  {
+    table: messages,
+    column: messages.searchVector,
+    reason:
+      'Generated FROM `text`. A tsvector carries every lexeme with its ' +
+      'position, so returning it largely reconstructs the body the entry above withholds.',
   },
 ];
 
