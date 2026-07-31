@@ -171,7 +171,9 @@ for real, converting a non-problem into a live bug.
 
 - `citext` is an extension: `CREATE EXTENSION` would have to run in dev, CI and
   RDS before the first migration, an ordering dependency in every environment for
-  one column.
+  one column. (Since PostGIS was adopted there IS now a mechanism for that —
+  `db/extensions.ts`, see below — but a mechanism is not a reason: the two
+  objections that follow are what decide `citext`, and both stand.)
 - `citext` changes behaviour for EVERY comparison on that column, including ones
   the author never considered, and its equivalence to `strength: 2` is a
   coincidence rather than a construction.
@@ -326,42 +328,58 @@ one's clothes. Mongo's `default_language` maps to the `to_tsvector`
 configuration; `user_locations` uses `'english'` for Mongo's
 `default_language: "en"`.
 
-## PostGIS — not adopted, and not deferred
+## PostGIS — adopted, and the point is GENERATED
 
 `User.locations.coordinates` had a `2dsphere` index and `findLocationsNear` is a
-real `$near`/`$maxDistance` query. Its Postgres equivalent would need PostGIS
-(`geography(Point, 4326)` + GiST). It does not travel, for two independent
-reasons and the SECOND is the deciding one:
+real `$near`/`$maxDistance` query, so `user_locations` gets the genuine Postgres
+equivalent: a `geography` point column (WGS 84 / SRID 4326) with a GiST index.
+No `earthdistance`/`cube` stand-in and no bounding box dressed up as a distance
+— a wrong "nearby" is worse than an absent one, and a query that looks like a
+distance search while answering a narrower question is the failure mode to
+avoid.
 
-1. PostGIS is not available here — `postgres:17-alpine`, the image in both
-   `docker-compose.dev.yml` and the CI service container, ships `btree_gist`,
-   `citext`, `cube`, `earthdistance`, `pg_trgm` and `uuid-ossp`, and no
-   `postgis`. Adopting it means a new base image in dev AND CI plus an RDS
-   extension: the install-ordering dependency in every environment this file
-   already refused for `citext`.
-2. **Nothing calls it.** `@oxyhq/core`, `@oxyhq/services` and all seven consuming
-   apps contain zero references to `location-search` / `locationSearch` /
-   `findLocationsNear`. The routes are mounted (`server.ts:586`, behind auth) and
-   unreachable from the ecosystem.
+**The column is `GENERATED ALWAYS AS (ST_MakePoint(longitude, latitude)::geography) STORED`,
+never written.** That shape is the decision, not the type. A hand-written geo
+column and the two coordinate columns are two representations of one fact, so
+they can disagree — and the ORIGINAL bug here was exactly a coordinate-ordering
+mistake. Mongo stored `{ lat, lon }` and a `2dsphere` index reads such a pair
+POSITIONALLY as `[longitude, latitude]`, so the live index has almost certainly
+had every point transposed for its whole life. Generating the point makes
+divergence unrepresentable (a write fails with SQLSTATE `428C9`) and states the
+`(longitude, latitude)` order in ONE place, once. NAMED coordinate columns
+remain the other half of the same fix: there is no ordering left to get wrong at
+the call site either.
 
-So `user_locations` has NAMED `latitude` / `longitude` columns with range CHECKs
-and NO spatial index — not pending infrastructure, simply not required. No
-`earthdistance`/`cube` stand-in and no bounding box dressed up as a distance: a
-wrong "nearby" is worse than an absent one, and a query that looks like a
-distance search while answering a narrower question is the failure mode to avoid.
-If a client ever needs one, adding it is purely additive against these columns:
-`add column geo geography(Point, 4326)` backfilled from
-`ST_MakePoint(longitude, latitude)`, plus a GiST index.
+The expression is legal in a generated column only because every part of it is
+IMMUTABLE, which is a property of the PostGIS version and is therefore MEASURED
+rather than assumed — `st_makepoint(double precision, double precision)` and the
+`geometry → geography` cast both report `provolatile = 'i'` (PostGIS 3.5.2 /
+PostgreSQL 17.5). Same trap as the `to_tsvector`/`convert_to` row in "Generated
+columns" above.
 
-The naming is itself the fix for a live bug. Mongo stored `{ lat, lon }` and a
-`2dsphere` index reads such a pair POSITIONALLY as `[longitude, latitude]` — the
-first field is longitude — so the existing index has almost certainly had every
-point transposed. Named columns make that class of bug unrepresentable: there is
-no ordering left to get wrong.
+**The extension is a precondition of the MIGRATOR, not a migration.** This file
+refused `citext` partly over "an install-ordering dependency in every
+environment"; that objection is answered rather than ignored. `db/extensions.ts`
+declares the requirement as data and `bun run db:migrate` runs
+`scripts/ensure-extensions.ts` BEFORE `drizzle-kit migrate`, so the ordering
+cannot be got wrong by renumbering, squashing or regenerating the sequence —
+which matters because migrations here are regenerated centrally from schema TS.
+`docker-compose.dev.yml` and the CI service container both run
+`postgis/postgis:17-3.5`. A managed database needs `CREATE EXTENSION postgis`
+run once by a privileged role; after that the migration role's
+`CREATE EXTENSION IF NOT EXISTS` short-circuits before the privilege check and
+is a no-op.
 
-The location DATA is live even though the location ENDPOINTS are dead — people
-search matches on `name`, `city` and `country` (`utils/profileQuery.ts:97-102`)
-— so the non-spatial indexes stay.
+**drizzle-kit cannot emit the `(Point,4326)` typmod.** Its `parseType` quotes any
+type name outside a hardcoded list (`geometry` is on it, `geography` is not — as
+of drizzle-kit 0.31.10), so `geography(Point,4326)` becomes an unresolvable
+identifier. The column is declared as bare `geography`; the typmod would only
+constrain WRITES, and there are none. That the stored value really is a Point at
+SRID 4326 is asserted against real rows in `db/__tests__/postgis.test.ts`.
+
+The location DATA is live independently of the spatial index — people search
+matches on `name`, `city` and `country` (`utils/profileQuery.ts:97-102`) — so
+the non-spatial indexes stay.
 
 ## Indexes
 
@@ -398,6 +416,7 @@ Not by discipline — these fail the build.
 | Protected-column registry, `publicColumns` filter, and no implicit whole-row read anywhere in `src/` | `schema/__tests__/protectedColumns.test.ts` |
 | Generated contact hashes match `contactHash.ts` byte for byte; identifier uniqueness; closed value sets and value CHECKs on `users`; constants still equal the Mongoose model's | `schema/__tests__/users.test.ts` |
 | Child-table relations, the coordinate fix, the search vector, ancestor-path ordering, and what deleting an account actually does | `schema/__tests__/userChildTables.test.ts` |
+| Every required extension is installed before migration and re-runnable unprivileged; `geo` is generated/stored/GiST-indexed and built as `(longitude, latitude)` | `db/__tests__/postgis.test.ts` |
 
 All of them run against a real Postgres through the application's own pool. Each
 has been mutation-tested: break the thing it guards and it goes red naming the

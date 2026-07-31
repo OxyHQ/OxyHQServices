@@ -14,39 +14,104 @@
  * over an object reads the pair POSITIONALLY as `[longitude, latitude]` — the
  * first field is longitude — so the live index has almost certainly had every
  * point transposed for its whole life. Two NAMED columns make that class of bug
- * unrepresentable: there is no ordering left to get wrong. (`ST_MakePoint(lon,
- * lat)` is the same fix spelled in PostGIS's argument order.)
+ * unrepresentable: there is no ordering left to get wrong.
  *
- * ## There is no spatial index, and none is needed
+ * ## The spatial index is PostGIS, and the point is GENERATED
  *
- * `findLocationsNear` (`locationQueryService.ts:29`) is a real `$near` /
- * `$maxDistance` query, and its Postgres equivalent would need PostGIS —
- * `geography(Point, 4326)` plus a GiST index. It does not travel, because
- * **nothing calls it**: `@oxyhq/core`, `@oxyhq/services` and all seven consuming
- * apps contain zero references to `location-search` / `locationSearch` /
- * `findLocationsNear`. The routes are mounted (`server.ts:586`, behind auth) and
- * unreachable from the ecosystem. Installing PostGIS in dev, CI and RDS to index
- * a query with no consumer is the definition of carrying something for its own
- * sake.
+ * `geo` is a PostGIS `geography` point (WGS 84 / SRID 4326) with a GiST index,
+ * which is what `findLocationsNear` (`locationQueryService.ts:29`) needs to
+ * become `ST_DWithin` / `ST_Distance` instead of a hand-rolled haversine. See
+ * `geography` below for why the column type carries no `(Point,4326)` typmod.
  *
- * Not "deferred" — not required. If a client ever needs distance search, adding
- * it is purely additive against these columns: `add column geo
- * geography(Point, 4326)` backfilled from `ST_MakePoint(longitude, latitude)`,
- * plus a GiST index. No reshaping, no re-backfill.
+ * It is `GENERATED ALWAYS AS … STORED`, never a column any write path supplies,
+ * and that shape is the whole reason it is safe. A hand-written geo column and
+ * the two coordinate columns are two representations of one fact, so they can
+ * disagree — and the ORIGINAL bug here was exactly a coordinate-ordering
+ * mistake, the kind that produces a plausible point in the wrong hemisphere
+ * rather than an error. Deriving the point in the schema makes divergence
+ * unrepresentable (a write to `geo` fails with SQLSTATE `428C9`) and states the
+ * `(longitude, latitude)` order in ONE place, once, where the compiler and the
+ * database both see it.
  *
- * What was deliberately NOT done in the meantime: no `earthdistance`/`cube`
- * stand-in, and no bounding box dressed up as a distance. A wrong "nearby" is
- * worse than an absent one.
+ * The expression is legal in a generated column because every part of it is
+ * IMMUTABLE — verified against this PostGIS version rather than assumed:
+ * `st_makepoint(double precision, double precision)` and the
+ * `geometry → geography` cast both report `provolatile = 'i'` in `pg_proc`
+ * (PostGIS 3.5.2 / PostgreSQL 17.5). The cast also promotes `ST_MakePoint`'s
+ * SRID 0 to geography's 4326, and `ST_MakePoint` is strict, so a row with no
+ * coordinates gets `geo IS NULL` rather than a point at (0, 0) in the Gulf of
+ * Guinea.
  *
- * The location DATA is live regardless of the dead endpoints — people search
+ * PostGIS itself is a prerequisite of the whole migration rather than of this
+ * table: `db/extensions.ts` creates it as the first half of `bun run db:migrate`
+ * so it cannot be ordered after a migration that names the `geography` type.
+ *
+ * The location DATA is live independently of the spatial index — people search
  * matches on `name`, `city` and `country` (`utils/profileQuery.ts:97-102`, via
  * `routes/search.ts:45`), which is why the non-spatial indexes below stay.
  */
 
 import { sql } from 'drizzle-orm';
-import { check, doublePrecision, index, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+  check,
+  customType,
+  doublePrecision,
+  index,
+  pgTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { createdAt, generatedId, tsvector, updatedAt } from './columns';
 import { users } from './users';
+
+/**
+ * `geography` — a location on the WGS 84 spheroid, which is what makes
+ * `ST_DWithin` and `ST_Distance` answer in METRES rather than in degrees.
+ * (`geometry`, which drizzle DOES ship a builder for, measures in units of the
+ * SRID — degrees for 4326 — so it is not a substitute here.)
+ *
+ * Declared in this file rather than in `columns.ts` because exactly one table
+ * has a spatial column; `columns.ts` holds the shapes that repeat everywhere.
+ * The TypeScript type is the `string` Postgres renders the value as (WKB hex),
+ * and there is deliberately no `toDriver` direction: the column is GENERATED,
+ * so no application code ever writes it, and giving it a write path would
+ * invite exactly the hand-maintained geo column this design exists to prevent.
+ *
+ * **Why the type carries no `(Point,4326)` typmod.** drizzle-kit emits a column
+ * type verbatim only when it starts with one of a hardcoded list of names
+ * (`sqlgenerator.ts` `parseType`); anything else is wrapped in double quotes as
+ * a single identifier. That list contains `geometry` but not `geography`
+ * (drizzle-kit 0.31.10 / drizzle-orm 0.45.2 — the current latest of both), so
+ * `geography(Point,4326)` is emitted as `"geography(Point,4326)"` and the
+ * migration fails with `type "geography(Point,4326)" does not exist`. A quoted
+ * bare `"geography"` resolves normally, so that is what is declared.
+ *
+ * Nothing is lost that this table relies on. A typmod constrains what may be
+ * WRITTEN, and nothing may be written here at all: every value is produced by
+ * `GEO_EXPRESSION`, so it is a Point, and the cast promotes SRID 0 to 4326.
+ * Both of those are asserted against stored rows on the running PostGIS version
+ * in `db/__tests__/postgis.test.ts` rather than assumed from the declaration —
+ * which is a stronger guarantee than the typmod, since it is measured.
+ */
+const geography = customType<{ data: string; driverData: string }>({
+  dataType: () => 'geography',
+});
+
+/**
+ * The one place the coordinate ORDER is written down.
+ *
+ * `ST_MakePoint` takes (x, y) — that is (longitude, latitude), the opposite of
+ * how humans say a coordinate — and reading it backwards is the exact bug
+ * inherited from Mongo's 2dsphere index. Because the column is generated from
+ * this expression, no write path can reintroduce the transposition: every row's
+ * point is derived from the NAMED columns, by this expression, or it does not
+ * exist.
+ *
+ * The column names are spelled in SQL for the same reason as
+ * `SEARCH_VECTOR_EXPRESSION` below: a generated expression is built before the
+ * table object exists, so there are no drizzle columns to interpolate.
+ */
+const GEO_EXPRESSION = sql.raw('ST_MakePoint(longitude, latitude)::geography');
 
 /** What the user calls this place. */
 export const USER_LOCATION_TYPES = ['home', 'work', 'school', 'other'] as const;
@@ -111,6 +176,12 @@ export const userLocations = pgTable(
     latitude: doublePrecision(),
     /** Degrees east, [-180, 180]. */
     longitude: doublePrecision(),
+    /**
+     * GENERATED — the spatial form of the pair above, and the only thing the
+     * GiST index and `ST_DWithin` can use. NULL exactly when the pair is
+     * absent. See `GEO_EXPRESSION`.
+     */
+    geo: geography().generatedAlwaysAs(GEO_EXPRESSION),
 
     // ---- geocoder metadata ------------------------------------------------
     placeId: text(),
@@ -143,6 +214,10 @@ export const userLocations = pgTable(
     // descending. Dropped: nothing in the codebase orders or filters locations
     // by either, and an index nobody uses still costs every write.
     index('user_locations_search_vector_idx').using('gin', t.searchVector),
+    // The only index a distance search can use. `geography` has a default GiST
+    // operator class, so no opclass is named here; `EXPLAIN` on a real
+    // `ST_DWithin` confirms the planner picks it (`db/__tests__/postgis.test.ts`).
+    index('user_locations_geo_idx').using('gist', t.geo),
     // NOTE for the call-site port: these are ports of the indexes Mongo
     // declared, and they serve equality and prefix reads. The one live consumer
     // of this data — people search — matches with an UNANCHORED
