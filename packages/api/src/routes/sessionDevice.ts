@@ -278,7 +278,11 @@ router.post('/add', asyncHandler(async (req: AuthRequest, res: Response) => {
   // expired/revoked session (JWT not yet expired but the session doc
   // deactivated) — such a session must NOT be re-added to the device set.
   if (!sessionDoc) { res.status(401).json({ error: 'Invalid session' }); return; }
-  const operatedByUserId = sessionDoc.operatedByUserId ? sessionDoc.operatedByUserId.toString() : undefined;
+  // `sessions.operated_by_user_id` is a plain text id, NULL for an ordinary
+  // personal session. That NULL is the whole distinction between a delegated
+  // (`account:act_as`) entry and a personal one, so it is mapped to `undefined`
+  // and the key is then OMITTED below rather than sent as an empty value.
+  const operatedByUserId = sessionDoc.operatedByUserId ?? undefined;
 
   const { state, changed } = await deviceSessionService.addAccount(session.deviceId, {
     accountId,
