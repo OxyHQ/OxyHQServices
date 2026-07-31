@@ -6,14 +6,18 @@
  */
 
 import type { Request, Response, NextFunction } from 'express';
-import User from '../models/User';
+import { and } from 'drizzle-orm';
+import { getDb } from '../config/postgres';
+import { users } from '../db/schema/users';
 import { logger } from '../utils/logger';
 import { BadRequestError, InternalServerError } from '../utils/error';
 import { sendSuccess } from '../utils/asyncHandler';
-import { sanitizeSearchQuery } from '../utils/sanitize';
-import { buildPeopleSearchOrClause, peopleSearchMongoMatch } from '../utils/profileQuery';
-import { PUBLIC_USER_PROFILE_SELECT } from '../utils/publicUserProjection';
+import { peopleSearchMatch, peopleSearchPredicate } from '../utils/profileQuery';
+import { publicUserColumns, toPublicUserView } from '../utils/publicUserProjection';
 import { formatUserResponse } from '../utils/userTransform';
+
+/** Longest search term honoured — matches the other two people-search surfaces. */
+const MAX_SEARCH_TERM_LENGTH = 100;
 
 export class UsersController {
   /**
@@ -37,27 +41,23 @@ export class UsersController {
       // `@adamrbjack.bsky.social` finds `adamrbjack.bsky.social@bsky.social`, and
       // a Mastodon `@user@host` matches `user@host`. Only ONE leading `@` is
       // removed — a mid-string `@` (the `user@host` separator) is preserved.
-      const strippedQuery = query.trim().replace(/^@/, '');
+      // The term is passed RAW: `peopleSearchMatch` escapes it for LIKE and
+      // binds it as a parameter, so escaping it here as well would make `a+b`
+      // search for a literal backslash.
+      const term = query.trim().replace(/^@/, '').slice(0, MAX_SEARCH_TERM_LENGTH);
 
-      // Sanitize search query (length limit + regex escaping)
-      const sanitizedQuery = sanitizeSearchQuery(strippedQuery);
-
-      // Search for users where username or name matches the query.
-      const searchPattern = { $regex: sanitizedQuery, $options: 'i' as const };
-
-      const users = await User.find({
-        ...peopleSearchMongoMatch,
-        $or: buildPeopleSearchOrClause(searchPattern),
-      })
-        .select(PUBLIC_USER_PROFILE_SELECT)
+      const rows = await getDb()
+        .select(publicUserColumns)
+        .from(users)
+        .where(and(peopleSearchPredicate(), peopleSearchMatch(term)))
         .limit(5);
 
-      const formattedUsers = users
-        .map((user) => formatUserResponse(user))
+      const formattedUsers = rows
+        .map((row) => formatUserResponse(toPublicUserView(row)))
         .filter((user): user is NonNullable<typeof user> => user !== null);
 
       logger.debug('User search performed', {
-        query: sanitizedQuery,
+        query: term,
         resultsCount: formattedUsers.length,
       });
 

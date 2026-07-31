@@ -1,40 +1,258 @@
 /**
- * The Mongo projection for a PUBLIC user row.
+ * The PUBLIC user row — what a list of other people's profiles is allowed to be.
  *
- * SINGLE source of truth for every endpoint that returns a list of other
- * people's user documents (followers, following, mutuals, user search). Those
- * lists render the same row everywhere in the ecosystem — avatar, display name,
+ * SINGLE source of truth for every endpoint that returns other users
+ * (followers, following, mutuals, people search, profile lookup). Those lists
+ * render the same row everywhere in the ecosystem — avatar, display name,
  * handle, bio, verified badge, federated/remote-instance badge — so they all
- * need the same field set, and repeating a hand-written `.select('username name
- * avatar color …')` per query is exactly how they drifted apart: the follower /
- * following / mutual queries silently omitted `bio`, `verified` and
- * `federation`, so the API emitted `bio: undefined` on every row while the
- * model, the serializer (`UserService.formatUserResponse`) and the wire contract
- * (`userResponseSchema`) all carried the field.
+ * need the same column set, and a hand-written selection per query is exactly
+ * how they drifted apart before: the follower / following / mutual queries
+ * silently omitted `bio`, `verified` and `federation`, so the API emitted
+ * `bio: undefined` on every row while the serializer and the wire contract
+ * (`userResponseSchema`) both carried the field.
  *
- * INVARIANT: this projection must cover every field
- * `UserService.formatUserResponse` reads. A field it reads but this does not
- * project is not an error anywhere — it just silently serializes as `undefined`.
+ * ## Three things, and the middle one is the whole point
  *
- * Inclusion-only on purpose: every unlisted path (`email`, `phone`, `password`,
- * `refreshToken`, hashed contacts, the private half of `privacySettings`, …) is
- * dropped by MongoDB itself, instead of relying on an easily-forgotten `-field`
- * exclusion to keep a private field off a public row.
+ * 1. {@link publicUserColumns} — the drizzle SELECTION. Inclusion-only, exactly
+ *    as the Mongo projection was: every unlisted column (`email`, `phone`, the
+ *    contact hashes, `refresh_token`, the private half of the privacy settings)
+ *    is absent because it was never named, rather than because someone
+ *    remembered to exclude it.
+ * 2. {@link toPublicUserView} — the flat row → response-shaped VIEW. The
+ *    schema stores `name_first` / `federation_domain` /
+ *    `privacy_fediverse_sharing` as flat columns (see
+ *    `db/schema/CONVENTIONS.md`), while the WIRE contract nests them as
+ *    `name.first` / `federation.domain` / `privacySettings.fediverseSharing`.
+ *    The nesting is the API's shape, not Mongo's, so it belongs at the read
+ *    boundary — and putting it here means every serializer downstream consumes
+ *    one shape and cannot re-derive it differently.
+ * 3. {@link publicUserFollowCounts} — the follower/following totals. `_count`
+ *    was a denormalized counter on the Mongo document because Mongo cannot
+ *    JOIN; here it is a correlated `count(*)` served by
+ *    `user_follows_followed_id_created_at_id_idx` and the follower/followed
+ *    unique index, so it is a MEASUREMENT and can never drift from the edges.
  *
- * `publicKey` is deliberately NOT projected. The DTO `id` is always the stable
- * ObjectId (`formatUserResponse` anchors it on `_id`), and the social graph these
- * lists feed (follow edges, the viewer graph id lists, client-side follow-state
- * maps) is keyed by that same ObjectId — the public row needs no key material.
+ * `public_key` is deliberately NOT selected. The DTO `id` is always the stable
+ * account id, and the social graph these lists feed (follow edges, the viewer
+ * graph id lists, client-side follow-state maps) is keyed by that same id — a
+ * public row needs no key material.
  */
 
-import type { IUser } from '../models/User';
+import { getTableName, sql, type Column, type SQL } from 'drizzle-orm';
+import { sqlColumnName } from '../db/casing';
+import { userFollows } from '../db/schema/userFollows';
+import { userLinkMetadata } from '../db/schema/userLinkMetadata';
+import { users } from '../db/schema/users';
+import type { NameParts } from './displayName';
 
 /**
- * Public profile paths. Nested paths are allowed (MongoDB projects the single
- * leaf), which is how the public, derived `fediverseSharing` consent flag is
- * exposed without dragging in the rest of `privacySettings`.
+ * One profile link's unfurled metadata, as it appears on the wire.
+ *
+ * Mongo embedded this as an array on the user document; it is a child table
+ * here, aggregated back into an ordered array by {@link publicUserColumns} so a
+ * list of N profiles still costs ONE query.
  */
-const PUBLIC_USER_PROFILE_PATHS = [
+export interface LinkMetadataDto {
+  url: string;
+  title: string;
+  description: string;
+  image?: string | null;
+}
+
+/**
+ * A public profile in the shape the API returns it — the input every user-DTO
+ * serializer reads.
+ *
+ * Deliberately NOT the flat table row: `name`, `federation` and
+ * `privacySettings` are nested on the wire, so nesting them once here keeps the
+ * serializers free of column-name knowledge and makes a response-parity test a
+ * pure function of this type.
+ */
+export interface PublicUserView {
+  _id: string;
+  username?: string;
+  name?: NameParts;
+  avatar?: string;
+  color?: string;
+  bio?: string;
+  description?: string;
+  links?: string[];
+  linksMetadata?: LinkMetadataDto[];
+  verified?: boolean;
+  type?: string;
+  federation?: { actorUri?: string; domain?: string };
+  /** Only the two leaves a public row may carry — see the module header. */
+  privacySettings?: { fediverseSharing?: boolean; isPrivateAccount?: boolean };
+  accountStatus?: string;
+  reputationTier?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/**
+ * A FULLY QUALIFIED `"table"."column"` reference.
+ *
+ * Interpolating a drizzle column into `sql` renders it BARE (`"user_id"`) when
+ * its table is not in the statement's `FROM` — which is exactly the case inside
+ * a correlated subquery. The first port of this module wrote
+ * `where ${userLinkMetadata.userId} = ${users.id}`, which rendered
+ * `where "user_id" = "id"`: both names resolved against the SUBQUERY's own
+ * table, so it compared two of its own columns, matched nothing, and returned an
+ * empty array with no error. `link_metadata` silently disappeared from every
+ * public profile. Same class of trap as `column.name` in `CONVENTIONS.md`, and
+ * caught the same way — by an assertion on real rows.
+ */
+function qualified(column: Column): SQL {
+  return sql`${sql.identifier(getTableName(column.table))}.${sql.identifier(sqlColumnName(column))}`;
+}
+
+/**
+ * The ordered link-metadata array for the user of the row being selected.
+ *
+ * A correlated aggregate rather than a second round trip: a page of 50 profiles
+ * costs one query either way, and a second query would have to be re-attached
+ * by id at every call site — the shape that drifts.
+ *
+ * Every identifier is INTERPOLATED as a drizzle column/table so the SQL names
+ * come from the casing setting rather than being spelled out here (see the trap
+ * in `db/schema/CONVENTIONS.md`).
+ */
+const linksMetadataAggregate: SQL<LinkMetadataDto[]> = sql`coalesce((
+  select json_agg(
+    json_build_object(
+      'url', ${qualified(userLinkMetadata.url)},
+      'title', ${qualified(userLinkMetadata.title)},
+      'description', ${qualified(userLinkMetadata.description)},
+      'image', ${qualified(userLinkMetadata.image)}
+    )
+    order by ${qualified(userLinkMetadata.position)}
+  )
+  from ${userLinkMetadata}
+  where ${qualified(userLinkMetadata.userId)} = ${qualified(users.id)}
+), '[]'::json)`;
+
+/**
+ * Every column a client may see on SOMEONE ELSE's profile.
+ *
+ * `account_status`, `reputation_tier` and `privacy_is_private_account` are GATE
+ * columns: route handlers read them to decide discoverability
+ * (`isPublicGraphTarget`). {@link toPublicUserView} carries them, and the
+ * serializers never emit them.
+ */
+export const publicUserColumns = {
+  id: users.id,
+  username: users.username,
+  nameFirst: users.nameFirst,
+  nameLast: users.nameLast,
+  avatar: users.avatar,
+  color: users.color,
+  bio: users.bio,
+  description: users.description,
+  links: users.links,
+  linksMetadata: linksMetadataAggregate,
+  verified: users.verified,
+  type: users.type,
+  federationActorUri: users.federationActorUri,
+  federationDomain: users.federationDomain,
+  privacyFediverseSharing: users.privacyFediverseSharing,
+  privacyIsPrivateAccount: users.privacyIsPrivateAccount,
+  accountStatus: users.accountStatus,
+  reputationTier: users.reputationTier,
+  createdAt: users.createdAt,
+  updatedAt: users.updatedAt,
+} as const;
+
+/** The row {@link publicUserColumns} yields. */
+export interface PublicUserRow {
+  id: string;
+  username: string | null;
+  nameFirst: string | null;
+  nameLast: string | null;
+  avatar: string | null;
+  color: string;
+  bio: string | null;
+  description: string | null;
+  links: string[] | null;
+  linksMetadata: LinkMetadataDto[];
+  verified: boolean;
+  type: string;
+  federationActorUri: string | null;
+  federationDomain: string | null;
+  privacyFediverseSharing: boolean;
+  privacyIsPrivateAccount: boolean;
+  accountStatus: string;
+  reputationTier: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Follower/following totals for the user of the row being selected.
+ *
+ * Spread into a selection alongside {@link publicUserColumns} by any surface
+ * that emits `_count`. `::int` because `count(*)` is `bigint`, which postgres.js
+ * hands back as a STRING — a silent `"42"` on the wire where the contract
+ * promises a number.
+ */
+export const publicUserFollowCounts = {
+  followersCount: sql<number>`(select count(*)::int from ${userFollows} where ${qualified(userFollows.followedId)} = ${qualified(users.id)})`,
+  followingCount: sql<number>`(select count(*)::int from ${userFollows} where ${qualified(userFollows.followerId)} = ${qualified(users.id)})`,
+} as const;
+
+/** A `null` column becomes an ABSENT property — `undefined`, never `null`. */
+function optional<T>(value: T | null): T | undefined {
+  return value === null ? undefined : value;
+}
+
+/**
+ * Flat row → the response-shaped view every serializer reads.
+ *
+ * The three re-nestings (`name`, `federation`, `privacySettings`) are the whole
+ * job. `federation` is emitted only for a row that actually has federation
+ * data, matching Mongo, where the subdocument was simply absent on a local
+ * account and `formatUserResponse` tests it for truthiness.
+ */
+export function toPublicUserView(row: PublicUserRow): PublicUserView {
+  const federation =
+    row.federationActorUri !== null || row.federationDomain !== null
+      ? {
+          actorUri: optional(row.federationActorUri),
+          domain: optional(row.federationDomain),
+        }
+      : undefined;
+
+  return {
+    _id: row.id,
+    username: optional(row.username),
+    name: { first: optional(row.nameFirst), last: optional(row.nameLast) },
+    avatar: optional(row.avatar),
+    color: row.color,
+    bio: optional(row.bio),
+    description: optional(row.description),
+    links: optional(row.links),
+    linksMetadata: row.linksMetadata,
+    verified: row.verified,
+    type: row.type,
+    federation,
+    privacySettings: {
+      fediverseSharing: row.privacyFediverseSharing,
+      isPrivateAccount: row.privacyIsPrivateAccount,
+    },
+    accountStatus: row.accountStatus,
+    reputationTier: row.reputationTier,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * The Mongoose `.select(...)` argument for a public user row.
+ *
+ * Retained ONLY for `controllers/session.controller.ts`, whose port belongs to
+ * the auth/session batch; it is the last Mongo reader of this module. Delete it
+ * with that call site — nothing else may grow a dependency on it.
+ */
+export const PUBLIC_USER_PROFILE_SELECT = [
   'username',
   'name',
   'avatar',
@@ -44,85 +262,12 @@ const PUBLIC_USER_PROFILE_PATHS = [
   'links',
   'linksMetadata',
   'verified',
-  // Account type + remote-actor info: the row renders a verified badge, a
-  // federated badge and the `@user@instance` handle from these.
   'type',
   'federation',
-  // ONLY the public, derived consent flag — the rest of `privacySettings` is
-  // private and must never reach a public row.
   'privacySettings.fediverseSharing',
   'createdAt',
   'updatedAt',
-] as const;
-
-/**
- * Gate-only paths: read by route handlers / `isPublicGraphTarget` to decide
- * whether a row is discoverable. Never serialized on public DTOs.
- */
-const PUBLIC_USER_PROFILE_GATE_PATHS = [
   'accountStatus',
   'reputationTier',
   'privacySettings.isPrivateAccount',
-] as const;
-
-const ALL_PUBLIC_USER_PROFILE_PATHS = [
-  ...PUBLIC_USER_PROFILE_PATHS,
-  ...PUBLIC_USER_PROFILE_GATE_PATHS,
-] as const;
-
-/** `.select(...)` argument for a public user row. */
-export const PUBLIC_USER_PROFILE_SELECT = ALL_PUBLIC_USER_PROFILE_PATHS.join(' ');
-
-/**
- * `$project` stage for a public user row, for the surfaces that read through an
- * aggregation pipeline rather than a query (`GET /search`, `GET /profiles/search`).
- *
- * Derived from {@link PUBLIC_USER_PROFILE_PATHS} only — NOT
- * {@link PUBLIC_USER_PROFILE_GATE_PATHS}. Gate paths (`accountStatus`,
- * `reputationTier`, `privacySettings.isPrivateAccount`) are read from
- * {@link PUBLIC_USER_PROFILE_SELECT} when a handler must decide discoverability
- * before serializing, but they must never reach a public DTO. Search/profile
- * pipelines already filter those rows in `$match` (`peopleSearchMongoMatch`).
- *
- * INCLUSION-ONLY for the same reason as {@link PUBLIC_USER_PROFILE_SELECT}: an
- * exclusion `$project` listing the private fields to drop is one forgotten field
- * away from leaking. `GET /search` shipped exactly that bug — a
- * `{ password: 0, refreshToken: 0 }` denylist put `email`, `publicKey` and the
- * full `privacySettings` on an unauthenticated response.
- *
- * `_id` is included implicitly by MongoDB, which is what `formatUserResponse`
- * anchors the DTO `id` on. The sort-only fields a native-first pipeline adds
- * (`_nativePriority`, `_reputationRank`) are dropped for free — an inclusion
- * projection emits nothing it does not name.
- */
-export const PUBLIC_USER_PROFILE_PROJECTION: Record<string, 1> = Object.fromEntries(
-  PUBLIC_USER_PROFILE_PATHS.map((path) => [path, 1]),
-);
-
-/**
- * The lean document shape {@link PUBLIC_USER_PROFILE_SELECT} yields. Declared
- * from `IUser` so the projection and the type cannot drift: a path added to the
- * projection is a compile error here until it is a real `User` field.
- */
-export type PublicUserDocument = Pick<
-  IUser,
-  | '_id'
-  | 'username'
-  | 'name'
-  | 'avatar'
-  | 'color'
-  | 'bio'
-  | 'description'
-  | 'links'
-  | 'linksMetadata'
-  | 'verified'
-  | 'type'
-  | 'federation'
-  | 'accountStatus'
-  | 'reputationTier'
-  | 'createdAt'
-  | 'updatedAt'
-> & {
-  /** Only the projected leaves — see {@link PUBLIC_USER_PROFILE_SELECT}. */
-  privacySettings?: Pick<IUser['privacySettings'], 'fediverseSharing' | 'isPrivateAccount'>;
-};
+].join(' ');

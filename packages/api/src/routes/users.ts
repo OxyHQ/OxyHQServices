@@ -10,11 +10,12 @@
  */
 
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { Types } from 'mongoose';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
 import { readBoundedBody } from '../services/linkPreview/boundedBody';
-import User from '../models/User';
-import IdentityBackup from '../models/IdentityBackup';
+import { getDb } from '../config/postgres';
+import { identityBackups } from '../db/schema/identityBackups';
+import { users } from '../db/schema/users';
 import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler';
@@ -34,7 +35,7 @@ import { userService } from '../services/user.service';
 import graphCache from '../utils/graphCache';
 import { assetService } from '../services/assetServiceSingleton';
 import { UsersController } from '../controllers/users.controller';
-import { resolveUserIdToObjectId, isValidObjectId } from '../utils/validation';
+import { resolveUserIdToObjectId, isAccountIdFormat } from '../utils/validation';
 import userCache from '../utils/userCache';
 import SignatureService from '../services/signature.service';
 import { emailService } from '../services/email.service';
@@ -1139,37 +1140,20 @@ router.put(
       throw new BadRequestError('Invalid privacy settings');
     }
 
-    const user = await userService.getUserById(userId);
-
-    if (!user) {
+    // Merge only the provided fields. Replacing the whole settings object would
+    // wipe every toggle the client did not include, which is what Mongo's
+    // dot-path `$set` existed to avoid; the service owns that merge and the
+    // userCache invalidation that keeps the next session read fresh.
+    const incoming = req.body.privacySettings as Record<string, unknown>;
+    const updatedSettings = await userService.updatePrivacySettings(userId, incoming);
+    if (!updatedSettings) {
       throw new NotFoundError('User not found');
     }
 
-    // Merge only the provided fields into privacySettings using dot-path
-    // updates. Using `{ $set: { privacySettings: ... } }` would replace the
-    // whole subdocument and wipe any fields the client did not include.
-    const incoming = req.body.privacySettings as Record<string, unknown>;
-    const setOps: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(incoming)) {
-      setOps[`privacySettings.${key}`] = value;
-    }
-
-    // Update privacy settings
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      Object.keys(setOps).length > 0 ? { $set: setOps } : {},
-      { new: true, runValidators: true }
-    )
-      .select('-password -refreshToken')
-      .lean({ virtuals: true });
-
+    const updatedUser = await userService.getUserById(userId);
     if (!updatedUser) {
       throw new NotFoundError('User not found');
     }
-
-    // Bust the in-memory user cache so subsequent session-bound lookups
-    // return the fresh privacy state instead of the stale pre-write doc.
-    userCache.invalidate(userId);
 
     logger.info('User privacy settings updated', { userId });
 
@@ -1258,14 +1242,15 @@ router.get(
     }
 
     const format = (req.query.format as string) || 'json';
-    const user = await User.findById(userId).select('-refreshToken').lean();
+    // `readAccountDocument` selects through `publicColumns(users)`, so the
+    // protected set — the raw phone, the contact-discovery hashes, the refresh
+    // token, and the private mail configuration — is absent by construction
+    // rather than by a `-field` exclusion someone has to remember.
+    const safeUserData = await userService.readAccountDocument(userId);
 
-    if (!user) {
+    if (!safeUserData) {
       throw new NotFoundError('User not found');
     }
-
-    // Remove sensitive fields
-    const { refreshToken, ...safeUserData } = user;
 
     let data: string;
     let contentType: string;
@@ -1470,7 +1455,11 @@ router.delete(
       throw new BadRequestError('Confirmation text is required');
     }
 
-    const user = await User.findById(userId).select('+publicKey +username');
+    const [user] = await getDb()
+      .select({ publicKey: users.publicKey, username: users.username })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
     if (!user) {
       throw new NotFoundError('User not found');
     }
@@ -1502,7 +1491,7 @@ router.delete(
     await emailService.deleteAllUserData(userId);
 
     // Drop any encrypted off-device identity backup for this account.
-    await IdentityBackup.deleteOne({ userId });
+    await getDb().delete(identityBackups).where(eq(identityBackups.userId, userId));
 
     // Revoke every active session and detach the account from all device-session
     // docs so a deleted user cannot keep minting tokens from a retained secret.
@@ -1513,8 +1502,11 @@ router.delete(
     // before deleting the user document (mirrors federation actor-delete).
     await userService.purgeUserSocialGraph(userId);
 
-    // Delete the user account
-    await User.findByIdAndDelete(userId);
+    // Delete the account row. Every remaining edge that references it is
+    // removed by its own foreign key; the graph purge above ran first because it
+    // is what invalidates each counterparty's cached graph by name — a cascade
+    // tells nobody whose graph just changed.
+    await getDb().delete(users).where(eq(users.id, userId));
 
     userCache.invalidate(userId);
     await graphCache.invalidate(userId);
@@ -1732,15 +1724,16 @@ router.put(
       throw new BadRequestError('username is required');
     }
     if (type !== 'federated' && ownerId !== undefined && ownerId !== null) {
-      if (typeof ownerId !== 'string' || !isValidObjectId(ownerId)) {
+      if (typeof ownerId !== 'string' || !isAccountIdFormat(ownerId)) {
         throw new BadRequestError('ownerId must be a valid user id');
       }
     }
 
-    // Build the upsert filter and $set payload — never touch auth fields
-    let filter: Record<string, unknown>;
+    // Build the row predicate and the column payload — never touch auth fields.
+    // `existingPredicate` is what Mongo expressed as an upsert FILTER; it stays a
+    // predicate because the two branches key on different unique indexes.
+    let existingPredicate: SQL;
     const setFields: Record<string, unknown> = { username };
-    const unsetFields: Record<string, ''> = {};
 
     if (type === 'federated') {
       if (!actorUri || typeof actorUri !== 'string') {
@@ -1802,41 +1795,58 @@ router.put(
       ) {
         throw new BadRequestError('actorUri hostname does not match domain');
       }
-      filter = { 'federation.actorUri': actorUri };
+      existingPredicate = eq(users.federationActorUri, actorUri);
       setFields.username = normalisedUsername;
-      setFields['federation.actorUri'] = actorUri;
-      setFields['federation.domain'] = normalisedDomain;
-      setFields['federation.lastResolvedAt'] = new Date();
-      unsetFields['federation.unavailableAt'] = '';
-      unsetFields['federation.unavailableReason'] = '';
+      setFields.federationActorUri = actorUri;
+      setFields.federationDomain = normalisedDomain;
+      setFields.federationLastResolvedAt = new Date();
+      // A successful resolve clears the tombstone. NULL is what "available"
+      // means on these columns, so the Mongo `$unset` is a write of NULL.
+      setFields.federationUnavailableAt = null;
+      setFields.federationUnavailableReason = null;
     } else {
       // For agent / automated, refuse to clobber a username already taken
       // by a local user — that would be account takeover via the
       // federation pipeline.
-      const localCollision = await User.findOne({
-        username,
-        type: { $nin: ['agent', 'automated'] },
-      }).select('_id type').lean();
+      // Written against the EXPRESSION the unique index is built on
+      // (`lower(btrim(username))`, `db/schema/users.ts`); a plain `username = $1`
+      // is correct-looking, case-sensitive, and would miss a collision the
+      // index would then reject as a 500.
+      const [localCollision] = await getDb()
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            sql`lower(btrim(${users.username})) = lower(btrim(${username}))`,
+            sql`${users.type} not in ('agent', 'automated')`
+          )
+        )
+        .limit(1);
       if (localCollision) {
         throw new ConflictError('Username is already taken by a non-automated user');
       }
-      filter = { username, type: { $in: ['agent', 'automated'] } };
+      existingPredicate = and(
+        sql`lower(btrim(${users.username})) = lower(btrim(${username}))`,
+        inArray(users.type, ['agent', 'automated'])
+      ) ?? sql`false`;
       if (typeof ownerId === 'string') {
-        setFields['automation.ownerId'] = ownerId;
+        setFields.automationOwnerId = ownerId;
       }
     }
 
     // Type immutability check: if a user already exists, its `type` must
     // match what the caller is asserting. We never allow a federated user
-    // to be silently re-typed as an agent, or vice versa.
-    const existingByFilter = await User.findOne(filter).select('_id type').lean();
-    if (existingByFilter && existingByFilter.type && existingByFilter.type !== type) {
+    // to be silently re-typed as an agent, or vice versa. The same read also
+    // supplies the existing avatar file id below, so the two Mongo round trips
+    // that asked the same question collapse into one.
+    const [existingByFilter] = await getDb()
+      .select({ id: users.id, type: users.type, avatar: users.avatar })
+      .from(users)
+      .where(existingPredicate)
+      .limit(1);
+    if (existingByFilter && existingByFilter.type !== type) {
       throw new ConflictError('Cannot change the type of an existing user');
     }
-
-    // Only set `type` on initial insert; never overwrite on update. The
-    // immutability invariant above already rejected mismatched updates.
-    const setOnInsert: Record<string, unknown> = { type };
 
     // Clean free-text fields sourced from untrusted remote actors
     // (federated/agent/automated) before persisting. The bio renders as TEXT in
@@ -1866,31 +1876,33 @@ router.put(
     let remoteAvatarUrl: string | undefined;
     let existingAvatarFileId: string | undefined;
     if (typeof avatar === 'string' && avatar.startsWith('http')) {
-      const existingUser = await User.findOne(filter).select('avatar').lean();
-      existingAvatarFileId = typeof existingUser?.avatar === 'string' ? existingUser.avatar : undefined;
+      existingAvatarFileId = existingByFilter?.avatar ?? undefined;
       remoteAvatarUrl = avatar;
     } else if (typeof avatar === 'string') {
       // Non-URL avatar (already a file ID) — set directly
       setFields.avatar = avatar;
     }
 
-    const update: {
-      $set: Record<string, unknown>;
-      $setOnInsert: Record<string, unknown>;
-      $unset?: Record<string, ''>;
-    } = { $set: setFields, $setOnInsert: setOnInsert };
-    if (Object.keys(unsetFields).length > 0) {
-      update.$unset = unsetFields;
+    // `type` is written only on INSERT, never on update — the immutability
+    // check above already rejected a mismatched update, and re-writing it would
+    // make that check the only thing standing between a caller and a silent
+    // re-type. Column DEFAULTs replace Mongoose's `setDefaultsOnInsert`.
+    let resolvedUserId: string;
+    if (existingByFilter) {
+      await getDb().update(users).set(setFields).where(eq(users.id, existingByFilter.id));
+      resolvedUserId = existingByFilter.id;
+    } else {
+      const [inserted] = await getDb()
+        .insert(users)
+        .values({ ...setFields, type })
+        .returning({ id: users.id });
+      if (!inserted) {
+        throw new Error('Failed to resolve user');
+      }
+      resolvedUserId = inserted.id;
     }
 
-    const user = await User.findOneAndUpdate(
-      filter,
-      update,
-      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
-    )
-      .select('-password -refreshToken')
-      .lean({ virtuals: true });
-
+    const user = await userService.readAccountDocument(resolvedUserId);
     if (!user) {
       throw new Error('Failed to resolve user');
     }
@@ -1898,7 +1910,7 @@ router.put(
     // This route mutates user state (avatar/name/bio/federation fields), so the
     // in-memory user cache must be invalidated — otherwise getUserBySession can
     // serve a stale record and silently revert this update.
-    userCache.invalidate(user._id.toString());
+    userCache.invalidate(resolvedUserId);
 
     // Kick the remote avatar download off the request path. The scheduler
     // resolves the user fresh, honours the throttle + conditional requests, and
@@ -1909,14 +1921,14 @@ router.put(
       && !existingAvatarFileId.startsWith('http');
     if (remoteAvatarUrl && (forceAvatarRefresh || !hasExistingStoredAvatar)) {
       federationService.scheduleAvatarRefresh(
-        user._id.toString(),
+        resolvedUserId,
         remoteAvatarUrl,
         existingAvatarFileId,
         { force: forceAvatarRefresh },
       );
     }
 
-    logger.info('External user resolved', { type, username, userId: user._id });
+    logger.info('External user resolved', { type, username, userId: resolvedUserId });
 
     sendSuccess(res, user);
   })
