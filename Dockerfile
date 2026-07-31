@@ -23,7 +23,11 @@ WORKDIR /app
 # Remove bun.lock since the workspace change invalidates it — bun will
 # resolve fresh dependencies (still deterministic from package.json versions).
 COPY package.json ./
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/contracts','packages/protocol','packages/federation','packages/core','packages/api']; delete p.patchedDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+# The subset is written as the OBJECT form on purpose: narrowing `workspaces`
+# to an array drops `workspaces.catalog` with it, and every `"catalog:"`
+# reference in these manifests then fails to resolve — `bun install` here has
+# no lockfile to fall back on, so the build dies at dependency resolution.
+RUN node -e "const p=require('./package.json'); p.workspaces={packages:['packages/contracts','packages/protocol','packages/federation','packages/core','packages/api'], catalog:(p.workspaces&&p.workspaces.catalog)||{}}; delete p.patchedDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 
 # Copy package.json files for dependency resolution
 COPY packages/api/package.json packages/api/
@@ -62,7 +66,11 @@ WORKDIR /app
 
 # Copy workspace root and override workspaces
 COPY package.json ./
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/contracts','packages/protocol','packages/federation','packages/core','packages/api']; delete p.patchedDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+# The subset is written as the OBJECT form on purpose: narrowing `workspaces`
+# to an array drops `workspaces.catalog` with it, and every `"catalog:"`
+# reference in these manifests then fails to resolve — `bun install` here has
+# no lockfile to fall back on, so the build dies at dependency resolution.
+RUN node -e "const p=require('./package.json'); p.workspaces={packages:['packages/contracts','packages/protocol','packages/federation','packages/core','packages/api'], catalog:(p.workspaces&&p.workspaces.catalog)||{}}; delete p.patchedDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 COPY packages/protocol/package.json packages/protocol/

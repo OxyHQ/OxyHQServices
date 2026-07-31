@@ -44,7 +44,11 @@ WORKDIR /app
 # monorepo lockfile (the subset does not match the full-repo lock — bun resolves
 # deterministically from the package.json versions). Mirrors the api Dockerfile.
 COPY package.json ./
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/contracts','packages/protocol','packages/core','packages/node']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+# The subset is written as the OBJECT form on purpose: narrowing `workspaces`
+# to an array drops `workspaces.catalog` with it, and every `"catalog:"`
+# reference in these manifests then fails to resolve — `bun install` here has
+# no lockfile to fall back on, so the build dies at dependency resolution.
+RUN node -e "const p=require('./package.json'); p.workspaces={packages:['packages/contracts','packages/protocol','packages/core','packages/node'], catalog:(p.workspaces&&p.workspaces.catalog)||{}}; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 
 # package.json files first for dependency resolution caching
 COPY packages/node/package.json packages/node/
@@ -82,7 +86,11 @@ ENV npm_config_node_gyp=/usr/local/lib/node_modules/node-gyp/bin/node-gyp.js
 WORKDIR /app
 
 COPY package.json ./
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/contracts','packages/protocol','packages/core','packages/node']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+# The subset is written as the OBJECT form on purpose: narrowing `workspaces`
+# to an array drops `workspaces.catalog` with it, and every `"catalog:"`
+# reference in these manifests then fails to resolve — `bun install` here has
+# no lockfile to fall back on, so the build dies at dependency resolution.
+RUN node -e "const p=require('./package.json'); p.workspaces={packages:['packages/contracts','packages/protocol','packages/core','packages/node'], catalog:(p.workspaces&&p.workspaces.catalog)||{}}; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 COPY packages/node/package.json packages/node/
 COPY packages/core/package.json packages/core/
 COPY packages/protocol/package.json packages/protocol/
