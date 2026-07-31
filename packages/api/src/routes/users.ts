@@ -1859,7 +1859,11 @@ router.put(
       // Strip disallowed characters (emoji/symbols/shortcodes) from federated
       // names. cleanDisplayName's output can never contain an XSS vector and is
       // already clean, so it owns the name field here.
-      setFields['name.first'] = cleanDisplayName(displayName);
+      // The COLUMN PROPERTY, not Mongo's `name.first` dot path: drizzle keys
+      // `set()`/`values()` by property name and SILENTLY IGNORES a key that
+      // names no column, so the dot path stored nothing at all and every
+      // federated actor resolved through here landed with a null display name.
+      setFields.nameFirst = cleanDisplayName(displayName);
     }
     if (typeof bio === 'string') {
       setFields.bio = sanitizePlainText(bio);
