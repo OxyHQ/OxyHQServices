@@ -87,6 +87,18 @@ COPY --from=builder /app/packages/api/scripts packages/api/scripts
 COPY --from=builder /app/packages/api/src packages/api/src
 COPY --from=builder /app/packages/core/src packages/core/src
 
+# The SQL migrations + their journal. `dist/db/migrate.js` (built above) reads
+# them from a path resolved relative to itself, so this directory has to sit at
+# packages/api/drizzle exactly as it does in the repo. Applied by a one-shot ECS
+# task — see .github/workflows/run-postgres-migrations.yml.
+#
+# The migrator is drizzle-orm's, NOT the drizzle-kit CLI: drizzle-kit is a
+# devDependency that `bun install --production` above deliberately leaves out,
+# because it depends on esbuild, whose arm64/alpine postinstall breaks this
+# image (PR #261). drizzle-orm is already a runtime dependency and ships the
+# migrator, so migrations run from the same image the service runs.
+COPY --from=builder /app/packages/api/drizzle packages/api/drizzle
+
 # Main API entry point
 CMD ["node", "packages/api/dist/server.js"]
 

@@ -17,9 +17,14 @@ export interface RequiredEnvVars {
   MONGODB_URI: string;
 
   // PostgreSQL connection string, consumed by `config/postgres.ts` (Drizzle
-  // over Bun's built-in SQL client) and by drizzle-kit for migrations. Required
-  // alongside MONGODB_URI while the Mongo→Postgres port is in flight; Mongo is
-  // still the live store.
+  // over postgres.js) and by the migrator (`db/migrate.ts`). Required alongside
+  // MONGODB_URI while the Mongo→Postgres port is in flight; Mongo is still the
+  // live store.
+  //
+  // Every name in the `required` list below must reach the ECS task, which
+  // means being synced to SSM by `.github/workflows/deploy-aws.yml`. CI job
+  // "Deploy Secrets Sync" reads THIS array and fails the build on any entry
+  // that is neither synced nor recorded as a non-secret.
   DATABASE_URL: string;
 
   // Authentication
