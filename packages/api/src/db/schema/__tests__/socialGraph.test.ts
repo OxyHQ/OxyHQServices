@@ -29,6 +29,7 @@ import { moderationPolicySeverityRules } from '../moderationPolicySeverityRules'
 import { moderationPolicyStandingThresholds } from '../moderationPolicyStandingThresholds';
 import { notifications } from '../notifications';
 import { reporterReputationProfiles } from '../reporterReputationProfiles';
+import { reputationTransactions } from '../reputationTransactions';
 import { restrictions } from '../restrictions';
 import { reviewerReputationProfiles } from '../reviewerReputationProfiles';
 import { topics } from '../topics';
@@ -108,6 +109,21 @@ async function binding(userId: string): Promise<string> {
       bindingType: 'oauth_grant',
     })
     .returning({ id: identityBindings.id });
+  return row.id;
+}
+
+/**
+ * A real `reputation_transactions` row. `conduct_strikes.transaction_id` and
+ * `moderation_effects.transaction_id` carry foreign keys with
+ * `ON DELETE RESTRICT`: the ledger entry is where the points actually moved, so
+ * a synthetic id no longer satisfies it. Owned by the same account as the
+ * consequence, which is what the erasure cascade assumes.
+ */
+async function ledgerEntry(userId: string): Promise<string> {
+  const [row] = await getDb()
+    .insert(reputationTransactions)
+    .values({ userId, points: -20, actionType: 'conduct_penalty', category: 'penalty' })
+    .returning({ id: reputationTransactions.id });
   return row.id;
 }
 
@@ -784,8 +800,9 @@ describe('conduct_strikes and moderation_effects — one penalty per incident', 
   /** Everything a strike needs, minus what the caller overrides. */
   async function strikeValues(): Promise<typeof conductStrikes.$inferInsert> {
     const { version } = await policy();
+    const userId = await account();
     return {
-      userId: await account(),
+      userId,
       incidentId: `inc-${uniqueId()}`,
       decisionId: `dec-${uniqueId()}`,
       decisionRevision: 1,
@@ -794,7 +811,7 @@ describe('conduct_strikes and moderation_effects — one penalty per incident', 
       riskPoints: 10,
       family: 'spam',
       policyVersion: version,
-      transactionId: `txn-${uniqueId()}`,
+      transactionId: await ledgerEntry(userId),
     };
   }
 
@@ -1212,7 +1229,7 @@ describe('deleting an account takes its social graph and its records with it', (
         riskPoints: 10,
         family: 'spam',
         policyVersion: version,
-        transactionId: `txn-${uniqueId()}`,
+        transactionId: await ledgerEntry(subject),
       })
       .returning({ id: conductStrikes.id });
     await getDb().insert(moderationEffects).values({
@@ -1232,7 +1249,7 @@ describe('deleting an account takes its social graph and its records with it', (
       repetitionMultiplier: 1,
       multiFindingMultiplier: 1,
       idempotencyKey: `idem-${uniqueId()}`,
-      transactionId: `txn-${uniqueId()}`,
+      transactionId: await ledgerEntry(subject),
       strikeId: strike.id,
       policyVersionUniversal: 'universal.1',
       policyVersionApplication: 'app.1',

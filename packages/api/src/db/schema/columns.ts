@@ -95,3 +95,22 @@ export const bytea = customType<{ data: Buffer; driverData: Uint8Array }>({
 export const tsvector = customType<{ data: string; driverData: string }>({
   dataType: () => 'tsvector',
 });
+
+/**
+ * A `const` tuple rendered as the value list of a SQL `in (...)`.
+ *
+ * Every closed value set in this schema is `text` plus a CHECK derived from the
+ * SAME tuple that types the column (`CONVENTIONS.md`, "Closed value sets"), so
+ * the two cannot drift. The values must be SQL literals rather than bound
+ * parameters — a CHECK constraint cannot carry a parameter — which is why they
+ * go through `sql.raw`; the COLUMN is always interpolated as a drizzle Column so
+ * its SQL name still comes from the casing setting rather than being spelled out
+ * here.
+ *
+ * Safe only because every caller passes a locally-declared `as const` tuple of
+ * identifier-shaped literals. It is not an escaping routine and must never be
+ * handed a runtime value.
+ */
+export function inList(values: readonly string[]): string {
+  return values.map((value) => `'${value}'`).join(', ');
+}

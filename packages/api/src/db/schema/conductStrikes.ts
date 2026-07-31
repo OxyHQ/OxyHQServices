@@ -43,6 +43,7 @@ import {
 } from '@oxyhq/contracts';
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
 import { moderationPolicies } from './moderationPolicies';
+import { reputationTransactions } from './reputationTransactions';
 import { users } from './users';
 
 /** Renders a `const` tuple as a SQL `in (...)` list. */
@@ -93,8 +94,16 @@ export const conductStrikes = pgTable(
      * characters and Postgres truncates an identifier at 63.
      */
     policyVersion: text().notNull(),
-    /** FK to `reputation_transactions` — see `deferredForeignKeys.ts`. */
-    transactionId: text().notNull(),
+    /**
+     * The ledger transaction the strike accompanies.
+     *
+     * `RESTRICT`, same reasoning as `moderation_effects.transaction_id`: the
+     * ledger reverses rather than deletes. Verified against a real Postgres to
+     * not block the account-erasure cascade — `user_id` removes this row first.
+     */
+    transactionId: text()
+      .notNull()
+      .references(() => reputationTransactions.id, { onDelete: 'restrict' }),
     /** When the strike stopped being active, if it has. */
     resolvedAt: timestamptz(),
     createdAt: createdAt(),

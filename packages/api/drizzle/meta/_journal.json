@@ -29,6 +29,20 @@
       "when": 1785503278455,
       "tag": "0003_eminent_luke_cage",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785503463571,
+      "tag": "0004_nebulous_warbound",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785503463572,
+      "tag": "0005_transparency_immutability",
+      "breakpoints": true
     }
   ]
 }

@@ -64,6 +64,7 @@ import {
 import { conductStrikes } from './conductStrikes';
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
 import { moderationPolicies } from './moderationPolicies';
+import { reputationTransactions } from './reputationTransactions';
 import { identityBindings } from './identityBindings';
 import { users } from './users';
 
@@ -121,8 +122,19 @@ export const moderationEffects = pgTable(
     multiFindingMultiplier: doublePrecision().notNull(),
     /** The exact key the ledger transaction was written under. */
     idempotencyKey: text().notNull(),
-    /** FK to `reputation_transactions` — see `deferredForeignKeys.ts`. */
-    transactionId: text().notNull(),
+    /**
+     * The ledger row this effect wrote.
+     *
+     * `RESTRICT`: the ledger is append-only and REVERSES rather than deletes, so
+     * a deleted transaction would mean the points moved with no record of it.
+     * Measured against a real Postgres — this does NOT block the account-erasure
+     * cascade, because `user_id` cascades this row away before the referenced
+     * transaction's check runs, so the refusal only ever hits a bare delete of a
+     * referenced ledger row, which is exactly what it is for.
+     */
+    transactionId: text()
+      .notNull()
+      .references(() => reputationTransactions.id, { onDelete: 'restrict' }),
     /**
      * The strike this effect created, when it carries risk.
      *
@@ -135,8 +147,16 @@ export const moderationEffects = pgTable(
      * subject, which cascades both anyway.
      */
     strikeId: text().references(() => conductStrikes.id, { onDelete: 'cascade' }),
-    /** The compensating transaction, once an appeal reversed the effect. */
-    reversalTransactionId: text(),
+    /**
+     * The compensating transaction, once an appeal reversed the effect.
+     *
+     * `RESTRICT`, not `SET NULL`: NULL here MEANS "never reversed", so
+     * `SET NULL` would rewrite a reversed effect into a false claim — a worse
+     * lie than a refused delete. The ledger never deletes anyway.
+     */
+    reversalTransactionId: text().references(() => reputationTransactions.id, {
+      onDelete: 'restrict',
+    }),
     /** The emitting system's universal policy identifier. Not a row here. */
     policyVersionUniversal: text().notNull(),
     /** The emitting application's policy identifier. Not a row here. */
