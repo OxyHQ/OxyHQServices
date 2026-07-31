@@ -23,10 +23,17 @@
  * The CHECK constraints on `user_credits` are the second line. If some other
  * write path ever drives a balance negative, it fails loudly there instead of
  * being discovered in a support ticket.
+ *
+ * Every function takes `DatabaseOrTransaction`, not `Database`. A grant is
+ * frequently one half of a pair — `handleCheckoutCompleted` writes the receipt
+ * that CLAIMS the charge and then grants against it — and those two must commit
+ * or roll back together. Typed as `Database` these would refuse a `tx` and
+ * silently push the grant outside the caller's transaction, which is precisely
+ * the atomicity the pairing exists to buy.
  */
 
 import { and, eq, sql, type SQL } from 'drizzle-orm';
-import type { Database } from '../config/postgres';
+import type { DatabaseOrTransaction } from '../config/postgres';
 import { CREDIT_REFRESH_INTERVAL_HOURS, userCredits } from './schema/userCredits';
 
 /** Which half of the balance a grant lands in. */
@@ -68,7 +75,7 @@ function wholeNonNegative(amount: number): SQL {
  *   account", which is the same answer the Mongoose version gave.
  */
 export async function refreshCreditsIfNeeded(
-  db: Database,
+  db: DatabaseOrTransaction,
   userId: string
 ): Promise<boolean> {
   const [row] = await db
@@ -99,7 +106,7 @@ export async function refreshCreditsIfNeeded(
  *   amount that is not a whole non-negative number of credits.
  */
 export async function addCredits(
-  db: Database,
+  db: DatabaseOrTransaction,
   userId: string,
   amount: number,
   kind: CreditKind
@@ -138,7 +145,7 @@ export async function addCredits(
  *   same statement.
  */
 export async function deductCredits(
-  db: Database,
+  db: DatabaseOrTransaction,
   userId: string,
   amount: number
 ): Promise<boolean> {

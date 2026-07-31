@@ -21,12 +21,37 @@
  * Neither carries a `>= 0` CHECK: Mongoose declared no `min`, and a `refund` row
  * is exactly the shape that would legitimately be negative.
  *
- * ## The Stripe webhook idempotency index — preserved exactly
+ * ## TWO Stripe webhook idempotency indexes, one per grant path
  *
- * `handleSubscriptionUpdate` grants a month of credits on renewal
- * (`billing.ts:427-463`) and Stripe retries webhooks, so the ONLY thing standing
- * between a retry and a double credit grant is the partial unique index below.
- * Mongo declared it as
+ * Stripe retries a webhook by design, so on BOTH paths that grant credits the
+ * only thing standing between a replay and a double grant is a unique index. The
+ * two are deliberately symmetric — same shape, same reasoning — because they
+ * guard the same failure:
+ *
+ *   - `billing_transactions_subscription_period_key` guards the RENEWAL grant in
+ *     `handleSubscriptionUpdate`, and is Mongo's index carried across verbatim.
+ *   - `billing_transactions_payment_intent_key` guards the ONE-OFF PURCHASE grant
+ *     in `handleCheckoutCompleted`, and is NEW. Mongo had no such index and that
+ *     handler had no idempotency guard of any kind: a replayed
+ *     `checkout.session.completed` — which Stripe sends by design — granted the
+ *     credits a second time and wrote a second receipt. The natural key is
+ *     Stripe's own `payment_intent`, which is one per successful charge.
+ *
+ * A NEW unique index can fail a backfill, and here that is the POINT rather than
+ * a cost: a duplicate `(credit_purchase, payment_intent)` pair in production is
+ * not a cosmetic collision, it is a record of credits already granted twice for
+ * one charge. Carrying it silently across would hide the incident this index
+ * exists to stop. Same posture `user_credits.ts` takes on a negative balance and
+ * `CONVENTIONS.md` takes on two usernames differing only by case: stop, and name
+ * it.
+ *
+ * `type = 'credit_purchase'` is in the predicate for the SAME semantic reason it
+ * is in the subscription one — it leaves rows of every other type unconstrained,
+ * so two `refund` rows against one payment intent stay legitimate. The
+ * `is not null` clause is index-size fidelity: a btree already treats NULLs as
+ * DISTINCT, so a row without a payment intent could never collide.
+ *
+ * The renewal index, for reference. Mongo declared it as
  *
  *   { stripeSubscriptionId: 1, stripeSubscriptionPeriodStart: 1, type: 1 }
  *   partialFilterExpression: {
@@ -62,8 +87,16 @@
  * to grow an explicit retention decision.
  */
 
-import { sql } from 'drizzle-orm';
-import { bigint, check, index, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import { type SQL, sql } from 'drizzle-orm';
+import {
+  bigint,
+  check,
+  index,
+  type PgColumn,
+  pgTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
 import { DEFAULT_BILLING_CURRENCY } from './billingSubscriptions';
 import { users } from './users';
@@ -75,8 +108,11 @@ export const BILLING_TRANSACTION_TYPES = [
   'refund',
 ] as const;
 
-/** The type the idempotency index guards. */
+/** The type the renewal idempotency index guards. */
 export const SUBSCRIPTION_PAYMENT_TYPE = 'subscription_payment';
+
+/** The type the one-off purchase idempotency index guards. */
+export const CREDIT_PURCHASE_TYPE = 'credit_purchase';
 
 /** Lifecycle of the charge. */
 export const BILLING_TRANSACTION_STATUSES = [
@@ -85,6 +121,35 @@ export const BILLING_TRANSACTION_STATUSES = [
   'failed',
   'refunded',
 ] as const;
+
+/**
+ * The predicates of the two idempotency indexes.
+ *
+ * Each is defined ONCE and used twice — by its index below, and by the
+ * `onConflictDoNothing` in `routes/billing.ts` that infers it. Postgres requires
+ * the ON CONFLICT inference predicate to IMPLY the index predicate, so if the two
+ * ever drifted the insert would raise "there is no unique or exclusion constraint
+ * matching the ON CONFLICT specification" — a 500 on a live Stripe webhook, and a
+ * credit grant that never lands. A shared builder makes that divergence
+ * unrepresentable.
+ *
+ * Each takes the columns rather than closing over the table, so it can also be
+ * called from inside `pgTable`'s own callback, where the table does not exist yet.
+ */
+export function creditPurchaseIdempotencyPredicate(columns: {
+  type: PgColumn;
+  stripePaymentIntentId: PgColumn;
+}): SQL {
+  return sql`${columns.type} = ${sql.raw(`'${CREDIT_PURCHASE_TYPE}'`)} and ${columns.stripePaymentIntentId} is not null`;
+}
+
+export function subscriptionPeriodIdempotencyPredicate(columns: {
+  type: PgColumn;
+  stripeSubscriptionId: PgColumn;
+  stripeSubscriptionPeriodStart: PgColumn;
+}): SQL {
+  return sql`${columns.type} = ${sql.raw(`'${SUBSCRIPTION_PAYMENT_TYPE}'`)} and ${columns.stripeSubscriptionId} is not null and ${columns.stripeSubscriptionPeriodStart} is not null`;
+}
 
 export const billingTransactions = pgTable(
   'billing_transactions',
@@ -121,22 +186,23 @@ export const billingTransactions = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    // Stripe webhook idempotency. Every clause of the predicate is load-bearing
-    // — see the header.
+    // Stripe webhook idempotency, RENEWAL path. Every clause of the predicate is
+    // load-bearing — see the header.
     uniqueIndex('billing_transactions_subscription_period_key')
       .on(t.stripeSubscriptionId, t.stripeSubscriptionPeriodStart, t.type)
-      .where(
-        sql`${t.type} = ${sql.raw(`'${SUBSCRIPTION_PAYMENT_TYPE}'`)} and ${t.stripeSubscriptionId} is not null and ${t.stripeSubscriptionPeriodStart} is not null`
-      ),
+      .where(subscriptionPeriodIdempotencyPredicate(t)),
+    // Stripe webhook idempotency, ONE-OFF PURCHASE path. Symmetric with the one
+    // above, and the reason `handleCheckoutCompleted` can no longer grant twice.
+    uniqueIndex('billing_transactions_payment_intent_key')
+      .on(t.stripePaymentIntentId, t.type)
+      .where(creditPurchaseIdempotencyPredicate(t)),
     // The transaction list: `find({userId}).sort({createdAt: -1})`
     // (`billing.ts:248`). Mongo declared this one AND a standalone `{userId}`;
     // the standalone is redundant, since a btree serves any leading prefix.
     index('billing_transactions_user_id_created_at_idx').on(t.userId, t.createdAt),
-    // Mongo's `{stripeSubscriptionId: 1}` is DROPPED: the partial unique index
-    // above already leads with that column. Its sparse `{stripePaymentIntentId}`
-    // is dropped too — nothing reads this table by payment intent. See the
-    // migration report for the separate finding that `handleCheckoutCompleted`
-    // has no idempotency guard AT ALL on that column.
+    // Mongo's `{stripeSubscriptionId: 1}` and its sparse
+    // `{stripePaymentIntentId: 1}` are both DROPPED: each of the two partial
+    // unique indexes above already leads with the respective column.
 
     check(
       'billing_transactions_type_check',

@@ -1,31 +1,16 @@
-const mockFindOneAndUpdate = jest.fn();
-const mockFindByIdAndUpdate = jest.fn();
+/**
+ * Subscription read/cancel — against a REAL Postgres.
+ *
+ * The Mongoose model mocks this suite used to carry could only assert the query
+ * SHAPE. Two guarantees here are about stored state rather than call arguments —
+ * that cancelling REVOKES analytics sharing, and that it CANCELS the legacy row
+ * rather than deleting it — so they are asserted against real rows.
+ *
+ * Only Stripe is stubbed: it is a third-party network call.
+ */
+
 const mockInvalidate = jest.fn();
-const mockBillingFindOne = jest.fn();
-const mockSubscriptionFindOne = jest.fn();
 const mockStripeSubscriptionsUpdate = jest.fn();
-
-jest.mock('../../models/BillingSubscription', () => ({
-  __esModule: true,
-  default: {
-    findOne: (...args: unknown[]) => mockBillingFindOne(...args),
-  },
-}));
-
-jest.mock('../../models/Subscription', () => ({
-  __esModule: true,
-  default: {
-    findOne: (...args: unknown[]) => mockSubscriptionFindOne(...args),
-    findOneAndUpdate: (...args: unknown[]) => mockFindOneAndUpdate(...args),
-  },
-}));
-
-jest.mock('../../models/User', () => ({
-  __esModule: true,
-  default: {
-    findByIdAndUpdate: (...args: unknown[]) => mockFindByIdAndUpdate(...args),
-  },
-}));
 
 jest.mock('../../utils/userCache', () => ({
   __esModule: true,
@@ -40,94 +25,122 @@ jest.mock('../../utils/stripeClient', () => ({
   }),
 }));
 
-jest.mock('../../utils/logger', () => ({
-  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
-}));
-
 import type { Response } from 'express';
+import { eq } from 'drizzle-orm';
 import type { AuthRequest } from '../../middleware/auth';
+import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
+import { billingSubscriptions } from '../../db/schema/billingSubscriptions';
+import { subscriptions } from '../../db/schema/subscriptions';
+import { users } from '../../db/schema/users';
 import { cancelSubscription, getSubscription } from '../subscription.controller';
 
-describe('getSubscription', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+beforeAll(async () => {
+  await connectPostgres();
+});
+
+afterAll(async () => {
+  await closePostgres();
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockStripeSubscriptionsUpdate.mockResolvedValue({});
+});
+
+/** The whole run shares one database, so every test mints its own account. */
+async function account(): Promise<string> {
+  const [user] = await getDb().insert(users).values({ color: 'teal' }).returning({ id: users.id });
+  return user.id;
+}
+
+function requestFor(userId: string): AuthRequest {
+  return {
+    params: { userId },
+    user: { _id: { toString: () => userId } },
+  } as unknown as AuthRequest;
+}
+
+function responseSpy() {
+  const json = jest.fn();
+  const status = jest.fn().mockReturnThis();
+  return { json, status, res: { json, status } as unknown as Response };
+}
+
+async function giveBillingSubscription(userId: string): Promise<void> {
+  await getDb().insert(billingSubscriptions).values({
+    userId,
+    stripeCustomerId: `cus_${userId}`,
+    stripeSubscriptionId: `sub_${userId}`,
+    stripePriceId: 'price_test',
+    status: 'active',
+    currentPeriodStart: new Date('2026-01-01T00:00:00.000Z'),
+    currentPeriodEnd: new Date('2026-02-01T00:00:00.000Z'),
+    planName: 'pro',
+    planCreditsPerMonth: 10_000,
+    planPriceMinorUnits: 2999,
+    planCurrency: 'usd',
   });
+}
 
+async function giveLegacySubscription(userId: string): Promise<void> {
+  await getDb().insert(subscriptions).values({
+    userId,
+    plan: 'pro',
+    status: 'active',
+    startDate: new Date(Date.now() - 30 * DAY_MS),
+    endDate: new Date(Date.now() + 30 * DAY_MS),
+  });
+}
+
+describe('getSubscription', () => {
   it('returns the billing subscription when Stripe billing is active', async () => {
-    mockBillingFindOne.mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        userId: 'user-1',
-        status: 'active',
-        currentPeriodStart: new Date('2026-01-01T00:00:00.000Z'),
-        currentPeriodEnd: new Date('2026-02-01T00:00:00.000Z'),
-        cancelAtPeriodEnd: false,
-        plan: { name: 'pro', creditsPerMonth: 1000, price: 1000, currency: 'usd' },
-        createdAt: new Date('2026-01-01T00:00:00.000Z'),
-        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-      }),
-    });
-    mockSubscriptionFindOne.mockResolvedValue(null);
+    const userId = await account();
+    await giveBillingSubscription(userId);
 
-    const json = jest.fn();
-    const req = {
-      params: { userId: 'user-1' },
-      user: { _id: { toString: () => 'user-1' } },
-    } as unknown as AuthRequest;
-    const res = { json, status: jest.fn().mockReturnThis() } as unknown as Response;
+    const { json, res } = responseSpy();
+    await getSubscription(requestFor(userId), res);
 
-    await getSubscription(req, res);
-
-    expect(mockBillingFindOne).toHaveBeenCalledWith({
-      userId: 'user-1',
-      status: { $in: ['active', 'trialing'] },
-    });
     expect(json).toHaveBeenCalledWith(expect.objectContaining({
       plan: 'pro',
       status: 'active',
-      userId: 'user-1',
+      userId,
+      startDate: '2026-01-01T00:00:00.000Z',
+      endDate: '2026-02-01T00:00:00.000Z',
     }));
+  });
+
+  it('returns the basic fallback when the account has no subscription at all', async () => {
+    const userId = await account();
+
+    const { json, res } = responseSpy();
+    await getSubscription(requestFor(userId), res);
+
+    expect(json).toHaveBeenCalledWith({ plan: 'basic' });
   });
 });
 
 describe('cancelSubscription', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockFindByIdAndUpdate.mockResolvedValue({});
-  });
-
   it('cancels an active Stripe billing subscription at period end', async () => {
-    const billingSubscription = {
-      userId: 'user-1',
-      status: 'active',
-      stripeSubscriptionId: 'sub_123',
-      cancelAtPeriodEnd: false,
-      currentPeriodStart: new Date('2026-01-01T00:00:00.000Z'),
-      currentPeriodEnd: new Date('2026-02-01T00:00:00.000Z'),
-      plan: { name: 'pro' },
-      save: jest.fn().mockResolvedValue(undefined),
-    };
-    mockBillingFindOne.mockResolvedValue(billingSubscription);
-    mockFindOneAndUpdate.mockResolvedValue(null);
-    mockStripeSubscriptionsUpdate.mockResolvedValue({});
+    const userId = await account();
+    await giveBillingSubscription(userId);
 
-    const json = jest.fn();
-    const req = {
-      params: { userId: 'user-1' },
-      user: { _id: { toString: () => 'user-1' } },
-    } as unknown as AuthRequest;
-    const res = { json, status: jest.fn().mockReturnThis() } as unknown as Response;
+    const { json, res } = responseSpy();
+    await cancelSubscription(requestFor(userId), res);
 
-    await cancelSubscription(req, res);
-
-    expect(mockStripeSubscriptionsUpdate).toHaveBeenCalledWith('sub_123', {
+    expect(mockStripeSubscriptionsUpdate).toHaveBeenCalledWith(`sub_${userId}`, {
       cancel_at_period_end: true,
     });
-    expect(billingSubscription.cancelAtPeriodEnd).toBe(true);
-    expect(billingSubscription.save).toHaveBeenCalled();
-    expect(mockFindByIdAndUpdate).toHaveBeenCalledWith('user-1', {
-      $set: { 'privacySettings.analyticsSharing': false },
-    });
-    expect(mockInvalidate).toHaveBeenCalledWith('user-1');
+
+    // Stripe accepted it, so the local mirror must agree.
+    const [row] = await getDb()
+      .select({ cancelAtPeriodEnd: billingSubscriptions.cancelAtPeriodEnd })
+      .from(billingSubscriptions)
+      .where(eq(billingSubscriptions.userId, userId));
+    expect(row.cancelAtPeriodEnd).toBe(true);
+
+    expect(mockInvalidate).toHaveBeenCalledWith(userId);
     expect(json).toHaveBeenCalledWith(expect.objectContaining({
       plan: 'pro',
       status: 'active',
@@ -136,37 +149,30 @@ describe('cancelSubscription', () => {
   });
 
   it('cancels a legacy-only subscription and revokes analytics sharing', async () => {
-    mockBillingFindOne.mockResolvedValue(null);
-    mockFindOneAndUpdate.mockResolvedValue({
-      userId: 'user-1',
-      status: 'canceled',
-      plan: 'pro',
-      toJSON: () => ({
-        userId: 'user-1',
-        status: 'canceled',
-        plan: 'pro',
-      }),
-    });
+    const userId = await account();
+    await giveLegacySubscription(userId);
 
-    const json = jest.fn();
-    const req = {
-      params: { userId: 'user-1' },
-      user: { _id: { toString: () => 'user-1' } },
-    } as unknown as AuthRequest;
-    const res = { json, status: jest.fn().mockReturnThis() } as unknown as Response;
-
-    await cancelSubscription(req, res);
+    const { json, res } = responseSpy();
+    await cancelSubscription(requestFor(userId), res);
 
     expect(mockStripeSubscriptionsUpdate).not.toHaveBeenCalled();
-    expect(mockFindOneAndUpdate).toHaveBeenCalledWith(
-      { userId: 'user-1', status: { $ne: 'canceled' } },
-      { status: 'canceled' },
-      { new: true },
-    );
-    expect(mockFindByIdAndUpdate).toHaveBeenCalledWith('user-1', {
-      $set: { 'privacySettings.analyticsSharing': false },
-    });
-    expect(mockInvalidate).toHaveBeenCalledWith('user-1');
+
+    // CANCELED, never deleted — the record of what was bought survives, which is
+    // the whole reason the TTL index on this table was removed.
+    const [row] = await getDb()
+      .select({ status: subscriptions.status, plan: subscriptions.plan })
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId));
+    expect(row).toEqual({ status: 'canceled', plan: 'pro' });
+
+    // The privacy revocation is the part a call-shape assertion could not see.
+    const [user] = await getDb()
+      .select({ analyticsSharing: users.privacyAnalyticsSharing })
+      .from(users)
+      .where(eq(users.id, userId));
+    expect(user.analyticsSharing).toBe(false);
+
+    expect(mockInvalidate).toHaveBeenCalledWith(userId);
     expect(json).toHaveBeenCalledWith(expect.objectContaining({
       plan: 'pro',
       status: 'canceled',
@@ -174,18 +180,10 @@ describe('cancelSubscription', () => {
   });
 
   it('returns 404 when no billing or legacy subscription exists', async () => {
-    mockBillingFindOne.mockResolvedValue(null);
-    mockFindOneAndUpdate.mockResolvedValue(null);
+    const userId = await account();
 
-    const status = jest.fn().mockReturnThis();
-    const json = jest.fn();
-    const req = {
-      params: { userId: 'user-1' },
-      user: { _id: { toString: () => 'user-1' } },
-    } as unknown as AuthRequest;
-    const res = { json, status } as unknown as Response;
-
-    await cancelSubscription(req, res);
+    const { json, status, res } = responseSpy();
+    await cancelSubscription(requestFor(userId), res);
 
     expect(status).toHaveBeenCalledWith(404);
     expect(json).toHaveBeenCalledWith({ message: 'Subscription not found' });

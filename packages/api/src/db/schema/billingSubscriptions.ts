@@ -38,13 +38,35 @@ import { bigint, boolean, check, index, pgTable, text, unique } from 'drizzle-or
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
 import { users } from './users';
 
-/** Stripe's subscription statuses, restricted to the ones this platform sells. */
+/**
+ * Stripe's subscription statuses — ALL of them, because this table is a mirror.
+ *
+ * Mongoose declared only the five this platform sells, and that enum was never
+ * enforced: the webhook writes through `findOneAndUpdate` WITHOUT
+ * `runValidators`, so Mongo happily stored `incomplete`, `incomplete_expired`
+ * and `paused` whenever Stripe sent them. A CHECK constraint IS enforced, so
+ * porting the narrow list would convert a silent write into a failed webhook —
+ * Stripe would retry forever and the mirror would freeze at its previous value.
+ *
+ * That stale value is the part that matters, and it is an ENTITLEMENT bug rather
+ * than a bookkeeping one: a subscription that Stripe moved to `paused` would
+ * stay `active` here, and `subscriptionPlan.ts` would keep granting premium to
+ * someone who is no longer paying. A mirror has to be able to represent
+ * whatever it mirrors.
+ *
+ * Only `active` and `trialing` ever count as live — see `LIVE_SUBSCRIPTION_STATUSES`
+ * in `routes/billing.ts` — so widening the set grants nothing new; it only stops
+ * the mirror from lying.
+ */
 export const BILLING_SUBSCRIPTION_STATUSES = [
   'active',
   'canceled',
+  'incomplete',
+  'incomplete_expired',
   'past_due',
-  'unpaid',
+  'paused',
   'trialing',
+  'unpaid',
 ] as const;
 
 /** Stripe's default currency for this platform's plans. */

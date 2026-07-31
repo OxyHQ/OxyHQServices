@@ -5,7 +5,7 @@
  * Mounts the real accounts router over HTTP. Collaborators are mocked so we drive
  * the authorization gate + response shape without a database:
  *  - account.service.verifyActingAs → controls act_as authorization,
- *  - User.findById → the target account doc,
+ *  - the target account is a REAL row (the route resolves it from Postgres),
  *  - sessionService.createSession → session minting.
  *
  * Asserts: non-members are rejected (403); a personal account is never a switch
@@ -22,9 +22,7 @@
 import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
-import { Types } from 'mongoose';
-
-jest.mock('mongoose', () => jest.requireActual('mongoose'));
+import { eq } from 'drizzle-orm';
 
 const OPERATOR_ID = '6a0000000000000000000001';
 const ORG_ID = '6a0000000000000000000010';
@@ -39,13 +37,6 @@ jest.mock('../../services/account.service', () => ({
   },
 }));
 
-const mockFindById = jest.fn();
-jest.mock('../../models/User', () => ({
-  __esModule: true,
-  User: { findById: (...args: unknown[]) => mockFindById(...args) },
-  default: { findById: (...args: unknown[]) => mockFindById(...args) },
-}));
-
 const mockCreateSession = jest.fn();
 const mockGetSession = jest.fn();
 jest.mock('../../services/session.service', () => ({
@@ -58,9 +49,9 @@ jest.mock('../../services/session.service', () => ({
   },
 }));
 
-// The switch now registers the managed session into the operator's device set.
-// This suite uses REAL mongoose (no DB), so mock the device-set write + socket
-// broadcast to avoid a buffered query hanging the request.
+// The switch registers the managed session into the operator's device set.
+// Only the target ACCOUNT is a real row here; the device-set write + socket
+// broadcast belong to other services and stay mocked.
 const mockAddAccount = jest.fn(async () => ({
   state: { deviceId: 'op-device', accounts: [], activeAccountId: null, revision: 1, updatedAt: Date.now() },
   changed: false,
@@ -97,6 +88,29 @@ jest.mock('../../utils/logger', () => ({
 
 import accountsRouter from '../accounts';
 import { errorHandler } from '../../middleware/errorHandler';
+import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
+import { users } from '../../db/schema/users';
+
+/**
+ * Insert the switch TARGET as a real row at a known id. The route resolves it
+ * from Postgres, so the account's `kind` and `accountStatus` — the two things
+ * the 403/404 gates read — have to be real stored values.
+ */
+async function seedTargetAccount(values: {
+  username: string;
+  kind: 'personal' | 'organization' | 'project' | 'bot';
+  accountStatus?: 'active' | 'suspended' | 'archived';
+}): Promise<void> {
+  await getDb()
+    .insert(users)
+    .values({
+      id: ORG_ID,
+      color: 'teal',
+      username: values.username,
+      kind: values.kind,
+      accountStatus: values.accountStatus ?? 'active',
+    });
+}
 
 interface JsonResponse {
   status: number;
@@ -177,7 +191,8 @@ function get(srv: http.Server, path: string): Promise<JsonResponse> {
 
 let server: http.Server;
 
-beforeAll((done) => {
+beforeAll(async () => {
+  await connectPostgres();
   mockAuthMiddleware.mockImplementation((req: { user?: unknown }, _res: unknown, next: () => void) => {
     (req as { user?: unknown }).user = { _id: { toString: () => OPERATOR_ID } };
     next();
@@ -186,14 +201,20 @@ beforeAll((done) => {
   app.use(express.json());
   app.use('/accounts', accountsRouter);
   app.use(errorHandler);
-  server = app.listen(0, done);
+  await new Promise<void>((resolve) => { server = app.listen(0, resolve); });
 });
 
-afterAll((done) => { server.close(done); });
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  await closePostgres();
+});
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Every case seeds its own target at the same id, so clear it first.
+  await getDb().delete(users).where(eq(users.id, ORG_ID));
   mockVerifyActingAs.mockReset();
-  mockFindById.mockReset();
   mockCreateSession.mockReset();
   // Default: the operator's bearer decodes to a device id — the switch must
   // inherit it so the org session lands on the SAME device doc as the operator.
@@ -220,12 +241,7 @@ describe('POST /accounts/:id/switch', () => {
 
   it('refuses to switch INTO a personal account (403) even with act_as', async () => {
     mockVerifyActingAs.mockResolvedValue('owner');
-    mockFindById.mockResolvedValue({
-      _id: new Types.ObjectId(ORG_ID),
-      username: 'someone',
-      kind: 'personal',
-      accountStatus: 'active',
-    });
+    await seedTargetAccount({ username: 'someone', kind: 'personal' });
 
     const res = await post(server, `/accounts/${ORG_ID}/switch`);
 
@@ -235,12 +251,7 @@ describe('POST /accounts/:id/switch', () => {
 
   it('mints a real session AS the managed account for an authorized member', async () => {
     mockVerifyActingAs.mockResolvedValue('admin');
-    mockFindById.mockResolvedValue({
-      _id: new Types.ObjectId(ORG_ID),
-      username: 'acme-org',
-      kind: 'organization',
-      accountStatus: 'active',
-    });
+    await seedTargetAccount({ username: 'acme-org', kind: 'organization' });
     mockCreateSession.mockResolvedValue({
       sessionId: 'sess-1',
       deviceId: 'dev-1',
@@ -280,12 +291,7 @@ describe('POST /accounts/:id/switch', () => {
     const HUMAN_ID = '6a0000000000000000000099';
     mockGetSession.mockResolvedValue({ operatedByUserId: { toString: () => HUMAN_ID } });
     mockVerifyActingAs.mockResolvedValue('owner');
-    mockFindById.mockResolvedValue({
-      _id: new Types.ObjectId(ORG_ID),
-      username: 'sibling-org',
-      kind: 'organization',
-      accountStatus: 'active',
-    });
+    await seedTargetAccount({ username: 'sibling-org', kind: 'organization' });
     mockCreateSession.mockResolvedValue({
       sessionId: 'sess-2',
       deviceId: 'dev-op',
@@ -315,12 +321,7 @@ describe('POST /accounts/:id/switch', () => {
     // (let createSession derive/allocate a device) rather than passing undefined.
     mockDecodeToken.mockReturnValue(null);
     mockVerifyActingAs.mockResolvedValue('admin');
-    mockFindById.mockResolvedValue({
-      _id: new Types.ObjectId(ORG_ID),
-      username: 'acme-org',
-      kind: 'organization',
-      accountStatus: 'active',
-    });
+    await seedTargetAccount({ username: 'acme-org', kind: 'organization' });
     mockCreateSession.mockResolvedValue({
       sessionId: 'sess-1',
       deviceId: 'dev-fresh',
@@ -337,12 +338,7 @@ describe('POST /accounts/:id/switch', () => {
 
   it('does NOT write a refresh cookie (slot-clobber guard) — establishment is deferred to /auth/session', async () => {
     mockVerifyActingAs.mockResolvedValue('admin');
-    mockFindById.mockResolvedValue({
-      _id: new Types.ObjectId(ORG_ID),
-      username: 'acme-org',
-      kind: 'organization',
-      accountStatus: 'active',
-    });
+    await seedTargetAccount({ username: 'acme-org', kind: 'organization' });
     mockCreateSession.mockResolvedValue({
       sessionId: 'sess-1',
       deviceId: 'dev-1',
@@ -364,7 +360,7 @@ describe('POST /accounts/:id/switch', () => {
 
   it('returns 404 for a missing/archived target', async () => {
     mockVerifyActingAs.mockResolvedValue('admin');
-    mockFindById.mockResolvedValue(null);
+    // No row seeded — the account genuinely does not exist.
 
     const res = await post(server, `/accounts/${ORG_ID}/switch`);
 
