@@ -35,13 +35,17 @@ import { identityBindings } from './identityBindings';
 import { moderationEffects } from './moderationEffects';
 import { notifications } from './notifications';
 import { pushTokens } from './pushTokens';
+import { reputationTransactions } from './reputationTransactions';
 import { securityActivities } from './securityActivities';
 import { sessions } from './sessions';
+import { signedRecords } from './signedRecords';
 import { transactions } from './transactions';
+import { transparencyCheckpointSnapshotEntries } from './transparencyCheckpoints';
 import { userAuthMethods } from './userAuthMethods';
 import { userCredits } from './userCredits';
 import { userLocations } from './userLocations';
 import { users } from './users';
+import { validationRequests } from './validationRequests';
 import { webauthnCredentials } from './webauthnCredentials';
 
 /** A foreign key that is decided but not yet expressible. */
@@ -164,28 +168,6 @@ export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
       'be removed without invalidating the effect.',
   },
   {
-    table: moderationEffects,
-    column: moderationEffects.transactionId,
-    parentTable: 'reputation_transactions',
-    parentColumn: 'id',
-    onDelete: 'restrict',
-    reason:
-      'The ledger row the effect wrote. The ledger is append-only and reverses ' +
-      'rather than deletes, so a delete here would mean the points moved with ' +
-      'no record of it.',
-  },
-  {
-    table: moderationEffects,
-    column: moderationEffects.reversalTransactionId,
-    parentTable: 'reputation_transactions',
-    parentColumn: 'id',
-    onDelete: 'restrict',
-    reason:
-      'The compensating entry an appeal produced. `SET NULL` would make a ' +
-      'reversed effect read as never-reversed, which is a worse lie than a ' +
-      'refused delete; the ledger never deletes anyway.',
-  },
-  {
     table: conductStrikes,
     column: conductStrikes.applicationId,
     parentTable: 'applications',
@@ -197,14 +179,38 @@ export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
       'unattributed one is a real state rather than a corrupted one.',
   },
   {
-    table: conductStrikes,
-    column: conductStrikes.transactionId,
-    parentTable: 'reputation_transactions',
+    table: reputationTransactions,
+    column: reputationTransactions.applicationId,
+    parentTable: 'applications',
     parentColumn: 'id',
-    onDelete: 'restrict',
+    onDelete: 'set null',
     reason:
-      'The ledger transaction the strike accompanies. Same reasoning as the ' +
-      'effect: the ledger reverses rather than deletes.',
+      'The ledger entry is about the SUBJECT, not the reporter. NULL already ' +
+      'means "not attributed to an application" (every staff and civic award), ' +
+      'so a retired app leaves an unattributed entry rather than silently ' +
+      "deleting a user's earned points.",
+  },
+  {
+    table: reputationTransactions,
+    column: reputationTransactions.credentialId,
+    parentTable: 'application_credentials',
+    parentColumn: 'id',
+    onDelete: 'set null',
+    reason:
+      'Audit detail of WHICH credential reported the action. Credentials are ' +
+      'rotated routinely, and a rotation must not delete the ledger entries ' +
+      'the retired key produced.',
+  },
+  {
+    table: validationRequests,
+    column: validationRequests.applicationId,
+    parentTable: 'applications',
+    parentColumn: 'id',
+    onDelete: 'set null',
+    reason:
+      'The opening application is provenance on a jury decision that stands on ' +
+      'its own. NULL is already the normal state for a request opened by Oxy ' +
+      'itself, so an app going away must not erase the verdict.',
   },
 ];
 
@@ -462,5 +468,45 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
     table: conductStrikes,
     column: conductStrikes.decisionId,
     reason: 'Same external decision id as on `moderation_effects`.',
+  },
+  {
+    table: signedRecords,
+    column: signedRecords.recordId,
+    reason:
+      'The content address of the record ITSELF (sha256 of its canonical ' +
+      'signing input) — the TARGET five other tables reference, not a ' +
+      'reference of its own. Id-shaped because it identifies this row.',
+  },
+  {
+    table: reputationTransactions,
+    column: reputationTransactions.sourceActionId,
+    reason:
+      'The idempotency key the REPORTING system minted for its own action. Oxy ' +
+      'stores it to deduplicate awards and never resolves it to anything.',
+  },
+  {
+    table: validationRequests,
+    column: validationRequests.sourceActionId,
+    reason:
+      'Same key space as `reputation_transactions.source_action_id` — the ' +
+      "opening system's own action id, used only to dedupe an open jury.",
+  },
+  {
+    table: reputationTransactions,
+    column: reputationTransactions.targetEntityId,
+    reason:
+      'The id of whatever the action was ABOUT — a post, a report, a purchase ' +
+      "— in the SOURCE application's id space. `target_entity_type` says which " +
+      'space; none of them is a table in this database.',
+  },
+  {
+    table: transparencyCheckpointSnapshotEntries,
+    column: transparencyCheckpointSnapshotEntries.headRecordId,
+    reason:
+      'A value the checkpoint COMMITTED to under a signed Merkle root, not a ' +
+      'live pointer. Any ON DELETE action would let an unrelated erasure alter ' +
+      'published evidence, which is the exact tampering the log exists to ' +
+      'detect — so the reference is deliberately unenforced and the row is ' +
+      'immutable by trigger instead.',
   },
 ];
