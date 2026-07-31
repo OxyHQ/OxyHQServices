@@ -162,10 +162,18 @@ function readManifest(workspacePath) {
  * the comparison below quietly stop covering those packages.
  */
 function declaredWorkspacePaths(rootManifest) {
-  const patterns = Array.isArray(rootManifest.workspaces) ? rootManifest.workspaces : [];
+  // `workspaces` is either the array shorthand or the object form that also
+  // carries the catalog. Reading only the array shape does not fail when the
+  // manifest uses the object one — it enumerates nothing, and a layer that
+  // enumerates nothing passes everything.
+  const declared = Array.isArray(rootManifest.workspaces)
+    ? rootManifest.workspaces
+    : rootManifest.workspaces?.packages;
+  const patterns = Array.isArray(declared) ? declared : [];
   if (patterns.length === 0) {
-    console.error('package.json declares no workspaces array, so the packages bun.lock');
-    console.error('should describe cannot be enumerated.');
+    console.error('package.json declares no workspace paths (neither the "workspaces"');
+    console.error('array nor "workspaces.packages"), so the packages bun.lock should');
+    console.error('describe cannot be enumerated.');
     process.exit(1);
   }
 
@@ -328,7 +336,14 @@ if (staleRecords.length > 0) {
   process.exit(1);
 }
 
-run('bun', ['install'], { stdio: ['ignore', 'ignore', 'inherit'] });
+// --minimum-release-age=0 opts out of the supply-chain quarantine in
+// bunfig.toml. That gate belongs where a dependency is CHOSEN, and this install
+// only regenerates a lockfile from manifests whose ranges were already decided.
+// It has to be explicit because the gate applies to resolution, not to frozen
+// installs: on a cold manifest cache — a fresh CI runner — resolution judges
+// every dependency afresh, already-locked ones included, so a dependency
+// published this week would fail this check for a week with nothing wrong.
+run('bun', ['install', '--minimum-release-age=0'], { stdio: ['ignore', 'ignore', 'inherit'] });
 
 if (!lockfileIsDirty()) {
   console.log(`${LOCKFILE} is in sync with every package.json.`);

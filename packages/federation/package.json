@@ -103,12 +103,12 @@
     }
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "@types/express": "^4.17.21",
+    "@biomejs/biome": "catalog:",
+    "@types/express": "catalog:",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.20.1",
     "jest": "^29.7.0",
-    "release-it": "^19.0.6",
+    "release-it": "catalog:",
     "ts-jest": "^29.4.11",
     "typescript": "^5.9.2"
   }

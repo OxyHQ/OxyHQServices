@@ -97,6 +97,12 @@ bun run dev                      # Dev mode across workspaces
 bun install                      # Install all workspace deps
 ```
 
+**Shared dependency versions live in `workspaces.catalog` (root `package.json`), not in the manifests.** A package shared by two or more workspaces is declared there once and referenced as `"catalog:"` everywhere it is used, root `overrides` included — an override reading `"catalog:"` still rewrites transitive resolutions. Bumping one is a single edit plus `bun install`. A package with a range that legitimately differs per workspace (`packages/core` and `packages/protocol` target Expo SDK 56 while the apps are on 57) stays literal, because a catalog entry would be asserting an agreement that does not exist.
+
+This is safe for PUBLISHED packages only because of `scripts/assert-bun-publish.mjs`: `bun pm pack` substitutes a `catalog:` reference to the catalog's own range, while `npm pack` ships the literal string `catalog:`, which no consumer can resolve — the exact failure that broke `@oxyhq/core@12.10.1` with `workspace:`, one protocol later. Verified on the real `@oxyhq/core` and `@oxyhq/services` tarballs.
+
+**`bun install` refuses to RESOLVE a dependency published in the last week** (`minimumReleaseAge` in `bunfig.toml`), where a compromised release is most likely to still be live. Resolution only — a frozen install is never affected, cold cache included. Anything that re-resolves must opt out, which is why `scripts/check-lockfile-sync.mjs` passes `--minimum-release-age=0`; without it a dependency published this week fails that check for a week with nothing actually wrong. Excludes match EXACT names (a `"@oxyhq/*"` glob parses and silently matches nothing), and only registry-sourced first-party packages need listing — the `@oxyhq/*` packages built here are workspaces.
+
 **Test runners — per-package split (CRITICAL):**
 - `@oxyhq/api`, `@oxyhq/core`, `@oxyhq/services`, `@oxyhq/contracts`, and the `commons` app use **Jest** (ts-jest / jest-expo). Their `test` script invokes `jest`.
 - `packages/auth` (the standalone Vite IdP app) uses **Bun's native `bun test`** — configured via `packages/auth/bunfig.toml` (`[test] preload`), NOT jest. Its `test` script is `bun test lib/__tests__ components/__tests__` (the earlier `server/__tests__` suite no longer exists — do not reference it).
