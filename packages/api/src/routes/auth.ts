@@ -8,16 +8,19 @@
 
 import type { CommonsDenyReason } from '@oxyhq/contracts';
 import express from 'express';
-import type mongoose from 'mongoose';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { SessionController } from '../controllers/session.controller';
-import { User } from '../models/User';
-import { Application } from '../models/Application';
-import type { IApplication } from '../models/Application';
+import { getDb } from '../config/postgres';
+import { appGrants } from '../db/schema/appGrants';
+import { applicationCredentials } from '../db/schema/applicationCredentials';
+import { applications } from '../db/schema/applications';
+import { authSessions } from '../db/schema/authSessions';
+import { publicColumns } from '../db/schema/protectedColumns';
+import { sessions as sessionsTable } from '../db/schema/sessions';
+import { users } from '../db/schema/users';
 import { intersectScopes, isPaymentsScope } from '../utils/applicationScopes';
-import { ApplicationCredential } from '../models/ApplicationCredential';
-import type { IApplicationCredential } from '../models/ApplicationCredential';
 import { isCredentialUsable } from '../utils/credentialUsability';
 import { isTrustedApplication } from '../utils/trustedApplication';
 import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middleware/auth';
@@ -48,7 +51,6 @@ import {
   markAuthRequestOpened,
 } from '../services/authSessionDelivery.service';
 import { isAllowedRedirectUri } from '../utils/oauthRedirect';
-import Session from '../models/Session';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import {
   registerPublicKeySchema,
@@ -72,15 +74,74 @@ import {
   oauthConsentQuerySchema,
   grantApplicationIdParams,
 } from '../schemas/auth.schemas';
-import { AppGrant } from '../models/AppGrant';
 import { normaliseOrigin, isLoopbackOrigin } from '../utils/origin';
 import { deriveCoarseClientLabel } from '../utils/deviceUtils';
 import { serializePublicApplication } from '../utils/serializeApplication';
-import { isValidObjectId } from '../utils/validation';
 import { composeDisplayName, formatUserNameResponse } from '../utils/displayName';
 import { USERNAME_PATTERN, normalizeUsername } from '../utils/username';
 
 const router = express.Router();
+
+/**
+ * Every `applications` column this module reads, named explicitly.
+ *
+ * Not `db.select().from(applications)`: that also pulls `webhook_secret` and
+ * `webhook_url`, which no authentication path needs and no response here may
+ * ever carry. `applications` is not in `protectedColumns.ts` — nothing would
+ * FAIL if the whole row were selected — so naming the columns is the guard.
+ */
+const APPLICATION_COLUMNS = {
+  id: applications.id,
+  name: applications.name,
+  description: applications.description,
+  icon: applications.icon,
+  websiteUrl: applications.websiteUrl,
+  privacyPolicyUrl: applications.privacyPolicyUrl,
+  termsUrl: applications.termsUrl,
+  type: applications.type,
+  status: applications.status,
+  isOfficial: applications.isOfficial,
+  isInternal: applications.isInternal,
+  scopes: applications.scopes,
+  redirectUris: applications.redirectUris,
+  createdByUserId: applications.createdByUserId,
+} as const;
+
+/** An `applications` row as every read in this module projects it. */
+type ApplicationRow = {
+  [K in keyof typeof APPLICATION_COLUMNS]: (typeof applications.$inferSelect)[K];
+};
+
+/**
+ * An `application_credentials` row as {@link resolveUsableCredential} projects
+ * it. `secret_hash` is included because the two secret-verifying routes
+ * (`POST /auth/oauth/token`, `POST /auth/service-token`) compare against it in
+ * constant time; it never leaves the process.
+ */
+type ApplicationCredentialRow = Pick<
+  typeof applicationCredentials.$inferSelect,
+  'id' | 'applicationId' | 'publicKey' | 'secretHash' | 'type' | 'environment' | 'scopes' | 'status' | 'expiresAt'
+>;
+
+/** Read one application by id, projected to {@link APPLICATION_COLUMNS}. */
+async function findApplicationById(applicationId: string): Promise<ApplicationRow | null> {
+  const [app] = await getDb()
+    .select(APPLICATION_COLUMNS)
+    .from(applications)
+    .where(eq(applications.id, applicationId))
+    .limit(1);
+  return app ?? null;
+}
+
+/** Read one ACTIVE application by id, projected to {@link APPLICATION_COLUMNS}. */
+async function findActiveApplicationById(applicationId: string): Promise<ApplicationRow | null> {
+  const [app] = await getDb()
+    .select(APPLICATION_COLUMNS)
+    .from(applications)
+    .where(and(eq(applications.id, applicationId), eq(applications.status, 'active')))
+    .limit(1);
+  return app ?? null;
+}
 
 // ============================================
 // WebAuthn / Passkey Routes
@@ -357,13 +418,21 @@ router.get('/check-username/:username', checkLimiter, validate({ params: checkUs
     throw new BadRequestError('Username can only contain letters and numbers');
   }
 
-  const existingUser = await User.findOne({ username }).select('_id').lean();
+  // `lower(btrim(...))` on BOTH sides — that is the expression
+  // `users_lower_username_key` indexes, so a plain `username = $1` would be
+  // both case-sensitive (wrong: `Nate` and `nate` are one account now) and a
+  // sequential scan.
+  const [existingUser] = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`lower(btrim(${users.username})) = lower(btrim(${username}))`)
+    .limit(1);
 
   logger.debug('GET /auth/check-username', { username, available: !existingUser });
-  
-  sendSuccess(res, { 
-    available: !existingUser, 
-    message: existingUser ? 'Username is already taken' : 'Username is available' 
+
+  sendSuccess(res, {
+    available: !existingUser,
+    message: existingUser ? 'Username is already taken' : 'Username is available'
   });
 }));
 
@@ -398,9 +467,22 @@ router.get('/lookup/:username', checkLimiter, validate({ params: checkUsernamePa
 
   username = username.trim().toLowerCase();
 
-  const user = await User.findOne({ username })
-    .select('username color avatar name')
-    .lean();
+  // Matched through the `lower(btrim(username))` unique index — see
+  // `check-username` above. The structured name is FLAT here (`name_first` /
+  // `name_last`); `formatUserNameResponse` reassembles the wire object, so the
+  // response contract (`name.displayName` present only for a real name) is
+  // unchanged.
+  const [user] = await getDb()
+    .select({
+      username: users.username,
+      color: users.color,
+      avatar: users.avatar,
+      nameFirst: users.nameFirst,
+      nameLast: users.nameLast,
+    })
+    .from(users)
+    .where(sql`lower(btrim(${users.username})) = lower(btrim(${username}))`)
+    .limit(1);
 
   if (!user) {
     throw new NotFoundError('User not found');
@@ -412,7 +494,7 @@ router.get('/lookup/:username', checkLimiter, validate({ params: checkUsernamePa
     color: user.color || null,
     avatar: user.avatar || null,
     name: formatUserNameResponse({
-      name: user.name as { first?: string; last?: string } | undefined,
+      name: { first: user.nameFirst, last: user.nameLast },
       username: user.username,
     }),
   });
@@ -463,13 +545,20 @@ router.get('/check-email/:email', checkLimiter, validate({ params: checkEmailPar
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  const existingUser = await User.findOne({ email: normalizedEmail }).select('_id').lean();
+  // Matched through `users_lower_email_key`, the `lower(btrim(email))` unique
+  // index — Mongoose's `lowercase: true` setter has no Postgres counterpart, so
+  // the normalization is re-applied on BOTH sides at the call site.
+  const [existingUser] = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`lower(btrim(${users.email})) = lower(btrim(${normalizedEmail}))`)
+    .limit(1);
 
   logger.debug('GET /auth/check-email', { email: normalizedEmail, available: !existingUser });
-  
-  sendSuccess(res, { 
-    available: !existingUser, 
-    message: existingUser ? 'Email is already registered' : 'Email is available' 
+
+  sendSuccess(res, {
+    available: !existingUser,
+    message: existingUser ? 'Email is already registered' : 'Email is available'
   });
 }));
 
@@ -488,9 +577,16 @@ router.get('/check-publickey/:publicKey', checkLimiter, validate({ params: check
     throw new BadRequestError('Invalid public key format');
   }
 
-  const existingUser = await User.findOne({ publicKey }).select('_id').lean();
+  // Matched through `users_lower_public_key_key`. Mongoose lower-cased the key
+  // on write, so the stored values are already canonical; applying the same
+  // expression on both sides is what lets the index serve the lookup.
+  const [existingUser] = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`lower(btrim(${users.publicKey})) = lower(btrim(${publicKey}))`)
+    .limit(1);
 
-  logger.debug('GET /auth/check-publickey', { 
+  logger.debug('GET /auth/check-publickey', {
     publicKey: SignatureService.shortenPublicKey(publicKey), 
     registered: !!existingUser 
   });
@@ -510,8 +606,6 @@ router.get('/user/:publicKey', validate({ params: getUserByPublicKeyParams }), S
 // ============================================
 // Cross-App Authentication (OAuth-like flow)
 // ============================================
-
-import AuthSession from '../models/AuthSession';
 
 /**
  * @openapi
@@ -627,16 +721,19 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
 
   // Resolve the canonical Application. Every session is bound to a real,
   // active registered Application — there is no free-form app label.
-  let resolvedApp: IApplication | null = null;
+  //
+  // The `applicationId` branch no longer format-checks the id first: an id
+  // Postgres cannot match simply selects no rows and falls into the same
+  // `Invalid application` 400 the guard used to produce. Keeping the check
+  // would additionally have rejected every uuid v7 id minted after the cutover.
+  let resolvedApp: ApplicationRow | null = null;
   if (clientId) {
     const credential = await resolveUsableCredential(clientId);
     if (credential) {
-      resolvedApp = await Application.findById(credential.applicationId);
+      resolvedApp = await findApplicationById(credential.applicationId);
     }
   } else if (applicationId) {
-    if (isValidObjectId(applicationId)) {
-      resolvedApp = await Application.findById(applicationId);
-    }
+    resolvedApp = await findApplicationById(applicationId);
   }
 
   if (!resolvedApp) {
@@ -667,11 +764,17 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   if (oauth) {
     if (!isAllowedRedirectUri(resolvedApp, oauth.redirectUri)) {
       logger.warn('[OAuth] Rejected unregistered redirect_uri on session/create', {
-        applicationId: resolvedApp._id.toString(),
+        applicationId: resolvedApp.id,
       });
       throw new ForbiddenError('redirect_uri is not registered for this client');
     }
-    if (oauth.subjectAccountId && !isValidObjectId(oauth.subjectAccountId)) {
+    // `auth_sessions.oauth_subject_account_id` carries a real foreign key to
+    // `users` now, so an id that names no account is a constraint violation
+    // (a 500) rather than a value that sits inert until approval. The old
+    // FORMAT check is replaced by an EXISTENCE check, which keeps the
+    // documented 400 and is strictly stronger — a well-formed id for a
+    // nonexistent account used to be accepted here and refused much later.
+    if (oauth.subjectAccountId && !(await userExists(oauth.subjectAccountId))) {
       throw new BadRequestError('Invalid subjectAccountId');
     }
     oauthContext = {
@@ -740,12 +843,6 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     ? deriveCoarseClientLabel(req.headers['user-agent'])
     : null;
 
-  // Check if session token already exists (generic error to prevent enumeration)
-  const existing = await AuthSession.findOne({ sessionToken });
-  if (existing) {
-    throw new BadRequestError('Unable to create session');
-  }
-
   // The client-supplied `sessionToken` is the SECRET claim credential and is
   // kept as-is (never regenerated, never echoed to observers). The
   // `authorizeCode` is a SEPARATE public single-use handle that travels in the
@@ -754,37 +851,69 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   const authorizeCode = crypto.randomBytes(16).toString('hex');
   const qrNonce = crypto.randomBytes(8).toString('hex');
 
-  // Create new auth session. Every field is written from a SERVER-resolved value
+  // Create the auth session. Every field is written from a SERVER-resolved value
   // or an explicitly whitelisted one — `req.body` is never spread in.
-  const authSession = await AuthSession.create({
-    sessionToken,
-    applicationId: resolvedApp._id,
-    authorizeCode,
-    boundOrigin: boundOrigin ?? null,
-    originVerified,
-    requesterLabel,
-    challengeNonce: qrNonce,
-    expiresAt: expiresAtDate,
-    status: 'pending',
-    purpose: oauthContext ? 'oauth_authorization' : 'device_sign_in',
-    ...(oauthContext ? { oauth: oauthContext } : {}),
-    ...(typeof deviceId === 'string' && deviceId.trim() ? { deviceId: deviceId.trim() } : {}),
-  });
+  //
+  // The reuse check IS the insert now: `auth_sessions_session_token_key`
+  // decides, so a token already in use returns no row and produces the same
+  // generic `Unable to create session` (never enumerating whether it exists).
+  // The read-then-write pair this replaces left a window in which two callers
+  // could both pass the check, and the loser then hit a raw duplicate-key 500.
+  //
+  // The OAuth binding is written as FLAT columns alongside `purpose` in ONE
+  // insert, because `auth_sessions_oauth_binding_check` and
+  // `auth_sessions_oauth_purpose_check` require the whole group and the purpose
+  // to agree. There is no half-bound row to write — the schema-level statement
+  // of what the Mongoose sub-schema achieved by staying `undefined`.
+  const [authSession] = await getDb()
+    .insert(authSessions)
+    .values({
+      sessionToken,
+      applicationId: resolvedApp.id,
+      authorizeCode,
+      boundOrigin: boundOrigin ?? null,
+      originVerified,
+      requesterLabel,
+      challengeNonce: qrNonce,
+      expiresAt: expiresAtDate,
+      status: 'pending',
+      purpose: oauthContext ? 'oauth_authorization' : 'device_sign_in',
+      oauthRedirectUri: oauthContext ? oauthContext.redirectUri : null,
+      oauthCodeChallenge: oauthContext ? oauthContext.codeChallenge : null,
+      oauthCodeChallengeMethod: oauthContext ? oauthContext.codeChallengeMethod : null,
+      oauthScopes: oauthContext ? oauthContext.scopes : null,
+      oauthSubjectAccountId: oauthContext?.subjectAccountId ?? null,
+      deviceId: typeof deviceId === 'string' && deviceId.trim() ? deviceId.trim() : null,
+    })
+    .onConflictDoNothing({ target: authSessions.sessionToken })
+    .returning({
+      authorizeCode: authSessions.authorizeCode,
+      expiresAt: authSessions.expiresAt,
+      status: authSessions.status,
+    });
+
+  if (!authSession) {
+    throw new BadRequestError('Unable to create session');
+  }
 
   // Deep-link / universal-link payload for the QR. Commons parses ONLY `code`
   // from this; the `approve` path segment and `code` param name are part of its
   // deep-link router contract and MUST NOT change.
-  const qrPayload = `oxycommons://approve?v=1&code=${authorizeCode}&app=${resolvedApp._id.toString()}` +
+  const qrPayload = `oxycommons://approve?v=1&code=${authorizeCode}&app=${resolvedApp.id}` +
     `&origin=${encodeURIComponent(boundOrigin ?? '')}&nonce=${qrNonce}&exp=${expiresAtDate.getTime()}`;
 
   logger.debug('Auth session created', {
     sessionToken: sessionToken.substring(0, 8) + '...',
     authorizeCode: authorizeCode.substring(0, 8) + '...',
-    applicationId: resolvedApp._id.toString(),
+    applicationId: resolvedApp.id,
   });
 
   sendSuccess(res, {
-    sessionToken: authSession.sessionToken,
+    // Echoed from the REQUEST rather than re-read from the row: the insert
+    // matched it byte for byte, so the two are the same value, and
+    // `auth_sessions.session_token` stays out of every select in this module
+    // (`protectedColumns.ts`).
+    sessionToken,
     authorizeCode: authSession.authorizeCode,
     expiresAt: authSession.expiresAt.toISOString(),
     status: authSession.status,
@@ -926,16 +1055,39 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
 router.get('/session/status/:sessionToken', validate({ params: authSessionTokenParams }), asyncHandler(async (req, res) => {
   const { sessionToken } = req.params;
 
-  const authSession = await AuthSession.findOne({ sessionToken });
+  // Explicit columns, never `select()`: `auth_sessions.session_token` is a
+  // protected column (`protectedColumns.ts`) and this handler has no reason to
+  // read it — the value it echoes is the one the caller presented.
+  const [row] = await getDb()
+    .select({
+      id: authSessions.id,
+      status: authSessions.status,
+      applicationId: authSessions.applicationId,
+      expiresAt: authSessions.expiresAt,
+      pushSentAt: authSessions.pushSentAt,
+      openedAt: authSessions.openedAt,
+      authorizedSessionId: authSessions.authorizedSessionId,
+      authorizedBy: authSessions.authorizedBy,
+      authorizedUserId: authSessions.authorizedUserId,
+      purpose: authSessions.purpose,
+    })
+    .from(authSessions)
+    .where(eq(authSessions.sessionToken, sessionToken))
+    .limit(1);
 
-  if (!authSession) {
+  if (!row) {
     throw new NotFoundError('Auth session not found');
   }
 
-  // Check if expired
-  if (authSession.expiresAt < new Date()) {
-    authSession.status = 'expired';
-    await authSession.save();
+  // Check if expired. Unconditional, exactly as before: a row past its deadline
+  // reports `expired` whatever it was, including an already-`consumed` one.
+  let status = row.status;
+  if (row.expiresAt < new Date()) {
+    status = 'expired';
+    await getDb()
+      .update(authSessions)
+      .set({ status: 'expired' })
+      .where(eq(authSessions.id, row.id));
   }
 
   // Resolve sanitized public application metadata for the consent UI. Every
@@ -943,29 +1095,29 @@ router.get('/session/status/:sessionToken', validate({ params: authSessionTokenP
   // normally always present. If the app was later hard-deleted (or is no longer
   // active) we return null rather than throwing — defensive only.
   let application = null;
-  const app = await Application.findById(authSession.applicationId);
+  const app = await findApplicationById(row.applicationId);
   if (app && app.status === 'active') {
     const developerName = await resolveDeveloperName(app);
     application = serializePublicApplication(app, developerName);
   }
 
   sendSuccess(res, {
-    status: authSession.status,
-    authorized: authSession.status === 'authorized',
-    sessionToken: authSession.sessionToken,
+    status,
+    authorized: status === 'authorized',
+    sessionToken,
     application,
-    expiresAt: authSession.expiresAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
     // Delivery progress as TIMESTAMPS — never statuses. This is the
     // authoritative read-back for the socket's payload-free wake signal: the
     // waiting client learns "pushed" / "opened in the vault" from here, so no
     // progress data has to travel as trusted data on the socket.
-    pushSentAt: authSession.pushSentAt ? authSession.pushSentAt.toISOString() : null,
-    openedAt: authSession.openedAt ? authSession.openedAt.toISOString() : null,
-    sessionId: authSession.authorizedSessionId || null,
-    publicKey: authSession.authorizedBy || null,
-    userId: authSession.authorizedUserId ? authSession.authorizedUserId.toString() : null,
+    pushSentAt: row.pushSentAt ? row.pushSentAt.toISOString() : null,
+    openedAt: row.openedAt ? row.openedAt.toISOString() : null,
+    sessionId: row.authorizedSessionId || null,
+    publicKey: row.authorizedBy || null,
+    userId: row.authorizedUserId ?? null,
     // Lets poll clients distinguish device sign-in (claim) from OAuth (finalize).
-    purpose: authSession.purpose ?? 'device_sign_in',
+    purpose: row.purpose,
   });
 }));
 
@@ -1033,16 +1185,34 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
     throw new UnauthorizedError('Authentication required');
   }
 
-  // Find the auth session
-  const authSession = await AuthSession.findOne({ sessionToken, status: 'pending' });
+  // Find the auth session. Explicit columns — `session_token` is protected and
+  // this handler already holds the value, having matched on it.
+  const [authSession] = await getDb()
+    .select({
+      id: authSessions.id,
+      applicationId: authSessions.applicationId,
+      deviceId: authSessions.deviceId,
+      expiresAt: authSessions.expiresAt,
+      purpose: authSessions.purpose,
+      oauthRedirectUri: authSessions.oauthRedirectUri,
+      oauthCodeChallenge: authSessions.oauthCodeChallenge,
+      oauthCodeChallengeMethod: authSessions.oauthCodeChallengeMethod,
+      oauthScopes: authSessions.oauthScopes,
+      oauthSubjectAccountId: authSessions.oauthSubjectAccountId,
+    })
+    .from(authSessions)
+    .where(and(eq(authSessions.sessionToken, sessionToken), eq(authSessions.status, 'pending')))
+    .limit(1);
   if (!authSession) {
     throw new NotFoundError('Auth session not found or already processed');
   }
 
   // Check if expired
   if (authSession.expiresAt < new Date()) {
-    authSession.status = 'expired';
-    await authSession.save();
+    await getDb()
+      .update(authSessions)
+      .set({ status: 'expired' })
+      .where(eq(authSessions.id, authSession.id));
     throw new BadRequestError('Auth session has expired');
   }
 
@@ -1053,7 +1223,7 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
   // predicate `POST /accounts/:id/switch` uses). The identity never becomes the
   // account — it authorises the app to act as it.
   const oauthContext = resolveOAuthContext(authSession);
-  const subjectAccountId = oauthContext?.subjectAccountId?.toString();
+  const subjectAccountId = oauthContext?.subjectAccountId;
   if (subjectAccountId) {
     const delegation = await verifyDelegatedSubject(authenticatedUserId, subjectAccountId);
     if (!delegation.ok) {
@@ -1076,7 +1246,7 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
     // Resolve the bound Application for the device-name label. The session can't
     // exist without a valid applicationId; fall back to a generic label only if
     // the app was hard-deleted between create and authorize.
-    const app = await Application.findById(authSession.applicationId);
+    const app = await findApplicationById(authSession.applicationId);
     const appLabel = app ? app.name : 'App';
 
     // Create a new session for the third-party app, owned by the
@@ -1095,21 +1265,23 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
     newSessionId = newSession.sessionId;
   }
 
-  // Update auth session — including WHICH identity approved.
-  authSession.status = 'authorized';
-  if (authenticatedUser.publicKey) {
-    authSession.authorizedBy = authenticatedUser.publicKey;
-  }
-  authSession.authorizedUserId = authenticatedUser._id;
-  if (newSessionId) {
-    authSession.authorizedSessionId = newSessionId;
-  }
-  await authSession.save();
+  // Update auth session — including WHICH identity approved. `authorizedBy` is
+  // left untouched when the approver has no public key, matching the Mongoose
+  // path that only assigned the field when one existed.
+  await getDb()
+    .update(authSessions)
+    .set({
+      status: 'authorized',
+      authorizedUserId: authenticatedUserId,
+      ...(authenticatedUser.publicKey ? { authorizedBy: authenticatedUser.publicKey } : {}),
+      ...(newSessionId ? { authorizedSessionId: newSessionId } : {}),
+    })
+    .where(eq(authSessions.id, authSession.id));
 
   logger.info('Auth session authorized', {
     sessionToken: sessionToken.substring(0, 8) + '...',
     userId: authenticatedUserId,
-    applicationId: authSession.applicationId.toString(),
+    applicationId: authSession.applicationId,
   });
 
   // Emit socket event to notify the waiting client
@@ -1261,19 +1433,28 @@ router.post(
       throw new UnauthorizedError('invalid_grant');
     }
 
-    const user = await User.findById(authSession.authorizedUserId).lean();
+    // `publicColumns` is the sanctioned whole-row read: it drops `phone`, the
+    // contact-discovery hashes and `refresh_token` AT THE TYPE LEVEL, so the
+    // serializer below cannot carry any of them into the response.
+    const [user] = await getDb()
+      .select(publicColumns(users))
+      .from(users)
+      .where(eq(users.id, authSession.authorizedUserId))
+      .limit(1);
     if (!user) {
       logger.error('[AuthSession] User not found for claimed session', new Error('user not found'), {
         sessionToken: sessionToken.substring(0, 8) + '...',
-        userId: authSession.authorizedUserId.toString(),
+        userId: authSession.authorizedUserId,
       });
       throw new UnauthorizedError('invalid_grant');
     }
 
     // Pull the deviceId from the underlying Session for the response.
-    const session = await Session.findOne({ sessionId: authSession.authorizedSessionId })
-      .select('deviceId expiresAt')
-      .lean();
+    const [session] = await getDb()
+      .select({ deviceId: sessionsTable.deviceId, expiresAt: sessionsTable.expiresAt })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.sessionId, authSession.authorizedSessionId))
+      .limit(1);
 
     if (!session) {
       logger.error('[AuthSession] Underlying session disappeared between authorize and claim', new Error('session missing'), {
@@ -1305,8 +1486,8 @@ router.post(
     logger.info('[AuthSession] Claim succeeded', {
       sessionToken: sessionToken.substring(0, 8) + '...',
       sessionId: authSession.authorizedSessionId,
-      userId: authSession.authorizedUserId.toString(),
-      applicationId: authSession.applicationId.toString(),
+      userId: authSession.authorizedUserId,
+      applicationId: authSession.applicationId,
     });
 
     sendSuccess(res, {
@@ -1329,13 +1510,19 @@ router.post(
 router.post('/session/cancel/:sessionToken', validate({ params: authSessionTokenParams }), asyncHandler(async (req, res) => {
   const { sessionToken } = req.params;
 
-  const authSession = await AuthSession.findOne({ sessionToken });
-  if (!authSession) {
+  // Cancel in ONE statement: the 404 is "no row carried this secret", which the
+  // update itself answers, so there is no read to go stale in between. As
+  // before, cancelling is unconditional on the current status — possession of
+  // the secret is the ownership proof.
+  const cancelled = await getDb()
+    .update(authSessions)
+    .set({ status: 'cancelled' })
+    .where(eq(authSessions.sessionToken, sessionToken))
+    .returning({ id: authSessions.id });
+
+  if (cancelled.length === 0) {
     throw new NotFoundError('Auth session not found');
   }
-
-  authSession.status = 'cancelled';
-  await authSession.save();
 
   // Emit socket event to notify the waiting client
   emitAuthSessionUpdate(sessionToken, {
@@ -1398,21 +1585,45 @@ router.get(
   asyncHandler(async (req, res) => {
     const { authorizeCode } = req.params;
 
-    const authSession = await AuthSession.findOne({ authorizeCode });
+    // Explicit columns: `session_token` is protected AND this endpoint is
+    // PUBLIC, so it must never even load the secret it exists to keep hidden.
+    const [authSession] = await getDb()
+      .select({
+        id: authSessions.id,
+        status: authSessions.status,
+        applicationId: authSessions.applicationId,
+        boundOrigin: authSessions.boundOrigin,
+        originVerified: authSessions.originVerified,
+        requesterLabel: authSessions.requesterLabel,
+        expiresAt: authSessions.expiresAt,
+        purpose: authSessions.purpose,
+        oauthRedirectUri: authSessions.oauthRedirectUri,
+        oauthCodeChallenge: authSessions.oauthCodeChallenge,
+        oauthCodeChallengeMethod: authSessions.oauthCodeChallengeMethod,
+        oauthScopes: authSessions.oauthScopes,
+        oauthSubjectAccountId: authSessions.oauthSubjectAccountId,
+      })
+      .from(authSessions)
+      .where(eq(authSessions.authorizeCode, authorizeCode))
+      .limit(1);
     if (!authSession) {
       throw new NotFoundError('Auth session not found');
     }
 
-    if (authSession.status === 'pending' && authSession.expiresAt < new Date()) {
-      authSession.status = 'expired';
-      await authSession.save();
+    let status = authSession.status;
+    if (status === 'pending' && authSession.expiresAt < new Date()) {
+      status = 'expired';
+      await getDb()
+        .update(authSessions)
+        .set({ status: 'expired' })
+        .where(eq(authSessions.id, authSession.id));
     }
 
     const oauthContext = resolveOAuthContext(authSession);
 
     let application = null;
     let scopes: string[] = [];
-    const app = await Application.findById(authSession.applicationId);
+    const app = await findApplicationById(authSession.applicationId);
     if (app && app.status === 'active') {
       const developerName = await resolveDeveloperName(app);
       application = serializePublicApplication(app, developerName);
@@ -1430,20 +1641,26 @@ router.get(
     // Delegated subject: "who will the app act as". Resolved SERVER-side from
     // the bound id — the QR/deep link never carries display data.
     let subjectAccount: SanitizedSubjectAccount | null = null;
-    const subjectAccountId = oauthContext?.subjectAccountId?.toString();
+    const subjectAccountId = oauthContext?.subjectAccountId;
     if (subjectAccountId) {
-      const subject = await User.findById(subjectAccountId)
-        .select('username name')
-        .lean<{
-          _id: mongoose.Types.ObjectId;
-          username?: string;
-          name?: { first?: string; last?: string; full?: string; displayName?: string };
-        } | null>();
+      const [subject] = await getDb()
+        .select({
+          id: users.id,
+          username: users.username,
+          nameFirst: users.nameFirst,
+          nameLast: users.nameLast,
+        })
+        .from(users)
+        .where(eq(users.id, subjectAccountId))
+        .limit(1);
       if (subject) {
-        const name = formatUserNameResponse({ name: subject.name, username: subject.username });
+        const name = formatUserNameResponse({
+          name: { first: subject.nameFirst, last: subject.nameLast },
+          username: subject.username,
+        });
         subjectAccount = {
-          id: subject._id.toString(),
-          username: typeof subject.username === 'string' ? subject.username : null,
+          id: subject.id,
+          username: subject.username ?? null,
           displayName: name.displayName ?? null,
         };
       }
@@ -1456,18 +1673,18 @@ router.get(
       // Authoritative anti-phishing signal. When false (native callers, or a
       // session NOT proven to originate from a trusted app's own registered
       // origin), Commons warns the approver that the source is unverifiable.
-      originVerified: authSession.originVerified ?? false,
+      originVerified: authSession.originVerified,
       // COARSE, display-only requester label ("Chrome on Windows"), captured
       // server-side at create time, or `null` (native callers, unidentifiable
-      // User-Agents, rows that predate the field). This is the ONLY requester
-      // descriptor this endpoint exposes: never the raw User-Agent, never an IP
-      // or location, never the originating deviceId.
+      // User-Agents). This is the ONLY requester descriptor this endpoint
+      // exposes: never the raw User-Agent, never an IP or location, never the
+      // originating deviceId.
       requesterLabel: authSession.requesterLabel ?? null,
-      // What approving this request does. Legacy rows read as a device sign-in.
-      purpose: authSession.purpose ?? 'device_sign_in',
+      // What approving this request does.
+      purpose: authSession.purpose,
       subjectAccount,
       expiresAt: authSession.expiresAt.toISOString(),
-      status: authSession.status,
+      status,
     });
   }),
 );
@@ -1674,34 +1891,53 @@ router.post(
     // `req.body` onto the document.
     const { reason } = req.body as { reason?: CommonsDenyReason };
 
-    const authSession = await AuthSession.findOne({ authorizeCode });
-    if (!authSession) {
-      throw new NotFoundError('Auth session not found');
+    // The denial IS the update, conditioned on `status = 'pending'` — so two
+    // concurrent denials cannot both emit, and a request that was authorized
+    // between read and write is no longer cancellable by a knower of the code.
+    // `session_token` is a PROTECTED column and this is the one place in this
+    // module that legitimately needs it: the waiting originator is notified on
+    // its own secret channel, and the caller here only ever held the public
+    // code. It is returned to the server, never to the client.
+    const [denied] = await getDb()
+      .update(authSessions)
+      .set({ status: 'cancelled', ...(reason ? { deniedReason: reason } : {}) })
+      .where(and(eq(authSessions.authorizeCode, authorizeCode), eq(authSessions.status, 'pending')))
+      .returning({
+        sessionToken: authSessions.sessionToken,
+        applicationId: authSessions.applicationId,
+      });
+
+    if (!denied) {
+      // Nothing was pending under this code. Distinguish "no such request" from
+      // "already resolved": the former is a 404, the latter is the same
+      // idempotent success the pre-port handler returned.
+      const [existing] = await getDb()
+        .select({ id: authSessions.id })
+        .from(authSessions)
+        .where(eq(authSessions.authorizeCode, authorizeCode))
+        .limit(1);
+      if (!existing) {
+        throw new NotFoundError('Auth session not found');
+      }
+      sendSuccess(res, { success: true });
+      return;
     }
 
-    if (authSession.status === 'pending') {
-      authSession.status = 'cancelled';
-      if (reason) {
-        authSession.deniedReason = reason;
-      }
-      await authSession.save();
-
-      if (reason === 'not_me') {
-        // The "flag it as suspicious" half of the contract: someone was shown a
-        // sign-in request they say they never started. Recorded as a coarse,
-        // non-identifying fact — application + truncated approval handle, no
-        // User-Agent, no IP, no location.
-        logger.warn('Auth session denied as not-me', {
-          authorizeCode: `${authorizeCode.substring(0, 8)}...`,
-          applicationId: authSession.applicationId?.toString(),
-        });
-      }
-
-      // The waiting originator learns only that it was cancelled. The reason is
-      // the approver's report about the requester and is deliberately NOT
-      // broadcast back to it — a hostile RP must not learn it was suspected.
-      emitAuthSessionUpdate(authSession.sessionToken, { status: 'cancelled' });
+    if (reason === 'not_me') {
+      // The "flag it as suspicious" half of the contract: someone was shown a
+      // sign-in request they say they never started. Recorded as a coarse,
+      // non-identifying fact — application + truncated approval handle, no
+      // User-Agent, no IP, no location.
+      logger.warn('Auth session denied as not-me', {
+        authorizeCode: `${authorizeCode.substring(0, 8)}...`,
+        applicationId: denied.applicationId,
+      });
     }
+
+    // The waiting originator learns only that it was cancelled. The reason is
+    // the approver's report about the requester and is deliberately NOT
+    // broadcast back to it — a hostile RP must not learn it was suspected.
+    emitAuthSessionUpdate(denied.sessionToken, { status: 'cancelled' });
 
     sendSuccess(res, { success: true });
   }),
@@ -1933,15 +2169,47 @@ router.post(
  * no usable credential exists. Mirrors the resolution in `/oauth/authorize`
  * and `/oauth/token`.
  */
-async function resolveUsableCredential(clientId: string): Promise<IApplicationCredential | null> {
-  const credential = await ApplicationCredential.findOne({
-    publicKey: clientId,
-    status: { $ne: 'revoked' },
-  });
+async function resolveUsableCredential(clientId: string): Promise<ApplicationCredentialRow | null> {
+  const [credential] = await getDb()
+    .select({
+      id: applicationCredentials.id,
+      applicationId: applicationCredentials.applicationId,
+      publicKey: applicationCredentials.publicKey,
+      secretHash: applicationCredentials.secretHash,
+      type: applicationCredentials.type,
+      environment: applicationCredentials.environment,
+      scopes: applicationCredentials.scopes,
+      status: applicationCredentials.status,
+      expiresAt: applicationCredentials.expiresAt,
+    })
+    .from(applicationCredentials)
+    .where(
+      and(
+        eq(applicationCredentials.publicKey, clientId),
+        ne(applicationCredentials.status, 'revoked')
+      )
+    )
+    .limit(1);
   if (!credential || !isCredentialUsable(credential)) {
     return null;
   }
   return credential;
+}
+
+/**
+ * Whether `userId` names an existing account.
+ *
+ * Only used where a nonexistent id would otherwise become a FOREIGN KEY
+ * violation (a 500) instead of the endpoint's documented 400 — see the
+ * `subjectAccountId` binding in `POST /auth/session/create`.
+ */
+async function userExists(userId: string): Promise<boolean> {
+  const [row] = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return Boolean(row);
 }
 
 /** Parse the origin of a registered redirect URI, or null when malformed. */
@@ -1977,7 +2245,7 @@ function hasBrowserContext(req: express.Request): boolean {
 }
 
 /** True when `origin` is the origin of one of the app's registered redirect URIs. */
-function applicationAllowsOrigin(app: Pick<IApplication, 'redirectUris'>, origin: string): boolean {
+function applicationAllowsOrigin(app: Pick<ApplicationRow, 'redirectUris'>, origin: string): boolean {
   return (app.redirectUris ?? []).some((redirectUri) => originFromRedirectUri(redirectUri) === origin);
 }
 
@@ -1985,21 +2253,79 @@ function applicationAllowsOrigin(app: Pick<IApplication, 'redirectUris'>, origin
  * Best-effort owner display name for the consent UI. Only meaningful for
  * non-official apps. Never throws — a missing/deleted owner yields undefined so
  * the serializer simply omits the attribution.
+ *
+ * `created_by_user_id` is NULLABLE here (`ON DELETE SET NULL`): it is pure
+ * attribution, and Mongoose's `required` only ever guaranteed a creator was
+ * recorded at INSERT — a deleted user left a dangling id with no error. A NULL
+ * owner takes the same "no attribution" branch a deleted one already took.
  */
-async function resolveDeveloperName(app: IApplication): Promise<string | undefined> {
-  if (app.isOfficial) {
+async function resolveDeveloperName(
+  app: Pick<ApplicationRow, 'isOfficial' | 'createdByUserId'>
+): Promise<string | undefined> {
+  if (app.isOfficial || !app.createdByUserId) {
     return undefined;
   }
-  const owner = await User.findById(app.createdByUserId)
-    .select('username name')
-    .lean<{ username?: string; name?: { first?: string; last?: string; displayName?: string } } | null>();
+  const [owner] = await getDb()
+    .select({
+      username: users.username,
+      nameFirst: users.nameFirst,
+      nameLast: users.nameLast,
+    })
+    .from(users)
+    .where(eq(users.id, app.createdByUserId))
+    .limit(1);
   if (!owner) {
     return undefined;
   }
   const display =
-    composeDisplayName({ name: owner.name, username: owner.username }) ??
-    (typeof owner.username === 'string' ? owner.username.trim() : '');
+    composeDisplayName({
+      name: { first: owner.nameFirst, last: owner.nameLast },
+      username: owner.username,
+    }) ?? (owner.username ?? '').trim();
   return display || undefined;
+}
+
+/**
+ * Record (or refresh) a user's standing consent for a third-party application —
+ * the "Connected apps" entry. Upsert on `(user_id, application_id)`.
+ *
+ * The scope merge is Mongo's `$addToSet: { scopes: { $each } }`: the granted set
+ * is a UNION, and only genuinely new scopes are appended, so an existing grant
+ * keeps the order it was written in. `first_granted_at` is deliberately absent
+ * from the conflict branch — that is `$setOnInsert`, and re-stamping it would
+ * erase when the user first consented.
+ *
+ * `updated_at` is set explicitly: drizzle's `$onUpdate` fires for `db.update()`,
+ * not for the update arm of an upsert, so leaving it out would freeze the
+ * column at the value the row was inserted with.
+ */
+async function recordAppGrant(
+  userId: string,
+  applicationId: string,
+  requestedScopes: string[]
+): Promise<void> {
+  const now = new Date();
+  await getDb()
+    .insert(appGrants)
+    .values({
+      userId,
+      applicationId,
+      scopes: requestedScopes,
+      firstGrantedAt: now,
+      lastUsedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [appGrants.userId, appGrants.applicationId],
+      set: {
+        lastUsedAt: now,
+        updatedAt: now,
+        scopes: sql`${appGrants.scopes} || (
+          select coalesce(array_agg(distinct incoming), '{}'::text[])
+          from unnest(excluded.scopes) as incoming
+          where not (incoming = any(${appGrants.scopes}))
+        )`,
+      },
+    });
 }
 
 const oauthAuthorizeLimiter = rateLimit({
@@ -2121,16 +2447,13 @@ router.post(
     // The ApplicationCredential.publicKey serves as the OAuth `client_id`.
     // Accept `active` OR `deprecated`-but-within-grace credentials; reject
     // `revoked` and any whose rotation grace window has expired.
-    const credential = await ApplicationCredential.findOne({
-      publicKey: clientId,
-      status: { $ne: 'revoked' },
-    });
-    if (!credential || !isCredentialUsable(credential)) {
+    const credential = await resolveUsableCredential(clientId);
+    if (!credential) {
       // Don't leak whether the client exists vs is revoked/expired.
       throw new BadRequestError('Invalid client');
     }
 
-    const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
+    const app = await findActiveApplicationById(credential.applicationId);
     if (!app) {
       throw new BadRequestError('Invalid client');
     }
@@ -2164,8 +2487,8 @@ router.post(
     // the raw value, so leakage of the AuthCode collection would not
     // allow an attacker to redeem outstanding codes.
     const { code: rawCode } = await issueAuthCode({
-      userId: user._id,
-      appId: app._id.toString(),
+      userId: user._id.toString(),
+      appId: app.id,
       redirectUri,
       codeChallenge,
       codeChallengeMethod: codeChallenge ? 'S256' : undefined,
@@ -2181,16 +2504,7 @@ router.post(
     // Best-effort: a failure here must never block the issued code.
     if (!isTrustedApplication(app)) {
       try {
-        const now = new Date();
-        await AppGrant.findOneAndUpdate(
-          { userId: user._id, applicationId: app._id },
-          {
-            $set: { lastUsedAt: now },
-            $addToSet: { scopes: { $each: requestedScopes } },
-            $setOnInsert: { firstGrantedAt: now },
-          },
-          { upsert: true, new: true }
-        );
+        await recordAppGrant(user._id.toString(), app.id, requestedScopes);
       } catch (error) {
         logger.warn('[OAuth] Failed to record AppGrant', {
           err: error instanceof Error ? error.message : String(error),
@@ -2280,7 +2594,7 @@ router.get(
     if (!credential) {
       throw new BadRequestError('Invalid client');
     }
-    const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
+    const app = await findActiveApplicationById(credential.applicationId);
     if (!app) {
       throw new BadRequestError('Invalid client');
     }
@@ -2296,9 +2610,11 @@ router.get(
     }
 
     const requestedScopes = scope ? scope.split(/\s+/).filter(Boolean) : [];
-    const grant = await AppGrant.findOne({ userId: user._id, applicationId: app._id })
-      .select('scopes')
-      .lean<{ scopes?: string[] } | null>();
+    const [grant] = await getDb()
+      .select({ scopes: appGrants.scopes })
+      .from(appGrants)
+      .where(and(eq(appGrants.userId, user._id.toString()), eq(appGrants.applicationId, app.id)))
+      .limit(1);
 
     if (grant) {
       const granted = new Set(grant.scopes ?? []);
@@ -2358,35 +2674,39 @@ router.get(
       throw new UnauthorizedError('Authentication required');
     }
 
-    const grants = await AppGrant.find({ userId: user._id })
-      .select('applicationId scopes firstGrantedAt lastUsedAt')
-      .sort({ lastUsedAt: -1 })
-      .lean<
-        Array<{
-          applicationId: mongoose.Types.ObjectId;
-          scopes?: string[];
-          firstGrantedAt: Date;
-          lastUsedAt: Date;
-        }>
-      >();
+    const grants = await getDb()
+      .select({
+        applicationId: appGrants.applicationId,
+        scopes: appGrants.scopes,
+        firstGrantedAt: appGrants.firstGrantedAt,
+        lastUsedAt: appGrants.lastUsedAt,
+      })
+      .from(appGrants)
+      .where(eq(appGrants.userId, user._id.toString()))
+      .orderBy(desc(appGrants.lastUsedAt));
 
     const applicationIds = grants.map((grant) => grant.applicationId);
-    const apps = await Application.find({ _id: { $in: applicationIds } })
-      .select('name icon')
-      .lean<Array<{ _id: mongoose.Types.ObjectId; name: string; icon?: string }>>();
+    // `inArray` with an empty list renders `false` in drizzle rather than
+    // failing, but the round trip is pointless when the user has no grants.
+    const apps = applicationIds.length
+      ? await getDb()
+          .select({ id: applications.id, name: applications.name, icon: applications.icon })
+          .from(applications)
+          .where(inArray(applications.id, applicationIds))
+      : [];
 
-    const appById = new Map(apps.map((app) => [app._id.toString(), app]));
+    const appById = new Map(apps.map((app) => [app.id, app]));
 
     const data: ConnectedAppSummary[] = [];
     for (const grant of grants) {
-      const app = appById.get(grant.applicationId.toString());
+      const app = appById.get(grant.applicationId);
       // Skip grants whose application no longer exists — effectively revoked.
       if (!app) continue;
       data.push({
-        applicationId: grant.applicationId.toString(),
+        applicationId: grant.applicationId,
         name: app.name,
         logoUrl: app.icon ?? undefined,
-        scopes: grant.scopes ?? [],
+        scopes: grant.scopes,
         firstGrantedAt: grant.firstGrantedAt.toISOString(),
         lastUsedAt: grant.lastUsedAt.toISOString(),
       });
@@ -2415,9 +2735,10 @@ router.get(
  *         schema: { type: string }
  *     responses:
  *       200:
- *         description: Grant revoked (idempotent).
- *       400:
- *         description: Invalid applicationId.
+ *         description: >
+ *           Grant revoked. Idempotent, and total: an `applicationId` that names
+ *           no application — or one the caller never granted — deletes nothing
+ *           and answers the same way, so nothing here is an existence oracle.
  *       401:
  *         description: Missing or invalid bearer token.
  */
@@ -2433,12 +2754,19 @@ router.delete(
     }
 
     const { applicationId } = req.params;
-    if (!isValidObjectId(applicationId)) {
-      throw new BadRequestError('Invalid applicationId');
-    }
 
     // Drop the OAuth grant — the next authorize for this app re-prompts consent.
-    await AppGrant.deleteOne({ userId: user._id, applicationId });
+    //
+    // The `isValidObjectId` guard is gone: it existed only to stop a malformed
+    // id reaching Mongoose and raising a CastError, and it would additionally
+    // have rejected every uuid v7 application id minted after the cutover. Revoke
+    // is idempotent by design — an id that names nothing deletes nothing and
+    // answers `{ revoked: true }`, exactly as an id with no grant already did.
+    await getDb()
+      .delete(appGrants)
+      .where(
+        and(eq(appGrants.userId, user._id.toString()), eq(appGrants.applicationId, applicationId))
+      );
 
     sendSuccess(res, { revoked: true });
   })
@@ -2506,15 +2834,12 @@ router.post(
 
     // Accept `active` OR `deprecated`-but-within-grace credentials; reject
     // `revoked` and any whose rotation grace window has expired.
-    const credential = await ApplicationCredential.findOne({
-      publicKey: clientId,
-      status: { $ne: 'revoked' },
-    });
-    if (!credential || !isCredentialUsable(credential)) {
+    const credential = await resolveUsableCredential(clientId);
+    if (!credential) {
       throw new UnauthorizedError('invalid_client');
     }
 
-    const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
+    const app = await findActiveApplicationById(credential.applicationId);
     if (!app) {
       throw new UnauthorizedError('invalid_client');
     }
@@ -2540,7 +2865,7 @@ router.post(
 
     const exchange = await exchangeAuthCode({
       rawCode: code,
-      appId: app._id.toString(),
+      appId: app.id,
       redirectUri,
       clientSecretProvided,
       codeVerifier,
@@ -2557,13 +2882,18 @@ router.post(
       throw new UnauthorizedError('invalid_grant');
     }
 
-    // Issue a session bound to the authenticated user from the code.
-    const user = await User.findById(exchange.code.userId);
+    // Issue a session bound to the authenticated user from the code. The read
+    // goes through `publicColumns`, so the protected columns cannot reach the
+    // `user` field of the token response below.
+    const userId = String(exchange.code.userId);
+    const [user] = await getDb()
+      .select(publicColumns(users))
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
     if (!user) {
       throw new UnauthorizedError('invalid_grant');
     }
-
-    const userId = user._id.toString();
 
     const sharedDeviceId =
       typeof exchange.code.deviceId === 'string' && exchange.code.deviceId.trim()
@@ -2602,8 +2932,10 @@ router.post(
       throw new InternalServerError('Failed to finalize device session');
     }
 
-    app.lastUsedAt = new Date();
-    await app.save();
+    await getDb()
+      .update(applications)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(applications.id, app.id));
 
     const userData = formatUserResponse(user);
 
@@ -2691,7 +3023,7 @@ router.get(
       throw new NotFoundError('Application not found');
     }
 
-    const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
+    const app = await findActiveApplicationById(credential.applicationId);
     if (!app) {
       throw new NotFoundError('Application not found');
     }
@@ -2805,20 +3137,17 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
   // `service` credential that is currently usable: `active`, or `deprecated`
   // but still inside its rotation grace window. `revoked` and grace-expired
   // credentials are rejected.
-  const credential = await ApplicationCredential.findOne({
-    publicKey: apiKey,
-    status: { $ne: 'revoked' },
-  });
+  const credential = await resolveUsableCredential(apiKey);
 
-  if (!credential || !isCredentialUsable(credential)) {
+  if (!credential) {
     logger.warn('[ServiceToken] Invalid apiKey attempt', { apiKey: apiKey.substring(0, 12) + '...' });
     throw new UnauthorizedError('Invalid credentials');
   }
 
   if (credential.type !== 'service') {
     logger.warn('[ServiceToken] Non-service credential attempted service token', {
-      credentialId: credential._id.toString(),
-      applicationId: credential.applicationId.toString(),
+      credentialId: credential.id,
+      applicationId: credential.applicationId,
     });
     throw new ForbiddenError('Service tokens are only available to service credentials');
   }
@@ -2833,8 +3162,8 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
   if (expectedBuffer.length !== providedBuffer.length ||
       !crypto.timingSafeEqual(expectedBuffer, providedBuffer)) {
     logger.warn('[ServiceToken] Invalid apiSecret attempt', {
-      credentialId: credential._id.toString(),
-      applicationId: credential.applicationId.toString(),
+      credentialId: credential.id,
+      applicationId: credential.applicationId,
     });
     throw new UnauthorizedError('Invalid credentials');
   }
@@ -2857,11 +3186,11 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
   // Mercaria, etc.) mint the payments-scoped service token the `@oxyhq/pay`
   // SDK needs without ever letting a self-service app mint a token carrying
   // any other capability.
-  const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
+  const app = await findActiveApplicationById(credential.applicationId);
   if (!app) {
     logger.warn('[ServiceToken] Application inactive for service credential', {
-      credentialId: credential._id.toString(),
-      applicationId: credential.applicationId.toString(),
+      credentialId: credential.id,
+      applicationId: credential.applicationId,
     });
     throw new UnauthorizedError('Invalid credentials');
   }
@@ -2870,8 +3199,8 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
     credential.scopes.length > 0 && credential.scopes.every(isPaymentsScope);
   if (!isTrustedApplication(app) && !isPaymentsOnlyServiceCredential) {
     logger.warn('[ServiceToken] Untrusted application attempted service token', {
-      credentialId: credential._id.toString(),
-      applicationId: credential.applicationId.toString(),
+      credentialId: credential.id,
+      applicationId: credential.applicationId,
     });
     throw new ForbiddenError('Service tokens are only available to trusted applications');
   }
@@ -2895,15 +3224,15 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
   // survives if BOTH the credential AND the app hold it). A credential that
   // requested no scopes inherits the app's full granted set (unchanged
   // behaviour for credentials provisioned without explicit scopes).
-  const appScopes = app.scopes ?? [];
+  const appScopes = app.scopes;
   const scopes =
     credential.scopes.length > 0 ? intersectScopes(credential.scopes, appScopes) : appScopes;
   const token = jwt.sign(
     {
       type: 'service',
-      appId: app._id.toString(),
+      appId: app.id,
       appName: app.name,
-      credentialId: credential._id.toString(),
+      credentialId: credential.id,
       scopes,
       environment: credential.environment,
     },
@@ -2912,14 +3241,19 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
   );
 
   // Update lastUsedAt on the credential and the application.
-  credential.lastUsedAt = new Date();
-  await credential.save();
-  app.lastUsedAt = new Date();
-  await app.save();
+  const usedAt = new Date();
+  await getDb()
+    .update(applicationCredentials)
+    .set({ lastUsedAt: usedAt })
+    .where(eq(applicationCredentials.id, credential.id));
+  await getDb()
+    .update(applications)
+    .set({ lastUsedAt: usedAt })
+    .where(eq(applications.id, app.id));
 
   logger.info('[ServiceToken] Service token issued', {
-    credentialId: credential._id.toString(),
-    applicationId: app._id.toString(),
+    credentialId: credential.id,
+    applicationId: app.id,
     appName: app.name,
     expiresIn: SERVICE_TOKEN_EXPIRY,
   });

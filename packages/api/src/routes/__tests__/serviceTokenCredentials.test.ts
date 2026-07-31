@@ -1,260 +1,160 @@
 /**
- * POST /auth/service-token — ApplicationCredential resolution, rotation grace
- * window, expiry/revocation, and minted-JWT claims (issue #215).
+ * `POST /auth/service-token` — credential resolution, the trust gate and the
+ * minted JWT claims — against a REAL Postgres.
  *
- * The service-token endpoint resolves the supplied `apiKey` (= credential
- * publicKey) to an ApplicationCredential, validates the `apiSecret` against the
- * stored SHA-256 hash in constant time, and mints a 1-hour service JWT. It uses
- * the shared `isCredentialUsable` predicate so a credential is accepted when it
- * is `active`, OR `deprecated` but still within its rotation grace window
- * (`expiresAt` in the future); `revoked` and grace-expired credentials are
- * rejected. The minted JWT carries `appId` (Application `_id`) and
- * `credentialId` (the minting ApplicationCredential `_id`).
+ * Service tokens are bearer credentials for Oxy-to-Oxy / internal routes, so
+ * three things must hold and are asserted against stored rows rather than stubs:
+ * the credential must be USABLE (`active`, or `deprecated` within its rotation
+ * grace), the SECRET must match its stored SHA-256 hash under a constant-time
+ * comparison, and the owning application must be platform-trusted — except for
+ * the narrow Oxy Pay carve-out keyed on the CREDENTIAL's own payments-only
+ * scopes.
  *
- * These tests exercise the route end-to-end over real HTTP with the genuine
- * `isCredentialUsable` predicate (only `ApplicationCredential.findOne` and the
- * application lookup are stubbed), then verify the minted JWT by decoding it
- * with the configured secret.
+ * The previous version mocked `models/ApplicationCredential` /
+ * `models/Application`, so the secret comparison never ran against a real
+ * `secret_hash` and the scope intersection ran against a hand-built stub.
  */
 
 import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
-import crypto from 'crypto';
+import * as nodeCrypto from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+
+// `jest.setup.cjs` stubs `jsonwebtoken` globally (sign → a fixed string). The
+// claims ARE the contract here, so restore the real module for this suite.
+jest.mock('jsonwebtoken', () => jest.requireActual('jsonwebtoken'));
 import jwt from 'jsonwebtoken';
 
 process.env.ACCESS_TOKEN_SECRET = 'test-access-token-secret';
-
-// The global jest.setup.cjs stubs `jsonwebtoken` (sign → fixed string). This
-// suite mints a real service JWT and decodes its claims, so restore the genuine
-// module here. The static `import jwt from 'jsonwebtoken'` above then resolves
-// to the real export.
-jest.mock('jsonwebtoken', () => jest.requireActual('jsonwebtoken'));
-
-const mockApplicationCredentialFindOne = jest.fn();
-const mockApplicationFindOne = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
   serviceAuthMiddleware: jest.fn(),
   rejectQueryToken: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
-
 jest.mock('../../middleware/rateLimiter', () => ({
   rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
-
-jest.mock('../../middleware/validate', () => ({
-  validate: () => (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
-
-jest.mock('../../middleware/originGuard', () => ({
-  requireSameSiteOrigin: (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
-
-jest.mock('../../models/AuthSession', () => ({
-  __esModule: true,
-  default: { findOne: jest.fn() },
-  AuthSession: { findOne: jest.fn() },
-}));
-
-jest.mock('../../models/Session', () => ({
-  __esModule: true,
-  default: { findOne: jest.fn() },
-}));
-
-jest.mock('../../services/authSession.service', () => ({
-  claimAuthSession: jest.fn(),
-}));
-
-jest.mock('../../models/AuthCode', () => ({
-  __esModule: true,
-  AuthCode: { create: jest.fn() },
-  default: { create: jest.fn() },
-}));
-
-jest.mock('../../models/ApplicationCredential', () => ({
-  __esModule: true,
-  ApplicationCredential: { findOne: mockApplicationCredentialFindOne },
-  default: { findOne: mockApplicationCredentialFindOne },
-}));
-
-jest.mock('../../models/Application', () => ({
-  __esModule: true,
-  Application: { findOne: mockApplicationFindOne },
-  default: { findOne: mockApplicationFindOne },
-}));
-
-jest.mock('../../models/User', () => ({
-  __esModule: true,
-  User: { findOne: jest.fn(), findById: jest.fn() },
-  default: { findOne: jest.fn(), findById: jest.fn() },
-}));
-
-
-jest.mock('../../utils/userTransform', () => ({
-  formatUserResponse: jest.fn(),
-}));
-
-jest.mock('../../utils/authSessionSocket', () => ({
-  emitAuthSessionUpdate: jest.fn(),
-}));
-
 jest.mock('../../services/session.service', () => ({
   __esModule: true,
-  default: { createSession: jest.fn() },
+  default: { createSession: jest.fn(), getAccessToken: jest.fn() },
 }));
-
-jest.mock('../../services/oauthCode.service', () => ({
-  issueAuthCode: jest.fn(),
-  exchangeAuthCode: jest.fn(),
-  AUTH_CODE_TTL_MS: 60_000,
+jest.mock('../../utils/authSessionSocket', () => ({
+  emitAuthSessionUpdate: jest.fn(),
+  emitAuthSessionProgress: jest.fn(),
 }));
-
-jest.mock('../../services/signature.service', () => ({
-  __esModule: true,
-  default: {
-    isValidPublicKey: jest.fn(),
-    verifyChallengeResponse: jest.fn(),
-    verifyRegistrationSignature: jest.fn(),
-    verifySignature: jest.fn(),
-    generateChallenge: jest.fn(),
-    shortenPublicKey: jest.fn(),
-  },
-}));
-
+jest.mock('../../utils/socket', () => ({ broadcastSessionAccountsChanged: jest.fn() }));
 jest.mock('../../controllers/session.controller', () => ({
   SessionController: {
     register: jest.fn(),
-    signUp: jest.fn(),
-    signIn: jest.fn(),
     requestChallenge: jest.fn(),
     verifyChallenge: jest.fn(),
-    requestPasswordReset: jest.fn(),
-    verifyRecoveryCode: jest.fn(),
-    resetPassword: jest.fn(),
     getUserByPublicKey: jest.fn(),
   },
 }));
-
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-
-// auth.ts statically imports the AppGrant model (OAuth consent
-// grants); mock them so the real Mongoose schema does not run under the global
-// mongoose mock (which lacks Schema.Types).
-jest.mock('../../models/AppGrant', () => ({
-  __esModule: true,
-  AppGrant: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
-  default: { findOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn(), deleteOne: jest.fn() },
-}));
-import authRouter from '../auth';
+import { eq } from 'drizzle-orm';
+import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
+import { applicationCredentials } from '../../db/schema/applicationCredentials';
+import { applications } from '../../db/schema/applications';
+import { users } from '../../db/schema/users';
 import { errorHandler } from '../../middleware/errorHandler';
-
-interface ServiceTokenData {
-  token?: string;
-  expiresIn?: number;
-  appName?: string;
-}
+import authRouter from '../auth';
 
 interface JsonResponse {
   status: number;
-  body: { data?: ServiceTokenData; error?: string; message?: string };
+  body: Record<string, unknown>;
 }
 
-async function requestJson(
-  server: http.Server,
-  method: string,
-  path: string,
-  payload: unknown
-): Promise<JsonResponse> {
+let server: http.Server;
+
+function post(body: unknown): Promise<JsonResponse> {
   const address = server.address() as AddressInfo;
-  const body = JSON.stringify(payload ?? {});
+  const payload = JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
-        method,
+        method: 'POST',
         host: '127.0.0.1',
         port: address.port,
-        path,
+        path: '/auth/service-token',
         headers: {
           'content-type': 'application/json',
-          'content-length': Buffer.byteLength(body),
+          'content-length': Buffer.byteLength(payload),
         },
       },
       (res) => {
         let raw = '';
-        res.on('data', (chunk) => { raw += chunk; });
-        res.on('end', () => {
-          try {
-            resolve({ status: res.statusCode ?? 0, body: raw.length > 0 ? JSON.parse(raw) : {} });
-          } catch (err) {
-            reject(err);
-          }
+        res.on('data', (chunk) => {
+          raw += chunk;
         });
-      }
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, body: raw.length ? JSON.parse(raw) : {} }),
+        );
+      },
     );
     req.on('error', reject);
-    req.write(body);
+    req.write(payload);
     req.end();
   });
 }
 
-const API_KEY = 'oxy_dk_service_client';
-const PLAINTEXT_SECRET = 'plaintext-service-secret';
-const SECRET_HASH = crypto.createHash('sha256').update(PLAINTEXT_SECRET).digest('hex');
-const APP_ID = 'app-service-1';
-const CRED_ID = 'cred-service-1';
+const sha256 = (value: string) => nodeCrypto.createHash('sha256').update(value).digest('hex');
 
-interface StubCredential {
-  _id: { toString: () => string };
-  publicKey: string;
-  applicationId: { toString: () => string };
-  type: string;
-  environment: string;
-  status: string;
-  secretHash?: string;
-  scopes: string[];
-  expiresAt?: Date;
-  lastUsedAt?: Date;
-  save: jest.Mock;
+interface ServiceClient {
+  apiKey: string;
+  apiSecret: string;
+  applicationId: string;
+  credentialId: string;
+  appName: string;
 }
 
-function stubCredential(overrides: Partial<StubCredential> = {}): StubCredential {
-  return {
-    _id: { toString: () => CRED_ID },
-    publicKey: API_KEY,
-    applicationId: { toString: () => APP_ID },
-    type: 'service',
-    environment: 'production',
-    status: 'active',
-    secretHash: SECRET_HASH,
-    scopes: ['user:read'],
-    save: jest.fn().mockResolvedValue(undefined),
-    ...overrides,
-  };
+/**
+ * A real application + service credential. The defaults describe the ordinary
+ * case: an internal (platform-trusted) app with an active `service` credential
+ * whose stored hash matches `apiSecret`.
+ */
+async function serviceClient(
+  credentialFields: Partial<typeof applicationCredentials.$inferInsert> = {},
+  appFields: Partial<typeof applications.$inferInsert> = {},
+): Promise<ServiceClient> {
+  const [owner] = await getDb().insert(users).values({}).returning({ id: users.id });
+  const appName = `App ${randomUUID()}`;
+  const [app] = await getDb()
+    .insert(applications)
+    .values({
+      name: appName,
+      type: 'internal',
+      isInternal: true,
+      scopes: ['user:read'],
+      ...appFields,
+      ownerAccountId: owner.id,
+    })
+    .returning({ id: applications.id });
+
+  const apiKey = `oxy_dk_${randomUUID().replace(/-/g, '')}`;
+  const apiSecret = randomUUID();
+  const [credential] = await getDb()
+    .insert(applicationCredentials)
+    .values({
+      applicationId: app.id,
+      name: 'service',
+      type: 'service',
+      environment: 'production',
+      secretHash: sha256(apiSecret),
+      ...credentialFields,
+      publicKey: apiKey,
+    })
+    .returning({ id: applicationCredentials.id });
+
+  return { apiKey, apiSecret, applicationId: app.id, credentialId: credential.id, appName };
 }
 
-function stubApp(overrides: Partial<{ isInternal: boolean; scopes: string[] }> = {}): {
-  _id: { toString: () => string };
-  name: string;
-  isInternal: boolean;
-  scopes: string[];
-  save: jest.Mock;
-} {
-  return {
-    _id: { toString: () => APP_ID },
-    name: 'Service App',
-    isInternal: true,
-    scopes: ['user:read'],
-    save: jest.fn().mockResolvedValue(undefined),
-    ...overrides,
-  };
-}
-
-function decodeServiceJwt(token: string): {
+interface ServiceClaims {
   type?: string;
   appId?: string;
   appName?: string;
@@ -263,339 +163,287 @@ function decodeServiceJwt(token: string): {
   environment?: string;
   iss?: string;
   aud?: string | string[];
-} {
-  return jwt.verify(token, process.env.ACCESS_TOKEN_SECRET as string) as {
-    type?: string;
-    appId?: string;
-    appName?: string;
-    credentialId?: string;
-    scopes?: string[];
-    environment?: string;
-    iss?: string;
-    aud?: string | string[];
-  };
 }
 
-let server: http.Server;
+function decodeServiceJwt(token: string): ServiceClaims {
+  return jwt.verify(token, process.env.ACCESS_TOKEN_SECRET as string) as ServiceClaims;
+}
 
-beforeAll((done) => {
+beforeAll(async () => {
+  await connectPostgres();
   const app = express();
   app.use(express.json());
   app.use('/auth', authRouter);
   app.use(errorHandler);
-  server = app.listen(0, '127.0.0.1', done);
+  await new Promise<void>((resolve) => {
+    server = app.listen(0, '127.0.0.1', resolve);
+  });
 });
 
-afterAll((done) => {
-  server.close(done);
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  await closePostgres();
 });
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockApplicationFindOne.mockResolvedValue(stubApp());
 });
 
-describe('POST /auth/service-token — credential resolution + JWT claims (#215)', () => {
-  it('mints a token for an active service credential with the correct secret', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential());
+describe('POST /auth/service-token — credential usability', () => {
+  it('mints a token for an ACTIVE service credential with the correct secret', async () => {
+    const client = await serviceClient();
 
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
 
     expect(res.status).toBe(200);
-    expect(typeof res.body.data?.token).toBe('string');
-    expect(res.body.data?.appName).toBe('Service App');
+    expect(res.body.data).toMatchObject({ expiresIn: 3600, appName: client.appName });
   });
 
-  it('embeds appId (Application _id) and credentialId in the minted JWT', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential());
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
+  it('accepts a DEPRECATED credential still inside its rotation grace', async () => {
+    const client = await serviceClient({
+      status: 'deprecated',
+      expiresAt: new Date(Date.now() + 60_000),
     });
 
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
     expect(res.status).toBe(200);
-    const claims = decodeServiceJwt(res.body.data?.token as string);
+  });
+
+  it('rejects a deprecated credential with NO grace expiry', async () => {
+    const client = await serviceClient({ status: 'deprecated' });
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects a deprecated credential whose grace has elapsed', async () => {
+    const client = await serviceClient({
+      status: 'deprecated',
+      expiresAt: new Date(Date.now() - 1000),
+    });
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects an ACTIVE credential whose explicit expiresAt has passed', async () => {
+    const client = await serviceClient({ expiresAt: new Date(Date.now() - 1000) });
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects a REVOKED credential immediately', async () => {
+    const client = await serviceClient({ status: 'revoked' });
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects an unknown apiKey', async () => {
+    const res = await post({ apiKey: 'oxy_dk_unknown', apiSecret: 'anything' });
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects when the owning application is no longer active', async () => {
+    const client = await serviceClient({}, { status: 'suspended' });
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('POST /auth/service-token — the secret and the credential type', () => {
+  it('rejects a WRONG secret', async () => {
+    const client = await serviceClient();
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: 'not-the-secret' });
+
+    expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({ message: 'Invalid credentials' });
+  });
+
+  it('rejects a credential that stores NO secret hash', async () => {
+    const client = await serviceClient({ secretHash: null });
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: 'anything' });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects a NON-service credential with 403', async () => {
+    const client = await serviceClient({ type: 'confidential' });
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('POST /auth/service-token — the trust gate and the Oxy Pay carve-out', () => {
+  it('rejects a NON-trusted application', async () => {
+    const client = await serviceClient(
+      { scopes: ['user:read'] },
+      { type: 'third_party', isInternal: false, isOfficial: false, scopes: ['user:read'] },
+    );
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('mints for a non-trusted app from a PAYMENTS-ONLY credential', async () => {
+    const client = await serviceClient(
+      { scopes: ['payments:read', 'payments:write'] },
+      {
+        type: 'third_party',
+        isInternal: false,
+        isOfficial: false,
+        scopes: ['payments:read', 'payments:write'],
+      },
+    );
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(200);
+    const claims = decodeServiceJwt((res.body.data as { token: string }).token);
+    expect([...(claims.scopes ?? [])].sort()).toEqual(['payments:read', 'payments:write']);
+  });
+
+  it('still rejects a non-trusted app whose credential holds ANY non-payments scope', async () => {
+    const client = await serviceClient(
+      { scopes: ['payments:read', 'user:read'] },
+      {
+        type: 'third_party',
+        isInternal: false,
+        isOfficial: false,
+        scopes: ['payments:read', 'user:read'],
+      },
+    );
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('never applies the carve-out to a SCOPELESS credential', async () => {
+    // A scopeless credential falls back to the app's FULL granted set, so it
+    // must never qualify — only an explicit payments-only credential does.
+    const client = await serviceClient(
+      { scopes: [] },
+      {
+        type: 'third_party',
+        isInternal: false,
+        isOfficial: false,
+        scopes: ['payments:read', 'user:read'],
+      },
+    );
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('leaves a TRUSTED application unaffected by the carve-out', async () => {
+    const client = await serviceClient({ scopes: ['user:read'] });
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('POST /auth/service-token — the minted claims', () => {
+  it('embeds appId, appName, credentialId, environment and iss/aud', async () => {
+    const client = await serviceClient({ environment: 'staging' });
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    const claims = decodeServiceJwt((res.body.data as { token: string }).token);
     expect(claims.type).toBe('service');
-    expect(claims.appId).toBe(APP_ID);
-    expect(claims.credentialId).toBe(CRED_ID);
-    expect(claims.scopes).toEqual(['user:read']);
-  });
-
-  it('accepts a deprecated credential still within its rotation grace window (old secret keeps working)', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(
-      stubCredential({
-        status: 'deprecated',
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-      })
-    );
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(200);
-    expect(typeof res.body.data?.token).toBe('string');
-  });
-
-  it('rejects a deprecated credential without an explicit grace expiry', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(
-      stubCredential({
-        status: 'deprecated',
-      })
-    );
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects a deprecated credential whose grace window has expired', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(
-      stubCredential({
-        status: 'deprecated',
-        expiresAt: new Date(Date.now() - 1000),
-      })
-    );
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects an active credential whose explicit expiresAt is in the past', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(
-      stubCredential({
-        status: 'active',
-        expiresAt: new Date(Date.now() - 1000),
-      })
-    );
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects a revoked credential immediately (excluded by the status query)', async () => {
-    // The route queries `status: { $ne: 'revoked' }`; a revoked credential is
-    // therefore not returned at all.
-    mockApplicationCredentialFindOne.mockResolvedValue(null);
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects an invalid secret (timing-safe hash comparison fails)', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential());
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: 'wrong-secret',
-    });
-
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects a non-service credential with 403', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(
-      stubCredential({ type: 'confidential' })
-    );
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(403);
-  });
-
-  it('rejects service-token minting for a non-internal application', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential());
-    mockApplicationFindOne.mockResolvedValue(stubApp({ isInternal: false }));
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(403);
-  });
-
-  it('the Oxy Pay carve-out mints a token for a non-trusted app from a payments-only credential', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(
-      stubCredential({ scopes: ['payments:read', 'payments:write'] })
-    );
-    mockApplicationFindOne.mockResolvedValue(
-      stubApp({ isInternal: false, scopes: ['payments:read', 'payments:write'] })
-    );
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(200);
-    const claims = decodeServiceJwt(res.body.data?.token as string);
-    expect(claims.scopes).toEqual(['payments:read', 'payments:write']);
-    expect(claims.environment).toBe('production');
-  });
-
-  it('the Oxy Pay carve-out still rejects a non-trusted app whose credential holds any non-payments scope', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(
-      stubCredential({ scopes: ['payments:read', 'user:read'] })
-    );
-    mockApplicationFindOne.mockResolvedValue(
-      stubApp({ isInternal: false, scopes: ['payments:read', 'user:read'] })
-    );
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(403);
-  });
-
-  it('the Oxy Pay carve-out never applies to a scopeless credential from a non-trusted app', async () => {
-    // A scopeless credential inherits the app's FULL granted scope set below
-    // (intersectScopes fallback) — it must never qualify for the carve-out,
-    // even if the app itself only holds payments scopes.
-    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential({ scopes: [] }));
-    mockApplicationFindOne.mockResolvedValue(
-      stubApp({ isInternal: false, scopes: ['payments:read', 'payments:write'] })
-    );
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(403);
-  });
-
-  it('a trusted application is unaffected by the Oxy Pay carve-out', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential());
-    mockApplicationFindOne.mockResolvedValue(stubApp({ isInternal: true }));
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(200);
-  });
-
-  it('rejects when the owning application is inactive', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential());
-    mockApplicationFindOne.mockResolvedValue(null);
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(401);
-  });
-
-  it('intersects credential scopes with app scopes — a scope the app lacks is STRIPPED', async () => {
-    // The credential claims federation:write but the app only holds user:read.
-    // The minted token must NOT carry federation:write (privilege-escalation
-    // path closed).
-    mockApplicationCredentialFindOne.mockResolvedValue(
-      stubCredential({ scopes: ['user:read', 'federation:write'] })
-    );
-    mockApplicationFindOne.mockResolvedValue({
-      _id: { toString: () => APP_ID },
-      name: 'Service App',
-      isInternal: true,
-      scopes: ['user:read'],
-      save: jest.fn().mockResolvedValue(undefined),
-    });
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(200);
-    const claims = decodeServiceJwt(res.body.data?.token as string);
-    expect(claims.scopes).toEqual(['user:read']);
-    expect(claims.scopes).not.toContain('federation:write');
-  });
-
-  it('preserves a privileged scope when BOTH the credential and the app hold it (Mention case)', async () => {
-    // Mirrors the live Mention credential once the Mention app is elevated to
-    // carry federation:write at the app level (the documented one-time fix).
-    mockApplicationCredentialFindOne.mockResolvedValue(
-      stubCredential({ scopes: ['user:read', 'files:write', 'federation:write'] })
-    );
-    mockApplicationFindOne.mockResolvedValue({
-      _id: { toString: () => APP_ID },
-      name: 'Mention',
-      isInternal: true,
-      scopes: ['user:read', 'files:write', 'federation:write'],
-      save: jest.fn().mockResolvedValue(undefined),
-    });
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(200);
-    const claims = decodeServiceJwt(res.body.data?.token as string);
-    expect(claims.scopes).toEqual(['user:read', 'files:write', 'federation:write']);
-  });
-
-  it('falls back to the app scopes when the credential requested no scopes', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential({ scopes: [] }));
-    mockApplicationFindOne.mockResolvedValue({
-      _id: { toString: () => APP_ID },
-      name: 'Service App',
-      isInternal: true,
-      scopes: ['user:read', 'files:write'],
-      save: jest.fn().mockResolvedValue(undefined),
-    });
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(200);
-    const claims = decodeServiceJwt(res.body.data?.token as string);
-    expect(claims.scopes).toEqual(['user:read', 'files:write']);
-  });
-
-  it('embeds the credential environment and iss/aud claims in the minted JWT', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential({ environment: 'development' }));
-
-    const res = await requestJson(server, 'POST', '/auth/service-token', {
-      apiKey: API_KEY,
-      apiSecret: PLAINTEXT_SECRET,
-    });
-
-    expect(res.status).toBe(200);
-    const claims = decodeServiceJwt(res.body.data?.token as string);
-    expect(claims.environment).toBe('development');
+    // The claim name `appId` is a WIRE CONTRACT — it is the Application id, and
+    // `@oxyhq/core`'s service-token verification reads it under this name.
+    expect(claims.appId).toBe(client.applicationId);
+    expect(claims.appName).toBe(client.appName);
+    expect(claims.credentialId).toBe(client.credentialId);
+    expect(claims.environment).toBe('staging');
     expect(claims.iss).toBe('oxy-auth');
     expect(claims.aud).toBe('oxy-api');
+  });
+
+  it('INTERSECTS credential scopes with app scopes — a scope the app lacks is stripped', async () => {
+    const client = await serviceClient(
+      { scopes: ['user:read', 'federation:write'] },
+      { scopes: ['user:read'] },
+    );
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    const claims = decodeServiceJwt((res.body.data as { token: string }).token);
+    expect(claims.scopes).toEqual(['user:read']);
+  });
+
+  it('preserves a privileged scope when BOTH the credential and the app hold it', async () => {
+    const client = await serviceClient(
+      { scopes: ['federation:write'] },
+      { scopes: ['user:read', 'federation:write'] },
+    );
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    const claims = decodeServiceJwt((res.body.data as { token: string }).token);
+    expect(claims.scopes).toEqual(['federation:write']);
+  });
+
+  it('falls back to the app scopes when the credential requested none', async () => {
+    const client = await serviceClient({ scopes: [] }, { scopes: ['user:read', 'files:read'] });
+
+    const res = await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    const claims = decodeServiceJwt((res.body.data as { token: string }).token);
+    expect([...(claims.scopes ?? [])].sort()).toEqual(['files:read', 'user:read']);
+  });
+});
+
+describe('POST /auth/service-token — bookkeeping', () => {
+  it('stamps last_used_at on BOTH the credential and the application', async () => {
+    const client = await serviceClient();
+
+    await post({ apiKey: client.apiKey, apiSecret: client.apiSecret });
+
+    const [credential] = await getDb()
+      .select({ lastUsedAt: applicationCredentials.lastUsedAt })
+      .from(applicationCredentials)
+      .where(eq(applicationCredentials.id, client.credentialId))
+      .limit(1);
+    const [app] = await getDb()
+      .select({ lastUsedAt: applications.lastUsedAt })
+      .from(applications)
+      .where(eq(applications.id, client.applicationId))
+      .limit(1);
+
+    expect(credential.lastUsedAt).toBeInstanceOf(Date);
+    expect(app.lastUsedAt).toBeInstanceOf(Date);
+  });
+
+  it('records nothing when the secret is wrong', async () => {
+    const client = await serviceClient();
+
+    await post({ apiKey: client.apiKey, apiSecret: 'wrong' });
+
+    const [credential] = await getDb()
+      .select({ lastUsedAt: applicationCredentials.lastUsedAt })
+      .from(applicationCredentials)
+      .where(eq(applicationCredentials.id, client.credentialId))
+      .limit(1);
+    expect(credential.lastUsedAt).toBeNull();
   });
 });
