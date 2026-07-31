@@ -59,6 +59,17 @@ import type { Database } from '../config/postgres';
 import { AFFINITY_EVENT_SEEN_TTL_SECONDS } from '../utils/recommendationWeights';
 import { appAffinitySeenEvents } from './schema/appAffinitySeenEvents';
 import { authChallenges } from './schema/authChallenges';
+import { authCodes } from './schema/authCodes';
+import { authSessions } from './schema/authSessions';
+import { civicNonces } from './schema/civicNonces';
+import { devicePairingSessions } from './schema/devicePairingSessions';
+import { domainVerifications } from './schema/domainVerifications';
+import {
+  SECURITY_ACTIVITY_RETENTION_SECONDS,
+  securityActivities,
+} from './schema/securityActivities';
+import { sessions } from './schema/sessions';
+import { webauthnChallenges } from './schema/webauthnChallenges';
 
 /**
  * Rows deleted per statement. Bounded so a large backlog cannot hold one long
@@ -104,6 +115,79 @@ export const EXPIRY_SWEEP_TARGETS: readonly ExpirySweepTarget[] = [
     reason:
       'Bounds the idempotency ledger. Deleting a marker reopens the dedup ' +
       'window for an event nobody is still retrying.',
+  },
+  {
+    table: sessions,
+    column: sessions.expiresAt,
+    retentionSeconds: 0,
+    reason:
+      'Housekeeping only — every session lookup already filters ' +
+      '`is_active` plus `expires_at > now()`, so an expired session is ' +
+      'unusable the instant it expires rather than when the sweep runs.',
+  },
+  {
+    table: authCodes,
+    column: authCodes.expiresAt,
+    retentionSeconds: 300,
+    reason:
+      'The 5-minute pad is DELIBERATE, not slack: the row outlives its own ' +
+      'deadline so a replay of a just-expired code is still recognised as a ' +
+      'replay (`used_at` is set) instead of answering "no such code". ' +
+      'Lowering it to 0 converts a detected replay into an indistinguishable ' +
+      'miss.',
+  },
+  {
+    table: authSessions,
+    column: authSessions.expiresAt,
+    retentionSeconds: 3600,
+    reason:
+      'Grace window — the request outlives its deadline for an hour so a late ' +
+      'poll is told "expired" rather than "never existed". Every read filters ' +
+      'expiry itself, so nothing depends on the sweep for correctness.',
+  },
+  {
+    table: devicePairingSessions,
+    column: devicePairingSessions.expiresAt,
+    retentionSeconds: 0,
+    reason:
+      'Storage reclamation ONLY. The verdict a user sees comes from the lazy ' +
+      'read path (`deviceTransfer.service.ts:98`), which marks a past-deadline ' +
+      'pending row `expired` before the sweep reaches it — deleting it sooner ' +
+      'would turn every expired transfer into an unknown one.',
+  },
+  {
+    table: webauthnChallenges,
+    column: webauthnChallenges.expiresAt,
+    retentionSeconds: 0,
+    reason:
+      'Housekeeping only — the ceremony verify step checks the deadline and ' +
+      'burns `used` atomically, so a challenge is unspendable at expiry.',
+  },
+  {
+    table: domainVerifications,
+    column: domainVerifications.expiresAt,
+    retentionSeconds: 0,
+    reason:
+      'Housekeeping only — `identity.ts:439` compares `expires_at` against now ' +
+      'and refuses a stale challenge, and a proven domain deletes its own row.',
+  },
+  {
+    table: civicNonces,
+    column: civicNonces.expiresAt,
+    retentionSeconds: 600,
+    reason:
+      'SECURITY parameter, not housekeeping: the row IS the used-nonce record, ' +
+      'so deleting it frees its hash for reuse. The 10-minute pad is how long ' +
+      'a replay stays detectable past the nonce\'s own deadline.',
+  },
+  {
+    table: securityActivities,
+    column: securityActivities.occurredAt,
+    retentionSeconds: SECURITY_ACTIVITY_RETENTION_SECONDS,
+    reason:
+      'Two-year audit retention measured from the EVENT, bounding growth ' +
+      'while keeping enough history for the activity surface. No read filters ' +
+      'on it — an old entry is stale, never unsafe.',
   },
 ];
 

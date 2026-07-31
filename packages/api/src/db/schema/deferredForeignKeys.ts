@@ -23,7 +23,15 @@
 import type { PgColumn, PgTable, UpdateDeleteAction } from 'drizzle-orm/pg-core';
 import { bookmarks } from './bookmarks';
 import { appAffinitySeenEvents } from './appAffinitySeenEvents';
+import { authCodes } from './authCodes';
+import { authSessions } from './authSessions';
+import { devicePairingSessions } from './devicePairingSessions';
+import { deviceSessionAccounts } from './deviceSessionAccounts';
+import { deviceSessions } from './deviceSessions';
+import { identityBindings } from './identityBindings';
 import { pushTokens } from './pushTokens';
+import { securityActivities } from './securityActivities';
+import { sessions } from './sessions';
 import { userAuthMethods } from './userAuthMethods';
 import { userLocations } from './userLocations';
 import { users } from './users';
@@ -76,6 +84,53 @@ export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
     parentColumn: 'id',
     onDelete: 'cascade',
     reason: 'The ledger only dedupes ingest for an application that still exists.',
+  },
+  {
+    table: authCodes,
+    column: authCodes.applicationId,
+    parentTable: 'applications',
+    parentColumn: 'id',
+    onDelete: 'cascade',
+    reason:
+      'An authorization code is a grant TO an application. With the ' +
+      'application gone there is nobody to exchange it, and the code is ' +
+      'unusable within five minutes anyway.',
+  },
+  {
+    table: authSessions,
+    column: authSessions.applicationId,
+    parentTable: 'applications',
+    parentColumn: 'id',
+    onDelete: 'cascade',
+    reason:
+      'The whole approval screen — name, icon, scopes — is resolved from the ' +
+      'application. A request that can no longer name who is asking must not ' +
+      'be approvable.',
+  },
+  {
+    table: identityBindings,
+    column: identityBindings.applicationId,
+    parentTable: 'applications',
+    parentColumn: 'id',
+    onDelete: 'cascade',
+    reason:
+      'A binding is scoped to one application and never cross-application, so ' +
+      'it proves nothing once that application is gone. Note applications are ' +
+      "SOFT-deleted (`status: 'deleted'`) on the normal path, so this fires " +
+      'only on a hard delete.',
+  },
+  {
+    table: identityBindings,
+    column: identityBindings.credentialId,
+    parentTable: 'application_credentials',
+    parentColumn: 'id',
+    onDelete: 'set null',
+    reason:
+      'AUDIT pointer only, deliberately not part of the binding check — a ' +
+      'credential rotation must not invalidate a binding the user consented ' +
+      'to. NULL already means "not recorded", so SET NULL loses the audit ' +
+      'trail and nothing else; CASCADE would delete the evidence a past ' +
+      'moderation effect rests on.',
   },
 ];
 
@@ -136,5 +191,105 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
     reason:
       'An OpenStreetMap element id, meaningful only together with `osm_type`. ' +
       'External to Oxy entirely.',
+  },
+
+  // ---- the auth/session cluster ------------------------------------------
+  //
+  // Three distinct shapes live below, and they are not interchangeable:
+  //   (a) a row's OWN natural key, id-shaped by name only;
+  //   (b) the central DEVICE id space, which names a device rather than a row;
+  //   (c) a reference by natural key whose lifecycle is INDEPENDENT on purpose,
+  //       where every available ON DELETE would change behaviour.
+  {
+    table: sessions,
+    column: sessions.sessionId,
+    reason:
+      "(a) This row's own public handle — the UUID minted for it and embedded " +
+      'in every access token. Other tables reference it; it references nothing.',
+  },
+  {
+    table: sessions,
+    column: sessions.deviceId,
+    reason:
+      '(b) The central DEVICE id space (`device_sessions.device_id`), not the ' +
+      'primary key of any row. A session is routinely created before that ' +
+      'device has a `device_sessions` row at all.',
+  },
+  {
+    table: deviceSessions,
+    column: deviceSessions.deviceId,
+    reason:
+      "(a) The device's own identifier — per web origin, per native app group. " +
+      'It is this row\'s natural key, which is why it is UNIQUE here and a ' +
+      'loose value everywhere else.',
+  },
+  {
+    table: deviceSessionAccounts,
+    column: deviceSessionAccounts.sessionId,
+    reason:
+      '(c) Names a `sessions` row by its natural key, with lifecycles that are ' +
+      'independent BY DESIGN: the application never deletes a session (only ' +
+      'the expiry sweep does), and when one goes the entry must SURVIVE so the ' +
+      'mint path answers "dead session" instead of the device\'s account set ' +
+      'silently shrinking — a shrink that would also skip the `revision` bump ' +
+      'every real membership change makes. CASCADE would cause exactly that ' +
+      'shrink; RESTRICT would stop the sweep.',
+  },
+  {
+    table: authCodes,
+    column: authCodes.deviceId,
+    reason:
+      '(b) Central device id, threaded so the token exchange lands on the ' +
+      'device the flow started from. Not a row id.',
+  },
+  {
+    table: authSessions,
+    column: authSessions.deviceId,
+    reason:
+      '(b) Central device id of the browser that STARTED the request, resolved ' +
+      'from an optional device token. Not a row id.',
+  },
+  {
+    table: authSessions,
+    column: authSessions.authorizedSessionId,
+    reason:
+      '(c) The `sessions.session_id` of the session minted on approval. Same ' +
+      'independent lifecycle as `device_session_accounts.session_id`, on a row ' +
+      'that is itself swept an hour later.',
+  },
+  {
+    table: authSessions,
+    column: authSessions.finalizedAuthCodeId,
+    reason:
+      '(c) A RESERVATION, not a reference: `finalizeCommonsOAuth` mints the id ' +
+      'and writes it in the SAME atomic update that spends the request, before ' +
+      'the `auth_codes` row exists — and the mint may then fail, leaving an id ' +
+      'that never becomes a row. A constraint would reject that write and ' +
+      'destroy the single-use guarantee; SET NULL would be worse, resurrecting ' +
+      "a spent request as un-finalized when the code's own 5-minute sweep ran " +
+      'and letting it mint a SECOND authorization code.',
+  },
+  {
+    table: devicePairingSessions,
+    column: devicePairingSessions.pairingId,
+    reason:
+      "(a) This row's own single-use QR handle, which doubles as the HKDF salt " +
+      'for the transfer key. Id-shaped by name only.',
+  },
+  {
+    table: identityBindings,
+    column: identityBindings.localPrincipalId,
+    reason:
+      "The APPLICATION's own identifier for a person, in the application's own " +
+      'id space. Oxy stores it to match a claim against a binding and never ' +
+      'resolves it to anything local.',
+  },
+  {
+    table: securityActivities,
+    column: securityActivities.deviceId,
+    reason:
+      '(b) Central device id the event happened on. An audit trail must keep ' +
+      'naming the device that was removed, which is precisely one of the ' +
+      'events it records.',
   },
 ];

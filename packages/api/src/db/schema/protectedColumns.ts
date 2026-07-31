@@ -30,11 +30,22 @@
  *    deliberately no helper for this — the whole point is that it reads
  *    differently from an ordinary select.
  *
- * 4. **`__tests__/protectedColumns.test.ts` is the gate.** It holds the registry
- *    against the exact set Mongoose marked `select: false`, refuses a stale
- *    entry, checks the runtime filter, and scans `src/` for the two shapes that
- *    return every column implicitly — a bare `select()` and the relational
+ * 4. **`__tests__/protectedColumns.test.ts` is the gate.** It holds the `users`
+ *    entry against the exact set Mongoose marked `select: false`, refuses a
+ *    stale entry, checks the runtime filter, and scans `src/` for the two shapes
+ *    that return every column implicitly — a bare `select()` and the relational
  *    `db.query.<table>` API — against any table in this registry.
+ *
+ * ## Scope: the title, not the Mongoose keyword
+ *
+ * `select: false` is where this started, and `users` is held to that exact set.
+ * It is not the boundary. The subject is the module title, and a column can
+ * qualify without Mongoose ever having marked it — `sessions.access_token` and
+ * `auth_sessions.session_token` are live bearer credentials that Mongoose left
+ * fully selectable, and Mongo's call sites only avoided leaking them by
+ * hand-building each DTO field by field. Drizzle's `select()` does not, so the
+ * port is where the guard has to be added rather than inherited. Each entry
+ * below says which it is.
  *
  * ## What this does NOT replace
  *
@@ -46,6 +57,8 @@
 
 import { getTableColumns, getTableName } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
+import { authSessions } from './authSessions';
+import { sessions } from './sessions';
 import { users } from './users';
 
 /**
@@ -65,6 +78,39 @@ export const USERS_PROTECTED_COLUMNS = [
 ] as const;
 
 /**
+ * `sessions` columns holding a LIVE BEARER CREDENTIAL.
+ *
+ * These were NOT `select: false` in Mongoose — nothing was, on that model — and
+ * they are here anyway, because the registry's subject is the module title
+ * ("columns that must not reach a client"), not the Mongoose keyword that used
+ * to approximate it. `users.refresh_token` is already protected for exactly this
+ * reason ("a bearer credential; serializing it hands over the account"); the
+ * same value on `sessions` is the same credential.
+ *
+ * The reason this matters MORE after the port than before: the Mongo call sites
+ * build device DTOs field by field from a `Session` document
+ * (`devices.controller.ts:73-90`), and the natural drizzle transliteration of
+ * that is `db.select().from(sessions)` followed by a `.map(...)` — which now
+ * carries two live tokens into whatever the mapper forgets to drop.
+ */
+export const SESSIONS_PROTECTED_COLUMNS = [
+  'accessToken',
+  'refreshToken',
+  'previousRefreshToken',
+] as const;
+
+/**
+ * `auth_sessions` columns holding a LIVE BEARER CREDENTIAL.
+ *
+ * `session_token` is the 128-bit secret the originating client alone holds, and
+ * `POST /auth/session/claim` takes NO bearer — possession of this value is the
+ * whole authorization. The sibling `authorize_code` is deliberately absent from
+ * this list: it is the PUBLIC handle that travels in the QR, and approving with
+ * it is separately key-signed.
+ */
+export const AUTH_SESSIONS_PROTECTED_COLUMNS = ['sessionToken'] as const;
+
+/**
  * The registry, keyed by SQL table name.
  *
  * `Message` adds four more entries when it lands; the shape is already here so
@@ -72,6 +118,8 @@ export const USERS_PROTECTED_COLUMNS = [
  */
 export const PROTECTED_COLUMNS_BY_TABLE = {
   users: USERS_PROTECTED_COLUMNS,
+  sessions: SESSIONS_PROTECTED_COLUMNS,
+  auth_sessions: AUTH_SESSIONS_PROTECTED_COLUMNS,
 } as const;
 
 /** A protected column, with the reason it is one. */
@@ -134,6 +182,35 @@ export const PROTECTED_COLUMNS: readonly ProtectedColumn[] = [
     reason:
       'Only meaningful next to `auto_forward_to`, and leaks the same fact — ' +
       'that forwarding is configured.',
+  },
+  {
+    table: sessions,
+    column: sessions.accessToken,
+    reason:
+      "This session's live bearer token. Serializing it hands the account to " +
+      'whoever reads the response.',
+  },
+  {
+    table: sessions,
+    column: sessions.refreshToken,
+    reason:
+      'The refresh half of the same credential, and the longer-lived one — it ' +
+      'mints fresh access tokens for as long as the session lives.',
+  },
+  {
+    table: sessions,
+    column: sessions.previousRefreshToken,
+    reason:
+      'Still accepted during the rotation grace window, so it is a live ' +
+      'credential too — being superseded is not being revoked.',
+  },
+  {
+    table: authSessions,
+    column: authSessions.sessionToken,
+    reason:
+      'The secret claim credential for a pending authorization. ' +
+      '`POST /auth/session/claim` requires no bearer, so this value alone ' +
+      "exchanges an approved request for the approving account's access token.",
   },
 ];
 
