@@ -1,6 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { toast } from "@oxyhq/bloom";
 import { Button } from "@oxyhq/bloom/button";
 import {
 	SettingsListGroup,
@@ -9,6 +8,7 @@ import {
 import { Switch } from "@oxyhq/bloom/switch";
 import { TextField, TextFieldInput } from "@oxyhq/bloom/text-field";
 import { useTheme } from "@oxyhq/bloom/theme";
+import { toast } from "@oxyhq/bloom/toast";
 import { H2, Text } from "@oxyhq/bloom/typography";
 import { normalizeTheme } from "@oxyhq/core";
 import { packageInfo } from "@oxyhq/core";
