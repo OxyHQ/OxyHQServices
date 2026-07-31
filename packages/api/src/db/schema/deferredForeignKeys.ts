@@ -23,6 +23,9 @@
 import type { PgColumn, PgTable, UpdateDeleteAction } from 'drizzle-orm/pg-core';
 import { bookmarks } from './bookmarks';
 import { appAffinitySeenEvents } from './appAffinitySeenEvents';
+import { conductStrikes } from './conductStrikes';
+import { moderationEffects } from './moderationEffects';
+import { notifications } from './notifications';
 import { pushTokens } from './pushTokens';
 import { userAuthMethods } from './userAuthMethods';
 import { userLocations } from './userLocations';
@@ -55,7 +58,8 @@ export interface IdColumnWithoutForeignKey {
  * a real `.references()` and deleted from this list — `blocks.user_id`,
  * `blocks.blocked_id`, `bookmarks.user_id`, `push_tokens.user_id`,
  * `labels.user_id` and `webauthn_credentials.user_id`. What remains is owed to
- * `applications`, which has not landed yet.
+ * four tables that have not landed yet: `applications`,
+ * `application_credentials`, `identity_bindings` and `reputation_transactions`.
  */
 export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
   {
@@ -76,6 +80,83 @@ export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
     parentColumn: 'id',
     onDelete: 'cascade',
     reason: 'The ledger only dedupes ingest for an application that still exists.',
+  },
+  {
+    table: moderationEffects,
+    column: moderationEffects.applicationId,
+    parentTable: 'applications',
+    parentColumn: 'id',
+    onDelete: 'restrict',
+    reason:
+      'The emitting application is resolved from its credential and is part of ' +
+      'the provenance an effect exists to record. Deleting it must fail rather ' +
+      'than erase or orphan the audit trail of what it caused.',
+  },
+  {
+    table: moderationEffects,
+    column: moderationEffects.credentialId,
+    parentTable: 'application_credentials',
+    parentColumn: 'id',
+    onDelete: 'set null',
+    reason:
+      'Which credential the event arrived on is provenance detail, not the ' +
+      'effect itself; NULL already means "not recorded" on rows predating the ' +
+      'field. Unlike `application_id`, a rotated-out credential may legitimately ' +
+      'be removed without invalidating the effect.',
+  },
+  {
+    table: moderationEffects,
+    column: moderationEffects.bindingId,
+    parentTable: 'identity_bindings',
+    parentColumn: 'id',
+    onDelete: 'restrict',
+    reason:
+      'The binding is what PROVED the identity the effect landed on — no ' +
+      'binding, no effect. An effect whose proof of identity vanished is ' +
+      'unauditable, so the binding cannot be deleted while one cites it.',
+  },
+  {
+    table: moderationEffects,
+    column: moderationEffects.transactionId,
+    parentTable: 'reputation_transactions',
+    parentColumn: 'id',
+    onDelete: 'restrict',
+    reason:
+      'The ledger row the effect wrote. The ledger is append-only and reverses ' +
+      'rather than deletes, so a delete here would mean the points moved with ' +
+      'no record of it.',
+  },
+  {
+    table: moderationEffects,
+    column: moderationEffects.reversalTransactionId,
+    parentTable: 'reputation_transactions',
+    parentColumn: 'id',
+    onDelete: 'restrict',
+    reason:
+      'The compensating entry an appeal produced. `SET NULL` would make a ' +
+      'reversed effect read as never-reversed, which is a worse lie than a ' +
+      'refused delete; the ledger never deletes anyway.',
+  },
+  {
+    table: conductStrikes,
+    column: conductStrikes.applicationId,
+    parentTable: 'applications',
+    parentColumn: 'id',
+    onDelete: 'set null',
+    reason:
+      'Which application\'s report started the incident is attribution, and the ' +
+      'column is already nullable — a strike stands on its own decision, so an ' +
+      'unattributed one is a real state rather than a corrupted one.',
+  },
+  {
+    table: conductStrikes,
+    column: conductStrikes.transactionId,
+    parentTable: 'reputation_transactions',
+    parentColumn: 'id',
+    onDelete: 'restrict',
+    reason:
+      'The ledger transaction the strike accompanies. Same reasoning as the ' +
+      'effect: the ledger reverses rather than deletes.',
   },
 ];
 
@@ -136,5 +217,51 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
     reason:
       'An OpenStreetMap element id, meaningful only together with `osm_type`. ' +
       'External to Oxy entirely.',
+  },
+  {
+    table: notifications,
+    column: notifications.entityId,
+    reason:
+      'Polymorphic, discriminated by `entity_type`. Two of the three types ' +
+      '(`post`, `reply`) name rows in MENTION\'s database; the third ' +
+      '(`profile`) names a user, but a foreign key cannot be conditional on a ' +
+      'sibling column\'s value.',
+  },
+  {
+    table: moderationEffects,
+    column: moderationEffects.eventId,
+    reason:
+      "The emitting moderation system's transport event id. Oxy stores it to " +
+      'answer a redelivery and never resolves it to a row here.',
+  },
+  {
+    table: moderationEffects,
+    column: moderationEffects.incidentId,
+    reason:
+      'The CROSS-TENANT incident id. The incident is the moderation service\'s ' +
+      'own unit and has no table in this database — that is the point of it ' +
+      'being cross-tenant.',
+  },
+  {
+    table: moderationEffects,
+    column: moderationEffects.caseId,
+    reason: "A case in the moderation service's own store. Not a row here.",
+  },
+  {
+    table: moderationEffects,
+    column: moderationEffects.decisionId,
+    reason:
+      'The published decision. Its CONTENTS are deliberately not stored here — ' +
+      '`proof_hash` is the provenance — so there is nothing to reference.',
+  },
+  {
+    table: conductStrikes,
+    column: conductStrikes.incidentId,
+    reason: 'Same cross-tenant incident id as on `moderation_effects`.',
+  },
+  {
+    table: conductStrikes,
+    column: conductStrikes.decisionId,
+    reason: 'Same external decision id as on `moderation_effects`.',
   },
 ];
