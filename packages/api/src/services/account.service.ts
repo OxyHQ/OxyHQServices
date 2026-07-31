@@ -1,10 +1,10 @@
 /**
  * Account Service — unified Account graph (tree + membership + credentials).
  *
- * The `User` document IS the principal Account. This service owns the graph
+ * The `users` row IS the principal Account. This service owns the graph
  * semantics layered on top of it:
  *  - tree maintenance (create child accounts, reparent with cycle/depth guards,
- *    materialised `ancestors` rewrite);
+ *    materialised path rewrite);
  *  - membership resolution WITH inheritance (the nearest membership row over
  *    `[accountId, ...ancestors]` wins; ancestor rows cascade only when
  *    `inherit` is true);
@@ -13,14 +13,36 @@
  *  - members CRUD + transfer-ownership (never removes/demotes the last owner);
  *  - service credentials for `bot`-kind accounts (7-day rotation grace).
  *
+ * ## What the Postgres port changed
+ *
+ * - **`ancestors` is `user_ancestors`, not an embedded array.** Each edge is a
+ *   row with a real foreign key and an explicit `depth`, so the ROOT-FIRST order
+ *   the Mongo array carried implicitly is now stated (`db/schema/userAncestors.ts`).
+ * - **`account_members.permissions` does not travel.** Every write site set it
+ *   to exactly `permissionsForAccountRole(role)`; it is a derivation of `role`,
+ *   not data, and the serializer keeps emitting it from the role.
+ * - **The session-less transaction fallback is DELETED, not translated.** The
+ *   Mongoose helper string-matched a "no replica set" error and re-ran the work
+ *   WITHOUT a transaction, so a subtree move on a standalone deployment ran
+ *   non-atomically — a half-rewritten materialised path, silently. Postgres has
+ *   no such mode, so there is nothing to fall back to.
+ *
  * Pure tree/inheritance helpers are exported separately so they can be unit
- * tested without a database (the API test harness mocks mongoose).
+ * tested without a database.
  */
 
-import mongoose, { type ClientSession } from 'mongoose';
-import User, { type IUser, MAX_ACCOUNT_DEPTH, type AccountKind, type OrganizationCategory } from '../models/User';
-import AccountMember, { type IAccountMember } from '../models/AccountMember';
-import AccountCredential, { type IAccountCredential } from '../models/AccountCredential';
+import { and, asc, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import crypto from 'crypto';
+import { getDb, type Database } from '../config/postgres';
+import { accountCredentials } from '../db/schema/accountCredentials';
+import { accountMembers } from '../db/schema/accountMembers';
+import { userAncestors, MAX_ACCOUNT_DEPTH } from '../db/schema/userAncestors';
+import { users } from '../db/schema/users';
+import {
+  publicColumns,
+  USERS_PROTECTED_COLUMNS,
+} from '../db/schema/protectedColumns';
+import type { AccountKind, OrganizationCategory } from '../models/User';
 import {
   permissionsForAccountRole,
   roleCanActAs,
@@ -35,7 +57,6 @@ import {
 } from '../utils/error';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
-import crypto from 'crypto';
 import type { ApplicationScope } from '../utils/applicationScopes';
 
 const CREDENTIAL_PUBLIC_KEY_PREFIX = 'oxy_dk_';
@@ -48,19 +69,52 @@ const SECRET_RANDOM_BYTES = 32;
  */
 const CREDENTIAL_ROTATION_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
-type ObjectId = mongoose.Types.ObjectId;
-
 /** Account kinds that may be CREATED as children (personal accounts are roots). */
 const CHILD_ACCOUNT_KINDS: readonly AccountKind[] = ['organization', 'project', 'bot'];
 
 /** How the caller is related to an account in their accessible forest. */
 export type AccountRelationship = 'self' | 'owner' | 'member';
 
+/** An `account_members` row. */
+export type AccountMemberRow = typeof accountMembers.$inferSelect;
+
+/** An `account_credentials` row. */
+export type AccountCredentialRow = typeof accountCredentials.$inferSelect;
+
+/**
+ * A `users` row, read as an ACCOUNT rather than as a profile — WITHOUT the
+ * protected columns.
+ *
+ * Every read here goes through `publicColumns(users)`, so the phone number, the
+ * contact-discovery hashes and the refresh token never enter this service's
+ * memory, let alone an account DTO. Narrowing the TYPE to match is the half that
+ * a convention cannot give you: a serializer that reaches for `phone` on an
+ * account now fails `tsc` instead of shipping it.
+ *
+ * `schema/__tests__/protectedColumns.test.ts` is the gate for the other half —
+ * it scans `src/` for bare `select()` against a protected table and names the
+ * `file:line`. It caught all eight sites in this batch.
+ */
+export type AccountRow = Omit<
+  typeof users.$inferSelect,
+  (typeof USERS_PROTECTED_COLUMNS)[number]
+>;
+
+/**
+ * An account plus its materialised path, which is the shape every tree
+ * operation needs and which no single row can carry now that `ancestors` is a
+ * child table.
+ */
+export interface AccountWithAncestors {
+  account: AccountRow;
+  /** Root FIRST — `depth 0` is the tree root, the last entry is the parent. */
+  ancestors: string[];
+}
+
 /** A minimal membership shape sufficient for inheritance resolution. */
 export interface MembershipLike {
-  accountId: ObjectId;
+  accountId: string;
   role: AccountRole;
-  permissions: string[];
   inherit: boolean;
   status: string;
 }
@@ -72,7 +126,7 @@ export interface EffectiveAccess {
   /** `self` = implicit ownership of one's own personal account. */
   source: 'self' | 'direct' | 'inherited';
   /** The concrete membership row, when the access came from one. */
-  membership: IAccountMember | null;
+  membership: AccountMemberRow | null;
 }
 
 /** A node in the caller's accessible account forest. */
@@ -81,10 +135,10 @@ export interface AccountNode {
   kind: AccountKind;
   parentAccountId: string | null;
   rootAccountId: string;
-  account: IUser;
+  account: AccountRow;
   relationship: AccountRelationship;
   /** The caller's effective membership ROW over this account (null for `self`). */
-  callerMembership: IAccountMember | null;
+  callerMembership: AccountMemberRow | null;
   /** Whether `callerMembership` is a direct row or inherited from an ancestor. */
   callerMembershipSource: 'direct' | 'inherited' | null;
   childCount: number;
@@ -105,14 +159,14 @@ export interface CreateChildAccountInput {
 // Pure helpers (no DB) — exported for unit testing
 // ===========================================================================
 
-/** The `ancestors` array a new child of `parent` should carry (root → parent). */
-export function childAncestorsOf(parent: Pick<IUser, '_id' | 'ancestors'>): ObjectId[] {
-  return [...((parent.ancestors as ObjectId[]) ?? []), parent._id];
+/** The ancestor path a new child of `parent` should carry (root → parent). */
+export function childAncestorsOf(parent: AccountWithAncestors): string[] {
+  return [...parent.ancestors, parent.account.id];
 }
 
 /** The `rootAccountId` a new child of `parent` should carry. */
-export function childRootOf(parent: Pick<IUser, '_id' | 'rootAccountId'>): ObjectId {
-  return (parent.rootAccountId as ObjectId) ?? parent._id;
+export function childRootOf(parent: AccountWithAncestors): string {
+  return parent.account.rootAccountId ?? parent.account.id;
 }
 
 /**
@@ -121,27 +175,26 @@ export function childRootOf(parent: Pick<IUser, '_id' | 'rootAccountId'>): Objec
  * new parent (i.e. the new parent is a descendant of the account).
  */
 export function wouldCreateCycle(
-  accountId: ObjectId,
-  newParent: Pick<IUser, '_id' | 'ancestors'>
+  accountId: string,
+  newParent: AccountWithAncestors
 ): boolean {
-  if (newParent._id.equals(accountId)) {
+  if (newParent.account.id === accountId) {
     return true;
   }
-  const ancestors = ((newParent.ancestors as ObjectId[]) ?? []).map((id) => id.toString());
-  return ancestors.includes(accountId.toString());
+  return newParent.ancestors.includes(accountId);
 }
 
 /**
- * Rewrite a descendant's `ancestors` after its subtree root moved. The
- * descendant's ancestors begin with the moved node's OLD ancestors as a prefix
- * (followed by the moved node's id and any intermediate ids). Swapping that
- * prefix for the moved node's NEW ancestors preserves the in-subtree suffix.
+ * Rewrite a descendant's path after its subtree root moved. The descendant's
+ * ancestors begin with the moved node's OLD ancestors as a prefix (followed by
+ * the moved node's id and any intermediate ids). Swapping that prefix for the
+ * moved node's NEW ancestors preserves the in-subtree suffix.
  */
 export function rewriteDescendantAncestors(
-  oldSelfAncestors: ObjectId[],
-  newSelfAncestors: ObjectId[],
-  descendantAncestors: ObjectId[]
-): ObjectId[] {
+  oldSelfAncestors: string[],
+  newSelfAncestors: string[],
+  descendantAncestors: string[]
+): string[] {
   const suffix = descendantAncestors.slice(oldSelfAncestors.length);
   return [...newSelfAncestors, ...suffix];
 }
@@ -158,19 +211,19 @@ export function rewriteDescendantAncestors(
  */
 export function resolveEffectiveMembership<T extends MembershipLike>(
   rows: T[],
-  accountId: ObjectId,
-  ancestors: ObjectId[]
+  accountId: string,
+  ancestors: string[]
 ): { row: T; source: 'direct' | 'inherited' } | null {
   const byAccount = new Map<string, T>();
   for (const row of rows) {
     if (row.status === 'active') {
-      byAccount.set(row.accountId.toString(), row);
+      byAccount.set(row.accountId, row);
     }
   }
   // Nearest-first: the account, then ancestors from immediate parent → root.
   const path = [accountId, ...[...ancestors].reverse()];
   for (let i = 0; i < path.length; i++) {
-    const row = byAccount.get(path[i].toString());
+    const row = byAccount.get(path[i]);
     if (!row) continue;
     if (i === 0) {
       return { row, source: 'direct' };
@@ -183,37 +236,46 @@ export function resolveEffectiveMembership<T extends MembershipLike>(
 }
 
 // ===========================================================================
-// Transaction helper (falls back to session-less execution when unsupported)
+// Internal reads
 // ===========================================================================
 
-async function withTransaction<T>(
-  work: (session: ClientSession | undefined) => Promise<T>
-): Promise<T> {
-  const session = await mongoose.startSession();
-  try {
-    let result: T | undefined;
-    await session.withTransaction(async () => {
-      result = await work(session);
-    });
-    return result as T;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const transactionsUnsupported =
-      message.includes('Transaction numbers are only allowed') ||
-      message.includes('replica set') ||
-      message.includes('does not support transactions');
-    if (transactionsUnsupported) {
-      logger.warn(
-        'Account: transactions unsupported by this MongoDB deployment; ' +
-          'executing without a transaction',
-        { component: 'account.service' }
-      );
-      return work(undefined);
-    }
-    throw error;
-  } finally {
-    await session.endSession();
-  }
+/** Load an account with its materialised path, or null. */
+async function loadAccount(
+  db: Database,
+  accountId: string
+): Promise<AccountWithAncestors | null> {
+  const [account] = await db.select(publicColumns(users)).from(users).where(eq(users.id, accountId)).limit(1);
+  if (!account) return null;
+  return { account, ancestors: await loadAncestors(db, accountId) };
+}
+
+/** The root→parent path of one account. */
+async function loadAncestors(db: Database, accountId: string): Promise<string[]> {
+  const rows = await db
+    .select({ ancestorId: userAncestors.ancestorId })
+    .from(userAncestors)
+    .where(eq(userAncestors.userId, accountId))
+    .orderBy(asc(userAncestors.depth));
+  return rows.map((row) => row.ancestorId);
+}
+
+/**
+ * Replace one account's materialised path.
+ *
+ * Delete-then-insert rather than a positional update: the path is addressed by
+ * `(user_id, depth)` and a move changes its LENGTH, so an in-place update would
+ * leave the tail of a shortened path behind.
+ */
+async function writeAncestors(
+  tx: Database,
+  accountId: string,
+  ancestors: string[]
+): Promise<void> {
+  await tx.delete(userAncestors).where(eq(userAncestors.userId, accountId));
+  if (ancestors.length === 0) return;
+  await tx.insert(userAncestors).values(
+    ancestors.map((ancestorId, depth) => ({ userId: accountId, depth, ancestorId }))
+  );
 }
 
 export class AccountService {
@@ -222,15 +284,18 @@ export class AccountService {
   // -------------------------------------------------------------------------
 
   /**
-   * Create a child account under `parentAccountId`. Mints a no-login `User`
-   * (`authMethods: []`) of the requested non-personal `kind`, wires its tree
-   * fields, and records the creator as an `owner` member of the new account.
+   * Create a child account under `parentAccountId`. Mints a no-login account
+   * row of the requested non-personal `kind`, wires its tree fields, and records
+   * the creator as an `owner` member of the new account.
+   *
+   * One transaction: an account whose owner membership failed to write is an
+   * account nobody can administer.
    */
   async createChildAccount(
     parentAccountId: string,
     creatorUserId: string,
     input: CreateChildAccountInput
-  ): Promise<{ account: IUser; membership: IAccountMember }> {
+  ): Promise<{ account: AccountRow; membership: AccountMemberRow }> {
     if (!CHILD_ACCOUNT_KINDS.includes(input.kind)) {
       throw new BadRequestError(
         `A child account kind must be one of: ${CHILD_ACCOUNT_KINDS.join(', ')}`
@@ -240,56 +305,64 @@ export class AccountService {
       throw new BadRequestError('organizationCategory applies only to organization accounts');
     }
 
-    const parent = await User.findById(parentAccountId);
+    const db = getDb();
+    const parent = await loadAccount(db, parentAccountId);
     if (!parent) {
       throw new NotFoundError('Parent account not found');
     }
 
-    const parentAncestors = (parent.ancestors as ObjectId[]) ?? [];
-    if (parentAncestors.length + 1 > MAX_ACCOUNT_DEPTH) {
+    if (parent.ancestors.length + 1 > MAX_ACCOUNT_DEPTH) {
       throw new BadRequestError(
         `Maximum account nesting depth (${MAX_ACCOUNT_DEPTH}) exceeded`
       );
     }
 
     const username = await this.resolveUniqueUsername(input.username);
-
     const ancestors = childAncestorsOf(parent);
     const rootAccountId = childRootOf(parent);
 
-    const account = await User.create({
-      username,
-      name: input.name ?? {},
-      bio: input.bio ?? '',
-      description: input.description,
-      avatar: input.avatar ?? undefined,
-      authMethods: [],
-      verified: true,
-      type: 'local',
-      kind: input.kind,
-      organizationCategory:
-        input.kind === 'organization' ? input.organizationCategory : undefined,
-      parentAccountId: parent._id,
-      ancestors,
-      rootAccountId,
-      accountStatus: 'active',
-    });
+    const { account, membership } = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(users)
+        .values({
+          username,
+          nameFirst: input.name?.first,
+          nameLast: input.name?.last,
+          bio: input.bio,
+          description: input.description,
+          avatar: input.avatar,
+          verified: true,
+          type: 'local',
+          kind: input.kind,
+          organizationCategory:
+            input.kind === 'organization' ? input.organizationCategory : undefined,
+          parentAccountId: parent.account.id,
+          rootAccountId,
+          accountStatus: 'active',
+        })
+        .returning();
 
-    const creatorObjectId = new mongoose.Types.ObjectId(creatorUserId);
-    const membership = await AccountMember.create({
-      accountId: account._id,
-      memberUserId: creatorObjectId,
-      role: 'owner',
-      permissions: permissionsForAccountRole('owner'),
-      inherit: true,
-      status: 'active',
-      invitedByUserId: creatorObjectId,
-      joinedAt: new Date(),
+      await writeAncestors(tx, created.id, ancestors);
+
+      const [member] = await tx
+        .insert(accountMembers)
+        .values({
+          accountId: created.id,
+          memberUserId: creatorUserId,
+          role: 'owner',
+          inherit: true,
+          status: 'active',
+          invitedByUserId: creatorUserId,
+          joinedAt: new Date(),
+        })
+        .returning();
+
+      return { account: created, membership: member };
     });
 
     logger.info('Account created', {
-      accountId: account._id.toString(),
-      parentAccountId: parent._id.toString(),
+      accountId: account.id,
+      parentAccountId: parent.account.id,
       kind: input.kind,
       createdBy: creatorUserId,
     });
@@ -301,17 +374,19 @@ export class AccountService {
    * Re-parent `accountId` under `newParentId`. Rejects self-parenting, cycles
    * (the new parent being a descendant), and any move that would push the
    * subtree past `MAX_ACCOUNT_DEPTH`. Personal accounts are always roots and may
-   * not be moved. The subtree's materialised `ancestors`/`rootAccountId` are
-   * rewritten atomically.
+   * not be moved. The subtree's materialised paths and roots are rewritten
+   * atomically — with no session-less fallback, so a standalone deployment can
+   * no longer leave the tree half-rewritten.
    */
-  async moveAccount(accountId: string, newParentId: string): Promise<IUser> {
+  async moveAccount(accountId: string, newParentId: string): Promise<AccountRow> {
     if (accountId === newParentId) {
       throw new BadRequestError('An account cannot be its own parent');
     }
 
+    const db = getDb();
     const [account, newParent] = await Promise.all([
-      User.findById(accountId),
-      User.findById(newParentId),
+      loadAccount(db, accountId),
+      loadAccount(db, newParentId),
     ]);
     if (!account) {
       throw new NotFoundError('Account not found');
@@ -319,53 +394,67 @@ export class AccountService {
     if (!newParent) {
       throw new NotFoundError('New parent account not found');
     }
-    if (account.kind === 'personal') {
+    if (account.account.kind === 'personal') {
       throw new BadRequestError('A personal account is always a root and cannot be moved');
     }
-    if (wouldCreateCycle(account._id, newParent)) {
+    if (wouldCreateCycle(accountId, newParent)) {
       throw new BadRequestError('Cannot move an account beneath itself or one of its descendants');
     }
 
-    const oldSelfAncestors = (account.ancestors as ObjectId[]) ?? [];
+    const oldSelfAncestors = account.ancestors;
     const newSelfAncestors = childAncestorsOf(newParent);
     const newRoot = childRootOf(newParent);
 
-    const affectedIds: string[] = [account._id.toString()];
+    const affectedIds: string[] = [accountId];
 
-    await withTransaction(async (session) => {
-      const opts = session ? { session } : {};
+    const moved = await db.transaction(async (tx) => {
+      // Every account whose path contains this one — the whole subtree, in one
+      // indexed read (`user_ancestors_ancestor_id_idx`), which is the reason the
+      // path is materialised at all.
+      const descendantIds = (
+        await tx
+          .select({ userId: userAncestors.userId })
+          .from(userAncestors)
+          .where(eq(userAncestors.ancestorId, accountId))
+      ).map((row) => row.userId);
 
-      const descendants = await User.find({ ancestors: account._id }, null, opts);
+      const descendantPaths = new Map<string, string[]>();
+      let maxDescDepth = oldSelfAncestors.length;
+      for (const descendantId of descendantIds) {
+        const path = await loadAncestors(tx, descendantId);
+        descendantPaths.set(descendantId, path);
+        maxDescDepth = Math.max(maxDescDepth, path.length);
+      }
 
       // Depth guard over the whole subtree.
-      const oldSelfDepth = oldSelfAncestors.length;
-      let maxDescDepth = oldSelfDepth;
-      for (const descendant of descendants) {
-        maxDescDepth = Math.max(maxDescDepth, (descendant.ancestors?.length ?? 0));
-      }
-      const subtreeRelativeDepth = maxDescDepth - oldSelfDepth;
-      const newSelfDepth = newSelfAncestors.length;
-      if (newSelfDepth + subtreeRelativeDepth > MAX_ACCOUNT_DEPTH) {
+      const subtreeRelativeDepth = maxDescDepth - oldSelfAncestors.length;
+      if (newSelfAncestors.length + subtreeRelativeDepth > MAX_ACCOUNT_DEPTH) {
         throw new BadRequestError(
           `Move would exceed the maximum account nesting depth (${MAX_ACCOUNT_DEPTH})`
         );
       }
 
-      account.parentAccountId = newParent._id;
-      account.ancestors = newSelfAncestors;
-      account.rootAccountId = newRoot;
-      await account.save(opts);
+      const [updated] = await tx
+        .update(users)
+        .set({ parentAccountId: newParent.account.id, rootAccountId: newRoot })
+        .where(eq(users.id, accountId))
+        .returning();
+      await writeAncestors(tx, accountId, newSelfAncestors);
 
-      for (const descendant of descendants) {
-        descendant.ancestors = rewriteDescendantAncestors(
-          oldSelfAncestors,
-          newSelfAncestors,
-          (descendant.ancestors as ObjectId[]) ?? []
+      for (const [descendantId, path] of descendantPaths) {
+        await writeAncestors(
+          tx,
+          descendantId,
+          rewriteDescendantAncestors(oldSelfAncestors, newSelfAncestors, path)
         );
-        descendant.rootAccountId = newRoot;
-        await descendant.save(opts);
-        affectedIds.push(descendant._id.toString());
+        await tx
+          .update(users)
+          .set({ rootAccountId: newRoot })
+          .where(eq(users.id, descendantId));
+        affectedIds.push(descendantId);
       }
+
+      return updated;
     });
 
     for (const id of affectedIds) {
@@ -373,12 +462,12 @@ export class AccountService {
     }
 
     logger.info('Account moved', {
-      accountId: account._id.toString(),
-      newParentId: newParent._id.toString(),
+      accountId,
+      newParentId,
       affected: affectedIds.length,
     });
 
-    return account;
+    return moved;
   }
 
   /**
@@ -398,40 +487,46 @@ export class AccountService {
       links?: string[];
       organizationCategory?: OrganizationCategory | null;
     }
-  ): Promise<IUser> {
-    const account = await User.findById(accountId);
+  ): Promise<AccountRow> {
+    const db = getDb();
+    const [account] = await db.select(publicColumns(users)).from(users).where(eq(users.id, accountId)).limit(1);
     if (!account) {
       throw new NotFoundError('Account not found');
     }
+
+    const set: Partial<typeof users.$inferInsert> = {};
 
     if (input.organizationCategory !== undefined) {
       if (account.kind !== 'organization') {
         throw new BadRequestError('organizationCategory applies only to organization accounts');
       }
-      account.organizationCategory =
-        input.organizationCategory === null ? undefined : input.organizationCategory;
+      set.organizationCategory = input.organizationCategory ?? null;
     }
 
     if (input.username !== undefined) {
-      account.username = await this.resolveUniqueUsername(input.username, account._id);
+      set.username = await this.resolveUniqueUsername(input.username, accountId);
     }
     if (input.name !== undefined) {
-      account.name = {
-        ...(account.name ?? {}),
-        ...input.name,
-      };
+      // Mongo merged the supplied halves over the stored subdocument; the two
+      // columns are independent, so only the supplied half is written.
+      if (input.name.first !== undefined) set.nameFirst = input.name.first;
+      if (input.name.last !== undefined) set.nameLast = input.name.last;
     }
-    if (input.bio !== undefined) account.bio = input.bio;
-    if (input.avatar !== undefined) account.avatar = input.avatar;
-    if (input.description !== undefined) account.description = input.description;
-    if (input.color !== undefined) account.color = input.color;
-    if (input.links !== undefined) account.links = input.links;
+    if (input.bio !== undefined) set.bio = input.bio;
+    if (input.avatar !== undefined) set.avatar = input.avatar;
+    if (input.description !== undefined) set.description = input.description;
+    if (input.color !== undefined) set.color = input.color;
+    if (input.links !== undefined) set.links = input.links;
 
-    await account.save();
-    userCache.invalidate(account._id.toString());
+    const updated =
+      Object.keys(set).length > 0
+        ? (await db.update(users).set(set).where(eq(users.id, accountId)).returning())[0]
+        : account;
+
+    userCache.invalidate(accountId);
 
     logger.info('Account updated', { accountId });
-    return account;
+    return updated;
   }
 
   /**
@@ -440,20 +535,25 @@ export class AccountService {
    * history survive. Personal accounts cannot be archived (use the GDPR
    * self-delete flow instead).
    */
-  async archiveAccount(accountId: string): Promise<IUser> {
-    const account = await User.findById(accountId);
+  async archiveAccount(accountId: string): Promise<AccountRow> {
+    const db = getDb();
+    const [account] = await db.select(publicColumns(users)).from(users).where(eq(users.id, accountId)).limit(1);
     if (!account) {
       throw new NotFoundError('Account not found');
     }
     if (account.kind === 'personal') {
       throw new BadRequestError('A personal account cannot be archived');
     }
-    account.accountStatus = 'archived';
-    await account.save();
-    userCache.invalidate(account._id.toString());
+
+    const [archived] = await db
+      .update(users)
+      .set({ accountStatus: 'archived' })
+      .where(eq(users.id, accountId))
+      .returning();
+    userCache.invalidate(accountId);
 
     logger.info('Account archived', { accountId });
-    return account;
+    return archived;
   }
 
   /**
@@ -461,10 +561,11 @@ export class AccountService {
    * relationship + effective membership (so the route can emit `AccountNode`s).
    */
   async listChildren(userId: string, accountId: string): Promise<AccountNode[]> {
-    const children = await User.find({
-      parentAccountId: new mongoose.Types.ObjectId(accountId),
-      accountStatus: { $ne: 'archived' },
-    }).sort({ createdAt: 1 });
+    const children = await getDb()
+      .select(publicColumns(users))
+      .from(users)
+      .where(and(eq(users.parentAccountId, accountId), ne(users.accountStatus, 'archived')))
+      .orderBy(asc(users.createdAt));
     return this.annotateAccounts(userId, children);
   }
 
@@ -473,11 +574,20 @@ export class AccountService {
    * annotated with the caller's relationship + effective membership.
    */
   async getSubtree(userId: string, accountId: string): Promise<AccountNode[]> {
-    const id = new mongoose.Types.ObjectId(accountId);
-    const subtree = await User.find({
-      $or: [{ _id: id }, { ancestors: id }],
-      accountStatus: { $ne: 'archived' },
-    }).sort({ createdAt: 1 });
+    const subtree = await getDb()
+      .select(publicColumns(users))
+      .from(users)
+      .where(
+        and(
+          sql`(${users.id} = ${accountId} or exists (
+            select 1 from ${userAncestors}
+            where ${userAncestors.userId} = ${users.id}
+              and ${userAncestors.ancestorId} = ${accountId}
+          ))`,
+          ne(users.accountStatus, 'archived')
+        )
+      )
+      .orderBy(asc(users.createdAt));
     return this.annotateAccounts(userId, subtree);
   }
 
@@ -504,23 +614,36 @@ export class AccountService {
       };
     }
 
-    const account = await User.findById(accountId);
+    const db = getDb();
+    const [account] = await db
+      .select({ id: users.id, accountStatus: users.accountStatus })
+      .from(users)
+      .where(eq(users.id, accountId))
+      .limit(1);
     if (!account || account.accountStatus === 'archived') {
       return null;
     }
-    return this.effectiveAccessForAccount(userId, account);
+    return this.effectiveAccessForAccount(userId, { id: account.id });
   }
 
   /**
-   * Effective access of `userId` over an already-loaded `account` document.
-   * Lets route middleware that has already fetched the account avoid a second
-   * query while keeping the inheritance logic in one place.
+   * Effective access of `userId` over an already-identified account.
+   *
+   * Takes an object rather than an id so a caller that has already loaded the
+   * account keeps reading naturally; only the id is used, because the
+   * materialised path lives in `user_ancestors` now and is read here either way.
    */
   async effectiveAccessForAccount(
     userId: string,
-    account: IUser
+    account: { id?: unknown; _id?: unknown }
   ): Promise<EffectiveAccess | null> {
-    if (account._id.equals(new mongoose.Types.ObjectId(userId))) {
+    const raw = account.id ?? account._id;
+    const accountId = typeof raw === 'string' ? raw : String(raw ?? '');
+    if (!accountId) {
+      return null;
+    }
+
+    if (accountId === userId) {
       return {
         role: 'owner',
         permissions: permissionsForAccountRole('owner'),
@@ -529,26 +652,31 @@ export class AccountService {
       };
     }
 
-    const ancestors = (account.ancestors as ObjectId[]) ?? [];
-    const pathIds = [account._id, ...ancestors];
+    const db = getDb();
+    const ancestors = await loadAncestors(db, accountId);
+    const pathIds = [accountId, ...ancestors];
 
-    const rows = await AccountMember.find({
-      memberUserId: new mongoose.Types.ObjectId(userId),
-      accountId: { $in: pathIds },
-      status: 'active',
-    });
+    const rows = await db
+      .select()
+      .from(accountMembers)
+      .where(
+        and(
+          eq(accountMembers.memberUserId, userId),
+          inArray(accountMembers.accountId, pathIds),
+          eq(accountMembers.status, 'active')
+        )
+      );
 
-    const resolved = resolveEffectiveMembership(rows, account._id, ancestors);
+    const resolved = resolveEffectiveMembership(rows, accountId, ancestors);
     if (!resolved) {
       return null;
     }
 
     return {
       role: resolved.row.role,
-      permissions:
-        resolved.row.permissions?.length > 0
-          ? resolved.row.permissions
-          : permissionsForAccountRole(resolved.row.role),
+      // Derived from the role, always. Mongo stored an array beside it that
+      // every write site set to exactly this; it is not data and does not travel.
+      permissions: permissionsForAccountRole(resolved.row.role),
       source: resolved.source,
       membership: resolved.row,
     };
@@ -575,84 +703,127 @@ export class AccountService {
    * membership and a child count.
    */
   async listAccessibleAccounts(userId: string): Promise<AccountNode[]> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const db = getDb();
 
-    const directRows = await AccountMember.find({
-      memberUserId: userObjectId,
-      status: 'active',
-    });
+    const directRows = await db
+      .select()
+      .from(accountMembers)
+      .where(
+        and(eq(accountMembers.memberUserId, userId), eq(accountMembers.status, 'active'))
+      );
     const directAccountIds = directRows.map((row) => row.accountId);
 
-    const orClauses: Record<string, unknown>[] = [{ _id: userObjectId }];
-    if (directAccountIds.length > 0) {
-      orClauses.push({ _id: { $in: directAccountIds } });
-      orClauses.push({ ancestors: { $in: directAccountIds } });
-    }
+    // `inArray`, never `= any(${jsArray})`: interpolating a JS array into `sql`
+    // binds it as a single TUPLE parameter, and Postgres rejects it outright
+    // with `malformed array literal`. `inArray` renders a proper `in (...)`
+    // list. (The correlated `${users.id}` inside the EXISTS is safe here because
+    // a raw `sql` fragment renders columns table-qualified; a subquery built
+    // with the query builder would render it BARE and silently match the
+    // subquery's own table instead.)
+    const reachable =
+      directAccountIds.length > 0
+        ? or(
+            eq(users.id, userId),
+            inArray(users.id, directAccountIds),
+            sql`exists (
+              select 1 from ${userAncestors}
+              where ${userAncestors.userId} = ${users.id}
+                and ${inArray(userAncestors.ancestorId, directAccountIds)}
+            )`
+          )
+        : eq(users.id, userId);
 
-    const accounts = await User.find({
-      $or: orClauses,
-      accountStatus: { $ne: 'archived' },
-    }).sort({ createdAt: 1 });
+    const accounts = await db
+      .select(publicColumns(users))
+      .from(users)
+      .where(and(reachable, ne(users.accountStatus, 'archived')))
+      .orderBy(asc(users.createdAt));
 
     return this.annotateAccounts(userId, accounts, directRows);
   }
 
   /**
-   * Annotate a set of account documents with the caller's relationship +
-   * effective membership and a child count, producing `AccountNode`s. The
-   * caller's direct membership rows are fetched once (or reused when supplied),
-   * so inheritance is resolved in-memory with no per-node query. `childCount` is
-   * computed from the supplied set when closed (forest/subtree); for a flat
-   * sibling list (children) it falls back to a grouped count of grandchildren.
+   * Annotate a set of accounts with the caller's relationship + effective
+   * membership and a child count, producing `AccountNode`s. The caller's direct
+   * membership rows are fetched once (or reused when supplied), and every path
+   * is read in ONE query, so inheritance is resolved in-memory with no per-node
+   * round trip. `childCount` is computed from the supplied set when closed
+   * (forest/subtree); for a flat sibling list it falls back to a grouped count.
    */
   private async annotateAccounts(
     userId: string,
-    accounts: IUser[],
-    directRowsArg?: IAccountMember[]
+    accounts: AccountRow[],
+    directRowsArg?: AccountMemberRow[]
   ): Promise<AccountNode[]> {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const db = getDb();
     const directRows =
       directRowsArg ??
-      (await AccountMember.find({ memberUserId: userObjectId, status: 'active' }));
+      (await db
+        .select()
+        .from(accountMembers)
+        .where(
+          and(eq(accountMembers.memberUserId, userId), eq(accountMembers.status, 'active'))
+        ));
+
+    const accountIds = accounts.map((account) => account.id);
+
+    // Every path in one read, ordered so each account's list rebuilds root-first.
+    const pathsById = new Map<string, string[]>();
+    if (accountIds.length > 0) {
+      const pathRows = await db
+        .select({ userId: userAncestors.userId, ancestorId: userAncestors.ancestorId })
+        .from(userAncestors)
+        .where(inArray(userAncestors.userId, accountIds))
+        .orderBy(asc(userAncestors.userId), asc(userAncestors.depth));
+      for (const row of pathRows) {
+        const path = pathsById.get(row.userId) ?? [];
+        path.push(row.ancestorId);
+        pathsById.set(row.userId, path);
+      }
+    }
 
     // Child counts: prefer the in-memory set (closed for forest/subtree). For any
     // account whose children are not in the set, fall back to a grouped count.
     const inSetChildCounts = new Map<string, number>();
     for (const account of accounts) {
-      const parentId = account.parentAccountId?.toString();
+      const parentId = account.parentAccountId;
       if (parentId) {
         inSetChildCounts.set(parentId, (inSetChildCounts.get(parentId) ?? 0) + 1);
       }
     }
-    const needsCount = accounts.filter((a) => !inSetChildCounts.has(a._id.toString()));
+    const needsCount = accounts.filter((a) => !inSetChildCounts.has(a.id));
     const groupedChildCounts = new Map<string, number>();
     if (needsCount.length > 0) {
-      const rows = await User.aggregate<{ _id: ObjectId; n: number }>([
-        {
-          $match: {
-            parentAccountId: { $in: needsCount.map((a) => a._id) },
-            accountStatus: { $ne: 'archived' },
-          },
-        },
-        { $group: { _id: '$parentAccountId', n: { $sum: 1 } } },
-      ]);
+      const rows = await db
+        .select({ parentId: users.parentAccountId, n: sql<number>`count(*)::int` })
+        .from(users)
+        .where(
+          and(
+            inArray(
+              users.parentAccountId,
+              needsCount.map((a) => a.id)
+            ),
+            ne(users.accountStatus, 'archived')
+          )
+        )
+        .groupBy(users.parentAccountId);
       for (const row of rows) {
-        groupedChildCounts.set(row._id.toString(), row.n);
+        if (row.parentId) groupedChildCounts.set(row.parentId, row.n);
       }
     }
 
     return accounts.map((account) => {
-      const ancestors = (account.ancestors as ObjectId[]) ?? [];
-      const isSelf = account._id.equals(userObjectId);
+      const ancestors = pathsById.get(account.id) ?? [];
+      const isSelf = account.id === userId;
 
       let relationship: AccountRelationship;
-      let callerMembership: IAccountMember | null = null;
+      let callerMembership: AccountMemberRow | null = null;
       let callerMembershipSource: 'direct' | 'inherited' | null = null;
 
       if (isSelf) {
         relationship = 'self';
       } else {
-        const resolved = resolveEffectiveMembership(directRows, account._id, ancestors);
+        const resolved = resolveEffectiveMembership(directRows, account.id, ancestors);
         relationship = resolved?.row.role === 'owner' ? 'owner' : 'member';
         if (resolved) {
           callerMembership = resolved.row;
@@ -660,21 +831,16 @@ export class AccountService {
         }
       }
 
-      const idStr = account._id.toString();
-      const childCount = inSetChildCounts.has(idStr)
-        ? (inSetChildCounts.get(idStr) ?? 0)
-        : (groupedChildCounts.get(idStr) ?? 0);
-
       return {
-        accountId: idStr,
-        kind: (account.kind as AccountKind) ?? 'personal',
-        parentAccountId: account.parentAccountId ? account.parentAccountId.toString() : null,
-        rootAccountId: (account.rootAccountId ?? account._id).toString(),
+        accountId: account.id,
+        kind: account.kind,
+        parentAccountId: account.parentAccountId,
+        rootAccountId: account.rootAccountId ?? account.id,
         account,
         relationship,
         callerMembership,
         callerMembershipSource,
-        childCount,
+        childCount: inSetChildCounts.get(account.id) ?? groupedChildCounts.get(account.id) ?? 0,
       };
     });
   }
@@ -684,16 +850,23 @@ export class AccountService {
   // -------------------------------------------------------------------------
 
   /** Direct (non-removed) membership rows on an account. */
-  async listMembers(accountId: string): Promise<IAccountMember[]> {
-    return AccountMember.find({
-      accountId: new mongoose.Types.ObjectId(accountId),
-      status: { $ne: 'removed' },
-    }).sort({ createdAt: 1 });
+  async listMembers(accountId: string): Promise<AccountMemberRow[]> {
+    return getDb()
+      .select()
+      .from(accountMembers)
+      .where(
+        and(eq(accountMembers.accountId, accountId), ne(accountMembers.status, 'removed'))
+      )
+      .orderBy(asc(accountMembers.createdAt));
   }
 
   /**
    * Add (or re-activate) a direct membership on an account. `owner` is not
    * assignable here — ownership is granted only via {@link transferOwnership}.
+   *
+   * ONE statement: the compound unique on `(account_id, member_user_id)` is what
+   * decides between inserting and reactivating, so the read-then-branch the
+   * Mongo version ran cannot race with a concurrent invitation.
    */
   async addMember(
     accountId: string,
@@ -701,46 +874,49 @@ export class AccountService {
     targetUserId: string,
     role: Exclude<AccountRole, 'owner'>,
     inherit = true
-  ): Promise<IAccountMember> {
-    const accountObjectId = new mongoose.Types.ObjectId(accountId);
-    const targetObjectId = new mongoose.Types.ObjectId(targetUserId);
+  ): Promise<AccountMemberRow> {
+    const db = getDb();
 
-    const existing = await AccountMember.findOne({
-      accountId: accountObjectId,
-      memberUserId: targetObjectId,
-    });
-    if (existing && existing.status === 'active') {
+    const [existing] = await db
+      .select({ status: accountMembers.status })
+      .from(accountMembers)
+      .where(
+        and(
+          eq(accountMembers.accountId, accountId),
+          eq(accountMembers.memberUserId, targetUserId)
+        )
+      )
+      .limit(1);
+    if (existing?.status === 'active') {
       throw new BadRequestError('User is already a member of this account');
     }
 
-    const permissions = permissionsForAccountRole(role);
-    const callerObjectId = new mongoose.Types.ObjectId(callerUserId);
-
-    let member: IAccountMember;
-    if (existing) {
-      existing.role = role;
-      existing.permissions = permissions;
-      existing.inherit = inherit;
-      existing.status = 'active';
-      existing.invitedByUserId = callerObjectId;
-      existing.joinedAt = new Date();
-      member = await existing.save();
-    } else {
-      member = await AccountMember.create({
-        accountId: accountObjectId,
-        memberUserId: targetObjectId,
+    const [member] = await db
+      .insert(accountMembers)
+      .values({
+        accountId,
+        memberUserId: targetUserId,
         role,
-        permissions,
         inherit,
         status: 'active',
-        invitedByUserId: callerObjectId,
+        invitedByUserId: callerUserId,
         joinedAt: new Date(),
-      });
-    }
+      })
+      .onConflictDoUpdate({
+        target: [accountMembers.accountId, accountMembers.memberUserId],
+        set: {
+          role,
+          inherit,
+          status: 'active',
+          invitedByUserId: callerUserId,
+          joinedAt: new Date(),
+        },
+      })
+      .returning();
 
     logger.info('Account member added', {
       accountId,
-      memberId: member._id.toString(),
+      memberId: member.id,
       role,
       by: callerUserId,
     });
@@ -757,20 +933,20 @@ export class AccountService {
     memberId: string,
     role: Exclude<AccountRole, 'owner'>,
     inherit?: boolean
-  ): Promise<IAccountMember> {
+  ): Promise<AccountMemberRow> {
     const member = await this.requireDirectMember(accountId, memberId);
     if (member.role === 'owner') {
       throw new ForbiddenError("An owner's role can only be changed via transfer-ownership");
     }
-    member.role = role;
-    member.permissions = permissionsForAccountRole(role);
-    if (inherit !== undefined) {
-      member.inherit = inherit;
-    }
-    await member.save();
+
+    const [updated] = await getDb()
+      .update(accountMembers)
+      .set(inherit === undefined ? { role } : { role, inherit })
+      .where(eq(accountMembers.id, memberId))
+      .returning();
 
     logger.info('Account member role updated', { accountId, memberId, role });
-    return member;
+    return updated;
   }
 
   /**
@@ -782,24 +958,32 @@ export class AccountService {
     memberId: string,
     callerIsOwner: boolean
   ): Promise<void> {
+    const db = getDb();
     const member = await this.requireDirectMember(accountId, memberId);
 
     if (member.role === 'owner') {
       if (!callerIsOwner) {
         throw new ForbiddenError('Only an owner may remove another owner');
       }
-      const ownerCount = await AccountMember.countDocuments({
-        accountId: new mongoose.Types.ObjectId(accountId),
-        role: 'owner',
-        status: 'active',
-      });
-      if (ownerCount <= 1) {
+      const [{ n }] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(accountMembers)
+        .where(
+          and(
+            eq(accountMembers.accountId, accountId),
+            eq(accountMembers.role, 'owner'),
+            eq(accountMembers.status, 'active')
+          )
+        );
+      if (n <= 1) {
         throw new BadRequestError('Cannot remove the last owner of an account');
       }
     }
 
-    member.status = 'removed';
-    await member.save();
+    await db
+      .update(accountMembers)
+      .set({ status: 'removed' })
+      .where(eq(accountMembers.id, memberId));
 
     logger.info('Account member removed', { accountId, memberId });
   }
@@ -808,13 +992,21 @@ export class AccountService {
    * Transfer ownership to another active member. The target is promoted to
    * `owner`; the caller's direct `owner` row (if any) is demoted to `admin`. A
    * personal account cannot be transferred.
+   *
+   * One transaction: a promotion whose matching demotion failed leaves TWO
+   * owners, which the "cannot remove the last owner" guard then reads as safe.
    */
   async transferOwnership(
     accountId: string,
     callerUserId: string,
     targetUserId: string
   ): Promise<void> {
-    const account = await User.findById(accountId);
+    const db = getDb();
+    const [account] = await db
+      .select({ kind: users.kind })
+      .from(users)
+      .where(eq(users.id, accountId))
+      .limit(1);
     if (!account) {
       throw new NotFoundError('Account not found');
     }
@@ -822,34 +1014,38 @@ export class AccountService {
       throw new BadRequestError('A personal account cannot be transferred');
     }
 
-    const accountObjectId = new mongoose.Types.ObjectId(accountId);
-    const targetMember = await AccountMember.findOne({
-      accountId: accountObjectId,
-      memberUserId: new mongoose.Types.ObjectId(targetUserId),
-      status: 'active',
-    });
-    if (!targetMember) {
-      throw new NotFoundError('Target user is not an active member of this account');
-    }
-
-    if (targetMember.memberUserId.toString() === callerUserId) {
+    if (targetUserId === callerUserId) {
       throw new BadRequestError('You already own this account');
     }
 
-    targetMember.role = 'owner';
-    targetMember.permissions = permissionsForAccountRole('owner');
-    await targetMember.save();
+    await db.transaction(async (tx) => {
+      const promoted = await tx
+        .update(accountMembers)
+        .set({ role: 'owner' })
+        .where(
+          and(
+            eq(accountMembers.accountId, accountId),
+            eq(accountMembers.memberUserId, targetUserId),
+            eq(accountMembers.status, 'active')
+          )
+        )
+        .returning({ id: accountMembers.id });
+      if (promoted.length === 0) {
+        throw new NotFoundError('Target user is not an active member of this account');
+      }
 
-    const callerMember = await AccountMember.findOne({
-      accountId: accountObjectId,
-      memberUserId: new mongoose.Types.ObjectId(callerUserId),
-      status: 'active',
+      await tx
+        .update(accountMembers)
+        .set({ role: 'admin' })
+        .where(
+          and(
+            eq(accountMembers.accountId, accountId),
+            eq(accountMembers.memberUserId, callerUserId),
+            eq(accountMembers.status, 'active'),
+            eq(accountMembers.role, 'owner')
+          )
+        );
     });
-    if (callerMember && callerMember.role === 'owner') {
-      callerMember.role = 'admin';
-      callerMember.permissions = permissionsForAccountRole('admin');
-      await callerMember.save();
-    }
 
     logger.info('Account ownership transferred', {
       accountId,
@@ -863,12 +1059,13 @@ export class AccountService {
   // -------------------------------------------------------------------------
 
   /** List an account's credentials (never includes secret material). */
-  async listCredentials(accountId: string): Promise<IAccountCredential[]> {
-    return AccountCredential.find({
-      accountId: new mongoose.Types.ObjectId(accountId),
-    })
-      .select('-secretHash')
-      .sort({ createdAt: -1 });
+  async listCredentials(accountId: string): Promise<Omit<AccountCredentialRow, 'secretHash'>[]> {
+    const { secretHash: _secretHash, ...columns } = getTableColumnsOf();
+    return getDb()
+      .select(columns)
+      .from(accountCredentials)
+      .where(eq(accountCredentials.accountId, accountId))
+      .orderBy(sql`${accountCredentials.createdAt} desc`);
   }
 
   /**
@@ -880,11 +1077,16 @@ export class AccountService {
     callerUserId: string,
     input: {
       name: string;
-      environment: IAccountCredential['environment'];
+      environment: AccountCredentialRow['environment'];
       scopes?: ApplicationScope[];
     }
-  ): Promise<{ credential: IAccountCredential; secret: string }> {
-    const account = await User.findById(accountId);
+  ): Promise<{ credential: AccountCredentialRow; secret: string }> {
+    const db = getDb();
+    const [account] = await db
+      .select({ kind: users.kind })
+      .from(users)
+      .where(eq(users.id, accountId))
+      .limit(1);
     if (!account) {
       throw new NotFoundError('Account not found');
     }
@@ -893,21 +1095,24 @@ export class AccountService {
     }
 
     const { publicKey, secret, secretHash } = this.generateCredentialMaterial();
-    const credential = await AccountCredential.create({
-      accountId: account._id,
-      name: input.name,
-      publicKey,
-      secretHash,
-      type: 'service',
-      environment: input.environment,
-      scopes: input.scopes ?? [],
-      status: 'active',
-      createdByUserId: new mongoose.Types.ObjectId(callerUserId),
-    });
+    const [credential] = await db
+      .insert(accountCredentials)
+      .values({
+        accountId,
+        name: input.name,
+        publicKey,
+        secretHash,
+        type: 'service',
+        environment: input.environment,
+        scopes: input.scopes ?? [],
+        status: 'active',
+        createdByUserId: callerUserId,
+      })
+      .returning();
 
     logger.info('Account credential created', {
       accountId,
-      credentialId: credential._id.toString(),
+      credentialId: credential.id,
       by: callerUserId,
     });
 
@@ -917,72 +1122,89 @@ export class AccountService {
   /**
    * Rotate a credential — zero-downtime. Mints a replacement (fresh keys) then
    * deprecates the previous one with a 7-day grace `expiresAt`.
+   *
+   * One transaction: a mint whose deprecation failed leaves TWO active
+   * credentials with no record of which supersedes which.
    */
   async rotateCredential(
     accountId: string,
     credentialId: string,
     callerUserId: string
   ): Promise<{
-    credential: IAccountCredential;
+    credential: AccountCredentialRow;
     secret: string;
     rotatedFrom: string;
     graceExpiresAt: Date;
   }> {
-    const previous = await AccountCredential.findOne({
-      _id: new mongoose.Types.ObjectId(credentialId),
-      accountId: new mongoose.Types.ObjectId(accountId),
-      status: { $ne: 'revoked' },
-    });
+    const db = getDb();
+    const [previous] = await db
+      .select()
+      .from(accountCredentials)
+      .where(
+        and(
+          eq(accountCredentials.id, credentialId),
+          eq(accountCredentials.accountId, accountId),
+          ne(accountCredentials.status, 'revoked')
+        )
+      )
+      .limit(1);
     if (!previous) {
       throw new NotFoundError('Credential not found');
     }
 
     const { publicKey, secret, secretHash } = this.generateCredentialMaterial();
-
-    const rotated = await AccountCredential.create({
-      accountId: previous.accountId,
-      name: previous.name,
-      publicKey,
-      secretHash,
-      type: previous.type,
-      environment: previous.environment,
-      scopes: previous.scopes,
-      status: 'active',
-      rotatedFromCredentialId: previous._id,
-      createdByUserId: new mongoose.Types.ObjectId(callerUserId),
-    });
-
     const graceExpiresAt = new Date(Date.now() + CREDENTIAL_ROTATION_GRACE_MS);
-    previous.status = 'deprecated';
-    previous.expiresAt = graceExpiresAt;
-    await previous.save();
+
+    const rotated = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(accountCredentials)
+        .values({
+          accountId: previous.accountId,
+          name: previous.name,
+          publicKey,
+          secretHash,
+          type: previous.type,
+          environment: previous.environment,
+          scopes: previous.scopes,
+          status: 'active',
+          rotatedFromCredentialId: previous.id,
+          createdByUserId: callerUserId,
+        })
+        .returning();
+
+      await tx
+        .update(accountCredentials)
+        .set({ status: 'deprecated', expiresAt: graceExpiresAt })
+        .where(eq(accountCredentials.id, previous.id));
+
+      return created;
+    });
 
     logger.info('Account credential rotated', {
       accountId,
-      previousCredentialId: previous._id.toString(),
-      newCredentialId: rotated._id.toString(),
+      previousCredentialId: previous.id,
+      newCredentialId: rotated.id,
       by: callerUserId,
     });
 
-    return {
-      credential: rotated,
-      secret,
-      rotatedFrom: previous._id.toString(),
-      graceExpiresAt,
-    };
+    return { credential: rotated, secret, rotatedFrom: previous.id, graceExpiresAt };
   }
 
   /** Revoke a credential — it can no longer authenticate (no grace). */
   async revokeCredential(accountId: string, credentialId: string): Promise<void> {
-    const credential = await AccountCredential.findOne({
-      _id: new mongoose.Types.ObjectId(credentialId),
-      accountId: new mongoose.Types.ObjectId(accountId),
-    });
-    if (!credential) {
+    const revoked = await getDb()
+      .update(accountCredentials)
+      .set({ status: 'revoked' })
+      .where(
+        and(
+          eq(accountCredentials.id, credentialId),
+          eq(accountCredentials.accountId, accountId)
+        )
+      )
+      .returning({ id: accountCredentials.id });
+    if (revoked.length === 0) {
       throw new NotFoundError('Credential not found');
     }
-    credential.status = 'revoked';
-    await credential.save();
 
     logger.info('Account credential revoked', { accountId, credentialId });
   }
@@ -991,8 +1213,12 @@ export class AccountService {
    * Resolve a usable (active or within-grace) service credential by its public
    * key. Shared predicate with the Application credential resolution sites.
    */
-  async resolveUsableCredential(publicKey: string): Promise<IAccountCredential | null> {
-    const credential = await AccountCredential.findOne({ publicKey });
+  async resolveUsableCredential(publicKey: string): Promise<AccountCredentialRow | null> {
+    const [credential] = await getDb()
+      .select()
+      .from(accountCredentials)
+      .where(eq(accountCredentials.publicKey, publicKey))
+      .limit(1);
     if (!credential || !isCredentialUsable(credential)) {
       return null;
     }
@@ -1007,12 +1233,18 @@ export class AccountService {
   private async requireDirectMember(
     accountId: string,
     memberId: string
-  ): Promise<IAccountMember> {
-    const member = await AccountMember.findOne({
-      _id: new mongoose.Types.ObjectId(memberId),
-      accountId: new mongoose.Types.ObjectId(accountId),
-      status: { $ne: 'removed' },
-    });
+  ): Promise<AccountMemberRow> {
+    const [member] = await getDb()
+      .select()
+      .from(accountMembers)
+      .where(
+        and(
+          eq(accountMembers.id, memberId),
+          eq(accountMembers.accountId, accountId),
+          ne(accountMembers.status, 'removed')
+        )
+      )
+      .limit(1);
     if (!member) {
       throw new NotFoundError('Member not found');
     }
@@ -1021,10 +1253,14 @@ export class AccountService {
 
   /**
    * Resolve a unique username, suffixing a numeric counter on collision (org and
-   * bot accounts share the `User.username` unique index with humans). Validates
-   * the username character policy.
+   * bot accounts share the account username index with humans). Validates the
+   * username character policy.
+   *
+   * The collision probe is written against the EXPRESSION the unique index is
+   * built on — `lower(btrim(username))`, `db/schema/users.ts` — so a candidate
+   * that differs only by case is REJECTED here rather than by the constraint.
    */
-  private async resolveUniqueUsername(requested: string, excludeId?: ObjectId): Promise<string> {
+  private async resolveUniqueUsername(requested: string, excludeId?: string): Promise<string> {
     const base = requested.trim().toLowerCase();
     if (!base) {
       throw new BadRequestError('Username is required');
@@ -1035,13 +1271,18 @@ export class AccountService {
       );
     }
 
+    const db = getDb();
     let candidate = base;
     for (let suffix = 1; suffix <= 1000; suffix++) {
-      const query: Record<string, unknown> = { username: candidate };
+      const clauses = [sql`lower(btrim(${users.username})) = lower(btrim(${candidate}))`];
       if (excludeId) {
-        query._id = { $ne: excludeId };
+        clauses.push(ne(users.id, excludeId));
       }
-      const taken = await User.findOne(query);
+      const [taken] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(...clauses))
+        .limit(1);
       if (!taken) {
         return candidate;
       }
@@ -1062,6 +1303,24 @@ export class AccountService {
     const secretHash = crypto.createHash('sha256').update(secret).digest('hex');
     return { publicKey, secret, secretHash };
   }
+}
+
+/**
+ * The credential columns, so `listCredentials` can drop `secret_hash` by NAME.
+ *
+ * Mongo's `.select('-secretHash')` was an exclusion; drizzle enumerates, so the
+ * omission is expressed as a destructure and the compiler carries it into the
+ * return type — a serializer that reads `secretHash` off the result fails `tsc`.
+ */
+function getTableColumnsOf() {
+  const {
+    id, accountId, name, publicKey, secretHash, type, environment, scopes, status,
+    rotatedFromCredentialId, createdByUserId, lastUsedAt, expiresAt, createdAt, updatedAt,
+  } = accountCredentials;
+  return {
+    id, accountId, name, publicKey, secretHash, type, environment, scopes, status,
+    rotatedFromCredentialId, createdByUserId, lastUsedAt, expiresAt, createdAt, updatedAt,
+  };
 }
 
 export const accountService = new AccountService();

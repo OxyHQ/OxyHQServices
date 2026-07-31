@@ -88,16 +88,32 @@ describe('projectExpiredSubscriptions', () => {
     expect((await storedRows(userId))[0].status).toBe('canceled');
   });
 
-  it('is idempotent — a second run relabels nothing', async () => {
+  it('is idempotent — a second run does not touch an already-expired row', async () => {
     const userId = await account();
     await giveSubscription(userId, 'active', new Date(Date.now() - DAY_MS));
 
     const first = await projectExpiredSubscriptions(getDb());
     expect(first.expired).toBeGreaterThanOrEqual(1);
+    const [afterFirst] = await getDb()
+      .select({ status: subscriptions.status, updatedAt: subscriptions.updatedAt })
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId));
+    expect(afterFirst.status).toBe('expired');
 
-    const second = await projectExpiredSubscriptions(getDb());
-    expect(second.expired).toBe(0);
-    expect(second.truncated).toBe(false);
+    await projectExpiredSubscriptions(getDb());
+
+    // Asserted on THIS row rather than on a global "0 rows moved" count: the
+    // projection is fleet-wide and jest runs suites in parallel against one
+    // database, so another suite's lapsed row could legitimately be relabelled
+    // between the two passes. An untouched `updated_at` is the stronger claim
+    // anyway — the second pass performed no write at all, which is what
+    // "materialization of an already-false predicate" means.
+    const [afterSecond] = await getDb()
+      .select({ status: subscriptions.status, updatedAt: subscriptions.updatedAt })
+      .from(subscriptions)
+      .where(eq(subscriptions.userId, userId));
+    expect(afterSecond.status).toBe('expired');
+    expect(afterSecond.updatedAt.getTime()).toBe(afterFirst.updatedAt.getTime());
   });
 
   it('reports truncation when the batch ceiling is hit, and finishes on the next run', async () => {
@@ -106,11 +122,13 @@ describe('projectExpiredSubscriptions', () => {
     await giveSubscription(userId, 'active', new Date(Date.now() - 2 * DAY_MS));
 
     // One row per statement, one statement per run: the caller must be told rows
-    // remain rather than silently leaving a backlog behind.
+    // remain rather than silently leaving a backlog behind. The ceiling is what
+    // is asserted, not a global tally — two of the lapsed rows are this test's,
+    // so a bounded run always fills its single batch.
     const first = await projectExpiredSubscriptions(getDb(), { batchSize: 1, maxBatches: 1 });
     expect(first).toEqual({ expired: 1, truncated: true });
 
-    const second = await projectExpiredSubscriptions(getDb(), { batchSize: 1, maxBatches: 10 });
+    const second = await projectExpiredSubscriptions(getDb(), { batchSize: 1, maxBatches: 100 });
     expect(second.truncated).toBe(false);
 
     const rows = await storedRows(userId);

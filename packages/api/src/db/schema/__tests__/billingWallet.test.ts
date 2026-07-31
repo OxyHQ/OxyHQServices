@@ -604,43 +604,17 @@ describe('subscriptions — expiry is derived, never a deletion', () => {
     expect(entitled).toEqual([]);
   });
 
-  it('materializes `expired` through the projection, idempotently', async () => {
-    const userId = await owner();
-    await getDb()
-      .insert(subscriptions)
-      .values({ userId, plan: 'pro', status: 'active', endDate: new Date(Date.now() - 60_000) });
-    await getDb()
-      .insert(subscriptions)
-      .values({ userId, plan: 'basic', status: 'canceled', endDate: new Date(Date.now() - 60_000) });
-    await getDb()
-      .insert(subscriptions)
-      .values({ userId, plan: 'business', status: 'active', endDate: new Date(Date.now() + 86_400_000) });
-
-    const project = () =>
-      getDb()
-        .update(subscriptions)
-        .set({ status: 'expired' })
-        .where(
-          and(
-            eq(subscriptions.userId, userId),
-            eq(subscriptions.status, 'active'),
-            sql`${subscriptions.endDate} <= now()`
-          )
-        )
-        .returning({ id: subscriptions.id });
-
-    expect(await project()).toHaveLength(1);
-    // A second pass must move nothing: the projection is not a state machine
-    // step, it is a materialization of a predicate that is already false.
-    expect(await project()).toHaveLength(0);
-
-    const rows = await getDb().select().from(subscriptions).where(eq(subscriptions.userId, userId));
-    const byPlan = new Map(rows.map((row) => [row.plan, row.status]));
-    expect(byPlan.get('pro')).toBe('expired');
-    // A cancellation is a fact somebody asserted; expiry must not overwrite it.
-    expect(byPlan.get('basic')).toBe('canceled');
-    expect(byPlan.get('business')).toBe('active');
-  });
+  // The projection itself — that `active` + lapsed becomes `expired`, that a
+  // cancellation is never overwritten, that a second pass writes nothing — is
+  // tested against its REAL implementation in `db/__tests__/subscriptionStatus.test.ts`.
+  //
+  // It used to be re-tested here with a hand-written copy of the UPDATE. That
+  // copy was deleted for two reasons, and the second one is why it had to go
+  // rather than merely being redundant: a second definition of a predicate can
+  // DRIFT from the one that ships, and — because jest runs suites in parallel
+  // against ONE database — the real projection is fleet-wide and would race this
+  // copy for its own rows, failing it intermittently for no reason a reader
+  // could see.
 
   it('backs the projection with the index its predicate needs', async () => {
     const rows = await getDb().execute<{ indexdef: string }>(sql`

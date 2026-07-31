@@ -1,6 +1,6 @@
 import express from 'express';
 import type { Request } from 'express';
-import mongoose from 'mongoose';
+import { and, count, eq, ne } from 'drizzle-orm';
 import type { OrganizationCategory } from '@oxyhq/contracts';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { isStaffUser } from '../middleware/requireStaff';
@@ -9,10 +9,17 @@ import { rateLimit } from '../middleware/rateLimiter';
 import { hashedIpKey } from '../utils/ipKey';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../utils/error';
-import { accountService, type AccountNode, type EffectiveAccess } from '../services/account.service';
-import { User, type IUser } from '../models/User';
-import type { IAccountMember } from '../models/AccountMember';
-import type { IAccountCredential } from '../models/AccountCredential';
+import {
+  accountService,
+  type AccountCredentialRow,
+  type AccountMemberRow,
+  type AccountNode,
+  type AccountRow,
+  type EffectiveAccess,
+} from '../services/account.service';
+import { getDb } from '../config/postgres';
+import { publicColumns } from '../db/schema/protectedColumns';
+import { users } from '../db/schema/users';
 import sessionService from '../services/session.service';
 import deviceSessionService from '../services/deviceSession.service';
 import { broadcastDeviceState } from '../utils/socket';
@@ -23,7 +30,11 @@ import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import { isPrivilegedScope, type ApplicationScope } from '../utils/applicationScopes';
 import { stripSensitiveUrlQueryParams } from '../utils/sanitizeUrl';
 import { formatUserResponse } from '../utils/userTransform';
-import type { AccountPermission, AccountRole } from '../utils/accountRoles';
+import {
+  permissionsForAccountRole,
+  type AccountPermission,
+  type AccountRole,
+} from '../utils/accountRoles';
 import {
   accountIdRouteParams,
   accountMemberParams,
@@ -43,7 +54,7 @@ import {
  * the resolved account (a User doc) and the caller's effective access over it.
  */
 interface AccountContextRequest extends AuthRequest {
-  account?: IUser;
+  account?: AccountRow;
   access?: EffectiveAccess;
 }
 
@@ -158,17 +169,21 @@ const credentialsLimiter = rateLimit({
  * the members list), `'inherited'` when surfaced as a node's `callerMembership`
  * resolved from an ancestor.
  */
-function serializeMember(member: IAccountMember, source: 'direct' | 'inherited' = 'direct') {
+function serializeMember(member: AccountMemberRow, source: 'direct' | 'inherited' = 'direct') {
   return {
-    _id: member._id.toString(),
-    accountId: member.accountId.toString(),
-    memberUserId: member.memberUserId.toString(),
+    _id: member.id,
+    accountId: member.accountId,
+    memberUserId: member.memberUserId,
     role: member.role,
-    permissions: member.permissions,
+    // `account_members.permissions` does not travel to Postgres: every write
+    // site set it to exactly `permissionsForAccountRole(role)`, making it a
+    // derivation rather than data. The wire keeps the field, computed here.
+    permissions: permissionsForAccountRole(member.role),
     inherit: member.inherit,
     status: member.status,
     source,
-    invitedByUserId: member.invitedByUserId?.toString(),
+    // Mongoose omitted an unset optional; a nullable column reads back `null`.
+    invitedByUserId: member.invitedByUserId ?? undefined,
     joinedAt: member.joinedAt,
     createdAt: member.createdAt,
     updatedAt: member.updatedAt,
@@ -199,17 +214,18 @@ function serializeAccountNode(node: AccountNode) {
  * effective access (used by the single-account endpoints).
  */
 function accountNodeFromAccess(
-  account: IUser,
+  account: AccountRow,
   access: EffectiveAccess,
   childCount: number
 ): AccountNode {
   const relationship: AccountNode['relationship'] =
     access.source === 'self' ? 'self' : access.role === 'owner' ? 'owner' : 'member';
   return {
-    accountId: account._id.toString(),
-    kind: (account.kind as AccountNode['kind']) ?? 'personal',
-    parentAccountId: account.parentAccountId ? account.parentAccountId.toString() : null,
-    rootAccountId: (account.rootAccountId ?? account._id).toString(),
+    accountId: account.id,
+    kind: account.kind,
+    parentAccountId: account.parentAccountId,
+    // `rootAccountId ?? id` — a root account stores no self-reference.
+    rootAccountId: account.rootAccountId ?? account.id,
     account,
     relationship,
     callerMembership: access.membership,
@@ -218,16 +234,25 @@ function accountNodeFromAccess(
   };
 }
 
-/** Count an account's non-archived direct children. */
-async function countChildren(accountId: mongoose.Types.ObjectId): Promise<number> {
-  return User.countDocuments({ parentAccountId: accountId, accountStatus: { $ne: 'archived' } });
+/**
+ * Count an account's non-archived direct children.
+ *
+ * `users_parent_account_id_idx` (partial, `where account_status <> 'archived'`)
+ * serves this exact predicate.
+ */
+async function countChildren(accountId: string): Promise<number> {
+  const [row] = await getDb()
+    .select({ value: count() })
+    .from(users)
+    .where(and(eq(users.parentAccountId, accountId), ne(users.accountStatus, 'archived')));
+  return row.value;
 }
 
 /** Serialise a credential — NEVER includes secret material. */
-function serializeCredential(credential: IAccountCredential) {
+function serializeCredential(credential: Omit<AccountCredentialRow, 'secretHash'>) {
   return {
-    _id: credential._id.toString(),
-    accountId: credential.accountId.toString(),
+    _id: credential.id,
+    accountId: credential.accountId,
     name: credential.name,
     publicKey: credential.publicKey,
     type: credential.type,
@@ -236,10 +261,9 @@ function serializeCredential(credential: IAccountCredential) {
     status: credential.status,
     lastUsedAt: credential.lastUsedAt,
     expiresAt: credential.expiresAt,
-    rotatedFromCredentialId: credential.rotatedFromCredentialId
-      ? credential.rotatedFromCredentialId.toString()
-      : undefined,
-    createdByUserId: credential.createdByUserId.toString(),
+    // Mongoose omitted an unset optional; a nullable column reads back `null`.
+    rotatedFromCredentialId: credential.rotatedFromCredentialId ?? undefined,
+    createdByUserId: credential.createdByUserId,
     createdAt: credential.createdAt,
     updatedAt: credential.updatedAt,
   };
@@ -250,7 +274,7 @@ function serializeCredential(credential: IAccountCredential) {
  * in directly (no wrapper). `extra` carries rotation metadata.
  */
 function serializeCredentialWithSecret(
-  credential: IAccountCredential,
+  credential: Omit<AccountCredentialRow, 'secretHash'>,
   secret: string,
   extra?: Record<string, unknown>
 ) {
@@ -262,17 +286,16 @@ function serializeCredentialWithSecret(
  * access over it. 404 when missing/archived, 403 when the caller has no access.
  */
 async function loadAccountContext(req: AccountContextRequest): Promise<{
-  account: IUser;
+  account: AccountRow;
   access: EffectiveAccess;
 }> {
   const userId = requireUserId(req);
   const id = req.params.id;
 
-  if (!mongoose.isValidObjectId(id)) {
-    throw new NotFoundError('Account not found');
-  }
-
-  const account = await User.findById(id);
+  // The `isValidObjectId` guard is gone: it only ever prevented a Mongoose
+  // `CastError`, and a Postgres text id that matches no row is already the 404
+  // this endpoint documents.
+  const [account] = await getDb().select(publicColumns(users)).from(users).where(eq(users.id, id)).limit(1);
   if (!account || account.accountStatus === 'archived') {
     throw new NotFoundError('Account not found');
   }
@@ -363,9 +386,6 @@ router.post(
     // and recorded against, the human — never the sub-account).
     const operatorId = await resolveOperatorId(req);
     const id = req.params.id;
-    if (!mongoose.isValidObjectId(id)) {
-      throw new NotFoundError('Account not found');
-    }
 
     // Authorize: the operator must hold account:act_as over the target (directly
     // or inherited). Non-members / insufficient role → 403. This is the ONLY gate
@@ -375,7 +395,7 @@ router.post(
       throw new ForbiddenError('You are not authorized to switch into this account');
     }
 
-    const account = await User.findById(id);
+    const [account] = await getDb().select(publicColumns(users)).from(users).where(eq(users.id, id)).limit(1);
     if (!account || account.accountStatus === 'archived') {
       throw new NotFoundError('Account not found');
     }
@@ -403,7 +423,7 @@ router.post(
         targetAccountId: id,
       });
     }
-    const session = await sessionService.createSession(account._id.toString(), req, {
+    const session = await sessionService.createSession(account.id, req, {
       operatedByUserId: operatorId,
       ...(callerDeviceId ? { deviceId: callerDeviceId } : {}),
     });
@@ -418,7 +438,7 @@ router.post(
         const { state, changed } = await deviceSessionService.addAccount(
           session.deviceId,
           {
-            accountId: account._id.toString(),
+            accountId: account.id,
             sessionId: session.sessionId,
             operatedByUserId: operatorId,
           },
@@ -487,9 +507,6 @@ router.post(
     };
 
     const parentAccountId = body.parentAccountId ?? userId;
-    if (!mongoose.isValidObjectId(parentAccountId)) {
-      throw new BadRequestError('Invalid parentAccountId');
-    }
 
     // The caller must be allowed to create children on the chosen parent.
     const access = await accountService.resolveEffectiveAccess(userId, parentAccountId);
@@ -511,10 +528,10 @@ router.post(
     });
 
     const node: AccountNode = {
-      accountId: account._id.toString(),
+      accountId: account.id,
       kind: (account.kind as AccountNode['kind']) ?? body.kind,
       parentAccountId: account.parentAccountId ? account.parentAccountId.toString() : null,
-      rootAccountId: (account.rootAccountId ?? account._id).toString(),
+      rootAccountId: account.rootAccountId ?? account.id,
       account,
       relationship: 'owner',
       callerMembership: membership,
@@ -537,7 +554,7 @@ router.get(
     if (!account || !access) {
       throw new NotFoundError('Account not found');
     }
-    const childCount = await countChildren(account._id);
+    const childCount = await countChildren(account.id);
     res.json({ account: serializeAccountNode(accountNodeFromAccess(account, access, childCount)) });
   })
 );
@@ -564,7 +581,7 @@ router.patch(
       organizationCategory?: OrganizationCategory | null;
     };
 
-    const updated = await accountService.updateAccount(account._id.toString(), {
+    const updated = await accountService.updateAccount(account.id, {
       ...body,
       avatar: body.avatar !== undefined ? stripSensitiveUrlQueryParams(body.avatar) : undefined,
     });
@@ -573,7 +590,7 @@ router.patch(
     if (!access) {
       throw new NotFoundError('Account not found');
     }
-    const childCount = await countChildren(updated._id);
+    const childCount = await countChildren(updated.id);
     res.json({ account: serializeAccountNode(accountNodeFromAccess(updated, access, childCount)) });
   })
 );
@@ -589,7 +606,7 @@ router.delete(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    await accountService.archiveAccount(account._id.toString());
+    await accountService.archiveAccount(account.id);
     res.json({ success: true });
   })
 );
@@ -609,7 +626,7 @@ router.get(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    const children = await accountService.listChildren(requireUserId(req), account._id.toString());
+    const children = await accountService.listChildren(requireUserId(req), account.id);
     res.json({ accounts: children.map(serializeAccountNode) });
   })
 );
@@ -625,7 +642,7 @@ router.get(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    const subtree = await accountService.getSubtree(requireUserId(req), account._id.toString());
+    const subtree = await accountService.getSubtree(requireUserId(req), account.id);
     res.json({ accounts: subtree.map(serializeAccountNode) });
   })
 );
@@ -645,9 +662,6 @@ router.post(
       throw new NotFoundError('Account not found');
     }
     const { newParentId } = req.body as { newParentId: string };
-    if (!mongoose.isValidObjectId(newParentId)) {
-      throw new BadRequestError('Invalid newParentId');
-    }
 
     const userId = requireUserId(req);
     const destAccess = await accountService.resolveEffectiveAccess(userId, newParentId);
@@ -655,12 +669,12 @@ router.post(
       throw new ForbiddenError('Missing permission to add children to the destination account');
     }
 
-    const moved = await accountService.moveAccount(account._id.toString(), newParentId);
+    const moved = await accountService.moveAccount(account.id, newParentId);
     const access = req.access;
     if (!access) {
       throw new NotFoundError('Account not found');
     }
-    const childCount = await countChildren(moved._id);
+    const childCount = await countChildren(moved.id);
     res.json({ account: serializeAccountNode(accountNodeFromAccess(moved, access, childCount)) });
   })
 );
@@ -680,7 +694,7 @@ router.get(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    const members = await accountService.listMembers(account._id.toString());
+    const members = await accountService.listMembers(account.id);
     res.json({ members: members.map((member) => serializeMember(member)) });
   })
 );
@@ -708,9 +722,9 @@ router.post(
     }
 
     const member = await accountService.addMember(
-      account._id.toString(),
+      account.id,
       requireUserId(req),
-      targetUser._id.toString(),
+      targetUser.id,
       role,
       inherit
     );
@@ -730,16 +744,13 @@ router.patch(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    if (!mongoose.isValidObjectId(req.params.memberId)) {
-      throw new NotFoundError('Member not found');
-    }
     const { role, inherit } = req.body as {
       role: Exclude<AccountRole, 'owner'>;
       inherit?: boolean;
     };
 
     const member = await accountService.updateMemberRole(
-      account._id.toString(),
+      account.id,
       req.params.memberId,
       role,
       inherit
@@ -760,12 +771,9 @@ router.delete(
     if (!account || !access) {
       throw new NotFoundError('Account not found');
     }
-    if (!mongoose.isValidObjectId(req.params.memberId)) {
-      throw new NotFoundError('Member not found');
-    }
 
     await accountService.removeMember(
-      account._id.toString(),
+      account.id,
       req.params.memberId,
       access.role === 'owner'
     );
@@ -785,11 +793,8 @@ router.post(
       throw new NotFoundError('Account not found');
     }
     const { userId: targetUserId } = req.body as { userId: string };
-    if (!mongoose.isValidObjectId(targetUserId)) {
-      throw new BadRequestError('Invalid userId');
-    }
 
-    await accountService.transferOwnership(account._id.toString(), requireUserId(req), targetUserId);
+    await accountService.transferOwnership(account.id, requireUserId(req), targetUserId);
     res.json({ success: true });
   })
 );
@@ -809,7 +814,7 @@ router.get(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    const credentials = await accountService.listCredentials(account._id.toString());
+    const credentials = await accountService.listCredentials(account.id);
     res.json({ credentials: credentials.map(serializeCredential) });
   })
 );
@@ -830,7 +835,7 @@ router.post(
     }
     const body = req.body as {
       name: string;
-      environment: IAccountCredential['environment'];
+      environment: AccountCredentialRow['environment'];
       scopes?: ApplicationScope[];
     };
 
@@ -848,7 +853,7 @@ router.post(
     }
 
     const { credential, secret } = await accountService.createCredential(
-      account._id.toString(),
+      account.id,
       requireUserId(req),
       { name: body.name, environment: body.environment, scopes: requestedScopes }
     );
@@ -869,12 +874,9 @@ router.post(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    if (!mongoose.isValidObjectId(req.params.credId)) {
-      throw new NotFoundError('Credential not found');
-    }
 
     const result = await accountService.rotateCredential(
-      account._id.toString(),
+      account.id,
       req.params.credId,
       requireUserId(req)
     );
@@ -900,10 +902,7 @@ router.delete(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    if (!mongoose.isValidObjectId(req.params.credId)) {
-      throw new NotFoundError('Credential not found');
-    }
-    await accountService.revokeCredential(account._id.toString(), req.params.credId);
+    await accountService.revokeCredential(account.id, req.params.credId);
     res.json({ success: true });
   })
 );
