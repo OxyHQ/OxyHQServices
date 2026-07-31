@@ -19,7 +19,6 @@ import { rateLimit } from '../middleware/rateLimiter';
 import { hashedIpKey } from '../utils/ipKey';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '../utils/error';
-import { isValidObjectId } from '../utils/validation';
 import { getIO } from '../utils/socket';
 import {
   signedRecordEnvelopeSchema,
@@ -31,6 +30,7 @@ import { requireStaff } from '../middleware/requireStaff';
 import { eq } from 'drizzle-orm';
 import { getDb } from '../config/postgres';
 import { personhoodStatuses } from '../db/schema/personhoodStatuses';
+import { users } from '../db/schema/users';
 import { buildSignedPublicCard } from '../services/civic/publicCard.service';
 import { submitRealLifeAttestation, type RealLifeRejectionReason } from '../services/civic/realLife.service';
 import {
@@ -262,9 +262,6 @@ router.get(
   '/:userId/card',
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
-    if (!isValidObjectId(userId)) {
-      throw new NotFoundError('Card not found');
-    }
 
     const signed = await buildSignedPublicCard(userId);
     if (!signed) {
@@ -340,7 +337,16 @@ router.post(
     assertValidationScope(req);
 
     const { subjectUserId, actionType, sourceActionId, payload, highValue } = req.body;
-    if (!isValidObjectId(subjectUserId)) {
+    // Was an ObjectId-FORMAT check, which would reject every uuid v7 id minted
+    // after the cutover. The 400 is a real contract for a body field, so the
+    // check becomes EXISTENCE — otherwise an unknown subject reaches the
+    // `subject_user_id` foreign key and answers 500 instead of 400.
+    const [subject] = await getDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, String(subjectUserId)))
+      .limit(1);
+    if (!subject) {
       throw new BadRequestError('Invalid subjectUserId');
     }
 
@@ -404,9 +410,6 @@ router.post(
     if (!userId) {
       throw new UnauthorizedError('Authentication required');
     }
-    if (!isValidObjectId(req.params.id)) {
-      throw new NotFoundError('Validation request not found');
-    }
 
     const result = await submitVote(req.params.id, userId, req.body as SignedRecordEnvelope);
     if (!result.ok) {
@@ -434,9 +437,6 @@ router.post(
     const userId = req.user?._id?.toString();
     if (!userId) {
       throw new UnauthorizedError('Authentication required');
-    }
-    if (!isValidObjectId(req.params.id)) {
-      throw new NotFoundError('Validation request not found');
     }
 
     const result = await denyValidation(req.params.id, userId);
@@ -509,9 +509,6 @@ router.delete(
       throw new UnauthorizedError('Authentication required');
     }
     const { subjectUserId } = req.params;
-    if (!isValidObjectId(subjectUserId)) {
-      throw new NotFoundError('Vouch not found');
-    }
 
     const result = await withdrawVouch(voucherUserId, subjectUserId);
     if (!result.ok) {
@@ -578,9 +575,6 @@ router.post(
   personhoodAdminLimiter,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { userId } = req.params;
-    if (!isValidObjectId(userId)) {
-      throw new NotFoundError('User not found');
-    }
 
     const status = await recomputePersonhood(userId);
     res.json({
@@ -671,9 +665,6 @@ router.get(
   credentialReadLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const { holderUserId } = req.params;
-    if (!isValidObjectId(holderUserId)) {
-      throw new NotFoundError('Credentials not found');
-    }
 
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     if (status && status !== 'active' && status !== 'revoked' && status !== 'expired') {
@@ -700,9 +691,6 @@ router.post(
     const issuerUserId = req.user?._id?.toString();
     if (!issuerUserId) {
       throw new UnauthorizedError('Authentication required');
-    }
-    if (!isValidObjectId(req.params.id)) {
-      throw new NotFoundError('Credential not found');
     }
 
     const result = await revokeCredential(req.params.id, issuerUserId);
