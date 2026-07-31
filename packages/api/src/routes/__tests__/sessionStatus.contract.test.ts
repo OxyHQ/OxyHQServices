@@ -184,6 +184,51 @@ describe('GET /auth/session/status/:sessionToken — @oxyhq/contracts sessionSta
     expect(safeParseContract(sessionStatusSchema, data)).not.toBeNull();
   });
 
+  it('carries the consent screen legal links and the developer attribution', async () => {
+    // These three travelled through `serializePublicApplication` before the port
+    // and must still: `privacyPolicyUrl` / `termsUrl` are rendered as legal
+    // links on the consent screen, and `developerName` is the owner attribution
+    // shown for a non-official app.
+    const owner = await account({
+      username: `ada${randomUUID().slice(0, 8)}`,
+      nameFirst: 'Ada',
+      nameLast: 'Lovelace',
+    });
+    const applicationId = await application({
+      name: 'Acme Widgets',
+      type: 'third_party',
+      isOfficial: false,
+      privacyPolicyUrl: 'https://acme.example/privacy',
+      termsUrl: 'https://acme.example/terms',
+      createdByUserId: owner,
+    });
+    const sessionToken = await authRequest({ applicationId });
+
+    const res = await get(`/auth/session/status/${sessionToken}`);
+
+    const parsed = safeParseContract(sessionStatusSchema, res.body.data);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.application?.id).toBe(applicationId);
+    expect(parsed?.application?.privacyPolicyUrl).toBe('https://acme.example/privacy');
+    expect(parsed?.application?.termsUrl).toBe('https://acme.example/terms');
+    expect(parsed?.application?.developerName).toBe('Ada Lovelace');
+  });
+
+  it('omits an absent optional rather than emitting null', async () => {
+    // `serializePublicApplication` drops undefined/null optionals entirely, and
+    // Drizzle hands it `null` where Mongoose handed it `undefined` — so this is
+    // exactly where the port could have started emitting `termsUrl: null`.
+    const applicationId = await application({ privacyPolicyUrl: null, termsUrl: null });
+    const sessionToken = await authRequest({ applicationId });
+
+    const res = await get(`/auth/session/status/${sessionToken}`);
+
+    const app = (res.body.data as { application: Record<string, unknown> }).application;
+    expect(app).not.toHaveProperty('privacyPolicyUrl');
+    expect(app).not.toHaveProperty('termsUrl');
+    expect(app).not.toHaveProperty('description');
+  });
+
   it('parses application:null when the bound app is no longer active', async () => {
     const applicationId = await application();
     const sessionToken = await authRequest({ applicationId });
