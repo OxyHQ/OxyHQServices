@@ -21,17 +21,17 @@
  */
 
 import type { PgColumn, PgTable, UpdateDeleteAction } from 'drizzle-orm/pg-core';
-import { billingSubscriptions } from './billingSubscriptions';
-import { billingTransactions } from './billingTransactions';
-import { bookmarks } from './bookmarks';
 import { appAffinitySeenEvents } from './appAffinitySeenEvents';
 import { authCodes } from './authCodes';
 import { authSessions } from './authSessions';
+import { billingSubscriptions } from './billingSubscriptions';
+import { billingTransactions } from './billingTransactions';
+import { bookmarks } from './bookmarks';
+import { conductStrikes } from './conductStrikes';
 import { devicePairingSessions } from './devicePairingSessions';
 import { deviceSessionAccounts } from './deviceSessionAccounts';
 import { deviceSessions } from './deviceSessions';
 import { identityBindings } from './identityBindings';
-import { conductStrikes } from './conductStrikes';
 import { moderationEffects } from './moderationEffects';
 import { notifications } from './notifications';
 import { pushTokens } from './pushTokens';
@@ -70,9 +70,9 @@ export interface IdColumnWithoutForeignKey {
  * a real `.references()` and deleted from this list — `blocks.user_id`,
  * `blocks.blocked_id`, `bookmarks.user_id`, `push_tokens.user_id`,
  * `labels.user_id` and `webauthn_credentials.user_id`. What remains is owed to
- * four tables that have not landed yet: `applications`,
- * `application_credentials`, `identity_bindings` and `reputation_transactions`.
+ * `applications`, which has not landed yet.
  */
+
 export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
   {
     table: pushTokens,
@@ -130,6 +130,17 @@ export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
   {
     table: identityBindings,
     column: identityBindings.credentialId,
+    parentTable: 'application_credentials',
+    parentColumn: 'id',
+    onDelete: 'set null',
+    reason:
+      'AUDIT pointer only, deliberately not part of the binding check — a ' +
+      'credential rotation must not invalidate a binding the user consented ' +
+      'to. NULL already means "not recorded", so SET NULL loses the audit ' +
+      'trail and nothing else; CASCADE would delete the evidence a past ' +
+      'moderation effect rests on.',
+  },
+  {
     table: moderationEffects,
     column: moderationEffects.applicationId,
     parentTable: 'applications',
@@ -147,26 +158,10 @@ export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
     parentColumn: 'id',
     onDelete: 'set null',
     reason:
-      'AUDIT pointer only, deliberately not part of the binding check — a ' +
-      'credential rotation must not invalidate a binding the user consented ' +
-      'to. NULL already means "not recorded", so SET NULL loses the audit ' +
-      'trail and nothing else; CASCADE would delete the evidence a past ' +
-      'moderation effect rests on.',
       'Which credential the event arrived on is provenance detail, not the ' +
       'effect itself; NULL already means "not recorded" on rows predating the ' +
       'field. Unlike `application_id`, a rotated-out credential may legitimately ' +
       'be removed without invalidating the effect.',
-  },
-  {
-    table: moderationEffects,
-    column: moderationEffects.bindingId,
-    parentTable: 'identity_bindings',
-    parentColumn: 'id',
-    onDelete: 'restrict',
-    reason:
-      'The binding is what PROVED the identity the effect landed on — no ' +
-      'binding, no effect. An effect whose proof of identity vanished is ' +
-      'unauditable, so the binding cannot be deleted while one cites it.',
   },
   {
     table: moderationEffects,
@@ -271,14 +266,6 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
       'An OpenStreetMap element id, meaningful only together with `osm_type`. ' +
       'External to Oxy entirely.',
   },
-
-  // ---- the auth/session cluster ------------------------------------------
-  //
-  // Three distinct shapes live below, and they are not interchangeable:
-  //   (a) a row's OWN natural key, id-shaped by name only;
-  //   (b) the central DEVICE id space, which names a device rather than a row;
-  //   (c) a reference by natural key whose lifecycle is INDEPENDENT on purpose,
-  //       where every available ON DELETE would change behaviour.
   {
     table: sessions,
     column: sessions.sessionId,
@@ -370,6 +357,7 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
       '(b) Central device id the event happened on. An audit trail must keep ' +
       'naming the device that was removed, which is precisely one of the ' +
       'events it records.',
+  },
   {
     table: transactions,
     column: transactions.itemId,
@@ -428,6 +416,7 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
       "Stripe's identifier for the subscription this payment covers. Pointing " +
       'it at the local mirror would let an incomplete mirror reject a real ' +
       'payment record; Stripe is the authority for both.',
+  },
   {
     table: notifications,
     column: notifications.entityId,

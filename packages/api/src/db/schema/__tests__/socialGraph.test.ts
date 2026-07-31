@@ -22,6 +22,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../../../config/postgres';
 import { APP_DATA_IDENTIFIER_PATTERN } from '../../../models/UserAppData';
 import { conductStrikes } from '../conductStrikes';
+import { identityBindings } from '../identityBindings';
 import { moderationEffects } from '../moderationEffects';
 import { moderationPolicies } from '../moderationPolicies';
 import { moderationPolicySeverityRules } from '../moderationPolicySeverityRules';
@@ -89,6 +90,24 @@ async function rejection(query: Promise<unknown>): Promise<unknown> {
 /** A real `users` row — every `user_id` in this file carries a foreign key. */
 async function account(): Promise<string> {
   const [row] = await getDb().insert(users).values({ color: 'teal' }).returning({ id: users.id });
+  return row.id;
+}
+
+/**
+ * A real `identity_bindings` row. `moderation_effects.binding_id` carries a
+ * foreign key with `ON DELETE RESTRICT`: the binding is what PROVED the identity
+ * an effect landed on, so a synthetic id no longer satisfies it.
+ */
+async function binding(userId: string): Promise<string> {
+  const [row] = await getDb()
+    .insert(identityBindings)
+    .values({
+      applicationId: `app-${uniqueId()}`,
+      userId,
+      localPrincipalId: `principal-${uniqueId()}`,
+      bindingType: 'oauth_grant',
+    })
+    .returning({ id: identityBindings.id });
   return row.id;
 }
 
@@ -866,7 +885,7 @@ describe('conduct_strikes and moderation_effects — one penalty per incident', 
       decisionId: strike.decisionId,
       decisionRevision: 1,
       principalId: strike.userId,
-      bindingId: `bind-${uniqueId()}`,
+      bindingId: await binding(strike.userId),
       applicationId: `app-${uniqueId()}`,
       effectType: 'conduct_penalty',
       points: -20,
@@ -938,7 +957,7 @@ describe('conduct_strikes and moderation_effects — one penalty per incident', 
         decisionId: strike.decisionId,
         decisionRevision: 1,
         principalId: strike.userId,
-        bindingId: `bind-${uniqueId()}`,
+        bindingId: await binding(strike.userId),
         applicationId: `app-${uniqueId()}`,
         effectType: 'conduct_penalty',
         points: -20,
@@ -1203,7 +1222,7 @@ describe('deleting an account takes its social graph and its records with it', (
       decisionId: `dec-${uniqueId()}`,
       decisionRevision: 1,
       principalId: subject,
-      bindingId: `bind-${uniqueId()}`,
+      bindingId: await binding(subject),
       applicationId: `app-${uniqueId()}`,
       effectType: 'conduct_penalty',
       points: -20,

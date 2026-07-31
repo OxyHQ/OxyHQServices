@@ -64,6 +64,7 @@ import {
 import { conductStrikes } from './conductStrikes';
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
 import { moderationPolicies } from './moderationPolicies';
+import { identityBindings } from './identityBindings';
 import { users } from './users';
 
 /** Renders a `const` tuple as a SQL `in (...)` list. */
@@ -91,9 +92,13 @@ export const moderationEffects = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     /**
      * The binding that proved the identity. No binding, no effect.
-     * FK to `identity_bindings` — see `deferredForeignKeys.ts`.
+     *
+     * `ON DELETE RESTRICT`: an effect whose proof of identity vanished is
+     * unauditable, so a binding cannot be deleted while an effect cites it.
      */
-    bindingId: text().notNull(),
+    bindingId: text()
+      .notNull()
+      .references(() => identityBindings.id, { onDelete: 'restrict' }),
     /**
      * The emitting application, resolved from its credential — never the body.
      * FK to `applications` — see `deferredForeignKeys.ts`.
