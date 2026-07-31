@@ -1,6 +1,9 @@
 import * as crypto from 'crypto';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { DeviceSessionState, SessionAccount } from '@oxyhq/contracts';
-import DeviceSession, { type IDeviceSession, type IDeviceSessionAccount } from '../models/DeviceSession';
+import { getDb, type Database } from '../config/postgres';
+import { deviceSessionAccounts } from '../db/schema/deviceSessionAccounts';
+import { deviceSessions } from '../db/schema/deviceSessions';
 import sessionService from './session.service';
 import { sha256Hex, base64UrlEncode, timingSafeStringEqual } from './oauthCode.service';
 import { logger } from '../utils/logger';
@@ -16,30 +19,73 @@ const BACKGROUND_CREDENTIAL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  */
 const DEVICE_SECRET_GRACE_MS = 60_000;
 
-function idToString(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object' && 'toString' in (value as object)) return (value as { toString(): string }).toString();
-  return String(value);
+/**
+ * Anything that can run a query — the pool handle or an open transaction.
+ *
+ * Every read helper takes one of these so the SAME loader serves an ordinary
+ * request and a read INSIDE a transaction. Without it a transactional write
+ * would have to re-read through the pool and could observe pre-transaction
+ * state, which is exactly the lost update the transactions exist to prevent.
+ */
+type Queryable = Database | Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/**
+ * One account signed in on one device — a `device_session_accounts` row.
+ *
+ * `operatedByUserId` is the OPERATOR of a delegated (`account:act_as`) entry and
+ * `null` for an ordinary personal account. That null is load-bearing, not
+ * incidental: it is the whole distinction between a delegated entry, whose
+ * validity is bounded by a live `account:act_as` re-check, and a plain one that
+ * carries no such check. Nothing in this module may collapse the two.
+ */
+interface DeviceAccountRow {
+  accountId: string;
+  sessionId: string;
+  authuser: number;
+  operatedByUserId: string | null;
 }
 
-export function projectState(doc: IDeviceSession): DeviceSessionState {
-  const accounts: SessionAccount[] = (doc.accounts ?? []).map((a: IDeviceSessionAccount) => {
-    const operatedBy = idToString(a.operatedByUserId ?? null);
-    const account: SessionAccount = { accountId: idToString(a.accountId) ?? '', sessionId: a.sessionId, authuser: a.authuser };
-    if (operatedBy) account.operatedByUserId = operatedBy;
+/**
+ * A device and everything signed in on it — the `device_sessions` row plus its
+ * `device_session_accounts` children, which were an embedded array in Mongo.
+ */
+interface DeviceSessionRow {
+  id: string;
+  deviceId: string;
+  activeAccountId: string | null;
+  secretHash: string | null;
+  prevSecretHash: string | null;
+  prevSecretExpiresAt: Date | null;
+  backgroundSecretHash: string | null;
+  backgroundSecretAccountId: string | null;
+  backgroundSecretExpiresAt: Date | null;
+  revision: number;
+  updatedAt: Date;
+  accounts: DeviceAccountRow[];
+}
+
+export function projectState(doc: DeviceSessionRow): DeviceSessionState {
+  const accounts: SessionAccount[] = doc.accounts.map((entry) => {
+    const account: SessionAccount = {
+      accountId: entry.accountId,
+      sessionId: entry.sessionId,
+      authuser: entry.authuser,
+    };
+    // Emitted only for a delegated entry, so a personal account never carries a
+    // key the client would read as "operated by someone".
+    if (entry.operatedByUserId) account.operatedByUserId = entry.operatedByUserId;
     return account;
   });
   return {
     deviceId: doc.deviceId,
     accounts,
-    activeAccountId: idToString(doc.activeAccountId),
-    revision: doc.revision ?? 0,
-    updatedAt: (doc.updatedAt ?? new Date()).getTime(),
+    activeAccountId: doc.activeAccountId,
+    revision: doc.revision,
+    updatedAt: doc.updatedAt.getTime(),
   };
 }
 
-function lowestFreeAuthuser(accounts: IDeviceSessionAccount[]): number {
+function lowestFreeAuthuser(accounts: DeviceAccountRow[]): number {
   const used = new Set(accounts.map((a) => a.authuser));
   let i = 0;
   while (used.has(i)) i += 1;
@@ -62,19 +108,78 @@ export type BackgroundMintResult =
 export type AddAccountResult = { state: DeviceSessionState; changed: boolean };
 
 class DeviceSessionService {
-  private async load(deviceId: string): Promise<IDeviceSession | null> {
-    return DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
+  /**
+   * Read a device and its account set.
+   *
+   * The account order is `added_at` then `authuser`, which reproduces the Mongo
+   * array order this replaced: a fresh add appended, and a re-add rebuilt the
+   * array as `[...others, account]` with a fresh `addedAt`, so both landed last.
+   * The order is not cosmetic — `signout` elects `remaining[0]` as the next
+   * active account, so an unordered read would make that election arbitrary.
+   * `authuser` breaks a same-millisecond tie so the result is total.
+   */
+  private async load(db: Queryable, deviceId: string): Promise<DeviceSessionRow | null> {
+    const [device] = await db
+      .select({
+        id: deviceSessions.id,
+        deviceId: deviceSessions.deviceId,
+        activeAccountId: deviceSessions.activeAccountId,
+        secretHash: deviceSessions.secretHash,
+        prevSecretHash: deviceSessions.prevSecretHash,
+        prevSecretExpiresAt: deviceSessions.prevSecretExpiresAt,
+        backgroundSecretHash: deviceSessions.backgroundSecretHash,
+        backgroundSecretAccountId: deviceSessions.backgroundSecretAccountId,
+        backgroundSecretExpiresAt: deviceSessions.backgroundSecretExpiresAt,
+        revision: deviceSessions.revision,
+        updatedAt: deviceSessions.updatedAt,
+      })
+      .from(deviceSessions)
+      .where(eq(deviceSessions.deviceId, deviceId))
+      .limit(1);
+    if (!device) return null;
+
+    const accounts = await db
+      .select({
+        accountId: deviceSessionAccounts.accountId,
+        sessionId: deviceSessionAccounts.sessionId,
+        authuser: deviceSessionAccounts.authuser,
+        operatedByUserId: deviceSessionAccounts.operatedByUserId,
+      })
+      .from(deviceSessionAccounts)
+      .where(eq(deviceSessionAccounts.deviceSessionId, device.id))
+      .orderBy(asc(deviceSessionAccounts.addedAt), asc(deviceSessionAccounts.authuser));
+
+    return { ...device, accounts };
+  }
+
+  /**
+   * The device row for `deviceId`, created empty if it does not exist yet.
+   *
+   * `on conflict do nothing` is the direct analogue of Mongo's
+   * `{ upsert: true, $setOnInsert: … }`: a concurrent creator wins harmlessly
+   * and both callers go on to read the same row.
+   */
+  private async ensureDevice(db: Queryable, deviceId: string): Promise<DeviceSessionRow> {
+    await db
+      .insert(deviceSessions)
+      .values({ deviceId })
+      .onConflictDoNothing({ target: deviceSessions.deviceId });
+    const row = await this.load(db, deviceId);
+    if (!row) {
+      // Unreachable: the insert above either created the row or found it
+      // already there. Throwing beats a non-null assertion — if the invariant
+      // ever breaks, it says so instead of failing as a null-property read
+      // somewhere further down the mint path.
+      throw new Error(`device_sessions row for "${deviceId}" vanished after upsert`);
+    }
+    return row;
   }
 
   async getState(deviceId: string): Promise<DeviceSessionState> {
-    const existing = await this.load(deviceId);
+    const db = getDb();
+    const existing = await this.load(db, deviceId);
     if (existing) return this.healActiveAccount(existing);
-    const created = await DeviceSession.findOneAndUpdate(
-      { deviceId },
-      { $setOnInsert: { deviceId, accounts: [], activeAccountId: null, revision: 0 } },
-      { new: true, upsert: true },
-    ).lean<IDeviceSession>();
-    return projectState(created as IDeviceSession);
+    return projectState(await this.ensureDevice(db, deviceId));
   }
 
   // Self-heals a device's active account when it is a managed (act_as)
@@ -89,12 +194,14 @@ class DeviceSessionService {
   // Non-managed (personal) active accounts are never touched by this path —
   // a personal account with a transiently-unresolvable access token must not
   // be dropped, only a managed account whose act_as membership check failed.
-  private async healActiveAccount(doc: IDeviceSession): Promise<DeviceSessionState> {
-    const activeId = idToString(doc.activeAccountId);
+  private async healActiveAccount(doc: DeviceSessionRow): Promise<DeviceSessionState> {
+    const activeId = doc.activeAccountId;
     if (!activeId) return projectState(doc);
-    const active = (doc.accounts ?? []).find((a) => idToString(a.accountId) === activeId);
-    const operatedBy = active ? idToString(active.operatedByUserId ?? null) : null;
-    if (!active || !operatedBy) return projectState(doc);
+    const active = doc.accounts.find((a) => a.accountId === activeId);
+    // A NULL `operated_by_user_id` means "not a delegated session". Only a
+    // delegated entry is re-checked here; widening this to every entry would
+    // drop a personal account on a transient lookup failure.
+    if (!active || !active.operatedByUserId) return projectState(doc);
     const validated = await sessionService.validateSessionById(active.sessionId, false);
     if (validated) return projectState(doc);
     logger.info('deviceSession.getState: dropping revoked managed active account', {
@@ -127,53 +234,92 @@ class DeviceSessionService {
     // new account into the set but NEVER steal the device's current active
     // selection — it only becomes active when nothing else is.
     const activate = opts?.activate ?? 'always';
-    const current = await this.load(deviceId);
-    const existing = (current?.accounts ?? []).find((a) => idToString(a.accountId) === input.accountId);
 
-    // Case 1 — idempotent re-register (the cold-boot reload handoff).
-    if (current && existing && existing.sessionId === input.sessionId) {
-      return { state: projectState(current), changed: false };
-    }
+    // The session displaced by case 2, deactivated AFTER the transaction
+    // commits. Mongo did this before its (non-atomic) write; deferring it means
+    // a rolled-back transaction can no longer kill a session that is still
+    // referenced, and the observable order — displaced session dead, device set
+    // updated — is unchanged.
+    let displacedSessionId: string | null = null;
 
-    const currentActiveId = idToString(current?.activeAccountId ?? null);
-    // 'if-empty' preserves an existing active account; only claims active when
-    // the device currently has none.
-    const nextActiveAccountId =
-      activate === 'always' || !currentActiveId ? input.accountId : currentActiveId;
+    const result = await getDb().transaction(async (tx) => {
+      const current = await this.ensureDevice(tx, deviceId);
+      const existing = current.accounts.find((a) => a.accountId === input.accountId);
 
-    const others = (current?.accounts ?? []).filter((a) => idToString(a.accountId) !== input.accountId);
-    // Case 2 — replacing an account's session (re-add with a new sessionId) must
-    // deactivate the session it displaces — otherwise a live, server-side session
-    // is left dangling with no device-session entry referencing it.
-    if (existing && existing.sessionId !== input.sessionId) {
+      // Case 1 — idempotent re-register (the cold-boot reload handoff).
+      if (existing && existing.sessionId === input.sessionId) {
+        return { state: projectState(current), changed: false };
+      }
+
+      // 'if-empty' preserves an existing active account; only claims active when
+      // the device currently has none.
+      const nextActiveAccountId =
+        activate === 'always' || !current.activeAccountId
+          ? input.accountId
+          : current.activeAccountId;
+
+      const others = current.accounts.filter((a) => a.accountId !== input.accountId);
+
+      // Case 2 — replacing an account's session (re-add with a new sessionId)
+      // must deactivate the session it displaces — otherwise a live,
+      // server-side session is left dangling with no device-session entry
+      // referencing it.
+      if (existing) {
+        displacedSessionId = existing.sessionId;
+        await tx
+          .delete(deviceSessionAccounts)
+          .where(
+            and(
+              eq(deviceSessionAccounts.deviceSessionId, current.id),
+              eq(deviceSessionAccounts.accountId, input.accountId),
+            ),
+          );
+      }
+
+      await tx.insert(deviceSessionAccounts).values({
+        deviceSessionId: current.id,
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        authuser: lowestFreeAuthuser(others),
+        // NULL, never a placeholder: a delegated entry is exactly the one with
+        // an operator set, and `''` would read as a delegated entry owned by
+        // nobody while also violating the users foreign key.
+        operatedByUserId: input.operatedByUserId ?? null,
+      });
+
+      await tx
+        .update(deviceSessions)
+        .set({
+          activeAccountId: nextActiveAccountId,
+          revision: sql`${deviceSessions.revision} + 1`,
+        })
+        .where(eq(deviceSessions.id, current.id));
+
+      const updated = await this.load(tx, deviceId);
+      if (!updated) {
+        throw new Error(`device_sessions row for "${deviceId}" vanished during addAccount`);
+      }
+      return { state: projectState(updated), changed: true };
+    });
+
+    if (displacedSessionId) {
       try {
-        await sessionService.deactivateSession(existing.sessionId);
+        await sessionService.deactivateSession(displacedSessionId);
       } catch (error) {
-        logger.warn('deviceSession.addAccount: deactivate replaced session failed', { sessionId: existing.sessionId, error });
+        logger.warn('deviceSession.addAccount: deactivate replaced session failed', {
+          sessionId: displacedSessionId,
+          error,
+        });
       }
     }
-    const authuser = lowestFreeAuthuser(others);
-    const account = {
-      accountId: input.accountId,
-      sessionId: input.sessionId,
-      authuser,
-      addedAt: new Date(),
-      operatedByUserId: input.operatedByUserId ?? null,
-    };
-    const updated = await DeviceSession.findOneAndUpdate(
-      { deviceId },
-      {
-        $set: { accounts: [...others, account], activeAccountId: nextActiveAccountId },
-        $inc: { revision: 1 },
-      },
-      { new: true, upsert: true },
-    ).lean<IDeviceSession>();
-    return { state: projectState(updated as IDeviceSession), changed: true };
+
+    return result;
   }
 
   async switchActive(deviceId: string, accountId: string): Promise<SwitchActiveResult> {
-    const current = await this.load(deviceId);
-    const target = (current?.accounts ?? []).find((a) => idToString(a.accountId) === accountId);
+    const db = getDb();
+    const current = await this.load(db, deviceId);
+    const target = current?.accounts.find((a) => a.accountId === accountId);
     if (!current || !target) return { ok: false, reason: 'not_found' };
 
     // Re-validate the target account's session BEFORE committing the switch.
@@ -193,11 +339,13 @@ class DeviceSessionService {
       return { ok: false, reason: 'unauthorized', state };
     }
 
-    const updated = await DeviceSession.findOneAndUpdate(
-      { deviceId },
-      { $set: { activeAccountId: accountId }, $inc: { revision: 1 } },
-      { new: true },
-    ).lean<IDeviceSession>();
+    const updated = await db.transaction(async (tx) => {
+      await tx
+        .update(deviceSessions)
+        .set({ activeAccountId: accountId, revision: sql`${deviceSessions.revision} + 1` })
+        .where(eq(deviceSessions.id, current.id));
+      return this.load(tx, deviceId);
+    });
     if (!updated) return { ok: false, reason: 'not_found' };
     return { ok: true, state: projectState(updated) };
   }
@@ -207,7 +355,7 @@ class DeviceSessionService {
    * account is not registered on the device or its session is no longer live —
    * the caller must not distinguish the two (see the pinned mint route).
    *
-   * Strictly READ-ONLY with respect to the device doc: it never touches
+   * Strictly READ-ONLY with respect to the device row: it never touches
    * `activeAccountId` or `revision`, so an identity-bound client can hold a
    * session for a non-active account without any other app on the same device
    * observing a state change.
@@ -232,28 +380,32 @@ class DeviceSessionService {
   }
 
   async signout(deviceId: string, target: { accountId: string } | { all: true }): Promise<DeviceSessionState> {
-    const current = await this.load(deviceId);
+    const db = getDb();
+    const current = await this.load(db, deviceId);
     if (!current) return this.getState(deviceId);
-    const allAccounts = current.accounts ?? [];
+    const allAccounts = current.accounts;
 
     let removingIds: Set<string>;
     if ('all' in target) {
-      removingIds = new Set(allAccounts.map((a) => idToString(a.accountId) ?? ''));
+      removingIds = new Set(allAccounts.map((a) => a.accountId));
     } else {
-      const targetPresent = allAccounts.some((a) => idToString(a.accountId) === target.accountId);
+      const targetPresent = allAccounts.some((a) => a.accountId === target.accountId);
       if (!targetPresent) return projectState(current);
       removingIds = new Set([target.accountId]);
       // Cascade: signing out an operator's own account must also remove every
       // managed/org account that operator switched into on this device (one
-      // level deep — operated accounts can't themselves operate others).
+      // level deep — operated accounts can't themselves operate others). This
+      // mirrors `device_session_accounts.operated_by_user_id`'s ON DELETE
+      // CASCADE, which is the same rule enforced for a delete that never
+      // reaches this service.
       for (const a of allAccounts) {
-        if (idToString(a.operatedByUserId) === target.accountId) {
-          removingIds.add(idToString(a.accountId) ?? '');
+        if (a.operatedByUserId === target.accountId) {
+          removingIds.add(a.accountId);
         }
       }
     }
 
-    const removing = allAccounts.filter((a) => removingIds.has(idToString(a.accountId) ?? ''));
+    const removing = allAccounts.filter((a) => removingIds.has(a.accountId));
     for (const a of removing) {
       try {
         await sessionService.deactivateSession(a.sessionId);
@@ -262,56 +414,78 @@ class DeviceSessionService {
       }
     }
 
-    const remaining = allAccounts.filter((a) => !removingIds.has(idToString(a.accountId) ?? ''));
-    const activeStillPresent = remaining.some((a) => idToString(a.accountId) === idToString(current.activeAccountId));
-    const nextActive = activeStillPresent ? idToString(current.activeAccountId) : (remaining[0] ? idToString(remaining[0].accountId) : null);
-    const boundBackgroundAccountId = idToString(current.backgroundSecretAccountId);
+    const remaining = allAccounts.filter((a) => !removingIds.has(a.accountId));
+    const activeStillPresent = remaining.some((a) => a.accountId === current.activeAccountId);
+    const nextActive = activeStillPresent
+      ? current.activeAccountId
+      : (remaining[0] ? remaining[0].accountId : null);
+    const boundBackgroundAccountId = current.backgroundSecretAccountId;
     const shouldClearBackground =
       'all' in target ||
       (boundBackgroundAccountId !== null && removingIds.has(boundBackgroundAccountId));
-    const unsetFields: Record<string, string> = {};
-    if ('all' in target) {
-      unsetFields.secretHash = '';
-      unsetFields.prevSecretHash = '';
-      unsetFields.prevSecretExpiresAt = '';
-    }
-    if (shouldClearBackground) {
-      Object.assign(unsetFields, this.clearBackgroundCredentialFields());
-    }
+
     // Signout-ALL also revokes the device's `deviceSecret`: clear the secret
     // hashes so a retained secret can never later mint a token for the now-empty
     // set. Single-account signout leaves the secret alone — other accounts on the
     // SAME device still legitimately mint with it.
-    const updated = await DeviceSession.findOneAndUpdate(
-      { deviceId },
-      {
-        $set: { accounts: remaining, activeAccountId: nextActive },
-        $inc: { revision: 1 },
-        ...(Object.keys(unsetFields).length > 0 ? { $unset: unsetFields } : {}),
-      },
-      { new: true, upsert: true },
-    ).lean<IDeviceSession>();
-    return projectState(updated as IDeviceSession);
+    //
+    // Cleared to NULL, never `''`. Mongo used `$unset`; the Postgres analogue of
+    // "absent" is NULL. An empty string is a VALUE — it would collide on
+    // `device_sessions_secret_hash_key` across devices, and `getStateBySecret`
+    // guards on a non-empty hash, so `''` would also read as "no secret" while
+    // occupying the unique slot.
+    const clearedSecrets = {
+      ...('all' in target
+        ? { secretHash: null, prevSecretHash: null, prevSecretExpiresAt: null }
+        : {}),
+      ...(shouldClearBackground ? this.clearedBackgroundCredentialFields() : {}),
+    };
+
+    const updated = await db.transaction(async (tx) => {
+      if (removingIds.size > 0) {
+        await tx
+          .delete(deviceSessionAccounts)
+          .where(
+            and(
+              eq(deviceSessionAccounts.deviceSessionId, current.id),
+              inArray(deviceSessionAccounts.accountId, [...removingIds]),
+            ),
+          );
+      }
+      await tx
+        .update(deviceSessions)
+        .set({
+          activeAccountId: nextActive,
+          revision: sql`${deviceSessions.revision} + 1`,
+          ...clearedSecrets,
+        })
+        .where(eq(deviceSessions.id, current.id));
+      return this.load(tx, deviceId);
+    });
+    if (!updated) {
+      throw new Error(`device_sessions row for "${deviceId}" vanished during signout`);
+    }
+    return projectState(updated);
   }
 
   /**
-   * Detach an account from a device doc after its session MIGRATED to another
+   * Detach an account from a device row after its session MIGRATED to another
    * device (see the deviceId migration in `sessionService.createSession`).
-   * Removes the account's entry from THIS device's `accounts[]` so the stale
-   * (graveyard) doc stops advertising a live-looking account, and deactivates
-   * the session the doc referenced — UNLESS it is `preserveSessionId`, the
+   * Removes the account's entry from THIS device's account set so the stale
+   * (graveyard) row stops advertising a live-looking account, and deactivates
+   * the session the row referenced — UNLESS it is `preserveSessionId`, the
    * session that just moved (which stays active on its new device). Best-effort
-   * cleanup: a no-op when the doc is absent or the account is not listed. Never
+   * cleanup: a no-op when the row is absent or the account is not listed. Never
    * throws for a missing account so callers can fire it without guarding.
    */
   async detachMigratedAccount(deviceId: string, accountId: string, preserveSessionId: string): Promise<void> {
-    const current = await this.load(deviceId);
+    const db = getDb();
+    const current = await this.load(db, deviceId);
     if (!current) return;
-    const accounts = current.accounts ?? [];
-    const entry = accounts.find((a) => idToString(a.accountId) === accountId);
+    const entry = current.accounts.find((a) => a.accountId === accountId);
     if (!entry) return;
 
-    // Deactivate a DIFFERENT (genuinely stale) session the doc referenced —
+    // Deactivate a DIFFERENT (genuinely stale) session the row referenced —
     // never the one that just migrated and is now live on the caller's device.
     if (entry.sessionId && entry.sessionId !== preserveSessionId) {
       try {
@@ -321,33 +495,45 @@ class DeviceSessionService {
       }
     }
 
-    const remaining = accounts.filter((a) => idToString(a.accountId) !== accountId);
-    const activeStillPresent = remaining.some((a) => idToString(a.accountId) === idToString(current.activeAccountId));
+    const remaining = current.accounts.filter((a) => a.accountId !== accountId);
+    const activeStillPresent = remaining.some((a) => a.accountId === current.activeAccountId);
     const nextActive = activeStillPresent
-      ? idToString(current.activeAccountId)
-      : (remaining[0] ? idToString(remaining[0].accountId) : null);
-    await DeviceSession.updateOne(
-      { deviceId },
-      { $set: { accounts: remaining, activeAccountId: nextActive }, $inc: { revision: 1 } },
-    );
+      ? current.activeAccountId
+      : (remaining[0] ? remaining[0].accountId : null);
+
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(deviceSessionAccounts)
+        .where(
+          and(
+            eq(deviceSessionAccounts.deviceSessionId, current.id),
+            eq(deviceSessionAccounts.accountId, accountId),
+          ),
+        );
+      await tx
+        .update(deviceSessions)
+        .set({ activeAccountId: nextActive, revision: sql`${deviceSessions.revision} + 1` })
+        .where(eq(deviceSessions.id, current.id));
+    });
   }
 
   /**
    * Issue (rotating) the `deviceSecret` bound to a device (zero-cookie
    * transport). Mints a fresh 256-bit secret, stores only its `sha256` in
-   * `secretHash`, and — when a prior secret existed — moves that prior hash into
-   * `prevSecretHash` with a short `prevSecretExpiresAt` grace so a concurrent tab
-   * presenting the just-superseded secret is not locked out (rotation-in-use).
+   * `secret_hash`, and — when a prior secret existed — moves that prior hash into
+   * `prev_secret_hash` with a short `prev_secret_expires_at` grace so a concurrent
+   * tab presenting the just-superseded secret is not locked out (rotation-in-use).
    *
-   * The WRITE is a single atomic `findOneAndUpdate`; the grace window (not a lock)
+   * The WRITE is a single conditional `update`; the grace window (not a lock)
    * is the multi-tab concurrency mitigation — mirroring the refresh family. The
    * raw secret is returned to the caller EXACTLY ONCE and is NEVER logged.
    *
-   * Returns null when no `DeviceSession` doc exists for `deviceId` (or it vanished
-   * between read and write): a secret is only ever bound to a real device doc,
-   * never to a phantom device (no upsert).
+   * Returns null when no `device_sessions` row exists for `deviceId` (or it
+   * vanished between read and write): a secret is only ever bound to a real
+   * device row, never to a phantom device (no upsert).
    */
   async issueDeviceSecret(deviceId: string): Promise<string | null> {
+    const db = getDb();
     // Two concurrent rotations (multi-tab mint, parallel sign-ins) must not
     // clobber each other: last-writer-wins would drop the first writer's fresh
     // secret entirely (neither current nor prev). Compare-and-swap on the
@@ -355,26 +541,45 @@ class DeviceSessionService {
     // winner — the winner's secret then sits in the grace slot, so BOTH clients
     // end up holding a mintable secret.
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const current = await DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
+      const [current] = await db
+        .select({ secretHash: deviceSessions.secretHash })
+        .from(deviceSessions)
+        .where(eq(deviceSessions.deviceId, deviceId))
+        .limit(1);
       if (!current) return null;
 
       const rawSecret = base64UrlEncode(crypto.randomBytes(DEVICE_SECRET_BYTES));
       const secretHash = sha256Hex(rawSecret);
 
-      const set: { secretHash: string; prevSecretHash?: string; prevSecretExpiresAt?: Date } = { secretHash };
+      const set: {
+        secretHash: string;
+        prevSecretHash?: string;
+        prevSecretExpiresAt?: Date;
+      } = { secretHash };
       if (current.secretHash) {
         set.prevSecretHash = current.secretHash;
         set.prevSecretExpiresAt = new Date(Date.now() + DEVICE_SECRET_GRACE_MS);
       }
 
-      const updated = await DeviceSession.findOneAndUpdate(
-        current.secretHash
-          ? { deviceId, secretHash: current.secretHash }
-          : { deviceId, secretHash: { $exists: false } },
-        { $set: set },
-        { new: true },
-      ).lean<IDeviceSession>();
-      if (updated) return rawSecret;
+      // The CAS guard. `isNull` is the exact analogue of Mongo's
+      // `{ secretHash: { $exists: false } }` for a device that has never been
+      // bound — Mongo used `default: undefined` there ONLY because a sparse
+      // unique index collides on nulls, which Postgres does not do. Comparing
+      // against `''` instead would match nothing and silently never bind a
+      // first secret.
+      const updated = await db
+        .update(deviceSessions)
+        .set(set)
+        .where(
+          and(
+            eq(deviceSessions.deviceId, deviceId),
+            current.secretHash
+              ? eq(deviceSessions.secretHash, current.secretHash)
+              : isNull(deviceSessions.secretHash),
+          ),
+        )
+        .returning({ id: deviceSessions.id });
+      if (updated.length > 0) return rawSecret;
     }
     return null;
   }
@@ -382,19 +587,24 @@ class DeviceSessionService {
   /**
    * Resolve the `DeviceSessionState` bound to a raw `deviceSecret`. The secret is
    * hashed and matched — constant-time — against the device's current
-   * `secretHash` OR, within the grace window, its `prevSecretHash`. Returns null
-   * when the device is unknown, carries no secret, or the secret does not match
-   * (possession of the deviceId alone reveals nothing).
+   * `secret_hash` OR, within the grace window, its `prev_secret_hash`. Returns
+   * null when the device is unknown, carries no secret, or the secret does not
+   * match (possession of the deviceId alone reveals nothing).
    */
   async getStateBySecret(deviceId: string, rawSecret: string): Promise<DeviceSessionState | null> {
     if (typeof deviceId !== 'string' || deviceId.length === 0) return null;
     if (typeof rawSecret !== 'string' || rawSecret.length === 0) return null;
 
-    const doc = await DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
+    const doc = await this.load(getDb(), deviceId);
     if (!doc) return null;
 
     const hash = sha256Hex(rawSecret);
-    if (typeof doc.secretHash === 'string' && doc.secretHash.length > 0 && timingSafeStringEqual(hash, doc.secretHash)) {
+    // Constant-time throughout — never `!==` on secret material.
+    if (
+      typeof doc.secretHash === 'string' &&
+      doc.secretHash.length > 0 &&
+      timingSafeStringEqual(hash, doc.secretHash)
+    ) {
       return projectState(doc);
     }
     if (
@@ -427,18 +637,16 @@ class DeviceSessionService {
     const secretHash = sha256Hex(rawSecret);
     const expiresAt = new Date(Date.now() + BACKGROUND_CREDENTIAL_TTL_MS);
 
-    const updated = await DeviceSession.findOneAndUpdate(
-      { deviceId },
-      {
-        $set: {
-          backgroundSecretHash: secretHash,
-          backgroundSecretAccountId: accountId,
-          backgroundSecretExpiresAt: expiresAt,
-        },
-      },
-      { new: true },
-    ).lean<IDeviceSession>();
-    if (!updated) return null;
+    const updated = await getDb()
+      .update(deviceSessions)
+      .set({
+        backgroundSecretHash: secretHash,
+        backgroundSecretAccountId: accountId,
+        backgroundSecretExpiresAt: expiresAt,
+      })
+      .where(eq(deviceSessions.deviceId, deviceId))
+      .returning({ id: deviceSessions.id });
+    if (updated.length === 0) return null;
 
     return {
       deviceId,
@@ -461,13 +669,13 @@ class DeviceSessionService {
       return { ok: false, reason: 'background_credential_invalid' };
     }
 
-    const doc = await DeviceSession.findOne({ deviceId }).lean<IDeviceSession>();
+    const doc = await this.load(getDb(), deviceId);
     if (!doc) return { ok: false, reason: 'background_credential_invalid' };
 
     const hash = sha256Hex(rawSecret);
     const storedHash = doc.backgroundSecretHash;
     const expiresAt = doc.backgroundSecretExpiresAt;
-    const boundAccountId = idToString(doc.backgroundSecretAccountId);
+    const boundAccountId = doc.backgroundSecretAccountId;
 
     if (
       typeof storedHash !== 'string' ||
@@ -494,29 +702,40 @@ class DeviceSessionService {
     };
   }
 
-  private clearBackgroundCredentialFields(): Record<string, string> {
+  /** The background-credential triple, cleared. NULL is "absent"; `''` is a value. */
+  private clearedBackgroundCredentialFields(): {
+    backgroundSecretHash: null;
+    backgroundSecretAccountId: null;
+    backgroundSecretExpiresAt: null;
+  } {
     return {
-      backgroundSecretHash: '',
-      backgroundSecretAccountId: '',
-      backgroundSecretExpiresAt: '',
+      backgroundSecretHash: null,
+      backgroundSecretAccountId: null,
+      backgroundSecretExpiresAt: null,
     };
   }
 
   /**
    * Remove a deleted account from every device session that still lists it.
-   * Reuses the normal signout cascade (deactivates sessions, pulls the account
-   * from `accounts[]`, and removes any managed accounts the user operated).
+   * Reuses the normal signout cascade (deactivates sessions, drops the account's
+   * entry, and removes any managed accounts the user operated).
+   *
+   * The lookup is an indexed join on `device_session_accounts.account_id`
+   * (`device_session_accounts_account_id_idx`) — under Mongo the same question
+   * was a scan of every document's embedded `accounts.accountId`.
    */
   async purgeAccountFromAllDevices(userId: string): Promise<void> {
-    const docs = await DeviceSession.find({ 'accounts.accountId': userId })
-      .select('deviceId')
-      .lean<{ deviceId: string }[]>();
-    for (const doc of docs) {
+    const rows = await getDb()
+      .selectDistinct({ deviceId: deviceSessions.deviceId })
+      .from(deviceSessionAccounts)
+      .innerJoin(deviceSessions, eq(deviceSessionAccounts.deviceSessionId, deviceSessions.id))
+      .where(eq(deviceSessionAccounts.accountId, userId));
+    for (const row of rows) {
       try {
-        await this.signout(doc.deviceId, { accountId: userId });
+        await this.signout(row.deviceId, { accountId: userId });
       } catch (error) {
         logger.warn('deviceSession.purgeAccountFromAllDevices: signout failed', {
-          deviceId: doc.deviceId,
+          deviceId: row.deviceId,
           userId,
           error,
         });

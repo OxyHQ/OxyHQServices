@@ -122,7 +122,13 @@ jest.mock('../../controllers/session.controller', () => ({
 }));
 jest.mock('../../utils/logger', () => ({ logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
 
+import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import authRouter from '../auth';
+import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
+import { applications as applicationsTable } from '../../db/schema/applications';
+import { authSessions } from '../../db/schema/authSessions';
+import { users } from '../../db/schema/users';
 import { errorHandler } from '../../middleware/errorHandler';
 import { IDENTITY_APPROVAL_CAPABILITY } from '../../utils/applicationCapabilities';
 
@@ -176,15 +182,52 @@ function pendingSession(overrides: Record<string, unknown> = {}) {
 
 let server: http.Server;
 
-beforeAll((done) => {
+/**
+ * A pending request in REAL Postgres.
+ *
+ * The delivery service is still Mongo-backed and is mocked above; the status
+ * endpoint is ported and reads `auth_sessions`, so the progress projection is
+ * asserted against a stored row rather than a stubbed document.
+ */
+async function storedPendingRequest(
+  overrides: Partial<typeof authSessions.$inferInsert> = {},
+): Promise<string> {
+  const [owner] = await getDb().insert(users).values({}).returning({ id: users.id });
+  const [app] = await getDb()
+    .insert(applicationsTable)
+    .values({ name: `App ${randomUUID()}`, ownerAccountId: owner.id })
+    .returning({ id: applicationsTable.id });
+  const sessionToken = `at_${randomUUID().replace(/-/g, '')}`;
+  await getDb()
+    .insert(authSessions)
+    .values({
+      sessionToken,
+      authorizeCode: randomUUID().replace(/-/g, ''),
+      applicationId: app.id,
+      expiresAt: new Date(Date.now() + 3_600_000),
+      status: 'pending',
+      ...overrides,
+    });
+  return sessionToken;
+}
+
+beforeAll(async () => {
+  await connectPostgres();
   const app = express();
   app.use(express.json());
   app.use('/auth', authRouter);
   app.use(errorHandler);
-  server = app.listen(0, '127.0.0.1', done);
+  await new Promise<void>((resolve) => {
+    server = app.listen(0, '127.0.0.1', resolve);
+  });
 });
 
-afterAll((done) => { server.close(done); });
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  await closePostgres();
+});
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -388,37 +431,32 @@ describe('GET /auth/session/status/:sessionToken — delivery progress projectio
   it('exposes pushSentAt and openedAt while leaving the status machine alone', async () => {
     const pushSentAt = new Date('2026-07-27T10:00:00.000Z');
     const openedAt = new Date('2026-07-27T10:00:05.000Z');
-    mockAuthSessionFindOne.mockResolvedValue({
-      ...pendingSession({ pushSentAt, openedAt }),
-      applicationId: 'app-commons',
-      authorizedSessionId: null,
-      authorizedBy: null,
-      authorizedUserId: null,
-      save: jest.fn(),
-    });
-    mockApplicationFindById.mockResolvedValue(null);
+    const sessionToken = await storedPendingRequest({ pushSentAt, openedAt });
 
-    const res = await request(server, 'GET', '/auth/session/status/secret-session-token');
+    const res = await request(server, 'GET', `/auth/session/status/${sessionToken}`);
 
     expect(res.status).toBe(200);
     const data = res.body.data as Record<string, unknown>;
+    // Progress is TIMESTAMPS beside the state machine, never inside it: neither
+    // "pushed" nor "opened" is a status a waiting client could misread as an
+    // authorization.
     expect(data.status).toBe('pending');
+    expect(data.authorized).toBe(false);
     expect(data.pushSentAt).toBe('2026-07-27T10:00:00.000Z');
     expect(data.openedAt).toBe('2026-07-27T10:00:05.000Z');
+    // …and the stored row still says pending too.
+    const [row] = await getDb()
+      .select({ status: authSessions.status })
+      .from(authSessions)
+      .where(eq(authSessions.sessionToken, sessionToken))
+      .limit(1);
+    expect(row.status).toBe('pending');
   });
 
   it('emits null timestamps for a request that was never pushed or opened', async () => {
-    mockAuthSessionFindOne.mockResolvedValue({
-      ...pendingSession(),
-      applicationId: 'app-commons',
-      authorizedSessionId: null,
-      authorizedBy: null,
-      authorizedUserId: null,
-      save: jest.fn(),
-    });
-    mockApplicationFindById.mockResolvedValue(null);
+    const sessionToken = await storedPendingRequest();
 
-    const res = await request(server, 'GET', '/auth/session/status/secret-session-token');
+    const res = await request(server, 'GET', `/auth/session/status/${sessionToken}`);
 
     const data = res.body.data as Record<string, unknown>;
     expect(data.pushSentAt).toBeNull();

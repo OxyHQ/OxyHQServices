@@ -1,9 +1,28 @@
-import Session, { type ISession } from '../models/Session';
+import { and, desc, asc, eq, gt, gte, ne } from 'drizzle-orm';
+import { getDb } from '../config/postgres';
+import { sessions } from '../db/schema/sessions';
+/**
+ * The ONE Mongoose dependency left in this file, and it is a deliberate,
+ * reported gap rather than an oversight — every `sessions` query below is
+ * Drizzle.
+ *
+ * `getSessionWithUser` hydrates the USER, and that user is what
+ * `middleware/auth.ts` assigns to `req.user` through an `as IUser & Document`
+ * CAST. 183 call sites across 45 files then read `req.user._id`. A Drizzle
+ * `users` row exposes `id`, not `_id`, so switching this read would make every
+ * one of those reads `undefined` — and because the assignment is a cast, `tsc`
+ * would not report a single one of them. It fails silently as
+ * "not authenticated", API-wide.
+ *
+ * Porting it therefore requires `middleware/auth.ts`, `AuthRequest`, `IUser`
+ * and `utils/userCache.ts` (typed `IUser`, imported by 21 files) to move
+ * TOGETHER, which is outside this batch's file set. Until then the session half
+ * is Postgres and the user half is Mongo.
+ */
 import { User, type IUser } from '../models/User';
 import { logger } from '../utils/logger';
-import sessionCache from '../utils/sessionCache';
+import sessionCache, { type CachedSession } from '../utils/sessionCache';
 import userCache from '../utils/userCache';
-import { Types } from 'mongoose';
 import securityActivityService from './securityActivityService';
 import {
   extractDeviceInfo,
@@ -24,9 +43,6 @@ import type {
 } from '../types/session.types';
 
 const SESSION_EXPIRES_IN = 7 * 24 * 60 * 60 * 1000; // 7 days
-const ACCESS_TOKEN_EXPIRES_IN = '15m';
-const REFRESH_TOKEN_EXPIRES_IN = '7d';
-const OBJECT_ID_LENGTH = 24; // MongoDB ObjectId hex string length
 const TOKEN_ROTATION_GRACE_PERIOD_MS = 30_000; // 30 seconds grace period for concurrent tab refreshes
 
 /**
@@ -47,48 +63,67 @@ const MANAGED_SESSION_RECHECK_MS = 60_000;
 const managedSessionRecheckAt = new Map<string, number>();
 
 /**
- * Extract userId string from various possible formats (ObjectId, populated object, string)
- * Handles edge cases and corrupted cache entries gracefully
- * 
- * @param userIdValue - The userId value which could be ObjectId, populated object, or string
- * @returns Extracted userId string or undefined if invalid
+ * The columns of a `sessions` row this service reads.
+ *
+ * Named EXPLICITLY rather than `select()`-ing the table: `access_token`,
+ * `refresh_token` and `previous_refresh_token` are registered in
+ * `db/schema/protectedColumns.ts`, and a bare `select()` against `sessions`
+ * fails the repo-wide gate in `schema/__tests__/protectedColumns.test.ts`. This
+ * service is the one place that legitimately needs the token columns — it mints
+ * and rotates them — so it opts in by naming them, which is exactly the
+ * greppable shape that registry asks for.
  */
-function extractUserIdFromCache(userIdValue: unknown): string | undefined {
-  if (!userIdValue) return undefined;
+const SESSION_COLUMNS = {
+  id: sessions.id,
+  sessionId: sessions.sessionId,
+  userId: sessions.userId,
+  deviceId: sessions.deviceId,
+  deviceName: sessions.deviceName,
+  deviceType: sessions.deviceType,
+  platform: sessions.platform,
+  browser: sessions.browser,
+  os: sessions.os,
+  lastActiveAt: sessions.lastActiveAt,
+  userAgent: sessions.userAgent,
+  deviceFingerprint: sessions.deviceFingerprint,
+  accessToken: sessions.accessToken,
+  refreshToken: sessions.refreshToken,
+  previousRefreshToken: sessions.previousRefreshToken,
+  tokenRotatedAt: sessions.tokenRotatedAt,
+  operatedByUserId: sessions.operatedByUserId,
+  isActive: sessions.isActive,
+  expiresAt: sessions.expiresAt,
+  lastRefresh: sessions.lastRefresh,
+  createdAt: sessions.createdAt,
+  updatedAt: sessions.updatedAt,
+} as const;
 
-  try {
-    if (userIdValue instanceof Types.ObjectId) {
-      return userIdValue.toString();
+/**
+ * Normalize an id that may arrive as a plain string or as a Mongoose-shaped
+ * object, to a string.
+ *
+ * Postgres hands back plain `text` ids, so the ObjectId branches this replaced
+ * are gone along with the 24-hex length check — a 24-char check would now
+ * REJECT every uuid v7 id minted after the cutover. The object branch survives
+ * only because the USER half of `getSessionWithUser` is still a Mongoose
+ * document (see the note there), so `session.userId` can be a populated user.
+ */
+function extractUserId(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string') return value.length > 0 ? value : undefined;
+  if (typeof value === 'object' && '_id' in value) {
+    const id = (value as { _id?: unknown })._id;
+    if (typeof id === 'string') return id.length > 0 ? id : undefined;
+    if (id && typeof id === 'object' && 'toString' in id) {
+      const text = String(id);
+      return text.length > 0 ? text : undefined;
     }
-
-    if (typeof userIdValue === 'object' && userIdValue !== null && '_id' in userIdValue) {
-      const extractedId = (userIdValue as { _id?: unknown })._id;
-      if (extractedId instanceof Types.ObjectId) {
-        return extractedId.toString();
-      }
-      if (typeof extractedId === 'string' && Types.ObjectId.isValid(extractedId) && extractedId.length === OBJECT_ID_LENGTH) {
-        return extractedId;
-      }
-      return undefined;
-    }
-
-    if (typeof userIdValue === 'string') {
-      if (Types.ObjectId.isValid(userIdValue) && userIdValue.length === OBJECT_ID_LENGTH) {
-        return userIdValue;
-      }
-      return undefined;
-    }
-
-    if (typeof userIdValue === 'object' && userIdValue !== null && 'toString' in userIdValue) {
-      const idString = String(userIdValue);
-      if (Types.ObjectId.isValid(idString) && idString.length === OBJECT_ID_LENGTH) {
-        return idString;
-      }
-    }
-  } catch {
-    // Silently handle extraction errors
+    return undefined;
   }
-
+  if (typeof value === 'object' && 'id' in value) {
+    const id = (value as { id?: unknown }).id;
+    return typeof id === 'string' && id.length > 0 ? id : undefined;
+  }
   return undefined;
 }
 
@@ -113,7 +148,7 @@ class SessionService {
     session: { sessionId: string; userId: unknown; operatedByUserId?: unknown },
     opts: { force?: boolean } = {}
   ): Promise<boolean> {
-    const operatorId = extractUserIdFromCache(session.operatedByUserId);
+    const operatorId = extractUserId(session.operatedByUserId);
     if (!operatorId) {
       return true; // ordinary session (no operator) — nothing to bind
     }
@@ -128,7 +163,7 @@ class SessionService {
 
     // `userId` may be a raw ObjectId (refresh path) or a populated user doc
     // (validate path, where getSessionWithUser swaps in the user) — normalize.
-    const accountId = extractUserIdFromCache(session.userId);
+    const accountId = extractUserId(session.userId);
     if (!accountId) {
       return true;
     }
@@ -171,7 +206,7 @@ class SessionService {
    * @param useCache - Whether to use cache (default: true)
    * @returns Session object or null if not found or expired
    */
-  async getSession(sessionId: string, useCache = true): Promise<ISession | null> {
+  async getSession(sessionId: string, useCache = true): Promise<CachedSession | null> {
     try {
       // Try cache first
       if (useCache) {
@@ -181,12 +216,20 @@ class SessionService {
         }
       }
 
-      // Fallback to database
-      const session = await Session.findOne({
-        sessionId,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      }).lean();
+      // Fallback to database. `is_active` + `expires_at > now()` are filtered
+      // HERE, exactly as Mongo did — the expiry sweep is housekeeping only, and
+      // relying on it would turn its interval into a live-credential window.
+      const [session] = await getDb()
+        .select(SESSION_COLUMNS)
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.sessionId, sessionId),
+            eq(sessions.isActive, true),
+            gt(sessions.expiresAt, new Date())
+          )
+        )
+        .limit(1);
 
       if (!session) {
         return null;
@@ -194,10 +237,10 @@ class SessionService {
 
       // Cache the session
       if (useCache) {
-        sessionCache.set(sessionId, session as unknown as ISession);
+        sessionCache.set(sessionId, session);
       }
 
-      return session as unknown as ISession;
+      return session;
     } catch (error) {
       logger.error('[SessionService] Failed to get session', error instanceof Error ? error : new Error(String(error)), {
         component: 'SessionService',
@@ -223,18 +266,22 @@ class SessionService {
    * @returns Session and user object, or null if not found
    */
   async getSessionWithUser(
-    sessionId: string, 
-    options: { useCache?: boolean; select?: string } = {}
-  ): Promise<{ session: ISession; user: any } | null> {
+    sessionId: string,
+    options: { useCache?: boolean } = {}
+  ): Promise<{ session: CachedSession; user: IUser } | null> {
     try {
-      const { useCache = true, select = '-password' } = options;
+      const { useCache = true } = options;
+      // Mongoose projection strings do not travel to Postgres; the only caller
+      // ever passed the default, so the `select` option is dropped rather than
+      // translated. `-password` is preserved below as an explicit exclusion.
+      const select = '-password';
 
       // Try cache first for session (fast path)
       if (useCache) {
         const cached = sessionCache.get(sessionId);
         if (cached) {
           // Extract userId from cached session (handles various formats)
-          const userId = extractUserIdFromCache(cached.userId);
+          const userId = extractUserId(cached.userId);
           
           if (!userId) {
             sessionCache.invalidate(sessionId);
@@ -256,23 +303,29 @@ class SessionService {
         }
       }
 
-      const sessionDoc = await Session.findOne({
-        sessionId,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      }).lean();
+      const [sessionRow] = await getDb()
+        .select(SESSION_COLUMNS)
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.sessionId, sessionId),
+            eq(sessions.isActive, true),
+            gt(sessions.expiresAt, new Date())
+          )
+        )
+        .limit(1);
 
-      if (!sessionDoc?.userId) {
+      if (!sessionRow?.userId) {
         return null;
       }
 
       if (useCache) {
-        sessionCache.set(sessionId, sessionDoc as unknown as ISession);
+        sessionCache.set(sessionId, sessionRow);
       }
 
-      const userId = sessionDoc.userId.toString();
+      const userId = sessionRow.userId;
       let user = userCache.get(userId);
-      
+
       if (!user) {
         const userDoc = await User.findById(userId).select(select).lean<IUser>();
         if (!userDoc) {
@@ -284,12 +337,11 @@ class SessionService {
         }
       }
 
-      const session = {
-        ...sessionDoc,
-        userId: user
-      } as unknown as ISession;
-
-      return { session, user };
+      // Mongo replaced `session.userId` with the populated user document here.
+      // That swap does NOT travel: `sessions.user_id` is a `text` foreign key
+      // and the user rides beside the session in the returned pair instead, so
+      // `session.userId` stays the id it is declared to be.
+      return { session: sessionRow, user };
     } catch (error) {
       logger.error('[SessionService] Failed to get session with user', error instanceof Error ? error : new Error(String(error)), {
         component: 'SessionService',
@@ -361,20 +413,17 @@ class SessionService {
   async updateLastActivity(sessionId: string): Promise<void> {
     try {
       const now = new Date();
-      
-      await Session.updateOne(
-        { sessionId, isActive: true },
-        { 
-          $set: { 
-            'deviceInfo.lastActive': now,
-            updatedAt: now
-          } 
-        }
-      );
+
+      // `updated_at` is maintained by drizzle's `$onUpdate`, so it is no longer
+      // set by hand here (Mongoose needed the explicit `$set`).
+      await getDb()
+        .update(sessions)
+        .set({ lastActiveAt: now })
+        .where(and(eq(sessions.sessionId, sessionId), eq(sessions.isActive, true)));
 
       const cached = sessionCache.get(sessionId);
       if (cached) {
-        cached.deviceInfo.lastActive = now;
+        cached.lastActiveAt = now;
         sessionCache.set(sessionId, cached);
       }
     } catch (error) {
@@ -405,7 +454,7 @@ class SessionService {
     userId: string,
     req: Request,
     options: SessionCreateOptions = {}
-  ): Promise<ISession> {
+  ): Promise<CachedSession> {
     try {
       const { deviceName, deviceFingerprint, stableDeviceKey, deviceId: explicitDeviceId, operatedByUserId } = options;
       // For a server-to-server session mint where the request itself carries no
@@ -460,30 +509,43 @@ class SessionService {
       }
 
       // Check if this is a new device for this user (no previous sessions on this device)
-      const isNewDevice = !(await Session.findOne({
-        userId,
-        deviceId: deviceInfo.deviceId,
-      }).select('_id').lean());
+      const priorOnDevice = await getDb()
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(and(eq(sessions.userId, userId), eq(sessions.deviceId, deviceInfo.deviceId)))
+        .limit(1);
+      const isNewDevice = priorOnDevice.length === 0;
 
       // Reuse an existing active session. Prefer one already attributed to the
       // caller's (central) device; fall back to a LEGACY per-origin session so a
       // pre-unification session HOPS onto the central device (below) instead of
       // orphaning. Once migrated it's found by the primary lookup on subsequent
       // mints — the fallback can't re-sprawl.
-      let existingSession = await Session.findOne({
-        userId,
-        deviceId: deviceInfo.deviceId,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      }).select('_id sessionId deviceId deviceInfo').lean();
+      const reusableOn = async (candidateDeviceId: string) => {
+        const [row] = await getDb()
+          .select({
+            id: sessions.id,
+            sessionId: sessions.sessionId,
+            deviceId: sessions.deviceId,
+            deviceName: sessions.deviceName,
+          })
+          .from(sessions)
+          .where(
+            and(
+              eq(sessions.userId, userId),
+              eq(sessions.deviceId, candidateDeviceId),
+              eq(sessions.isActive, true),
+              gt(sessions.expiresAt, new Date())
+            )
+          )
+          .limit(1);
+        return row;
+      };
+
+      let existingSession = await reusableOn(deviceInfo.deviceId);
 
       if (!existingSession && originDeviceId && originDeviceId !== deviceInfo.deviceId) {
-        existingSession = await Session.findOne({
-          userId,
-          deviceId: originDeviceId,
-          isActive: true,
-          expiresAt: { $gt: new Date() }
-        }).select('_id sessionId deviceId deviceInfo').lean();
+        existingSession = await reusableOn(originDeviceId);
       }
 
       if (existingSession) {
@@ -508,30 +570,27 @@ class SessionService {
           ? explicitDeviceId
           : null;
 
-        const updated = await Session.findOneAndUpdate(
-          { _id: existingSession._id },
-          {
-            $set: {
-              accessToken,
-              refreshToken,
-              expiresAt,
-              lastRefresh: now,
-              ...(migrateToDeviceId ? { deviceId: migrateToDeviceId } : {}),
-              'deviceInfo.lastActive': now,
-              'deviceInfo.deviceName': deviceName || existingSession.deviceInfo?.deviceName,
-              'deviceInfo.userAgent': deviceInfo.userAgent,
-              // Bind the reused session to the CURRENT operator when this is an
-              // account switch (keeps the act_as re-check pointed at whoever just
-              // switched in); leave it untouched for ordinary sessions.
-              ...(operatedByUserId ? { operatedByUserId } : {}),
-              updatedAt: now
-            }
-          },
-          { new: true }
-        );
+        const [updated] = await getDb()
+          .update(sessions)
+          .set({
+            accessToken,
+            refreshToken,
+            expiresAt,
+            lastRefresh: now,
+            ...(migrateToDeviceId ? { deviceId: migrateToDeviceId } : {}),
+            lastActiveAt: now,
+            deviceName: deviceName || existingSession.deviceName,
+            userAgent: deviceInfo.userAgent,
+            // Bind the reused session to the CURRENT operator when this is an
+            // account switch (keeps the act_as re-check pointed at whoever just
+            // switched in); leave it untouched for ordinary sessions.
+            ...(operatedByUserId ? { operatedByUserId } : {}),
+          })
+          .where(eq(sessions.id, existingSession.id))
+          .returning(SESSION_COLUMNS);
 
         if (updated) {
-          sessionCache.set(sessionId, updated as ISession);
+          sessionCache.set(sessionId, updated);
           if (migrateToDeviceId) {
             logger.info('[SessionService] Migrated reused session onto caller device', {
               component: 'SessionService',
@@ -558,7 +617,7 @@ class SessionService {
               });
             }
           }
-          return updated as ISession;
+          return updated;
         }
       }
 
@@ -567,29 +626,33 @@ class SessionService {
       const now = new Date();
       const { accessToken, refreshToken } = generateSessionTokens(userId, sessionId, deviceInfo.deviceId);
 
-      const session = new Session({
-        sessionId,
-        userId,
-        deviceId: deviceInfo.deviceId,
-        deviceInfo: {
+      // `deviceInfo` was a nested subdocument in Mongo; the eight fields are
+      // real columns now (see the table in `db/schema/sessions.ts`).
+      const [session] = await getDb()
+        .insert(sessions)
+        .values({
+          sessionId,
+          userId,
+          deviceId: deviceInfo.deviceId,
           deviceName: deviceInfo.deviceName,
           deviceType: deviceInfo.deviceType,
           platform: deviceInfo.platform,
           browser: deviceInfo.browser,
           os: deviceInfo.os,
           userAgent: deviceInfo.userAgent,
-          fingerprint: deviceInfo.fingerprint,
-          lastActive: now
-        },
-        accessToken,
-        refreshToken,
-        operatedByUserId: operatedByUserId || null,
-        isActive: true,
-        expiresAt,
-        lastRefresh: now
-      });
+          deviceFingerprint: deviceInfo.fingerprint,
+          lastActiveAt: now,
+          accessToken,
+          refreshToken,
+          // NULL, not a placeholder: NULL here means "not a delegated session",
+          // and that is what the `account:act_as` re-check keys off.
+          operatedByUserId: operatedByUserId || null,
+          isActive: true,
+          expiresAt,
+          lastRefresh: now,
+        })
+        .returning(SESSION_COLUMNS);
 
-      await session.save();
       sessionCache.set(sessionId, session);
 
       // Log security event for new device (only if this is the first session on this device)
@@ -638,12 +701,18 @@ class SessionService {
       const sessionId = payload.sessionId;
 
       // First, try matching the current refresh token (fast path)
-      const session = await Session.findOne({
-        sessionId,
-        refreshToken,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      });
+      const [session] = await getDb()
+        .select(SESSION_COLUMNS)
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.sessionId, sessionId),
+            eq(sessions.refreshToken, refreshToken),
+            eq(sessions.isActive, true),
+            gt(sessions.expiresAt, new Date())
+          )
+        )
+        .limit(1);
 
       // If no match on current token, check if this is a recently-rotated token (grace period).
       // This handles the multi-tab race condition: Tab A rotates the token, Tab B still holds
@@ -652,13 +721,20 @@ class SessionService {
         const now = new Date();
         const graceWindowStart = new Date(now.getTime() - TOKEN_ROTATION_GRACE_PERIOD_MS);
 
-        const graceSession = await Session.findOne({
-          sessionId,
-          previousRefreshToken: refreshToken,
-          tokenRotatedAt: { $gte: graceWindowStart },
-          isActive: true,
-          expiresAt: { $gt: now }
-        });
+        // Serves the partial index on (previous_refresh_token, token_rotated_at).
+        const [graceSession] = await getDb()
+          .select(SESSION_COLUMNS)
+          .from(sessions)
+          .where(
+            and(
+              eq(sessions.sessionId, sessionId),
+              eq(sessions.previousRefreshToken, refreshToken),
+              gte(sessions.tokenRotatedAt, graceWindowStart),
+              eq(sessions.isActive, true),
+              gt(sessions.expiresAt, now)
+            )
+          )
+          .limit(1);
 
         if (graceSession) {
           // A managed-account session must re-prove operator act_as on EVERY
@@ -702,29 +778,47 @@ class SessionService {
         payload.deviceId || session.deviceId
       );
 
-      session.previousRefreshToken = session.refreshToken;
-      session.tokenRotatedAt = now;
-      session.accessToken = newAccessToken;
-      session.refreshToken = newRefreshToken;
-      session.lastRefresh = now;
-      session.deviceInfo.lastActive = now;
-      // Sliding (idle) session window: a successful rotation is a USE of the
-      // session, so push the absolute expiry forward. In the zero-cookie
-      // device-first model the durable credential is the never-expiring
-      // deviceSecret; `expiresAt` must therefore be an IDLE timeout (a session
-      // dies only after SESSION_EXPIRES_IN of NO use), not a hard absolute cap
-      // measured from the last interactive sign-in. Renewed here alongside the
-      // token rotation so it is a single write.
-      session.expiresAt = new Date(now.getTime() + SESSION_EXPIRES_IN);
-      await session.save();
+      // Mongo mutated the document field by field and called `.save()`. Here it
+      // is ONE conditional update, and the condition is what makes the rotation
+      // single-use: it still requires the presented `refresh_token` to be the
+      // current one, so two tabs racing the same token cannot both rotate — the
+      // loser matches nothing and falls to the grace path on its next attempt.
+      const [rotated] = await getDb()
+        .update(sessions)
+        .set({
+          previousRefreshToken: session.refreshToken,
+          tokenRotatedAt: now,
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+          lastRefresh: now,
+          lastActiveAt: now,
+          // Sliding (idle) session window: a successful rotation is a USE of the
+          // session, so push the absolute expiry forward. In the zero-cookie
+          // device-first model the durable credential is the never-expiring
+          // deviceSecret; `expiresAt` must therefore be an IDLE timeout (a
+          // session dies only after SESSION_EXPIRES_IN of NO use), not a hard
+          // absolute cap measured from the last interactive sign-in. Renewed
+          // here alongside the token rotation so it is a single write.
+          expiresAt: new Date(now.getTime() + SESSION_EXPIRES_IN),
+        })
+        .where(
+          and(eq(sessions.id, session.id), eq(sessions.refreshToken, session.refreshToken))
+        )
+        .returning(SESSION_COLUMNS);
+
+      if (!rotated) {
+        // A concurrent rotation won. Never hand back a token pair this call did
+        // not actually persist.
+        return null;
+      }
 
       sessionCache.invalidate(sessionId);
-      sessionCache.set(sessionId, session);
+      sessionCache.set(sessionId, rotated);
 
       return {
         accessToken: newAccessToken,
         refreshToken: newRefreshToken,
-        session
+        session: rotated
       };
     } catch (error) {
       logger.error('[SessionService] Failed to refresh tokens', error instanceof Error ? error : new Error(String(error)), {
@@ -746,17 +840,21 @@ class SessionService {
    */
   async deactivateSession(sessionId: string): Promise<boolean> {
     try {
-      const result = await Session.updateOne(
-        { sessionId, isActive: true },
-        { $set: { isActive: false, updatedAt: new Date() } }
-      );
+      // `deactivate` never DELETES — only the expiry sweep removes a row, which
+      // is what keeps every `session_id` reference from another table
+      // lifecycle-independent.
+      const deactivated = await getDb()
+        .update(sessions)
+        .set({ isActive: false })
+        .where(and(eq(sessions.sessionId, sessionId), eq(sessions.isActive, true)))
+        .returning({ id: sessions.id });
 
       // Invalidate cache
       sessionCache.invalidate(sessionId);
       managedSessionRecheckAt.delete(sessionId);
 
       logger.info('[SessionService] Deactivated session', { sessionId: sessionId.substring(0, 8) });
-      return result.modifiedCount > 0;
+      return deactivated.length > 0;
     } catch (error) {
       logger.error('[SessionService] Failed to deactivate session', error instanceof Error ? error : new Error(String(error)), {
         component: 'SessionService',
@@ -780,21 +878,23 @@ class SessionService {
    */
   async deactivateAllUserSessions(userId: string, excludeSessionId?: string): Promise<number> {
     try {
-      const filter: any = { userId, isActive: true };
-      if (excludeSessionId) {
-        filter.sessionId = { $ne: excludeSessionId };
-      }
-
-      const result = await Session.updateMany(
-        filter,
-        { $set: { isActive: false, updatedAt: new Date() } }
-      );
+      const deactivated = await getDb()
+        .update(sessions)
+        .set({ isActive: false })
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            eq(sessions.isActive, true),
+            ...(excludeSessionId ? [ne(sessions.sessionId, excludeSessionId)] : [])
+          )
+        )
+        .returning({ id: sessions.id });
 
       // Invalidate all cached sessions for this user
       sessionCache.invalidateUserSessions(userId);
 
-      logger.info('[SessionService] Deactivated sessions for user', { count: result.modifiedCount, userId });
-      return result.modifiedCount;
+      logger.info('[SessionService] Deactivated sessions for user', { count: deactivated.length, userId });
+      return deactivated.length;
     } catch (error) {
       logger.error('[SessionService] Failed to deactivate all user sessions', error instanceof Error ? error : new Error(String(error)), {
         component: 'SessionService',
@@ -815,20 +915,23 @@ class SessionService {
    * @param userId - The user ID to get sessions for
    * @returns Array of active sessions (empty array on error)
    */
-  async getUserActiveSessions(userId: string): Promise<ISession[]> {
+  async getUserActiveSessions(userId: string): Promise<CachedSession[]> {
     try {
-      const sessions = await Session.find({
-        userId,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      })
-      .sort({ 
-        'deviceInfo.lastActive': -1, // Most recent first
-        'sessionId': 1 // Secondary sort by sessionId for stability
-      })
-      .lean();
-
-      return sessions as unknown as ISession[];
+      // Serves the (user_id, is_active, expires_at) index.
+      return await getDb()
+        .select(SESSION_COLUMNS)
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.userId, userId),
+            eq(sessions.isActive, true),
+            gt(sessions.expiresAt, new Date())
+          )
+        )
+        .orderBy(
+          desc(sessions.lastActiveAt), // Most recent first
+          asc(sessions.sessionId) // Secondary sort for stability
+        );
     } catch (error) {
       logger.error('[SessionService] Failed to get user active sessions', error instanceof Error ? error : new Error(String(error)), {
         component: 'SessionService',
@@ -853,7 +956,7 @@ class SessionService {
   async validateSessionById(
     sessionId: string, 
     populateUser = true
-  ): Promise<{ session: ISession; user?: any } | null> {
+  ): Promise<{ session: CachedSession; user?: any } | null> {
     try {
       if (populateUser) {
         const result = await this.getSessionWithUser(sessionId, { useCache: true });
@@ -948,10 +1051,10 @@ class SessionService {
       // otherwise-valid mint — fall through and return the still-valid token.
       try {
         const slidExpiresAt = new Date(Date.now() + SESSION_EXPIRES_IN);
-        await Session.updateOne(
-          { sessionId, isActive: true },
-          { $set: { expiresAt: slidExpiresAt, updatedAt: new Date() } }
-        );
+        await getDb()
+          .update(sessions)
+          .set({ expiresAt: slidExpiresAt })
+          .where(and(eq(sessions.sessionId, sessionId), eq(sessions.isActive, true)));
         session.expiresAt = slidExpiresAt;
         sessionCache.set(sessionId, session);
       } catch (slideError) {
