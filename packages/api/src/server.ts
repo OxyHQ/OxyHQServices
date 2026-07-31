@@ -85,6 +85,10 @@ import {
   startConductRiskExpiryJobs,
   stopConductRiskExpiryJobs,
 } from './queue/conductRiskExpiry.queue';
+import {
+  startSubscriptionExpiryJobs,
+  stopSubscriptionExpiryJobs,
+} from './queue/subscriptionExpiry.queue';
 import { getEnvBoolean, validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import { getDbName } from './config/db';
 import { logger } from './utils/logger';
@@ -460,6 +464,7 @@ async function gracefulShutdown(signal: string) {
   await stopTransparencyCheckpointJobs();
   await stopLinkPreviewWarmJobs();
   await stopConductRiskExpiryJobs();
+  await stopSubscriptionExpiryJobs();
   await stopSmtpInbound();
   smtpOutbound.shutdown();
   await closeRedis();
@@ -923,6 +928,13 @@ if (require.main === module) {
       // not become a life sentence. Idempotent — a missed tick only delays a
       // recovery. Never throws.
       await startConductRiskExpiryJobs();
+
+      // Materialize `status = 'expired'` on lapsed subscriptions. This REPLACES
+      // a Mongo TTL index that DELETED the subscription record when its period
+      // closed; nothing is deleted now. Entitlement never depends on this
+      // running — every read derives expiry from `end_date` itself — so a missed
+      // tick delays a label and nothing more. Never throws.
+      await startSubscriptionExpiryJobs();
 
       server.listen(PORT, '0.0.0.0', () => {
         logger.info(`Server running on port ${PORT}`, {

@@ -718,14 +718,45 @@ describe('closed value sets — text + CHECK, not a pg enum', () => {
     expect(pgConstraintName(error)).toBe('billing_transactions_type_check');
   });
 
-  it('rejects a Stripe status this platform does not sell', async () => {
+  /**
+   * `billing_subscriptions` is a MIRROR, so the CHECK admits every status Stripe
+   * can send — including the three this platform does not sell
+   * (`incomplete`, `incomplete_expired`, `paused`).
+   *
+   * Mongoose declared only the five sellable ones and never enforced them: the
+   * webhook writes through `findOneAndUpdate` WITHOUT `runValidators`, so Mongo
+   * stored whatever arrived. A CHECK *is* enforced, so porting the narrow list
+   * would have turned a silent write into a failed webhook — Stripe retrying
+   * forever while the mirror froze at its previous value. A subscription Stripe
+   * had moved to `paused` would still read `active` here, and
+   * `subscriptionPlan.ts` would keep granting premium to someone who stopped
+   * paying. Widening grants nothing: only `active` and `trialing` ever count as
+   * live.
+   */
+  it('accepts every status Stripe can send, including ones this platform does not sell', async () => {
+    const userId = await owner();
+
+    for (const status of ['incomplete', 'incomplete_expired', 'paused']) {
+      await expect(
+        getDb().execute(sql`
+          insert into billing_subscriptions
+            (id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id, status,
+             current_period_start, current_period_end, plan_name, plan_credits_per_month, plan_price_minor_units)
+          values (${randomUUID()}, ${userId}, 'cus_x', ${`sub_${randomUUID()}`}, 'price_x', ${status},
+                  now(), now() + interval '30 days', 'Pro', 10000, 2999)
+        `)
+      ).resolves.toBeDefined();
+    }
+  });
+
+  it('still rejects a status Stripe cannot send', async () => {
     const userId = await owner();
     const error = await rejection(
       getDb().execute(sql`
         insert into billing_subscriptions
           (id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id, status,
            current_period_start, current_period_end, plan_name, plan_credits_per_month, plan_price_minor_units)
-        values (${randomUUID()}, ${userId}, 'cus_x', ${`sub_${randomUUID()}`}, 'price_x', 'incomplete_expired',
+        values (${randomUUID()}, ${userId}, 'cus_x', ${`sub_${randomUUID()}`}, 'price_x', 'chargeback',
                 now(), now() + interval '30 days', 'Pro', 10000, 2999)
       `)
     );

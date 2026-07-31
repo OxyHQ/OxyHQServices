@@ -50,6 +50,20 @@
       "when": 1785504661556,
       "tag": "0006_workable_blonde_phantom",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785527071622,
+      "tag": "0007_billing_payment_intent_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785527614823,
+      "tag": "0008_billing_subscription_all_stripe_statuses",
+      "breakpoints": true
     }
   ]
 }

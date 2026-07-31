@@ -34,6 +34,24 @@ const CLOSE_TIMEOUT_SECONDS = 5;
 
 export type Database = PostgresJsDatabase<typeof schema>;
 
+/**
+ * An open transaction on that pool — the handle `db.transaction(async (tx) => …)`
+ * passes its callback.
+ *
+ * DERIVED from `Database` rather than written out, so it cannot drift from the
+ * schema or from drizzle's generics when either changes.
+ */
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/**
+ * Either handle. A write that must be able to JOIN a caller's transaction takes
+ * this: a `Transaction` is not assignable to `Database` (it has no `$client`),
+ * so a helper typed only as `Database` silently forces its caller to run outside
+ * the transaction — which is how a guarded write loses its atomicity with the
+ * work it is supposed to be atomic WITH.
+ */
+export type DatabaseOrTransaction = Database | Transaction;
+
 let db: Database | null = null;
 let client: postgres.Sql | null = null;
 

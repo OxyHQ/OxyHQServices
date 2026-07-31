@@ -13,7 +13,7 @@ export const checkPremiumAccess = async (req: AuthRequest, res: Response, next: 
       return res.status(401).json({ message: 'Authentication required' });
     }
 
-    const plan = await resolveUserSubscriptionPlan(user._id);
+    const plan = await resolveUserSubscriptionPlan(user._id.toString());
     if (!isPremiumSubscriptionPlan(plan)) {
       return res.status(403).json({
         message: 'Analytics access denied',

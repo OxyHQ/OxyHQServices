@@ -1,18 +1,14 @@
 import express from 'express';
 import crypto from 'crypto';
-import mongoose from 'mongoose';
-import { Application, type IApplication } from '../models/Application';
+import { and, count, desc, eq, gte, inArray, ne, sql } from 'drizzle-orm';
+import { getDb } from '../config/postgres';
+import { apiKeyUsageEvents, applicationCredentials, applications } from '../db/schema';
 import {
   type APPLICATION_SCOPES,
   type ApplicationScope,
   isPaymentsScope,
   isPrivilegedScope,
 } from '../utils/applicationScopes';
-import {
-  ApplicationCredential,
-  type IApplicationCredential,
-} from '../models/ApplicationCredential';
-import ApiKeyUsage from '../models/ApiKeyUsage';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { isStaffUser } from '../middleware/requireStaff';
 import { validate } from '../middleware/validate';
@@ -44,6 +40,15 @@ import {
   createCredentialSchema,
 } from '../schemas/application.schemas';
 
+/** A stored application row. */
+type ApplicationRow = typeof applications.$inferSelect;
+
+/**
+ * A credential row as read by this module — every column EXCEPT `secretHash`.
+ * See {@link CREDENTIAL_COLUMNS}.
+ */
+type CredentialRow = Omit<typeof applicationCredentials.$inferSelect, 'secretHash'>;
+
 /**
  * Resolved application access for the caller.
  *
@@ -54,7 +59,7 @@ import {
  * table.
  */
 interface AppAccess {
-  application: IApplication;
+  application: ApplicationRow;
   /** The caller's effective account role over `ownerAccountId`. */
   role: AccountRole;
   /** Effective application permissions derived from that role. */
@@ -66,7 +71,7 @@ interface AppAccess {
  * the resolved application and the caller's access.
  */
 interface AppContextRequest extends AuthRequest {
-  application?: IApplication;
+  application?: ApplicationRow;
   access?: AppAccess;
 }
 
@@ -82,6 +87,36 @@ const WEBHOOK_SECRET_RANDOM_BYTES = 24;
  * time to roll out the new secret with zero downtime (7 days).
  */
 const CREDENTIAL_ROTATION_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Most-used endpoints reported by the usage summary. */
+const USAGE_TOP_ENDPOINTS = 10;
+
+/**
+ * The credential columns a client may ever see — every column except
+ * `secretHash`.
+ *
+ * Mongoose expressed this as `.select('-secretHash')`; drizzle enumerates
+ * columns explicitly and has no exclusion form, so the selection is named once
+ * here and reused by the list read AND by every `returning()`. A credential
+ * object in this module therefore never carries the hash in the first place,
+ * which is a stronger guarantee than remembering to drop it in the serializer.
+ */
+const CREDENTIAL_COLUMNS = {
+  id: applicationCredentials.id,
+  applicationId: applicationCredentials.applicationId,
+  name: applicationCredentials.name,
+  publicKey: applicationCredentials.publicKey,
+  type: applicationCredentials.type,
+  environment: applicationCredentials.environment,
+  scopes: applicationCredentials.scopes,
+  status: applicationCredentials.status,
+  lastUsedAt: applicationCredentials.lastUsedAt,
+  expiresAt: applicationCredentials.expiresAt,
+  rotatedFromCredentialId: applicationCredentials.rotatedFromCredentialId,
+  createdByUserId: applicationCredentials.createdByUserId,
+  createdAt: applicationCredentials.createdAt,
+  updatedAt: applicationCredentials.updatedAt,
+};
 
 const router = express.Router();
 
@@ -184,7 +219,11 @@ function resolveRedirectUris(input: { redirectUris?: string[] }): string[] | und
  *   scope requires staff.
  *
  * `previousScopes` supplies the currently-granted set to reconcile against; it
- * is empty on create (nothing to preserve) and the stored scopes on update.
+ * is empty on create (nothing to preserve) and the stored scopes on update. It
+ * is `readonly string[]` rather than `ApplicationScope[]` because the stored
+ * column is a `text[]` — narrowing back to the vocabulary is what
+ * `isPrivilegedScope`'s type predicate does below.
+ *
  * Staff callers get an authoritative replace of exactly what they submit,
  * including intentional privileged-scope removal. Returns the validated,
  * deduplicated scope list.
@@ -192,7 +231,7 @@ function resolveRedirectUris(input: { redirectUris?: string[] }): string[] | und
 function authorizeRequestedScopes(
   req: AuthRequest,
   requestedScopes: ApplicationScope[],
-  previousScopes: readonly ApplicationScope[]
+  previousScopes: readonly string[]
 ): ApplicationScope[] {
   const deduped = Array.from(new Set(requestedScopes));
 
@@ -201,7 +240,7 @@ function authorizeRequestedScopes(
   }
 
   const previouslyGranted = new Set(previousScopes);
-  const requested = new Set(deduped);
+  const requested = new Set<string>(deduped);
 
   const newlyAddedPrivileged = deduped.filter(
     (scope) => isPrivilegedScope(scope) && !previouslyGranted.has(scope)
@@ -221,7 +260,7 @@ function authorizeRequestedScopes(
   // revoking a privileged scope is a staff-only mutation, so an omission is
   // treated as "leave it untouched" rather than a silent revoke.
   const preservedPrivileged = Array.from(previouslyGranted).filter(
-    (scope) => isPrivilegedScope(scope) && !requested.has(scope)
+    (scope): scope is ApplicationScope => isPrivilegedScope(scope) && !requested.has(scope)
   );
   if (preservedPrivileged.length > 0) {
     logger.warn('Preserving already-granted privileged application scope omitted by non-staff actor', {
@@ -244,30 +283,81 @@ interface SerializedCallerMembership {
   ownerAccountId: string;
 }
 
+/**
+ * The wire shape of an application. Declared explicitly so a column rename or a
+ * dropped field fails `tsc` here rather than silently changing the response.
+ *
+ * Every optional field is `?: T` and is fed `?? undefined` from its nullable
+ * column: Mongo omitted an unset field entirely, and `JSON.stringify` drops an
+ * `undefined` property but emits an explicit `null`. Mapping the column's NULL
+ * back to `undefined` is what keeps the response byte-identical.
+ */
+interface SerializedApplication {
+  _id: string;
+  name: string;
+  description?: string;
+  websiteUrl?: string;
+  privacyPolicyUrl?: string;
+  termsUrl?: string;
+  icon?: string;
+  type: ApplicationRow['type'];
+  status: ApplicationRow['status'];
+  isOfficial: boolean;
+  isInternal: boolean;
+  capabilities: string[];
+  redirectUris: string[];
+  scopes: string[];
+  webhookUrl?: string;
+  devWebhookUrl?: string;
+  ownerAccountId: string;
+  createdByUserId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  callerMembership: SerializedCallerMembership | null;
+}
+
+/** The wire shape of a credential — NEVER carries secret material. */
+interface SerializedCredential {
+  _id: string;
+  applicationId: string;
+  name: string;
+  publicKey: string;
+  type: CredentialRow['type'];
+  environment: CredentialRow['environment'];
+  scopes: string[];
+  status: CredentialRow['status'];
+  lastUsedAt?: Date;
+  expiresAt?: Date;
+  rotatedFromCredentialId?: string;
+  createdByUserId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 /** Serialise an application for client responses (no webhook secret). */
 function serializeApplication(
-  app: IApplication,
+  app: ApplicationRow,
   callerMembership?: SerializedCallerMembership | null
-) {
+): SerializedApplication {
   return {
-    _id: app._id.toString(),
+    _id: app.id,
     name: app.name,
-    description: app.description,
-    websiteUrl: app.websiteUrl,
-    privacyPolicyUrl: app.privacyPolicyUrl,
-    termsUrl: app.termsUrl,
-    icon: app.icon,
+    description: app.description ?? undefined,
+    websiteUrl: app.websiteUrl ?? undefined,
+    privacyPolicyUrl: app.privacyPolicyUrl ?? undefined,
+    termsUrl: app.termsUrl ?? undefined,
+    icon: app.icon ?? undefined,
     type: app.type,
     status: app.status,
     isOfficial: app.isOfficial,
     isInternal: app.isInternal,
-    capabilities: app.capabilities ?? [],
-    redirectUris: app.redirectUris ?? [],
-    scopes: app.scopes ?? [],
-    webhookUrl: app.webhookUrl,
-    devWebhookUrl: app.devWebhookUrl,
-    ownerAccountId: app.ownerAccountId.toString(),
-    createdByUserId: app.createdByUserId.toString(),
+    capabilities: app.capabilities,
+    redirectUris: app.redirectUris,
+    scopes: app.scopes,
+    webhookUrl: app.webhookUrl ?? undefined,
+    devWebhookUrl: app.devWebhookUrl ?? undefined,
+    ownerAccountId: app.ownerAccountId,
+    createdByUserId: app.createdByUserId ?? undefined,
     createdAt: app.createdAt,
     updatedAt: app.updatedAt,
     callerMembership: callerMembership ?? null,
@@ -275,82 +365,108 @@ function serializeApplication(
 }
 
 /** Serialise a credential for client responses — NEVER includes the secret hash. */
-function serializeCredential(credential: IApplicationCredential) {
+function serializeCredential(credential: CredentialRow): SerializedCredential {
   return {
-    _id: credential._id.toString(),
-    applicationId: credential.applicationId.toString(),
+    _id: credential.id,
+    applicationId: credential.applicationId,
     name: credential.name,
     publicKey: credential.publicKey,
     type: credential.type,
     environment: credential.environment,
     scopes: credential.scopes,
     status: credential.status,
-    lastUsedAt: credential.lastUsedAt,
-    expiresAt: credential.expiresAt,
-    rotatedFromCredentialId: credential.rotatedFromCredentialId
-      ? credential.rotatedFromCredentialId.toString()
-      : undefined,
-    createdByUserId: credential.createdByUserId.toString(),
+    lastUsedAt: credential.lastUsedAt ?? undefined,
+    expiresAt: credential.expiresAt ?? undefined,
+    rotatedFromCredentialId: credential.rotatedFromCredentialId ?? undefined,
+    createdByUserId: credential.createdByUserId ?? undefined,
     createdAt: credential.createdAt,
     updatedAt: credential.updatedAt,
   };
 }
 
-/** Aggregate usage statistics for the supplied match filter. */
-async function getUsageStats(matchFilter: Record<string, unknown>) {
-  const [usage] = await ApiKeyUsage.aggregate([
-    { $match: matchFilter },
-    {
-      $group: {
-        _id: null,
-        totalRequests: { $sum: 1 },
-        totalTokens: { $sum: '$tokensUsed' },
-        totalCredits: { $sum: '$creditsUsed' },
-        avgResponseTime: { $avg: '$responseTime' },
-        successfulRequests: { $sum: { $cond: [{ $lt: ['$statusCode', 400] }, 1, 0] } },
-        errorRequests: { $sum: { $cond: [{ $gte: ['$statusCode', 400] }, 1, 0] } },
-      },
-    },
-  ]);
+/** Aggregate totals over the requested window. */
+interface UsageSummary {
+  totalRequests: number;
+  totalTokens: number;
+  totalCredits: number;
+  avgResponseTime: number;
+  successfulRequests: number;
+  errorRequests: number;
+}
 
-  const byDay = await ApiKeyUsage.aggregate([
-    { $match: matchFilter },
-    {
-      $group: {
-        _id: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
-        requests: { $sum: 1 },
-        tokens: { $sum: '$tokensUsed' },
-        credits: { $sum: '$creditsUsed' },
-      },
-    },
-    { $sort: { _id: 1 } },
-  ]);
+/** Per-day usage bucket. `_id` is the UTC day key (`YYYY-MM-DD`). */
+interface UsageByDay {
+  _id: string;
+  requests: number;
+  tokens: number;
+  credits: number;
+}
 
-  const byEndpoint = await ApiKeyUsage.aggregate([
-    { $match: matchFilter },
-    {
-      $group: {
-        _id: '$endpoint',
-        requests: { $sum: 1 },
-        tokens: { $sum: '$tokensUsed' },
-      },
-    },
-    { $sort: { requests: -1 } },
-    { $limit: 10 },
-  ]);
+/** Per-endpoint usage bucket. `_id` is the endpoint. */
+interface UsageByEndpoint {
+  _id: string;
+  requests: number;
+  tokens: number;
+}
 
-  return {
-    summary: usage || {
-      totalRequests: 0,
-      totalTokens: 0,
-      totalCredits: 0,
-      avgResponseTime: 0,
-      successfulRequests: 0,
-      errorRequests: 0,
-    },
-    byDay,
-    byEndpoint,
-  };
+/** Usage statistics for one application over a period. */
+interface UsageStats {
+  summary: UsageSummary;
+  byDay: UsageByDay[];
+  byEndpoint: UsageByEndpoint[];
+}
+
+/**
+ * Usage statistics for one application since `startDate`.
+ *
+ * `sum()` over an integer column yields `bigint`, which postgres.js hands back
+ * as a STRING; every integer total is therefore cast in SQL rather than
+ * converted in TypeScript. `avg` and the credit sum are already
+ * double-precision. `count(*) filter (where …)` replaces Mongo's
+ * `$sum: {$cond: […]}`.
+ */
+async function getUsageStats(applicationId: string, startDate: Date): Promise<UsageStats> {
+  const db = getDb();
+  const window = and(
+    eq(apiKeyUsageEvents.applicationId, applicationId),
+    gte(apiKeyUsageEvents.createdAt, startDate)
+  );
+
+  // Mongo's `$dateToString` formats in UTC; `to_char` over a `timestamptz`
+  // formats in the SESSION time zone, so the day key is pinned to UTC here or
+  // the buckets silently shift with the server's `TimeZone`.
+  const dayKey = sql<string>`to_char(${apiKeyUsageEvents.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`;
+  const tokenTotal = sql<number>`coalesce(sum(${apiKeyUsageEvents.tokensUsed}), 0)::int`;
+  const creditTotal = sql<number>`coalesce(sum(${apiKeyUsageEvents.creditsUsed}), 0)::double precision`;
+
+  const [summary] = await db
+    .select({
+      totalRequests: count(),
+      totalTokens: tokenTotal,
+      totalCredits: creditTotal,
+      avgResponseTime: sql<number>`coalesce(avg(${apiKeyUsageEvents.responseTime}), 0)::double precision`,
+      successfulRequests: sql<number>`(count(*) filter (where ${apiKeyUsageEvents.statusCode} < 400))::int`,
+      errorRequests: sql<number>`(count(*) filter (where ${apiKeyUsageEvents.statusCode} >= 400))::int`,
+    })
+    .from(apiKeyUsageEvents)
+    .where(window);
+
+  const byDay = await db
+    .select({ _id: dayKey, requests: count(), tokens: tokenTotal, credits: creditTotal })
+    .from(apiKeyUsageEvents)
+    .where(window)
+    .groupBy(dayKey)
+    .orderBy(dayKey);
+
+  const byEndpoint = await db
+    .select({ _id: apiKeyUsageEvents.endpoint, requests: count(), tokens: tokenTotal })
+    .from(apiKeyUsageEvents)
+    .where(window)
+    .groupBy(apiKeyUsageEvents.endpoint)
+    .orderBy(sql`count(*) desc`)
+    .limit(USAGE_TOP_ENDPOINTS);
+
+  return { summary, byDay, byEndpoint };
 }
 
 /** Generate a fresh credential public key + plaintext secret + its hash. */
@@ -369,7 +485,7 @@ function callerMembershipFromAccess(access: AppAccess | undefined): SerializedCa
     role: access.role,
     permissions: [...access.permissions],
     source: 'account',
-    ownerAccountId: access.application.ownerAccountId.toString(),
+    ownerAccountId: access.application.ownerAccountId,
   };
 }
 
@@ -382,23 +498,20 @@ function callerMembershipFromAccess(access: AppAccess | undefined): SerializedCa
  */
 async function loadApplicationContext(req: AppContextRequest): Promise<AppAccess> {
   const userId = requireUserId(req);
-  const appId = req.params.appId;
+  const db = getDb();
 
-  if (!mongoose.isValidObjectId(appId)) {
-    throw new NotFoundError('Application not found');
-  }
-
-  const application = await Application.findOne({
-    _id: appId,
-    status: { $ne: 'deleted' },
-  });
+  const [application] = await db
+    .select()
+    .from(applications)
+    .where(and(eq(applications.id, req.params.appId), ne(applications.status, 'deleted')))
+    .limit(1);
   if (!application) {
     throw new NotFoundError('Application not found');
   }
 
   const accountAccess = await accountService.resolveEffectiveAccess(
     userId,
-    application.ownerAccountId.toString()
+    application.ownerAccountId
   );
   if (!accountAccess) {
     throw new ForbiddenError('You do not have access to this application');
@@ -451,9 +564,6 @@ router.get(
     const roleByAccountId = new Map<string, AccountRole>();
 
     if (ownerAccountIdFilter !== undefined) {
-      if (!mongoose.isValidObjectId(ownerAccountIdFilter)) {
-        throw new NotFoundError('Account not found');
-      }
       const access = await accountService.resolveEffectiveAccess(userId, ownerAccountIdFilter);
       if (!access) {
         throw new ForbiddenError('You do not have access to this account');
@@ -470,26 +580,32 @@ router.get(
       }
     }
 
-    const accountIds = [...roleByAccountId.keys()].map((id) => new mongoose.Types.ObjectId(id));
+    const accountIds = [...roleByAccountId.keys()];
     if (accountIds.length === 0) {
       res.json({ applications: [] });
       return;
     }
 
-    const applications = await Application.find({
-      ownerAccountId: { $in: accountIds },
-      status: { $ne: 'deleted' },
-    }).sort({ createdAt: -1 });
+    const rows = await getDb()
+      .select()
+      .from(applications)
+      .where(
+        and(
+          inArray(applications.ownerAccountId, accountIds),
+          ne(applications.status, 'deleted')
+        )
+      )
+      .orderBy(desc(applications.createdAt));
 
     res.json({
-      applications: applications.map((app) => {
-        const role = roleByAccountId.get(app.ownerAccountId.toString());
+      applications: rows.map((app) => {
+        const role = roleByAccountId.get(app.ownerAccountId);
         const callerMembership = role
           ? {
               role,
               permissions: appPermissionsForAccountRole(role),
               source: 'account' as const,
-              ownerAccountId: app.ownerAccountId.toString(),
+              ownerAccountId: app.ownerAccountId,
             }
           : null;
         return serializeApplication(app, callerMembership);
@@ -523,9 +639,6 @@ router.post(
     };
 
     const ownerAccountId = body.ownerAccountId ?? userId;
-    if (!mongoose.isValidObjectId(ownerAccountId)) {
-      throw new BadRequestError('Invalid ownerAccountId');
-    }
 
     const access = await accountService.resolveEffectiveAccess(userId, ownerAccountId);
     if (!access) {
@@ -538,28 +651,31 @@ router.post(
     // Privileged scopes (e.g. federation:write) are NOT self-grantable.
     const scopes = authorizeRequestedScopes(req, body.scopes ?? [], []);
 
-    const application = await Application.create({
-      name: body.name,
-      description: body.description,
-      websiteUrl: body.websiteUrl || undefined,
-      privacyPolicyUrl: body.privacyPolicyUrl || undefined,
-      termsUrl: body.termsUrl || undefined,
-      icon: body.icon ? stripSensitiveUrlQueryParams(body.icon) : body.icon,
-      redirectUris: resolveRedirectUris(body) ?? [],
-      scopes,
-      ownerAccountId: new mongoose.Types.ObjectId(ownerAccountId),
-      createdByUserId: new mongoose.Types.ObjectId(userId),
-    });
+    const [application] = await getDb()
+      .insert(applications)
+      .values({
+        name: body.name,
+        description: body.description,
+        websiteUrl: body.websiteUrl || undefined,
+        privacyPolicyUrl: body.privacyPolicyUrl || undefined,
+        termsUrl: body.termsUrl || undefined,
+        icon: body.icon ? stripSensitiveUrlQueryParams(body.icon) : body.icon,
+        redirectUris: resolveRedirectUris(body) ?? [],
+        scopes,
+        ownerAccountId,
+        createdByUserId: userId,
+      })
+      .returning();
 
     // A newly-created app is `active` and may carry redirectUris, so it can add
     // origins to the approved-clients allow-list. Drop the cached set.
-    if (application.status === 'active' && (application.redirectUris?.length ?? 0) > 0) {
+    if (application.status === 'active' && application.redirectUris.length > 0) {
       refreshDynamicCorsOrigins();
     }
 
     logger.info('Application created', {
       userId,
-      applicationId: application._id.toString(),
+      applicationId: application.id,
       ownerAccountId: ownerAccountId,
       name: application.name,
     });
@@ -604,8 +720,8 @@ router.patch(
   validate({ params: appIdRouteParams, body: updateApplicationSchema }),
   requireAppPermission('app:update'),
   asyncHandler(async (req: AppContextRequest, res) => {
-    const application = req.application;
-    if (!application) {
+    const stored = req.application;
+    if (!stored) {
       throw new NotFoundError('Application not found');
     }
 
@@ -621,62 +737,79 @@ router.patch(
       webhookUrl?: string;
       devWebhookUrl?: string | null;
       status?: 'active' | 'suspended' | 'pending_review';
-      type?: IApplication['type'];
+      type?: ApplicationRow['type'];
       isOfficial?: boolean;
       isInternal?: boolean;
       capabilities?: string[];
     };
 
-    if (body.name !== undefined) application.name = body.name;
-    if (body.description !== undefined) application.description = body.description;
-    if (body.websiteUrl !== undefined) application.websiteUrl = body.websiteUrl || undefined;
+    // Only the fields the caller actually supplied are written, so a partial
+    // update never rewrites a column it did not name.
+    const updates: Partial<typeof applications.$inferInsert> = {};
+
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.description !== undefined) updates.description = body.description;
+    if (body.websiteUrl !== undefined) updates.websiteUrl = body.websiteUrl || null;
     if (body.privacyPolicyUrl !== undefined) {
-      application.privacyPolicyUrl = body.privacyPolicyUrl || undefined;
+      updates.privacyPolicyUrl = body.privacyPolicyUrl || null;
     }
-    if (body.termsUrl !== undefined) application.termsUrl = body.termsUrl || undefined;
-    if (body.icon !== undefined) application.icon = stripSensitiveUrlQueryParams(body.icon);
+    if (body.termsUrl !== undefined) updates.termsUrl = body.termsUrl || null;
+    if (body.icon !== undefined) updates.icon = stripSensitiveUrlQueryParams(body.icon);
     if (body.scopes !== undefined) {
       // Privileged scopes (e.g. federation:write) are staff-only. A non-staff
       // caller may keep an already-granted privileged scope but may not add one.
-      application.scopes = authorizeRequestedScopes(req, body.scopes, application.scopes);
+      updates.scopes = authorizeRequestedScopes(req, body.scopes, stored.scopes);
     }
-    if (body.status !== undefined) application.status = body.status;
+    if (body.status !== undefined) updates.status = body.status;
     if (body.devWebhookUrl !== undefined) {
-      application.devWebhookUrl = body.devWebhookUrl || undefined;
+      updates.devWebhookUrl = body.devWebhookUrl || null;
     }
 
     const resolvedRedirectUris = resolveRedirectUris(body);
     if (resolvedRedirectUris !== undefined) {
-      application.redirectUris = resolvedRedirectUris;
+      updates.redirectUris = resolvedRedirectUris;
     }
 
     // Rotate the webhook secret whenever the webhook URL changes.
-    if (body.webhookUrl !== undefined && body.webhookUrl !== application.webhookUrl) {
-      application.webhookUrl = body.webhookUrl || undefined;
-      application.webhookSecret = body.webhookUrl
+    if (body.webhookUrl !== undefined && body.webhookUrl !== stored.webhookUrl) {
+      updates.webhookUrl = body.webhookUrl || null;
+      updates.webhookSecret = body.webhookUrl
         ? crypto.randomBytes(WEBHOOK_SECRET_RANDOM_BYTES).toString('hex')
-        : undefined;
+        : null;
     }
 
     // Staff-only fields — applied only for platform staff, silently dropped otherwise.
     if (isStaffUser(req)) {
-      if (body.type !== undefined) application.type = body.type;
-      if (body.isOfficial !== undefined) application.isOfficial = body.isOfficial;
-      if (body.isInternal !== undefined) application.isInternal = body.isInternal;
-      if (body.capabilities !== undefined) application.capabilities = body.capabilities;
+      if (body.type !== undefined) updates.type = body.type;
+      if (body.isOfficial !== undefined) updates.isOfficial = body.isOfficial;
+      if (body.isInternal !== undefined) updates.isInternal = body.isInternal;
+      if (body.capabilities !== undefined) updates.capabilities = body.capabilities;
     }
 
-    await application.save();
+    // An empty patch writes nothing at all — matching Mongoose's `save()` on a
+    // document with no modified paths, which also left `updatedAt` untouched.
+    let application = stored;
+    if (Object.keys(updates).length > 0) {
+      const [updated] = await getDb()
+        .update(applications)
+        .set(updates)
+        .where(eq(applications.id, stored.id))
+        .returning();
+      if (!updated) {
+        throw new NotFoundError('Application not found');
+      }
+      application = updated;
+    }
 
     // The federation-domain allow-list is DERIVED from this app's redirectUris
     // and status; invalidate eagerly so revoked redirectUris or a suspended
     // status stop authorising federation signing immediately.
-    credentialDomainCache.invalidate(application._id.toString());
+    credentialDomainCache.invalidate(application.id);
     refreshDynamicCorsOrigins();
 
     logger.info('Application updated', {
       userId: requireUserId(req),
-      applicationId: application._id.toString(),
+      applicationId: application.id,
     });
 
     res.json({
@@ -698,16 +831,22 @@ router.delete(
       throw new NotFoundError('Application not found');
     }
 
-    application.status = 'deleted';
-    await application.save();
+    const [deleted] = await getDb()
+      .update(applications)
+      .set({ status: 'deleted' })
+      .where(eq(applications.id, application.id))
+      .returning({ id: applications.id });
+    if (!deleted) {
+      throw new NotFoundError('Application not found');
+    }
 
     // A deleted app must immediately stop authorising federation signing.
-    credentialDomainCache.invalidate(application._id.toString());
+    credentialDomainCache.invalidate(application.id);
     refreshDynamicCorsOrigins();
 
     logger.info('Application deleted', {
       userId: requireUserId(req),
-      applicationId: application._id.toString(),
+      applicationId: application.id,
     });
 
     res.json({ success: true });
@@ -731,11 +870,11 @@ router.get(
       throw new NotFoundError('Application not found');
     }
 
-    const credentials = await ApplicationCredential.find({
-      applicationId: application._id,
-    })
-      .select('-secretHash')
-      .sort({ createdAt: -1 });
+    const credentials = await getDb()
+      .select(CREDENTIAL_COLUMNS)
+      .from(applicationCredentials)
+      .where(eq(applicationCredentials.applicationId, application.id))
+      .orderBy(desc(applicationCredentials.createdAt));
 
     res.json({ credentials: credentials.map(serializeCredential) });
   })
@@ -760,8 +899,8 @@ router.post(
 
     const body = req.body as {
       name: string;
-      type: IApplicationCredential['type'];
-      environment: IApplicationCredential['environment'];
+      type: CredentialRow['type'];
+      environment: CredentialRow['environment'];
       scopes?: ApplicationScope[];
     };
 
@@ -804,21 +943,24 @@ router.post(
     const { publicKey, secret, secretHash } = generateCredentialMaterial();
     const isPublicClient = body.type === 'public';
 
-    const credential = await ApplicationCredential.create({
-      applicationId: application._id,
-      name: body.name,
-      secretHash: isPublicClient ? undefined : secretHash,
-      publicKey,
-      type: body.type,
-      environment: body.environment,
-      scopes: requestedScopes,
-      status: 'active',
-      createdByUserId: new mongoose.Types.ObjectId(requireUserId(req)),
-    });
+    const [credential] = await getDb()
+      .insert(applicationCredentials)
+      .values({
+        applicationId: application.id,
+        name: body.name,
+        secretHash: isPublicClient ? null : secretHash,
+        publicKey,
+        type: body.type,
+        environment: body.environment,
+        scopes: requestedScopes,
+        status: 'active',
+        createdByUserId: requireUserId(req),
+      })
+      .returning(CREDENTIAL_COLUMNS);
 
     logger.info('Application credential created', {
-      applicationId: application._id.toString(),
-      credentialId: credential._id.toString(),
+      applicationId: application.id,
+      credentialId: credential.id,
       type: credential.type,
       by: requireUserId(req),
     });
@@ -834,6 +976,10 @@ router.post(
  * Rotate a credential — zero-downtime. Mints a replacement (fresh keys) then
  * deprecates the previous one with a 7-day grace `expiresAt`. The new plaintext
  * `secret` is returned EXACTLY ONCE.
+ *
+ * Both writes run in ONE transaction: a mint that landed without its matching
+ * deprecation would leave two live credentials for the same client, which is
+ * exactly the state the grace window exists to avoid.
  */
 router.post(
   '/:appId/credentials/:credId/rotate',
@@ -845,47 +991,56 @@ router.post(
       throw new NotFoundError('Application not found');
     }
 
-    if (!mongoose.isValidObjectId(req.params.credId)) {
-      throw new NotFoundError('Credential not found');
-    }
-
-    const previous = await ApplicationCredential.findOne({
-      _id: req.params.credId,
-      applicationId: application._id,
-      status: { $ne: 'revoked' },
-    });
-    if (!previous) {
-      throw new NotFoundError('Credential not found');
-    }
-
-    if (previous.type === 'public') {
-      throw new BadRequestError('Public credentials do not have a rotatable secret');
-    }
-
     const { publicKey, secret, secretHash } = generateCredentialMaterial();
-
-    const rotated = await ApplicationCredential.create({
-      applicationId: application._id,
-      name: previous.name,
-      publicKey,
-      secretHash,
-      type: previous.type,
-      environment: previous.environment,
-      scopes: previous.scopes,
-      status: 'active',
-      rotatedFromCredentialId: previous._id,
-      createdByUserId: new mongoose.Types.ObjectId(requireUserId(req)),
-    });
-
     const graceExpiresAt = new Date(Date.now() + CREDENTIAL_ROTATION_GRACE_MS);
-    previous.status = 'deprecated';
-    previous.expiresAt = graceExpiresAt;
-    await previous.save();
+
+    const { previousId, rotated } = await getDb().transaction(async (tx) => {
+      const [previous] = await tx
+        .select(CREDENTIAL_COLUMNS)
+        .from(applicationCredentials)
+        .where(
+          and(
+            eq(applicationCredentials.id, req.params.credId),
+            eq(applicationCredentials.applicationId, application.id),
+            ne(applicationCredentials.status, 'revoked')
+          )
+        )
+        .limit(1);
+      if (!previous) {
+        throw new NotFoundError('Credential not found');
+      }
+      if (previous.type === 'public') {
+        throw new BadRequestError('Public credentials do not have a rotatable secret');
+      }
+
+      const [minted] = await tx
+        .insert(applicationCredentials)
+        .values({
+          applicationId: application.id,
+          name: previous.name,
+          publicKey,
+          secretHash,
+          type: previous.type,
+          environment: previous.environment,
+          scopes: previous.scopes,
+          status: 'active',
+          rotatedFromCredentialId: previous.id,
+          createdByUserId: requireUserId(req),
+        })
+        .returning(CREDENTIAL_COLUMNS);
+
+      await tx
+        .update(applicationCredentials)
+        .set({ status: 'deprecated', expiresAt: graceExpiresAt })
+        .where(eq(applicationCredentials.id, previous.id));
+
+      return { previousId: previous.id, rotated: minted };
+    });
 
     logger.info('Application credential rotated', {
-      applicationId: application._id.toString(),
-      previousCredentialId: previous._id.toString(),
-      newCredentialId: rotated._id.toString(),
+      applicationId: application.id,
+      previousCredentialId: previousId,
+      newCredentialId: rotated.id,
       graceExpiresAt: graceExpiresAt.toISOString(),
       by: requireUserId(req),
     });
@@ -893,7 +1048,7 @@ router.post(
     res.json({
       credential: serializeCredential(rotated),
       secret,
-      rotatedFrom: previous._id.toString(),
+      rotatedFrom: previousId,
       graceExpiresAt,
     });
   })
@@ -912,24 +1067,25 @@ router.delete(
       throw new NotFoundError('Application not found');
     }
 
-    if (!mongoose.isValidObjectId(req.params.credId)) {
-      throw new NotFoundError('Credential not found');
-    }
-
-    const credential = await ApplicationCredential.findOne({
-      _id: req.params.credId,
-      applicationId: application._id,
-    });
+    // One statement, and its RESULT decides the outcome: a credential that does
+    // not belong to this application updates no row and is a 404.
+    const [credential] = await getDb()
+      .update(applicationCredentials)
+      .set({ status: 'revoked' })
+      .where(
+        and(
+          eq(applicationCredentials.id, req.params.credId),
+          eq(applicationCredentials.applicationId, application.id)
+        )
+      )
+      .returning({ id: applicationCredentials.id });
     if (!credential) {
       throw new NotFoundError('Credential not found');
     }
 
-    credential.status = 'revoked';
-    await credential.save();
-
     logger.info('Application credential revoked', {
-      applicationId: application._id.toString(),
-      credentialId: credential._id.toString(),
+      applicationId: application.id,
+      credentialId: credential.id,
       by: requireUserId(req),
     });
 
@@ -956,14 +1112,7 @@ router.get(
     }
 
     const period = (req.query.period as string) || '7d';
-    const startDate = getStartDate(period);
-
-    const stats = await getUsageStats({
-      appId: application._id,
-      timestamp: { $gte: startDate },
-    });
-
-    res.json(stats);
+    res.json(await getUsageStats(application.id, getStartDate(period)));
   })
 );
 
