@@ -23,6 +23,22 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      # Postgres target of the Mongo->Postgres port. Mirrors
+      # docker-compose.dev.yml so a developer's local database and CI's agree.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: oxy
+          POSTGRES_PASSWORD: oxy
+          POSTGRES_DB: oxy_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U oxy -d oxy_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -73,6 +89,7 @@ jobs:
         working-directory: ./packages/api
         env:
           MONGODB_URI: mongodb://localhost:27017/oxyapi-test
+          DATABASE_URL: postgres://oxy:oxy@127.0.0.1:5432/oxy_test
           ACCESS_TOKEN_SECRET: test_access_token_secret_minimum_32_characters
           REFRESH_TOKEN_SECRET: test_refresh_token_secret_minimum_32_characters
           AWS_REGION: us-east-1
@@ -86,6 +103,7 @@ jobs:
         working-directory: ./packages/api
         env:
           MONGODB_URI: mongodb://localhost:27017/oxyapi-test
+          DATABASE_URL: postgres://oxy:oxy@127.0.0.1:5432/oxy_test
           ACCESS_TOKEN_SECRET: test_access_token_secret_minimum_32_characters
           REFRESH_TOKEN_SECRET: test_refresh_token_secret_minimum_32_characters
           AWS_REGION: us-east-1

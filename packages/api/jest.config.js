@@ -1,6 +1,11 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // Creates ONE throwaway, fully-migrated Postgres database per run and points
+  // DATABASE_URL at it, then drops it. A reachable Postgres is a hard
+  // prerequisite of this suite — see jest.globalSetup.ts.
+  globalSetup: '<rootDir>/jest.globalSetup.ts',
+  globalTeardown: '<rootDir>/jest.globalTeardown.ts',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.cjs'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   moduleNameMapper: {

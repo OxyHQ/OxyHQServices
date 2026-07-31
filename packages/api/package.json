@@ -18,7 +18,9 @@
     "lint:fix": "eslint . --fix",
     "openapi:generate": "bun scripts/generate-openapi.ts",
     "prepublishOnly": "node ../../scripts/assert-bun-publish.mjs && bun run clean && bun run build",
-    "release": "rm -rf dist && bun run build && release-it"
+    "release": "rm -rf dist && bun run build && release-it",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
   },
   "release-it": {
     "git": {
@@ -77,6 +79,7 @@
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.6.1",
+    "drizzle-orm": "catalog:",
     "elliptic": "catalog:",
     "express": "catalog:",
     "express-rate-limit": "catalog:",
@@ -90,6 +93,7 @@
     "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
     "pino": "catalog:",
+    "postgres": "catalog:",
     "rate-limit-redis": "^4.3.1",
     "sharp": "catalog:",
     "smtp-server": "^3.19.2",
@@ -112,6 +116,7 @@
     "@types/mongodb": "^4.0.7",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
+    "drizzle-kit": "catalog:",
     "eslint": "catalog:",
     "jest": "^29.7.0",
     "nodemon": "^3.1.14",

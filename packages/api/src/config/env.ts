@@ -16,6 +16,12 @@ export interface RequiredEnvVars {
   // Database
   MONGODB_URI: string;
 
+  // PostgreSQL connection string, consumed by `config/postgres.ts` (Drizzle
+  // over Bun's built-in SQL client) and by drizzle-kit for migrations. Required
+  // alongside MONGODB_URI while the Mongo→Postgres port is in flight; Mongo is
+  // still the live store.
+  DATABASE_URL: string;
+
   // Authentication
   ACCESS_TOKEN_SECRET: string;
   REFRESH_TOKEN_SECRET: string;
@@ -98,6 +104,13 @@ const MAX_HOSTNAME_LENGTH = 253;
 const MIN_DEVICE_ID_SALT_LENGTH = 32;
 
 /**
+ * Accepted URI schemes for `DATABASE_URL`. Both are the same protocol —
+ * `postgres://` is the historical spelling, `postgresql://` the one libpq
+ * documents — and Bun's SQL client accepts either.
+ */
+const POSTGRES_URL_SCHEMES = ['postgres://', 'postgresql://'] as const;
+
+/**
  * Development-only default for `DEVICE_ID_SALT`. NEVER use this in production —
  * production startup will fail-fast if `DEVICE_ID_SALT` is unset (see
  * `validateRequiredEnvVars`). The literal value is intentionally
@@ -121,6 +134,7 @@ export function isValidHostname(value: string): boolean {
 export function validateRequiredEnvVars(): void {
   const required: (keyof RequiredEnvVars)[] = [
     'MONGODB_URI',
+    'DATABASE_URL',
     'ACCESS_TOKEN_SECRET',
     'REFRESH_TOKEN_SECRET',
     'AWS_REGION',
@@ -141,6 +155,10 @@ export function validateRequiredEnvVars(): void {
   // Check for commonly misconfigured variables
   if (process.env.MONGODB_URI && !process.env.MONGODB_URI.startsWith('mongodb')) {
     warnings.push('MONGODB_URI should start with "mongodb://" or "mongodb+srv://"');
+  }
+
+  if (process.env.DATABASE_URL && !POSTGRES_URL_SCHEMES.some(scheme => process.env.DATABASE_URL?.startsWith(scheme))) {
+    warnings.push('DATABASE_URL should start with "postgres://" or "postgresql://"');
   }
 
   if (process.env.AWS_S3_BUCKET && process.env.AWS_S3_BUCKET.includes('/')) {
@@ -326,6 +344,7 @@ export function getSanitizedConfig(): Record<string, string> {
     AWS_ENDPOINT_URL: process.env.AWS_ENDPOINT_URL || 'default',
     ASSET_CDN_URL: process.env.ASSET_CDN_URL || 'https://cloud.oxy.so',
     MONGODB_URI: process.env.MONGODB_URI ? maskConnectionString(process.env.MONGODB_URI) : '',
+    DATABASE_URL: process.env.DATABASE_URL ? maskConnectionString(process.env.DATABASE_URL) : '',
   };
 }
 
