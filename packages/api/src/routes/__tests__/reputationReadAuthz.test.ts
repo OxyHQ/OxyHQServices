@@ -1,97 +1,104 @@
 /**
- * /reputation READ authorization tests.
+ * `/reputation` READ authorization, against a REAL Postgres.
  *
- * Two distinct leaks are guarded here:
+ * Two distinct leaks are guarded here, and both are about WHO may read what:
  *
  *  - `GET /:userId/transactions` used to serve ANY user's ledger to ANY
- *    authenticated caller. Transaction `metadata` names third parties (the
+ *    authenticated caller. A transaction's `metadata` names third parties — the
  *    attestor who physically met the subject, the staking voucher, the full
- *    juror roster of a resolved validation), so the ledger is owner-or-staff.
+ *    juror roster of a resolved validation — so the ledger is owner-or-staff.
  *  - `GET /:userId/balance` used to serve `reliability` (abuseScore,
  *    reportAccuracyScore, report counts) and the `influence` weights to
  *    ANONYMOUS callers, for any subject enumerable by id or publicKey. The
- *    endpoint stays public but the response is view-split.
+ *    endpoint stays public; the RESPONSE is view-split.
+ *
+ * The previous version mocked `reputation.service` wholesale, so it asserted
+ * that a stub had not been called — never that a real ledger row was withheld,
+ * and never that the numbers a caller does receive are the right ones. The
+ * service is fully ported, so it runs for real here: rows are seeded, the real
+ * balance recomputation runs, and the response is checked against the
+ * `@oxyhq/contracts` schemas.
+ *
+ * The auth middleware is the one mock: it attaches the caller a test selects,
+ * which is exactly its production contract.
  */
 
 import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
+import { randomUUID } from 'node:crypto';
+import {
+  reputationBalanceSchema,
+  reputationBalanceSummarySchema,
+  reputationTransactionSchema,
+  safeParseContract,
+} from '@oxyhq/contracts';
 
-const mockAuthMiddleware = jest.fn();
-const mockOptionalAuthMiddleware = jest.fn();
-const mockListTransactions = jest.fn();
-const mockGetBalance = jest.fn();
-const mockGetInfluence = jest.fn();
-const mockResolveUserIdToObjectId = jest.fn();
+/** The caller the mocked auth middleware attaches, or `undefined` for anonymous. */
+let currentCaller: { _id: string; isStaff?: boolean } | undefined;
 
 jest.mock('../../middleware/auth', () => ({
-  authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
+  authMiddleware: (
+    req: { user?: { _id: string; isStaff?: boolean } },
+    res: { status: (code: number) => { json: (body: unknown) => void } },
+    next: () => void,
+  ) => {
+    if (!currentCaller) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Authentication required' });
+      return;
+    }
+    req.user = currentCaller;
+    next();
+  },
   serviceAuthMiddleware: jest.fn(),
 }));
-
 jest.mock('../../middleware/optionalAuth', () => ({
-  optionalAuthMiddleware: (...args: unknown[]) => mockOptionalAuthMiddleware(...args),
+  optionalAuthMiddleware: (
+    req: { user?: { _id: string; isStaff?: boolean } },
+    _res: unknown,
+    next: () => void,
+  ) => {
+    if (currentCaller) req.user = currentCaller;
+    next();
+  },
 }));
-
 jest.mock('../../middleware/rateLimiter', () => ({
   rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
-
-jest.mock('../../utils/validation', () => ({
-  resolveUserIdToObjectId: (...args: unknown[]) => mockResolveUserIdToObjectId(...args),
-  validatePagination: (_limit: unknown, _offset: unknown, _max: number, defaultLimit: number) => ({
-    limit: defaultLimit,
-    offset: 0,
-  }),
-}));
-
-jest.mock('../../services/reputation.service', () => ({
-  __esModule: true,
-  default: {
-    listTransactions: (...args: unknown[]) => mockListTransactions(...args),
-    getBalance: (...args: unknown[]) => mockGetBalance(...args),
-    getInfluence: (...args: unknown[]) => mockGetInfluence(...args),
-    award: jest.fn(),
-    createDispute: jest.fn(),
-    upsertRule: jest.fn(),
-    listEnabledRules: jest.fn(),
-    getLeaderboard: jest.fn(),
-    listDisputesForUser: jest.fn(),
-    listOpenDisputes: jest.fn(),
-    reverseTransaction: jest.fn(),
-    voidTransaction: jest.fn(),
-    recalculateBalance: jest.fn(),
-    resolveDispute: jest.fn(),
-  },
-}));
-
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-import reputationRouter from '../reputation.routes';
+import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
+import { reputationTransactions } from '../../db/schema/reputationTransactions';
+import { users } from '../../db/schema/users';
 import { errorHandler } from '../../middleware/errorHandler';
-
-const SUBJECT_ID = '64aaaaaaaaaaaaaaaaaaaaaa';
-const OTHER_ID = '64bbbbbbbbbbbbbbbbbbbbbb';
-const STAFF_ID = '64cccccccccccccccccccccc';
-
-/** The caller each mocked auth middleware attaches, or `null` for anonymous. */
-interface TestCaller {
-  _id: string;
-  isStaff?: boolean;
-}
+import reputationRouter from '../reputation.routes';
 
 interface JsonResponse {
   status: number;
+  raw: string;
   body: {
     error?: string;
     message?: string;
-    data?: Record<string, unknown> | Record<string, unknown>[];
+    data?: Record<string, unknown> | Array<Record<string, unknown>>;
   };
 }
 
-function getJson(server: http.Server, path: string): Promise<JsonResponse> {
+/** Every field the public balance view must WITHHOLD. */
+const PRIVATE_BALANCE_FIELDS = [
+  'positive',
+  'negative',
+  'breakdown',
+  'influence',
+  'reliability',
+  'recalculatedAt',
+  'updatedAt',
+] as const;
+
+let server: http.Server;
+
+function get(path: string): Promise<JsonResponse> {
   const address = server.address() as AddressInfo;
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -101,19 +108,21 @@ function getJson(server: http.Server, path: string): Promise<JsonResponse> {
         port: address.port,
         path,
         // Close each socket after its response so the server has no lingering
-        // keep-alive connections at teardown (`server.close` resolves cleanly).
+        // keep-alive connections at teardown.
         headers: { connection: 'close' },
       },
       (res) => {
         let raw = '';
-        res.on('data', (chunk) => { raw += chunk; });
-        res.on('end', () => {
-          try {
-            resolve({ status: res.statusCode ?? 0, body: raw.length > 0 ? JSON.parse(raw) : {} });
-          } catch (err) {
-            reject(err);
-          }
+        res.on('data', (chunk) => {
+          raw += chunk;
         });
+        res.on('end', () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            raw,
+            body: raw.length > 0 ? JSON.parse(raw) : {},
+          }),
+        );
       },
     );
     req.on('error', reject);
@@ -121,291 +130,278 @@ function getJson(server: http.Server, path: string): Promise<JsonResponse> {
   });
 }
 
-/** Point both mocked auth middlewares at `caller` for the next request. */
-function signInAs(caller: TestCaller | null): void {
-  mockAuthMiddleware.mockImplementation((req, res, next) => {
-    if (!caller) {
-      res.status(401).json({ error: 'Authentication required' });
-      return;
-    }
-    req.user = caller;
-    next();
-  });
-  mockOptionalAuthMiddleware.mockImplementation((req, _res, next) => {
-    if (caller) {
-      req.user = caller;
-    }
-    next();
-  });
+async function account(fields: Partial<typeof users.$inferInsert> = {}): Promise<string> {
+  const [row] = await getDb().insert(users).values(fields).returning({ id: users.id });
+  return row.id;
 }
 
-/**
- * A balance carrying every sensitive field the serializers may expose.
- *
- * Shaped exactly as the `ReputationBalance` mongoose document is — every
- * breakdown bucket present, timestamps as `Date`s — because `serializeBalance`
- * now validates its output against the `@oxyhq/contracts` schema and a fixture
- * the real model could never produce would fail that check rather than the
- * authorization behaviour these tests are about.
- */
-function balanceFixture() {
-  return {
-    userId: { toString: () => SUBJECT_ID },
-    total: 120,
-    positive: 200,
-    negative: -80,
-    breakdown: {
-      content: 100,
-      social: 0,
-      trust: 100,
-      moderation: 0,
-      physical: 0,
-      penalties: 80,
-    },
-    trustTier: 'trusted',
-    influence: {
-      defaultWeight: 0.34,
-      reportWeight: 0.29,
-      moderationWeight: 0.34,
-      rankingFeedbackWeight: 0.34,
-    },
-    reliability: {
-      abuseScore: 0.62,
-      reportAccuracyScore: 0.25,
-      accurateReports: 1,
-      rejectedReports: 3,
-    },
-    recalculatedAt: new Date('2026-07-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-07-01T00:00:00.000Z'),
-  };
+/** One `active` ledger entry naming third parties in its metadata. */
+async function ledgerEntry(
+  userId: string,
+  overrides: Partial<typeof reputationTransactions.$inferInsert> = {},
+): Promise<string> {
+  const [row] = await getDb()
+    .insert(reputationTransactions)
+    .values({
+      userId,
+      points: 25,
+      actionType: 'real_life_attested',
+      category: 'physical',
+      metadata: { voterUserIds: ['juror-alpha', 'juror-beta'], attestor: 'attestor-gamma' },
+      ...overrides,
+    })
+    .returning({ id: reputationTransactions.id });
+  return row.id;
 }
 
-let server: http.Server;
-
-beforeAll((done) => {
-  process.env.ACCESS_TOKEN_SECRET = 'test-secret';
+beforeAll(async () => {
+  await connectPostgres();
   const app = express();
   app.use(express.json());
   app.use('/reputation', reputationRouter);
   app.use(errorHandler);
-  server = app.listen(0, '127.0.0.1', done);
+  await new Promise<void>((resolve) => {
+    server = app.listen(0, '127.0.0.1', resolve);
+  });
 });
 
-afterAll((done) => {
-  server.close(done);
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  await closePostgres();
 });
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  mockResolveUserIdToObjectId.mockImplementation((userId: string) => Promise.resolve(userId));
-  mockGetBalance.mockResolvedValue(balanceFixture());
-  mockListTransactions.mockResolvedValue({
-    items: [
-      {
-        _id: { toString: () => 'txn1' },
-        userId: { toString: () => SUBJECT_ID },
-        points: 40,
-        actionType: 'peer_validated',
-        category: 'trust',
-        status: 'active',
-        reason: 'Validated by a randomly-selected jury of peers',
-        metadata: { voterUserIds: ['juror-a', 'juror-b'] },
-        createdAt: new Date('2026-07-01T00:00:00.000Z'),
-        updatedAt: new Date('2026-07-01T00:00:00.000Z'),
-      },
-    ],
-    total: 1,
-  });
+  currentCaller = undefined;
 });
 
-describe('GET /reputation/:userId/transactions ownership gate', () => {
-  it('refuses an authenticated caller reading someone else\'s ledger', async () => {
-    signInAs({ _id: OTHER_ID });
+describe('GET /reputation/:userId/transactions — ownership gate', () => {
+  it("refuses an authenticated caller reading someone else's ledger", async () => {
+    const subject = await account();
+    await ledgerEntry(subject);
+    currentCaller = { _id: await account() };
 
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/transactions`);
+    const res = await get(`/reputation/${subject}/transactions`);
 
     expect(res.status).toBe(403);
     expect(res.body.message).toMatch(/your own/i);
-    expect(mockListTransactions).not.toHaveBeenCalled();
   });
 
-  it('never leaks juror identities to a non-owner', async () => {
-    signInAs({ _id: OTHER_ID });
+  it('never leaks the juror roster to a non-owner', async () => {
+    const subject = await account();
+    await ledgerEntry(subject);
+    currentCaller = { _id: await account() };
 
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/transactions`);
+    const res = await get(`/reputation/${subject}/transactions`);
 
-    expect(JSON.stringify(res.body)).not.toContain('juror-a');
-  });
-
-  it('serves the subject their own ledger', async () => {
-    signInAs({ _id: SUBJECT_ID });
-
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/transactions`);
-
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.data)).toBe(true);
-    expect(res.body.data).toHaveLength(1);
-    expect(mockListTransactions).toHaveBeenCalledWith(SUBJECT_ID, expect.any(Number), 0);
-  });
-
-  it('serves staff another user\'s ledger', async () => {
-    signInAs({ _id: STAFF_ID, isStaff: true });
-
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/transactions`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.data).toHaveLength(1);
+    expect(res.raw).not.toContain('juror-alpha');
+    expect(res.raw).not.toContain('attestor-gamma');
   });
 
   it('rejects an anonymous caller', async () => {
-    signInAs(null);
+    const subject = await account();
 
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/transactions`);
+    const res = await get(`/reputation/${subject}/transactions`);
 
     expect(res.status).toBe(401);
-    expect(mockListTransactions).not.toHaveBeenCalled();
+  });
+
+  it('serves the subject their own ledger, metadata included', async () => {
+    const subject = await account();
+    const entryId = await ledgerEntry(subject);
+    currentCaller = { _id: subject };
+
+    const res = await get(`/reputation/${subject}/transactions`);
+
+    expect(res.status).toBe(200);
+    const rows = res.body.data as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(entryId);
+    expect(rows[0].userId).toBe(subject);
+    expect(rows[0].points).toBe(25);
+    expect(rows[0].actionType).toBe('real_life_attested');
+    expect(rows[0].category).toBe('physical');
+    expect(rows[0].status).toBe('active');
+    expect(rows[0].metadata).toEqual({
+      voterUserIds: ['juror-alpha', 'juror-beta'],
+      attestor: 'attestor-gamma',
+    });
+    expect(safeParseContract(reputationTransactionSchema, rows[0])).not.toBeNull();
+  });
+
+  it("serves staff another user's ledger", async () => {
+    const subject = await account();
+    await ledgerEntry(subject);
+    currentCaller = { _id: await account(), isStaff: true };
+
+    const res = await get(`/reputation/${subject}/transactions`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+  });
+
+  it('resolves the subject by publicKey as well as by id', async () => {
+    const publicKey = `04${randomUUID().replace(/-/g, '')}`;
+    const subject = await account({ publicKey });
+    await ledgerEntry(subject);
+    currentCaller = { _id: subject };
+
+    const res = await get(`/reputation/${publicKey}/transactions`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+  });
+
+  it("serves only the subject's own rows, never another account's", async () => {
+    const subject = await account();
+    const stranger = await account();
+    await ledgerEntry(subject);
+    await ledgerEntry(stranger);
+    currentCaller = { _id: subject };
+
+    const res = await get(`/reputation/${subject}/transactions`);
+
+    const rows = res.body.data as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].userId).toBe(subject);
   });
 });
 
-describe('GET /reputation/:userId/balance view split', () => {
-  /** Fields that are the platform's internal judgement about the subject. */
-  const PRIVATE_FIELDS = [
-    'reliability',
-    'influence',
-    'breakdown',
-    'positive',
-    'negative',
-    'recalculatedAt',
-    'updatedAt',
-  ];
-
+describe('GET /reputation/:userId/balance — view split', () => {
   it('withholds the sensitive fields from an anonymous caller', async () => {
-    signInAs(null);
+    const subject = await account();
+    await ledgerEntry(subject, { points: 120, actionType: 'peer_validated', category: 'trust' });
 
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/balance`);
+    const res = await get(`/reputation/${subject}/balance`);
 
     expect(res.status).toBe(200);
     const data = res.body.data as Record<string, unknown>;
-    for (const field of PRIVATE_FIELDS) {
+    for (const field of PRIVATE_BALANCE_FIELDS) {
       expect(data).not.toHaveProperty(field);
     }
-    // Belt and braces: no abuse signal may survive anywhere in the payload.
-    expect(JSON.stringify(res.body)).not.toContain('abuseScore');
-    expect(JSON.stringify(res.body)).not.toContain('0.62');
   });
 
   it('keeps the public trust signal readable without a token', async () => {
-    signInAs(null);
+    const subject = await account();
+    await ledgerEntry(subject, { points: 120, actionType: 'peer_validated', category: 'trust' });
 
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/balance`);
+    const res = await get(`/reputation/${subject}/balance`);
 
-    expect(res.body.data).toEqual({
-      userId: SUBJECT_ID,
-      total: 120,
-      trustTier: 'trusted',
-    });
+    expect(res.body.data).toEqual({ userId: subject, total: 120, trustTier: 'trusted' });
+    expect(safeParseContract(reputationBalanceSummarySchema, res.body.data)).not.toBeNull();
   });
 
   it('withholds the sensitive fields from an authenticated third party', async () => {
-    signInAs({ _id: OTHER_ID });
+    const subject = await account();
+    await ledgerEntry(subject, { points: 120, actionType: 'peer_validated', category: 'trust' });
+    currentCaller = { _id: await account() };
 
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/balance`);
+    const res = await get(`/reputation/${subject}/balance`);
 
     expect(res.status).toBe(200);
     const data = res.body.data as Record<string, unknown>;
-    for (const field of PRIVATE_FIELDS) {
+    for (const field of PRIVATE_BALANCE_FIELDS) {
       expect(data).not.toHaveProperty(field);
     }
   });
 
   it('serves the subject their own full balance', async () => {
-    signInAs({ _id: SUBJECT_ID });
+    const subject = await account();
+    await ledgerEntry(subject, { points: 120, actionType: 'peer_validated', category: 'trust' });
+    currentCaller = { _id: subject };
 
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/balance`);
-
-    expect(res.status).toBe(200);
-    const data = res.body.data as Record<string, unknown>;
-    for (const field of PRIVATE_FIELDS) {
-      expect(data).toHaveProperty(field);
-    }
-    expect(data.reliability).toMatchObject({ abuseScore: 0.62 });
-    expect(data.influence).toMatchObject({ reportWeight: 0.29 });
-  });
-
-  it('serves staff another user\'s full balance', async () => {
-    signInAs({ _id: STAFF_ID, isStaff: true });
-
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/balance`);
+    const res = await get(`/reputation/${subject}/balance`);
 
     expect(res.status).toBe(200);
     const data = res.body.data as Record<string, unknown>;
-    for (const field of PRIVATE_FIELDS) {
-      expect(data).toHaveProperty(field);
-    }
+    expect(data.userId).toBe(subject);
+    expect(data.total).toBe(120);
+    expect(data.positive).toBe(120);
+    expect(data.negative).toBe(0);
+    expect(data.trustTier).toBe('trusted');
+    expect(data.breakdown).toEqual({
+      content: 0,
+      social: 0,
+      trust: 120,
+      moderation: 0,
+      physical: 0,
+      penalties: 0,
+    });
+    expect(data.influence).toEqual(expect.objectContaining({ defaultWeight: expect.any(Number) }));
+    expect(data.reliability).toEqual(expect.objectContaining({ abuseScore: expect.any(Number) }));
+    expect(safeParseContract(reputationBalanceSchema, data)).not.toBeNull();
   });
 
-  it('recognizes the subject when req.user._id is an ObjectId-like value', async () => {
-    signInAs({ _id: { toString: () => SUBJECT_ID } as unknown as string });
+  it("serves staff another user's full balance", async () => {
+    const subject = await account();
+    await ledgerEntry(subject, { points: 120, actionType: 'peer_validated', category: 'trust' });
+    currentCaller = { _id: await account(), isStaff: true };
 
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/balance`);
+    const res = await get(`/reputation/${subject}/balance`);
 
     expect(res.status).toBe(200);
     const data = res.body.data as Record<string, unknown>;
     expect(data).toHaveProperty('reliability');
+    expect(data).toHaveProperty('influence');
+  });
+
+  it('hides from a non-subject the penalty history the total alone conceals', async () => {
+    const subject = await account();
+    await ledgerEntry(subject, { points: 120, actionType: 'peer_validated', category: 'trust' });
+    await ledgerEntry(subject, { points: -20, actionType: 'vouch_slashed', category: 'penalty' });
+
+    const anonymous = await get(`/reputation/${subject}/balance`);
+    currentCaller = { _id: subject };
+    const own = await get(`/reputation/${subject}/balance`);
+
+    // Both see the same total; only the subject sees the sanctions inside it.
+    expect((anonymous.body.data as Record<string, unknown>).total).toBe(100);
+    const ownData = own.body.data as Record<string, unknown>;
+    expect(ownData.total).toBe(100);
+    expect(ownData.negative).toBe(-20);
+    expect(ownData.breakdown).toEqual(expect.objectContaining({ trust: 120, penalties: 20 }));
   });
 });
 
-describe('GET /reputation/:userId/influence ownership gate', () => {
-  const influenceFixture = {
-    context: 'default',
-    weight: 0.34,
-    influence: {
-      defaultWeight: 0.34,
-      reportWeight: 0.29,
-      moderationWeight: 0.34,
-      rankingFeedbackWeight: 0.34,
-    },
-  };
+describe('GET /reputation/:userId/influence — ownership gate', () => {
+  it("refuses an authenticated caller reading someone else's influence", async () => {
+    const subject = await account();
+    currentCaller = { _id: await account() };
 
-  beforeEach(() => {
-    mockGetInfluence.mockResolvedValue(influenceFixture);
-  });
-
-  it('refuses an authenticated caller reading someone else\'s influence', async () => {
-    signInAs({ _id: OTHER_ID });
-
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/influence`);
+    const res = await get(`/reputation/${subject}/influence`);
 
     expect(res.status).toBe(403);
     expect(res.body.message).toMatch(/your own influence/i);
-    expect(mockGetInfluence).not.toHaveBeenCalled();
-  });
-
-  it('serves the subject their own influence', async () => {
-    signInAs({ _id: SUBJECT_ID });
-
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/influence`);
-
-    expect(res.status).toBe(200);
-    expect(res.body.data).toMatchObject({ weight: 0.34 });
-    expect(mockGetInfluence).toHaveBeenCalledWith(SUBJECT_ID, 'default');
-  });
-
-  it('serves staff another user\'s influence', async () => {
-    signInAs({ _id: STAFF_ID, isStaff: true });
-
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/influence`);
-
-    expect(res.status).toBe(200);
-    expect(mockGetInfluence).toHaveBeenCalledWith(SUBJECT_ID, 'default');
   });
 
   it('rejects an anonymous caller', async () => {
-    signInAs(null);
+    const subject = await account();
 
-    const res = await getJson(server, `/reputation/${SUBJECT_ID}/influence`);
+    const res = await get(`/reputation/${subject}/influence`);
 
     expect(res.status).toBe(401);
-    expect(mockGetInfluence).not.toHaveBeenCalled();
+  });
+
+  it('serves the subject their own influence', async () => {
+    const subject = await account();
+    await ledgerEntry(subject, { points: 120, actionType: 'peer_validated', category: 'trust' });
+    currentCaller = { _id: subject };
+
+    const res = await get(`/reputation/${subject}/influence`);
+
+    expect(res.status).toBe(200);
+    const data = res.body.data as Record<string, unknown>;
+    expect(data.context).toBe('default');
+    expect(typeof data.weight).toBe('number');
+  });
+
+  it("serves staff another user's influence", async () => {
+    const subject = await account();
+    currentCaller = { _id: await account(), isStaff: true };
+
+    const res = await get(`/reputation/${subject}/influence`);
+
+    expect(res.status).toBe(200);
   });
 });

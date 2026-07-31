@@ -1,83 +1,78 @@
 /**
- * `GET /reputation/leaderboard` wire-shape tests.
+ * `GET /reputation/leaderboard` wire shape, against a REAL Postgres.
  *
  * The leaderboard used to hand `sendPaginated` the raw aggregate projection, so
  * each row's `user` carried Mongo's `_id` and the user's RAW stored name
  * subdocument. The SDK type promised `user.id` and the canonical composed
  * `name`, which meant `entry.user.id` was `undefined` for every row — the
  * `@oxyhq/services` leaderboard screen's `keyExtractor` silently fell through to
- * its index fallback, and `name.displayName` did not mean what it means on
- * every other user DTO.
+ * its index fallback, and `name.displayName` did not mean what it means on every
+ * other user DTO.
  *
- * The row now goes through `serializeLeaderboardEntry`, which is annotated
- * against `ReputationLeaderboardEntry` from `@oxyhq/contracts` and validated
- * with that type's schema. These tests lock what a consumer actually receives.
+ * The row now goes through `serializeLeaderboardEntry`, annotated against
+ * `ReputationLeaderboardEntry` from `@oxyhq/contracts`. These tests lock what a
+ * consumer actually receives, over real `reputation_balances` rows joined to
+ * real `users` rows — the previous version fed a mocked service a hand-built
+ * projection, so it could not have noticed the join changing shape.
+ *
+ * ## Isolation
+ *
+ * The leaderboard is global by construction. Rows are therefore located by user
+ * id rather than by position, except in the one case that is ABOUT position,
+ * which seeds the three highest totals in the database.
  */
 
 import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
-
-const mockGetLeaderboard = jest.fn();
+import { randomUUID } from 'node:crypto';
+import { reputationLeaderboardEntrySchema, safeParseContract } from '@oxyhq/contracts';
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
   serviceAuthMiddleware: jest.fn(),
 }));
-
 jest.mock('../../middleware/optionalAuth', () => ({
   optionalAuthMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
-
 jest.mock('../../middleware/rateLimiter', () => ({
   rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
-
-jest.mock('../../utils/validation', () => ({
-  resolveUserIdToObjectId: jest.fn(),
-  validatePagination: () => ({ limit: 20, offset: 0 }),
-}));
-
-jest.mock('../../services/reputation.service', () => ({
-  __esModule: true,
-  default: {
-    getLeaderboard: (...args: unknown[]) => mockGetLeaderboard(...args),
-    listTransactions: jest.fn(),
-    getBalance: jest.fn(),
-    getInfluence: jest.fn(),
-    award: jest.fn(),
-    createDispute: jest.fn(),
-    upsertRule: jest.fn(),
-    listEnabledRules: jest.fn(),
-    listDisputesForUser: jest.fn(),
-    listOpenDisputes: jest.fn(),
-    reverseTransaction: jest.fn(),
-    voidTransaction: jest.fn(),
-    recalculateBalance: jest.fn(),
-    resolveDispute: jest.fn(),
-  },
-}));
-
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-import reputationRouter from '../reputation.routes';
+import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
+import { reputationBalances } from '../../db/schema/reputationBalances';
+import { users } from '../../db/schema/users';
 import { errorHandler } from '../../middleware/errorHandler';
-
-const USER_ID = '64aaaaaaaaaaaaaaaaaaaaaa';
+import reputationRouter from '../reputation.routes';
 
 interface LeaderboardRow {
-  user: { id?: string; _id?: string; username: string; name: Record<string, unknown> };
+  user: {
+    id?: string;
+    _id?: string;
+    username: string;
+    name: Record<string, unknown>;
+    avatar?: string;
+    publicKey?: string;
+  };
   total: number;
   trustTier: string;
   rank: number;
 }
 
-function getJson(
-  server: http.Server,
-  path: string
-): Promise<{ status: number; body: { data?: LeaderboardRow[] } }> {
+/**
+ * Totals no other suite sharing this database produces, so a row seeded with one
+ * is guaranteed to be on the first page.
+ */
+const TOP_TOTAL = 9_000_003;
+
+let server: http.Server;
+
+function leaderboard(
+  query = '',
+): Promise<{ status: number; body: { data?: LeaderboardRow[]; pagination?: { total: number } } }> {
   const address = server.address() as AddressInfo;
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -85,7 +80,7 @@ function getJson(
         method: 'GET',
         host: '127.0.0.1',
         port: address.port,
-        path,
+        path: `/reputation/leaderboard${query}`,
         headers: { connection: 'close' },
       },
       (res) => {
@@ -93,113 +88,191 @@ function getJson(
         res.on('data', (chunk) => {
           raw += chunk;
         });
-        res.on('end', () => {
-          try {
-            resolve({ status: res.statusCode ?? 0, body: raw.length > 0 ? JSON.parse(raw) : {} });
-          } catch (err) {
-            reject(err);
-          }
-        });
-      }
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, body: raw.length > 0 ? JSON.parse(raw) : {} }),
+        );
+      },
     );
     req.on('error', reject);
     req.end();
   });
 }
 
-/**
- * One aggregate row exactly as `reputationService.getLeaderboard` projects it:
- * the subject user inlined under `userId`, keyed on `_id`, with the raw stored
- * name subdocument.
- */
-function leaderboardRow(name: Record<string, string> | undefined) {
-  return {
-    userId: {
-      _id: { toString: () => USER_ID },
-      username: 'nate',
-      name,
-      avatar: 'file-1',
-      publicKey: '04abc',
-    },
-    total: 120,
-    trustTier: 'trusted',
-  };
+async function account(fields: Partial<typeof users.$inferInsert> = {}): Promise<string> {
+  const [row] = await getDb().insert(users).values(fields).returning({ id: users.id });
+  return row.id;
 }
 
-let server: http.Server;
+async function balance(
+  userId: string,
+  total: number,
+  trustTier: (typeof reputationBalances.$inferInsert)['trustTier'] = 'trusted',
+): Promise<void> {
+  await getDb().insert(reputationBalances).values({ userId, total, positive: total, trustTier });
+}
 
-beforeAll((done) => {
+function rowFor(
+  res: { body: { data?: LeaderboardRow[] } },
+  userId: string,
+): LeaderboardRow | undefined {
+  return res.body.data?.find((row) => row.user.id === userId);
+}
+
+beforeAll(async () => {
+  await connectPostgres();
   const app = express();
   app.use(express.json());
   app.use('/reputation', reputationRouter);
   app.use(errorHandler);
-  server = app.listen(0, '127.0.0.1', done);
+  await new Promise<void>((resolve) => {
+    server = app.listen(0, '127.0.0.1', resolve);
+  });
 });
 
-afterAll((done) => {
-  server.close(done);
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  await closePostgres();
 });
 
-beforeEach(() => {
-  jest.clearAllMocks();
-});
+describe('GET /reputation/leaderboard — user identity', () => {
+  it('emits the user id as `id`, never a raw `_id`', async () => {
+    const username = `board${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const userId = await account({ username, nameFirst: 'Nate', nameLast: 'Isern' });
+    await balance(userId, TOP_TOTAL - 100);
 
-describe('GET /reputation/leaderboard', () => {
-  it('emits the user id as `id`, not the raw Mongo `_id`', async () => {
-    mockGetLeaderboard.mockResolvedValue({
-      items: [leaderboardRow({ first: 'Nate', last: 'Isern' })],
-      total: 1,
-    });
-
-    const res = await getJson(server, '/reputation/leaderboard');
+    const res = await leaderboard('?limit=50');
 
     expect(res.status).toBe(200);
-    const rows = res.body.data as LeaderboardRow[];
-    expect(rows[0].user.id).toBe(USER_ID);
-    expect(rows[0].user).not.toHaveProperty('_id');
+    const row = rowFor(res, userId);
+    expect(row).toBeDefined();
+    expect(row?.user.id).toBe(userId);
+    expect(row?.user).not.toHaveProperty('_id');
   });
 
   it('composes `name.displayName` the same way every other user DTO does', async () => {
-    mockGetLeaderboard.mockResolvedValue({
-      items: [leaderboardRow({ first: 'Nate', last: 'Isern' })],
-      total: 1,
+    const username = `board${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const userId = await account({ username, nameFirst: 'Nate', nameLast: 'Isern' });
+    await balance(userId, TOP_TOTAL - 101);
+
+    const res = await leaderboard('?limit=50');
+
+    expect(rowFor(res, userId)?.user.name).toEqual({
+      displayName: 'Nate Isern',
+      first: 'Nate',
+      last: 'Isern',
+      full: 'Nate Isern',
     });
-
-    const res = await getJson(server, '/reputation/leaderboard');
-
-    const rows = res.body.data as LeaderboardRow[];
-    expect(rows[0].user.name.displayName).toBe('Nate Isern');
   });
 
-  /*
-   * `composeDisplayName` never synthesizes a name from the username, so an
-   * account with no human name gets NO `displayName` and the consumer falls back
-   * to the handle. Locked here so a future "helpful" fallback cannot creep in.
-   */
   it('omits `displayName` for an account with no human name', async () => {
-    mockGetLeaderboard.mockResolvedValue({ items: [leaderboardRow(undefined)], total: 1 });
+    // `composeDisplayName` never synthesizes a name from the username, so the
+    // consumer falls back to the handle. Locked here so a future "helpful"
+    // fallback cannot creep back in.
+    const username = `board${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const userId = await account({ username });
+    await balance(userId, TOP_TOTAL - 102);
 
-    const res = await getJson(server, '/reputation/leaderboard');
+    const res = await leaderboard('?limit=50');
 
-    const rows = res.body.data as LeaderboardRow[];
-    expect(rows[0].user.name).not.toHaveProperty('displayName');
-    expect(rows[0].user.username).toBe('nate');
+    const row = rowFor(res, userId);
+    expect(row?.user.name).not.toHaveProperty('displayName');
+    expect(row?.user.username).toBe(username);
   });
+});
 
+describe('GET /reputation/leaderboard — projection', () => {
   it('publishes only the narrow public projection, and the rank', async () => {
-    mockGetLeaderboard.mockResolvedValue({ items: [leaderboardRow(undefined)], total: 1 });
+    const username = `board${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const publicKey = `04${randomUUID().replace(/-/g, '')}`;
+    const userId = await account({
+      username,
+      publicKey,
+      avatar: 'file_board',
+      email: `${username}@oxy.so`,
+      phone: '+34600999888',
+      refreshToken: `rt_secret_${username}`,
+      bio: 'a bio',
+      description: 'a description',
+    });
+    await balance(userId, TOP_TOTAL - 103, 'high_trust');
 
-    const res = await getJson(server, '/reputation/leaderboard');
+    const res = await leaderboard('?limit=50');
 
-    const rows = res.body.data as LeaderboardRow[];
-    expect(Object.keys(rows[0]).sort()).toEqual(['rank', 'total', 'trustTier', 'user']);
-    expect(Object.keys(rows[0].user).sort()).toEqual([
+    const row = rowFor(res, userId);
+    expect(row).toBeDefined();
+    expect(Object.keys(row ?? {}).sort()).toEqual(['rank', 'total', 'trustTier', 'user']);
+    expect(Object.keys(row?.user ?? {}).sort()).toEqual([
       'avatar',
       'id',
       'name',
       'publicKey',
       'username',
     ]);
-    expect(rows[0].rank).toBe(1);
+    expect(row?.total).toBe(TOP_TOTAL - 103);
+    expect(row?.trustTier).toBe('high_trust');
+    expect(safeParseContract(reputationLeaderboardEntrySchema, row)).not.toBeNull();
+  });
+
+  it('never emits the private user columns the join could have carried', async () => {
+    const username = `board${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    const userId = await account({
+      username,
+      email: `${username}@oxy.so`,
+      phone: '+34600777666',
+      refreshToken: `rt_secret_${username}`,
+    });
+    await balance(userId, TOP_TOTAL - 104);
+
+    const res = await leaderboard('?limit=50');
+
+    const row = rowFor(res, userId);
+    expect(row?.user).not.toHaveProperty('email');
+    expect(row?.user).not.toHaveProperty('phone');
+    expect(row?.user).not.toHaveProperty('refreshToken');
+  });
+});
+
+describe('GET /reputation/leaderboard — ordering and eligibility', () => {
+  it('ranks by total descending, numbering from the page offset', async () => {
+    // The three highest totals in the database, so their positions are the top
+    // three regardless of what other suites have seeded.
+    const first = await account({ username: `first${randomUUID().replace(/-/g, '').slice(0, 10)}` });
+    const second = await account({ username: `second${randomUUID().replace(/-/g, '').slice(0, 10)}` });
+    const third = await account({ username: `third${randomUUID().replace(/-/g, '').slice(0, 10)}` });
+    await balance(first, TOP_TOTAL);
+    await balance(second, TOP_TOTAL - 1);
+    await balance(third, TOP_TOTAL - 2);
+
+    const page = await leaderboard('?limit=3&offset=0');
+    const nextPage = await leaderboard('?limit=3&offset=3');
+
+    expect(page.body.data?.map((row) => row.user.id)).toEqual([first, second, third]);
+    expect(page.body.data?.map((row) => row.rank)).toEqual([1, 2, 3]);
+    // Rank continues across the page boundary rather than restarting.
+    expect(nextPage.body.data?.[0]?.rank).toBe(4);
+  });
+
+  it('excludes archived accounts and restricted tiers from the public board', async () => {
+    const visible = await account({ username: `vis${randomUUID().replace(/-/g, '').slice(0, 12)}` });
+    const archived = await account({
+      username: `arc${randomUUID().replace(/-/g, '').slice(0, 12)}`,
+      accountStatus: 'archived',
+    });
+    const restricted = await account({
+      username: `res${randomUUID().replace(/-/g, '').slice(0, 12)}`,
+      reputationTier: 'restricted',
+    });
+    await balance(visible, TOP_TOTAL - 200);
+    await balance(archived, TOP_TOTAL - 201);
+    await balance(restricted, TOP_TOTAL - 202, 'restricted');
+
+    const res = await leaderboard('?limit=50');
+
+    const returned = (res.body.data ?? []).map((row) => row.user.id);
+    expect(returned).toContain(visible);
+    expect(returned).not.toContain(archived);
+    expect(returned).not.toContain(restricted);
   });
 });
