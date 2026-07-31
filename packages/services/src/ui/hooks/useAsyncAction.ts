@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 
 interface UseAsyncActionOptions<T> {
     /** Function to execute */

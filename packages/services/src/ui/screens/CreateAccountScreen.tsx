@@ -13,7 +13,7 @@ import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useOxy } from '../context/OxyContext';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 
 type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
 

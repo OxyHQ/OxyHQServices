@@ -7,7 +7,7 @@ import {
     Platform,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Text } from '@oxyhq/bloom/typography';

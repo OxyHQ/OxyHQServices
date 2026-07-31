@@ -6,7 +6,7 @@ import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import FAIRWalletIcon from '../icon/FAIRWalletIcon';
 import { createPaymentStyles } from './paymentStyles';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import type { CardDetails, PaymentColors, PaymentStepAnimations } from './types';
 import { useI18n } from '../../hooks/useI18n';
 

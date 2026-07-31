@@ -4,7 +4,7 @@ import { View, StyleSheet, Platform, Animated } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { H1, Text } from '@oxyhq/bloom/typography';

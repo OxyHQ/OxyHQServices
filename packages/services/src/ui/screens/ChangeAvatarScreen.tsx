@@ -39,7 +39,7 @@ import {
 } from '@oxyhq/bloom/admonition';
 import { surfaces as bloomSurfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { getNormalizedUserHandle, logger } from '@oxyhq/core';
 import type { FileMetadata } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';

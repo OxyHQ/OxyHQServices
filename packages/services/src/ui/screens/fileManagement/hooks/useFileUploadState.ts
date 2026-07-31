@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import type { AssetUploadInput, FileMetadata } from '@oxyhq/core';
 import type { useUploadFile } from '../../../hooks/mutations/useAccountMutations';
 import { queryKeys } from '../../../hooks/queries/queryKeys';

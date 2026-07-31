@@ -19,7 +19,7 @@ import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { SurfaceHeaderAction } from '../components/SurfaceHeaderAction';
 import { useOxy } from '../context/OxyContext';
 import { useProfileEditing } from '../hooks/useProfileEditing';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { EMAIL_REGEX, isValidDisplayName } from '@oxyhq/core';
 import { getLinkTitle, getLinkDescription, linksToListItems } from './linkFormat';
 

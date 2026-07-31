@@ -5,7 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider, type OxyContextProviderProps } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
-import { BloomDialogProvider } from '@oxyhq/bloom';
+import { BloomDialogProvider } from '@oxyhq/bloom/dialog';
 import { SurfaceProvider } from '@oxyhq/bloom/surfaces';
 import { ToastOutlet } from '@oxyhq/bloom/toast';
 import { logger as loggerUtil } from '@oxyhq/core';

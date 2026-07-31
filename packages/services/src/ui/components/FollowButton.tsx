@@ -6,7 +6,7 @@ import type {
   StyleProp,
 } from 'react-native';
 import { useOxy } from '../context/OxyContext';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { Button } from '@oxyhq/bloom/button';
 import { Loading } from '@oxyhq/bloom/loading';
 import { useFollow, useFollowForButton } from '../hooks/useFollow';

@@ -17,7 +17,7 @@ import {
 } from '../queries/queryKeys';
 import { mutationKeys } from './mutationKeys';
 import { useOxy } from '../../context/OxyContext';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
 import { useAuthStore } from '../../stores/authStore';
 

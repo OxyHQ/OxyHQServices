@@ -36,7 +36,7 @@
 import type React from 'react';
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { Linking, Platform } from 'react-native';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { AccountDialogSnapshot } from '@oxyhq/core';
 import { isOxyRpOrigin } from '@oxyhq/core';

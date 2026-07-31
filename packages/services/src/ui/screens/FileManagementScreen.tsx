@@ -14,7 +14,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { Image as ExpoImage } from 'expo-image';
 import type { FileManagementScreenProps } from '../types/fileManagement';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { surfaces } from '@oxyhq/bloom/surfaces';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
 import Ionicons from '@expo/vector-icons/Ionicons';
