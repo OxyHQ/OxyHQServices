@@ -6,12 +6,16 @@
  */
 
 import type { Request, Response } from 'express';
+import { and, eq, sql } from 'drizzle-orm';
 import { emailService } from '../services/email.service';
 import { smtpOutbound } from '../services/smtp.outbound';
 import { assetService } from '../services/assetServiceSingleton';
 import { resolveEmailAddress } from '../config/email.config';
-import User from '../models/User';
-import { Message, type IAttachment } from '../models/Message';
+import { getDb } from '../config/postgres';
+import { messageRecipients } from '../db/schema/messageRecipients';
+import { messages } from '../db/schema/messages';
+import { users } from '../db/schema/users';
+import type { IAttachment } from '../models/Message';
 import type { FileRecord } from '../types/file.types';
 import {
   BadRequestError,
@@ -40,7 +44,7 @@ function getOptionalQueryString(value: unknown, name: string): string | undefine
  *   - be in status 'active' (not trash/deleted)
  *   - be owned by the requesting user
  *
- * The IAttachment is built from the file record so the Message subdocument carries
+ * The IAttachment is built from the FileRecord so the Message subdocument carries
  * a stable snapshot of name/contentType/size at send time, regardless of any
  * later changes to the underlying file's originalName.
  */
@@ -70,6 +74,9 @@ async function resolveAttachmentInputs(
     // shares / public visibility) is intentionally NOT used here — attaching a
     // merely-readable file would leak it into a Message subdocument the sender
     // does not own.
+    // `owner_user_id` is nullable: a system-owned file (federation cache,
+    // link-preview cache) has no owner, and `null !== userId` correctly
+    // refuses it rather than letting a sender attach platform-internal media.
     if (file.ownerUserId !== userId) {
       throw new ForbiddenError(`Not authorized to attach file ${file.id}`);
     }
@@ -116,6 +123,25 @@ async function linkAttachmentsToMessage(
   }
 }
 
+
+/**
+ * Find one of this user's own messages by its RFC 5322 `Message-ID`.
+ *
+ * `messages.message_id` is a HEADER value, not a row id, and it is not unique —
+ * two accounts can hold copies of the same message — so the lookup is always
+ * scoped to the owner. Served by `messages_user_id_message_id_idx`.
+ */
+async function findOwnMessageByRfcId(
+  userId: string,
+  rfcMessageId: string,
+): Promise<{ id: string } | undefined> {
+  const [row] = await getDb()
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.userId, userId), eq(messages.messageId, rfcMessageId)))
+    .limit(1);
+  return row;
+}
 
 interface AuthRequest extends Request {
   user?: { id: string };
@@ -413,13 +439,20 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
 
   await emailService.enforceSendLimit(userId);
 
-  const user = await User.findById(userId).select('username name');
-  if (!user || !user.username) {
+  const [user] = await getDb()
+    .select({ username: users.username, first: users.nameFirst, last: users.nameLast })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!user?.username) {
     throw new BadRequestError('User must have a username to send email');
   }
 
   const fromAddress = resolveEmailAddress(user.username);
-  const fromName = resolveEmailFromName({ name: user.name, username: user.username });
+  const fromName = resolveEmailFromName({
+    name: { first: user.first, last: user.last },
+    username: user.username,
+  });
 
   const allRecipients = [...to, ...(cc ?? []), ...(bcc ?? [])];
 
@@ -451,14 +484,13 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
     });
 
     if (attachedFiles.length > 0) {
-      // scheduleMessage returns message.toJSON(): `id` is the Mongo _id string.
-      await linkAttachmentsToMessage(attachedFiles, String(scheduled.id ?? scheduled.messageId), userId);
+      await linkAttachmentsToMessage(attachedFiles, scheduled.id, userId);
     }
 
     if (inReplyTo) {
-      const original = await Message.findOne({ userId, messageId: inReplyTo });
+      const original = await findOwnMessageByRfcId(userId, inReplyTo);
       if (original) {
-        await emailService.updateMessageFlags(userId, original._id.toString(), { answered: true });
+        await emailService.updateMessageFlags(userId, original.id, { answered: true });
       }
     }
 
@@ -496,9 +528,9 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
   }
 
   if (inReplyTo) {
-    const original = await Message.findOne({ userId, messageId: inReplyTo });
+    const original = await findOwnMessageByRfcId(userId, inReplyTo);
     if (original) {
-      await emailService.updateMessageFlags(userId, original._id.toString(), { answered: true });
+      await emailService.updateMessageFlags(userId, original.id, { answered: true });
     }
   }
 
@@ -763,46 +795,42 @@ export async function suggestContacts(req: AuthRequest, res: Response): Promise<
     return;
   }
 
-  // Escape special regex characters for safe prefix matching
-  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  // Search both the Contact model (address book) and message history in parallel
+  // Search both the address book and message history in parallel.
+  //
+  // Mongo's `$concatArrays` of `from`, `to` and `cc` followed by `$unwind`
+  // existed only because all three lived on one document. `to` and `cc` are a
+  // child table now, so the concat IS the union — and the `$regex` becomes
+  // `strpos`, which has no metacharacter language, so the escaping the old
+  // query needed to neutralize ReDoS has nothing left to escape.
+  //
+  // `$first` after no `$sort` picked an arbitrary spelling of the name; this
+  // picks the most recently used one, which is at least a decision.
   const [contactResults, messageResults] = await Promise.all([
     emailService.searchContacts(userId, q, 10),
-    Message.aggregate([
-      { $match: { userId } },
-      {
-        $project: {
-          contacts: {
-            $concatArrays: [
-              [{ name: '$from.name', address: '$from.address' }],
-              { $ifNull: ['$to', []] },
-              { $ifNull: ['$cc', []] },
-            ],
-          },
-        },
-      },
-      { $unwind: '$contacts' },
-      {
-        $match: {
-          $or: [
-            { 'contacts.address': { $regex: escaped, $options: 'i' } },
-            { 'contacts.name': { $regex: escaped, $options: 'i' } },
-          ],
-        },
-      },
-      {
-        $group: {
-          _id: { $toLower: '$contacts.address' },
-          name: { $first: '$contacts.name' },
-          address: { $first: '$contacts.address' },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { count: -1 } },
-      { $limit: 10 },
-      { $project: { _id: 0, name: 1, address: 1 } },
-    ]),
+    getDb().execute<{ name: string | null; address: string }>(sql`
+      with candidates as (
+          select lower(m.from_address) as key,
+                 m.from_name as name,
+                 m.from_address as address,
+                 m.date
+          from ${messages} m
+          where m.user_id = ${userId}
+        union all
+          select lower(r.address), r.name, r.address, m.date
+          from ${messageRecipients} r
+          join ${messages} m on m.id = r.message_id
+          where m.user_id = ${userId} and r.kind in ('to', 'cc')
+      )
+      select (array_agg(name order by date desc nulls last))[1] as name,
+             (array_agg(address order by date desc nulls last))[1] as address,
+             count(*) as occurrences
+      from candidates
+      where strpos(key, ${q}) > 0
+         or strpos(lower(coalesce(name, '')), ${q}) > 0
+      group by key
+      order by occurrences desc, key asc
+      limit 10
+    `),
   ]);
 
   // Merge results: contacts from address book first, then message history
@@ -822,7 +850,8 @@ export async function suggestContacts(req: AuthRequest, res: Response): Promise<
     const key = (m.address || '').toLowerCase();
     if (key && !seen.has(key)) {
       seen.add(key);
-      merged.push(m);
+      // Mongoose defaulted an absent display name to `''`, not null.
+      merged.push({ name: m.name ?? '', address: m.address });
     }
   }
 

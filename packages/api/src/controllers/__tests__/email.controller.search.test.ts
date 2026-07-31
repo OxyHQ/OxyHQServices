@@ -20,15 +20,6 @@ jest.mock('../../config/email.config', () => ({
   resolveEmailAddress: jest.fn(),
 }));
 
-jest.mock('../../models/User', () => ({
-  __esModule: true,
-  default: {},
-}));
-
-jest.mock('../../models/Message', () => ({
-  Message: {},
-}));
-
 jest.mock('../../utils/logger', () => ({
   logger: { error: jest.fn(), info: jest.fn(), debug: jest.fn(), warn: jest.fn() },
 }));
