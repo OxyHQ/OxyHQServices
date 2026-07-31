@@ -9,11 +9,24 @@ import { NotFoundError, BadRequestError, ValidationError } from './error';
 import { logger } from './logger';
 
 /**
- * Validates if a string is a valid MongoDB ObjectId
- * Uses mongoose's built-in validation for accurate checking
+ * Does this string have the shape of an account identifier?
+ *
+ * TWO formats are live and both are permanent. Rows that predate the Postgres
+ * migration keep their 24-hex Mongo ObjectId verbatim — they are published in
+ * DIDs, in the signing input of every signed record, and in URLs cached by
+ * remote fediverse instances, so they can never be rewritten. Rows created
+ * after it get a uuid v7.
+ *
+ * Accepting only the first is a CUTOVER BUG, not a stricter check: every
+ * account created after the migration would fail a guard written for the old
+ * shape, and the caller's `false` branch is usually a 404 or — worse, as in the
+ * media-privacy guards this replaced — a silent "not blocked".
  */
+const OBJECT_ID_FORMAT = /^[0-9a-f]{24}$/i;
+const UUID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function isValidObjectId(id: string): boolean {
-  return mongoose.Types.ObjectId.isValid(id);
+  return OBJECT_ID_FORMAT.test(id) || UUID_FORMAT.test(id);
 }
 
 /**
@@ -77,12 +90,12 @@ export async function resolveUserIdToObjectId(userId: string): Promise<string> {
 
   const trimmedUserId = userId.trim();
 
-  // Check if it's a valid ObjectId
-  if (mongoose.Types.ObjectId.isValid(trimmedUserId)) {
-    // Verify the ObjectId is exactly 24 hex characters (MongoDB ObjectId format)
-    if (trimmedUserId.length === 24 && /^[0-9a-fA-F]{24}$/.test(trimmedUserId)) {
-      return trimmedUserId;
-    }
+  // An id-shaped value is the id. Both formats count: 24-hex for rows that
+  // predate the Postgres migration, uuid v7 for rows created after it. Matching
+  // only the first sends every post-cutover account down the publicKey branch
+  // below, where it misses and throws NotFound.
+  if (isValidObjectId(trimmedUserId)) {
+    return trimmedUserId;
   }
 
   // If not a valid ObjectId, treat it as a publicKey and look up the user
