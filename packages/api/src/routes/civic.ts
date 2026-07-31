@@ -28,7 +28,9 @@ import {
   type CredentialStatus,
 } from '@oxyhq/contracts';
 import { requireStaff } from '../middleware/requireStaff';
-import PersonhoodStatus from '../models/PersonhoodStatus';
+import { eq } from 'drizzle-orm';
+import { getDb } from '../config/postgres';
+import { personhoodStatuses } from '../db/schema/personhoodStatuses';
 import { buildSignedPublicCard } from '../services/civic/publicCard.service';
 import { submitRealLifeAttestation, type RealLifeRejectionReason } from '../services/civic/realLife.service';
 import {
@@ -352,7 +354,7 @@ router.post(
     });
 
     res.status(201).json({
-      requestId: request._id.toString(),
+      requestId: request.id,
       selectedValidatorCount: request.selectedValidatorIds.length,
       expiresAt: request.expiresAt.toISOString(),
     });
@@ -375,8 +377,8 @@ router.get(
     const requests = await getValidatorInbox(userId);
     res.json({
       requests: requests.map((request) => ({
-        id: request._id.toString(),
-        subjectUserId: request.subjectUserId.toString(),
+        id: request.id,
+        subjectUserId: request.subjectUserId,
         actionType: request.actionType,
         payload: request.payload,
         payloadHash: request.payloadHash,
@@ -530,11 +532,16 @@ router.get(
   personhoodReadLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
-    if (!isValidObjectId(userId)) {
-      throw new NotFoundError('Personhood status not found');
-    }
-
-    const status = await PersonhoodStatus.findOne({ userId }).lean();
+    // The `isValidObjectId` guard is DELETED, not ported. Its only effect was to
+    // answer 404 for an id that is not 24 hex chars, and after the cutover EVERY
+    // new account id is a uuid v7 — so keeping it would 404 the whole new id
+    // space. An id that matches no row already returned this zeroed
+    // `unverified` shape, so a malformed one now answers the same way.
+    const [status] = await getDb()
+      .select()
+      .from(personhoodStatuses)
+      .where(eq(personhoodStatuses.userId, userId))
+      .limit(1);
     setPublicCardHeaders(res);
     res.json({
       userId,
@@ -544,7 +551,16 @@ router.get(
       realLifeCount: status?.realLifeCount ?? 0,
       biometricBound: status?.biometricBound ?? false,
       sybilPenalty: status?.sybilPenalty ?? 0,
-      breakdown: status?.breakdown ?? null,
+      breakdown: status
+        ? {
+            vouchSignal: status.breakdownVouchSignal,
+            realLifeSignal: status.breakdownRealLifeSignal,
+            biometricSignal: status.breakdownBiometricSignal,
+            evidence: status.breakdownEvidence,
+            sybilPenalty: status.breakdownSybilPenalty,
+            seed: status.breakdownSeed,
+          }
+        : null,
       updatedAt: status?.updatedAt ?? null,
     });
   }),
@@ -575,7 +591,16 @@ router.post(
       realLifeCount: status.realLifeCount,
       biometricBound: status.biometricBound,
       sybilPenalty: status.sybilPenalty,
-      breakdown: status.breakdown,
+      // The `breakdown` subdocument is six prefixed columns now; the WIRE shape
+      // is unchanged, so it is reassembled here at the serializer boundary.
+      breakdown: {
+        vouchSignal: status.breakdownVouchSignal,
+        realLifeSignal: status.breakdownRealLifeSignal,
+        biometricSignal: status.breakdownBiometricSignal,
+        evidence: status.breakdownEvidence,
+        sybilPenalty: status.breakdownSybilPenalty,
+        seed: status.breakdownSeed,
+      },
       updatedAt: status.updatedAt,
     });
   }),
