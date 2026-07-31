@@ -21,6 +21,8 @@
  */
 
 import type { PgColumn, PgTable, UpdateDeleteAction } from 'drizzle-orm/pg-core';
+import { billingSubscriptions } from './billingSubscriptions';
+import { billingTransactions } from './billingTransactions';
 import { bookmarks } from './bookmarks';
 import { appAffinitySeenEvents } from './appAffinitySeenEvents';
 import { authCodes } from './authCodes';
@@ -32,7 +34,9 @@ import { identityBindings } from './identityBindings';
 import { pushTokens } from './pushTokens';
 import { securityActivities } from './securityActivities';
 import { sessions } from './sessions';
+import { transactions } from './transactions';
 import { userAuthMethods } from './userAuthMethods';
+import { userCredits } from './userCredits';
 import { userLocations } from './userLocations';
 import { users } from './users';
 import { webauthnCredentials } from './webauthnCredentials';
@@ -291,5 +295,63 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
       '(b) Central device id the event happened on. An audit trail must keep ' +
       'naming the device that was removed, which is precisely one of the ' +
       'events it records.',
+  {
+    table: transactions,
+    column: transactions.itemId,
+    reason:
+      'What was purchased, in the CONSUMING application\'s id space. There is ' +
+      'no local table to reference, and `item_type` — also free-form — is what ' +
+      'names the space it belongs to.',
+  },
+  {
+    table: userCredits,
+    column: userCredits.stripeCustomerId,
+    reason:
+      "Stripe's identifier for the customer. Oxy stores it to talk to Stripe " +
+      'and resolves it only back to this same row.',
+  },
+  {
+    table: billingSubscriptions,
+    column: billingSubscriptions.stripeCustomerId,
+    reason: "Stripe's identifier for the customer. Not a row in this database.",
+  },
+  {
+    table: billingSubscriptions,
+    column: billingSubscriptions.stripeSubscriptionId,
+    reason:
+      "Stripe's identifier for the subscription. This table IS the local " +
+      'mirror of it; the authority is Stripe.',
+  },
+  {
+    table: billingSubscriptions,
+    column: billingSubscriptions.stripePriceId,
+    reason:
+      "Stripe's identifier for the price. The catalogue it belongs to is a code " +
+      'constant (`billing.ts:74`), not a table.',
+  },
+  {
+    table: billingTransactions,
+    column: billingTransactions.stripeCustomerId,
+    reason: "Stripe's identifier for the customer. Not a row in this database.",
+  },
+  {
+    table: billingTransactions,
+    column: billingTransactions.stripePaymentIntentId,
+    reason:
+      "Stripe's identifier for the payment intent. Not a row in this database.",
+  },
+  {
+    table: billingTransactions,
+    column: billingTransactions.stripeSubscriptionId,
+    // This one COULD be a foreign key — `billing_subscriptions.stripe_subscription_id`
+    // is unique, and Postgres will reference a unique column. It deliberately is
+    // not: `billing_subscriptions` is a MIRROR that may legitimately be missing a
+    // subscription (one created before the mirror existed, or under a price id
+    // this deployment does not recognise), and a record of money actually
+    // charged must never be refused because a local mirror is incomplete.
+    reason:
+      "Stripe's identifier for the subscription this payment covers. Pointing " +
+      'it at the local mirror would let an incomplete mirror reject a real ' +
+      'payment record; Stripe is the authority for both.',
   },
 ];
