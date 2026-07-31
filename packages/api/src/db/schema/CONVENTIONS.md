@@ -32,6 +32,22 @@ creates), and by `sqlColumnName`. One setting, not three copies.
 > matches nothing and the check passes vacuously. Always `sqlColumnName(column)`,
 > or interpolate the Column itself into `sql` and let drizzle render it.
 
+> **Trap, second guise — the one that costs data, not a crash:** a drizzle column
+> interpolated into `sql` renders **bare** when its table is not in that
+> statement's `FROM`. In a correlated subquery,
+> `where ${userLinkMetadata.userId} = ${users.id}` renders
+> `where "user_id" = "id"` — both names then resolve against the SUBQUERY's own
+> table, the predicate compares two of its columns to each other, and the query
+> returns `[]` **with no error at all**. This shipped silently: `linksMetadata`
+> and both follow counts read empty/zero on every public profile until a test
+> caught it. Qualify every correlated reference (`qualified(column)` in
+> `src/utils/profileQuery.ts`, built on `sqlColumnName`), and treat "a correlated
+> subquery returned nothing" as a bug in the SQL until proven otherwise — the
+> failure mode is an empty result, not an exception.
+>
+> Related: `${col} <> all(${jsArray})` binds a TUPLE, not an array, and Postgres
+> raises `op ANY/ALL (array) requires array on right side`. Use `notInArray`.
+
 **Reserved words are fine.** `labels.order` stays `order`; drizzle quotes every
 identifier it emits. Hand-written SQL must quote it too. Renaming it would put a
 gratuitous divergence between the schema and the wire contract.
