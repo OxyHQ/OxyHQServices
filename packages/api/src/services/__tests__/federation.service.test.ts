@@ -182,9 +182,7 @@ const FRESH_AGE_MS = 60 * 1000; // 1 minute — well under the 24h stale window
 const STALE_AGE_MS = 48 * 60 * 60 * 1000; // 48h — older than STALE_MS (24h)
 
 function mockUploadedFile(fileId: string) {
-  return {
-    _id: { toString: () => fileId },
-  };
+  return { id: fileId };
 }
 
 function resetAssetMocks(): void {

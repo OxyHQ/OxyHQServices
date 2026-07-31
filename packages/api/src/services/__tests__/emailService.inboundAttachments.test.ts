@@ -164,12 +164,12 @@ function stageHappyPath(): void {
 }
 
 function makeUploadedFile(id: string, name: string, mime: string, size: number): {
-  _id: { toString: () => string };
+  id: string;
   originalName: string;
   mime: string;
   size: number;
 } {
-  return { _id: { toString: () => id }, originalName: name, mime, size };
+  return { id, originalName: name, mime, size };
 }
 
 beforeEach(() => {

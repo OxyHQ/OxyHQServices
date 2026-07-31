@@ -155,21 +155,24 @@ const FILE_TRASHED = '64f0000000000000000000a3';
 const FILE_MISSING = '64f0000000000000000000a4';
 const OTHER_USER_ID = '64b0000000000000000000bb';
 
+// A file record as `assetService` now hands it back: a flat Postgres row, so
+// `id` is a plain string and `owner_user_id` is a nullable text column rather
+// than an ObjectId that needed `.toString()`.
 function makeFile(id: string, status: 'active' | 'trash' | 'deleted', ownerUserId = TEST_USER_ID): {
-  _id: { toString: () => string };
+  id: string;
   status: 'active' | 'trash' | 'deleted';
   originalName: string;
   mime: string;
   size: number;
-  ownerUserId: { toString: () => string };
+  ownerUserId: string;
 } {
   return {
-    _id: { toString: () => id },
+    id,
     status,
     originalName: `${id}.pdf`,
     mime: 'application/pdf',
     size: 1234,
-    ownerUserId: { toString: () => ownerUserId },
+    ownerUserId,
   };
 }
 

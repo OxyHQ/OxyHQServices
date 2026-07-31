@@ -10,7 +10,7 @@ import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { ApiError, BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, ValidationError, ConflictError } from '../utils/error';
 import { z } from 'zod';
-import type { FileVisibility } from '../models/File';
+import type { FileLinkRecord, FileVariantRecord, FileVisibility } from '../types/file.types';
 import type { MediaAccessContext } from '../types/mediaPrivacy.types';
 import { validate } from '../middleware/validate';
 import {
@@ -26,9 +26,10 @@ import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../
 import { buildCdnUrl, stripPublicPrefix, isPublicKey, CDN_REDIRECT_MAX_AGE_SECONDS } from '../config/cdn';
 import { MEDIA_TOKEN_QUERY_PARAM, MEDIA_TOKEN_TTL_SECONDS, signMediaToken } from '../utils/mediaToken';
 import { FEDERATION_CACHE_MAX_BYTES, USER_MEDIA_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
-import User from '../models/User';
-import { isValidObjectId } from '../utils/validation';
-import { serviceAssetMetadataFields } from '../utils/fileMediaMetadata';
+import { and, eq } from 'drizzle-orm';
+import { getDb } from '../config/postgres';
+import { users } from '../db/schema';
+import { resolveFileMediaMetadata } from '../utils/fileMediaMetadata';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -39,6 +40,40 @@ interface AuthenticatedRequest extends express.Request {
 
 const router = express.Router();
 const upload = multer(); // memory storage
+
+/**
+ * Project a link/variant row onto the wire shape clients already receive.
+ *
+ * Two differences would otherwise ship silently. Mongo stored these as
+ * subdocuments declared `{ _id: false }`, so they carried NO id and no parent
+ * pointer — the `file_links.id` / `file_variants.id` / `file_id` columns are
+ * new and internal, and must not leak. And Mongo OMITTED an unset optional
+ * field, where a Postgres row spells it `null`; `JSON.stringify` drops
+ * `undefined` but preserves `null`, so passing rows through verbatim would turn
+ * "absent" into an explicit `null` for every consumer in the ecosystem.
+ */
+function serializeLink(link: FileLinkRecord) {
+  return {
+    app: link.app,
+    entityType: link.entityType,
+    entityId: link.entityId,
+    createdBy: link.createdBy,
+    createdAt: link.createdAt,
+    ...(link.webhookUrl === null ? {} : { webhookUrl: link.webhookUrl }),
+  };
+}
+
+function serializeVariant(variant: FileVariantRecord) {
+  return {
+    type: variant.type,
+    key: variant.key,
+    ...(variant.width === null ? {} : { width: variant.width }),
+    ...(variant.height === null ? {} : { height: variant.height }),
+    ...(variant.readyAt === null ? {} : { readyAt: variant.readyAt }),
+    ...(variant.size === null ? {} : { size: variant.size }),
+    ...(variant.metadata === null ? {} : { metadata: variant.metadata }),
+  };
+}
 
 /**
  * Build an absolute, our-origin streaming URL for an asset on the host that
@@ -187,7 +222,7 @@ router.get('/', authMiddleware, validate({ query: listAssetsQuerySchema }), asyn
 
   sendSuccess(res, {
     files: files.map((file) => ({
-      id: file._id,
+      id: file.id,
       sha256: file.sha256,
       size: file.size,
       mime: file.mime,
@@ -195,11 +230,11 @@ router.get('/', authMiddleware, validate({ query: listAssetsQuerySchema }), asyn
       originalName: file.originalName,
       ownerUserId: file.ownerUserId,
       status: file.status,
-      usageCount: file.usageCount,
+      usageCount: file.links.length,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
-      links: file.links,
-      variants: file.variants,
+      links: file.links.map(serializeLink),
+      variants: file.variants.map(serializeVariant),
       metadata: file.metadata,
     })),
     total,
@@ -378,24 +413,24 @@ router.post('/complete', authMiddleware, validate({ body: completeUploadSchema }
 
   logger.info('Asset upload completed', { 
     userId: user._id, 
-    fileId: file._id,
+    fileId: file.id,
     originalName: validatedData.originalName
   });
 
   sendSuccess(res, {
-    assetId: file._id.toString(),
+    assetId: file.id,
     file: {
-      id: file._id,
+      id: file.id,
       sha256: file.sha256,
       size: file.size,
       mime: file.mime,
       originalName: file.originalName,
       status: file.status,
-      usageCount: file.usageCount,
+      usageCount: file.links.length,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
-      links: file.links,
-      variants: file.variants
+      links: file.links.map(serializeLink),
+      variants: file.variants.map(serializeVariant)
     }
   });
 }));
@@ -515,13 +550,13 @@ router.post('/upload', authMiddleware, upload.single('file'), asyncHandler(async
 
   logger.info('File uploaded via direct endpoint', { 
     userId: user._id, 
-    fileId: file._id,
+    fileId: file.id,
     sha256: file.sha256
   });
 
   sendSuccess(res, {
     file: {
-      id: file._id.toString(),
+      id: file.id,
       sha256: file.sha256,
       size: file.size,
       mime: file.mime,
@@ -529,8 +564,8 @@ router.post('/upload', authMiddleware, upload.single('file'), asyncHandler(async
       originalName: file.originalName,
       visibility: file.visibility,
       metadata: file.metadata,
-      links: file.links,
-      variants: file.variants
+      links: file.links.map(serializeLink),
+      variants: file.variants.map(serializeVariant)
     }
   });
 }));
@@ -685,14 +720,14 @@ router.post(
       logger.info('Federation media cached', {
         appId: req.serviceApp?.appId,
         appName: req.serviceApp?.appName,
-        fileId: file._id,
+        fileId: file.id,
         mime,
         size: file.size,
       });
 
       sendSuccess(res, {
         file: {
-          id: file._id.toString(),
+          id: file.id,
         },
       });
     } catch (error) {
@@ -720,13 +755,19 @@ router.post(
     requireServiceScope(req, 'files:write');
 
     const ownerUserId = getSingleHeader(req, 'x-owner-user-id')?.trim();
-    if (!ownerUserId || !isValidObjectId(ownerUserId)) {
+    if (!ownerUserId) {
       throw new BadRequestError('x-owner-user-id must be a valid federated user id');
     }
 
-    const owner = await User.findOne({ _id: ownerUserId, type: 'federated' })
-      .select('_id type')
-      .lean();
+    // An id of the wrong SHAPE is no longer a separate 400: a `text` primary key
+    // matches no row, so it lands on the same 403 an id that simply names no
+    // federated account does. That is the answer this endpoint already gives for
+    // "not a federated user", and it is the accurate one.
+    const [owner] = await getDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, ownerUserId), eq(users.type, 'federated')))
+      .limit(1);
     if (!owner) {
       throw new ForbiddenError('Federated media owner must be an existing federated user');
     }
@@ -777,14 +818,14 @@ router.post(
         appId: req.serviceApp?.appId,
         appName: req.serviceApp?.appName,
         ownerUserId,
-        fileId: file._id,
+        fileId: file.id,
         mime,
         size: file.size,
       });
 
       sendSuccess(res, {
         file: {
-          id: file._id.toString(),
+          id: file.id,
           sha256: file.sha256,
           size: file.size,
           mime: file.mime,
@@ -815,13 +856,17 @@ router.post(
     requireServiceScope(req, 'files:write');
 
     const ownerUserId = getSingleHeader(req, 'x-owner-user-id')?.trim();
-    if (!ownerUserId || !isValidObjectId(ownerUserId)) {
+    if (!ownerUserId) {
       throw new BadRequestError('x-owner-user-id must be a valid user id');
     }
 
-    const owner = await User.findOne({ _id: ownerUserId, type: 'local' })
-      .select('_id type')
-      .lean();
+    // Same reasoning as `/service/federation` above: a malformed id matches no
+    // row and gets the endpoint's existing "not an existing local user" 403.
+    const [owner] = await getDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, ownerUserId), eq(users.type, 'local')))
+      .limit(1);
     if (!owner) {
       throw new ForbiddenError('User media owner must be an existing local user');
     }
@@ -875,14 +920,14 @@ router.post(
         appId: req.serviceApp?.appId,
         appName: req.serviceApp?.appName,
         ownerUserId,
-        fileId: file._id,
+        fileId: file.id,
         mime,
         size: file.size,
       });
 
       sendSuccess(res, {
         file: {
-          id: file._id.toString(),
+          id: file.id,
           sha256: file.sha256,
           size: file.size,
           mime: file.mime,
@@ -1013,9 +1058,9 @@ router.post(
     const data = files
       .filter((file) => file.status !== 'deleted')
       .map((file) => {
-        const media = serviceAssetMetadataFields(file);
+        const media = resolveFileMediaMetadata(file);
         return {
-          id: file._id.toString(),
+          id: file.id,
           sha256: file.sha256,
           mime: file.mime,
           size: file.size,
@@ -1140,14 +1185,14 @@ router.post(
           // batch — omit `url` and keep metadata (mirrors batch-access).
           logger.warn('service/by-sha256: CDN resolution failed; omitting url', {
             sha256: file.sha256,
-            fileId: file._id.toString(),
+            fileId: file.id,
             error: error instanceof Error ? error.message : String(error),
           });
         }
-        const media = serviceAssetMetadataFields(file);
+        const media = resolveFileMediaMetadata(file);
         return {
           sha256: file.sha256,
-          id: file._id.toString(),
+          id: file.id,
           mime: file.mime,
           size: file.size,
           status: file.status,
@@ -1208,11 +1253,11 @@ router.post('/:id/links', authMiddleware, validate({ params: assetIdParams, body
   });
 
   sendSuccess(res, {
-    assetId: file._id.toString(),
+    assetId: file.id,
     file: {
-      id: file._id,
-      usageCount: file.usageCount,
-      links: file.links,
+      id: file.id,
+      usageCount: file.links.length,
+      links: file.links.map(serializeLink),
       status: file.status
     }
   });
@@ -1255,9 +1300,9 @@ router.delete('/:id/links', authMiddleware, validate({ params: assetIdParams, bo
 
   sendSuccess(res, {
     file: {
-      id: file._id,
-      usageCount: file.usageCount,
-      links: file.links,
+      id: file.id,
+      usageCount: file.links.length,
+      links: file.links.map(serializeLink),
       status: file.status
     }
   });
@@ -1308,9 +1353,9 @@ router.get('/:id', authMiddleware, validate({ params: assetIdParams }), asyncHan
   });
 
   sendSuccess(res, {
-    assetId: file._id.toString(),
+    assetId: file.id,
     file: {
-      id: file._id,
+      id: file.id,
       sha256: file.sha256,
       size: file.size,
       mime: file.mime,
@@ -1318,11 +1363,11 @@ router.get('/:id', authMiddleware, validate({ params: assetIdParams }), asyncHan
       originalName: file.originalName,
       ownerUserId: file.ownerUserId,
       status: file.status,
-      usageCount: file.usageCount,
+      usageCount: file.links.length,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
-      links: file.links,
-      variants: file.variants,
+      links: file.links.map(serializeLink),
+      variants: file.variants.map(serializeVariant),
       metadata: file.metadata
     }
   });
@@ -1783,9 +1828,9 @@ router.post('/:id/restore', authMiddleware, validate({ params: assetIdParams }),
 
   sendSuccess(res, {
     file: {
-      id: file._id,
+      id: file.id,
       status: file.status,
-      usageCount: file.usageCount
+      usageCount: file.links.length
     }
   });
 }));
@@ -1816,7 +1861,7 @@ router.patch('/:id/visibility', authMiddleware, asyncHandler(async (req: Authent
   }
 
   // Compare as strings (handle ObjectId vs string comparison)
-  if (file.ownerUserId.toString() !== user._id.toString()) {
+  if (file.ownerUserId !== user._id) {
     throw new ForbiddenError('Access denied');
   }
 
@@ -1825,7 +1870,7 @@ router.patch('/:id/visibility', authMiddleware, asyncHandler(async (req: Authent
     // No change needed, return current file
     return sendSuccess(res, {
       file: {
-        id: file._id,
+        id: file.id,
         visibility: file.visibility,
         updatedAt: file.updatedAt
       }
@@ -1843,7 +1888,7 @@ router.patch('/:id/visibility', authMiddleware, asyncHandler(async (req: Authent
 
   sendSuccess(res, {
     file: {
-      id: updatedFile._id,
+      id: updatedFile.id,
       visibility: updatedFile.visibility,
       updatedAt: updatedFile.updatedAt
     }
@@ -1930,7 +1975,7 @@ router.post('/batch-access', authMiddleware, validate({ body: batchAccessSchema 
   // One DB round trip for the whole batch, then map each request (with its own
   // variant) back to its file. Unknown ids resolve to a "not found" entry.
   const fetched = await assetService.getFilesByIds(requests.map((r) => r.fileId));
-  const filesById = new Map(fetched.map((f) => [f._id.toString(), f]));
+  const filesById = new Map(fetched.map((f) => [f.id, f]));
 
   const results: Record<string, BatchAccessResult> = {};
 

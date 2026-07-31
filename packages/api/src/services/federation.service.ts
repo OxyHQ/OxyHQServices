@@ -1036,7 +1036,7 @@ class FederationService {
         },
       );
 
-      const fileId = file._id.toString();
+      const fileId = file.id;
 
       // Delete the replaced avatar only after the new durable file is present.
       // If dedupe returned the same file, keep it.

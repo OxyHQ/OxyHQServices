@@ -12,7 +12,7 @@ import { assetService } from '../services/assetServiceSingleton';
 import { resolveEmailAddress } from '../config/email.config';
 import User from '../models/User';
 import { Message, type IAttachment } from '../models/Message';
-import type { IFile } from '../models/File';
+import type { FileRecord } from '../types/file.types';
 import {
   BadRequestError,
   ForbiddenError,
@@ -40,25 +40,25 @@ function getOptionalQueryString(value: unknown, name: string): string | undefine
  *   - be in status 'active' (not trash/deleted)
  *   - be owned by the requesting user
  *
- * The IAttachment is built from the IFile so the Message subdocument carries
+ * The IAttachment is built from the file record so the Message subdocument carries
  * a stable snapshot of name/contentType/size at send time, regardless of any
  * later changes to the underlying file's originalName.
  */
 async function resolveAttachmentInputs(
   inputs: AttachmentInput[],
   userId: string
-): Promise<{ resolved: IAttachment[]; files: IFile[] }> {
+): Promise<{ resolved: IAttachment[]; files: FileRecord[] }> {
   const fileIds = inputs.map((a) => a.fileId);
   const files = await assetService.getFilesByIds(fileIds);
-  const byId = new Map<string, IFile>();
+  const byId = new Map<string, FileRecord>();
   for (const f of files) {
     if (f.status === 'active') {
-      byId.set(f._id.toString(), f);
+      byId.set(f.id, f);
     }
   }
 
   const resolved: IAttachment[] = [];
-  const usedFiles: IFile[] = [];
+  const usedFiles: FileRecord[] = [];
 
   for (const input of inputs) {
     const file = byId.get(input.fileId);
@@ -70,12 +70,12 @@ async function resolveAttachmentInputs(
     // shares / public visibility) is intentionally NOT used here — attaching a
     // merely-readable file would leak it into a Message subdocument the sender
     // does not own.
-    if (file.ownerUserId.toString() !== userId) {
-      throw new ForbiddenError(`Not authorized to attach file ${file._id}`);
+    if (file.ownerUserId !== userId) {
+      throw new ForbiddenError(`Not authorized to attach file ${file.id}`);
     }
     resolved.push({
-      fileId: file._id.toString(),
-      name: file.originalName || file._id.toString(),
+      fileId: file.id,
+      name: file.originalName || file.id,
       contentType: file.mime,
       size: file.size,
       ...(input.contentId ? { contentId: input.contentId } : {}),
@@ -94,13 +94,13 @@ async function resolveAttachmentInputs(
  * surface as a send failure to the client.
  */
 async function linkAttachmentsToMessage(
-  files: IFile[],
+  files: FileRecord[],
   messageId: string,
   userId: string
 ): Promise<void> {
   for (const file of files) {
     try {
-      await assetService.linkFile(file._id.toString(), {
+      await assetService.linkFile(file.id, {
         app: 'oxy-mail',
         entityType: 'message',
         entityId: messageId,
@@ -108,7 +108,7 @@ async function linkAttachmentsToMessage(
       });
     } catch (err) {
       logger.warn('Failed to link attachment file to email message', {
-        fileId: file._id.toString(),
+        fileId: file.id,
         messageId,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -428,7 +428,7 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
   // fileIds before any side effects.
   const { resolved: resolvedAttachments, files: attachedFiles } = attachments && attachments.length > 0
     ? await resolveAttachmentInputs(attachments, userId)
-    : { resolved: [] as IAttachment[], files: [] as IFile[] };
+    : { resolved: [] as IAttachment[], files: [] as FileRecord[] };
 
   if (scheduledAt) {
     const scheduledDate = new Date(scheduledAt);
