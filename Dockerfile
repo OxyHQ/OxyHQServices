@@ -23,7 +23,7 @@ WORKDIR /app
 # Remove bun.lock since the workspace change invalidates it — bun will
 # resolve fresh dependencies (still deterministic from package.json versions).
 COPY package.json ./
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/contracts','packages/protocol','packages/federation','packages/core','packages/api']; delete p.patchedDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+RUN node -e "const p=require('./package.json'); const catalog=p.workspaces?.catalog; const packages=['packages/contracts','packages/protocol','packages/federation','packages/core','packages/api']; p.workspaces=catalog?{packages,catalog}:packages; delete p.patchedDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 
 # Copy package.json files for dependency resolution
 COPY packages/api/package.json packages/api/
@@ -62,7 +62,7 @@ WORKDIR /app
 
 # Copy workspace root and override workspaces
 COPY package.json ./
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/contracts','packages/protocol','packages/federation','packages/core','packages/api']; delete p.patchedDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+RUN node -e "const p=require('./package.json'); const catalog=p.workspaces?.catalog; const packages=['packages/contracts','packages/protocol','packages/federation','packages/core','packages/api']; p.workspaces=catalog?{packages,catalog}:packages; delete p.patchedDependencies; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 COPY packages/protocol/package.json packages/protocol/
