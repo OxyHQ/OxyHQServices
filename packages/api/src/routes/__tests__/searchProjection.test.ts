@@ -1,220 +1,206 @@
 /**
- * GET /search public-projection coverage.
+ * `GET /search` — protected-column leak guard, over a REAL row that actually
+ * carries every protected value.
  *
  * `/search` is mounted with NO auth and NO CSRF (`server.ts`), so every field it
  * emits is world-readable. It once shipped an exclusion `$project`
- * (`{ password: 0, refreshToken: 0, ... }`), which put `email`, `publicKey` and
+ * (`{ password: 0, refreshToken: 0, … }`), which put `email`, `publicKey` and
  * the full `privacySettings` object on that public response.
  *
- * The sibling suite (`search.test.ts`) could not catch that: it stubs
- * `formatUserResponse` down to `{ id }` and its `User.aggregate` mock ignores
- * the `$project` stage entirely. This suite deliberately does the opposite —
- * it uses the REAL serializer and APPLIES the route's own `$project` with
- * MongoDB's semantics — so it fails if the projection ever regresses to a
- * denylist, or if a private path is added to the public projection.
+ * The Postgres read is an INCLUSION list (`publicUserColumns`), which is the
+ * right shape — and this suite is what notices if it ever stops being one. It
+ * matters more here than on the profiles surfaces because this route serializes
+ * through a DIFFERENT function (`utils/userTransform.formatUserResponse`), which
+ * happily emits `email`, `publicKey` and a whole `privacySettings` object when
+ * its input carries them. The selection is the only thing between those columns
+ * and the wire.
+ *
+ * Driven by the registry (`USERS_PROTECTED_COLUMNS`) so a newly protected column
+ * extends the assertion automatically, and seeded with a distinct sentinel per
+ * column so a value that leaks under a different key is caught too.
  */
 
 import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
-import { Types } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 
-const mockUserAggregate = jest.fn();
-
-jest.mock('../../middleware/validate', () => ({
-  validate: () => (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
-jest.mock('../../models/User', () => ({
-  __esModule: true,
-  default: {
-    aggregate: (...args: unknown[]) => mockUserAggregate(...args),
-  },
-}));
 
-import searchRouter from '../search';
+import { eq } from 'drizzle-orm';
+import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
+import { USERS_PROTECTED_COLUMNS } from '../../db/schema/protectedColumns';
+import { users } from '../../db/schema/users';
 import { errorHandler } from '../../middleware/errorHandler';
+import searchRouter from '../search';
 
-/** A complete User document, as it actually sits in Mongo. */
-const STORED_USER = {
-  _id: new Types.ObjectId(),
-  username: 'nate',
-  email: 'nate@oxy.so',
-  password: '$2b$10$hash',
-  refreshToken: 'rt_secret',
-  publicKey: '048295c46ffc47451',
-  phone: '+34600000000',
-  hashedEmail: 'deadbeef',
-  hashedPhone: 'cafebabe',
-  themePreference: { mode: 'dark', colorPreset: 'orange' },
-  name: { first: 'Nate', last: 'Isern', full: 'Nate Isern' },
-  avatar: 'file_123',
-  color: 'orange',
-  bio: 'hello',
-  description: 'desc',
-  links: ['https://oxy.so'],
-  linksMetadata: [{ url: 'https://oxy.so' }],
-  verified: true,
-  type: 'local',
-  privacySettings: {
-    isPrivateAccount: false,
-    fediverseSharing: true,
-    discoverableByEmail: false,
-    biometricLogin: false,
-  },
-  createdAt: '2026-02-03T10:08:23.997Z',
-  updatedAt: '2026-07-30T18:20:41.852Z',
-} as const;
-
-/** Every path on STORED_USER that must NEVER reach an unauthenticated response. */
-const PRIVATE_PATHS = [
-  'email',
-  'password',
-  'refreshToken',
-  'publicKey',
-  'phone',
-  'hashedEmail',
-  'hashedPhone',
-  'themePreference',
-] as const;
-
-/**
- * Applies a `$project` stage the way MongoDB does — supporting BOTH inclusion
- * and exclusion form, so a regression to a denylist is reproduced faithfully
- * rather than assumed away.
- */
-function applyProjection(
-  doc: Record<string, unknown>,
-  projection: Record<string, unknown>,
-): Record<string, unknown> {
-  const entries = Object.entries(projection).filter(([key]) => key !== '_id');
-  const isExclusion = entries.length > 0 && entries.every(([, value]) => value === 0 || value === false);
-
-  if (isExclusion) {
-    const out = { ...doc };
-    for (const [key] of entries) {
-      delete out[key];
-    }
-    return out;
-  }
-
-  const out: Record<string, unknown> = { _id: doc._id };
-  for (const [path] of entries) {
-    if (path.includes('.')) {
-      const [head, leaf] = path.split('.');
-      const parent = doc[head];
-      if (parent && typeof parent === 'object') {
-        const nested = (out[head] as Record<string, unknown>) ?? {};
-        nested[leaf] = (parent as Record<string, unknown>)[leaf];
-        out[head] = nested;
-      }
-    } else if (path in doc) {
-      out[path] = doc[path];
-    }
-  }
-  return out;
+interface SearchResponse {
+  status: number;
+  raw: string;
+  body: { users?: Array<Record<string, unknown>> };
 }
 
-function requestJson(
-  server: http.Server,
-  path: string,
-): Promise<{ status: number; raw: string; body: { users?: Array<Record<string, unknown>> } }> {
+interface SeededSecrets {
+  term: string;
+  username: string;
+  id: string;
+  values: string[];
+}
+
+let server: http.Server;
+
+/** See `profilesUsernameProjection.test.ts` for why the hashes are read back. */
+async function seedUserWithEverySecret(): Promise<SeededSecrets> {
+  const term = `t${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+  const username = `secretive${term}`;
+  const email = `${username}@oxy.so`;
+
+  const [inserted] = await getDb()
+    .insert(users)
+    .values({
+      username,
+      nameFirst: 'Secretive',
+      avatar: 'file_public',
+      bio: 'public bio',
+      description: 'public description',
+      email,
+      phone: `+34600${term.replace(/\D/g, '0').slice(0, 6)}`,
+      publicKey: `04${term}${randomUUID().replace(/-/g, '')}`,
+      refreshToken: `rt_secret_${term}`,
+      emailSignature: `signature_secret_${term}`,
+      autoForwardTo: `forward_secret_${term}@example.com`,
+      autoForwardKeepCopy: false,
+      // A privacy block that is NOT all-default, so a wholesale
+      // `privacySettings` leak would be visible in the response body.
+      privacyDiscoverableByEmail: true,
+      privacyBiometricLogin: true,
+    })
+    .returning({ id: users.id });
+
+  const [derived] = await getDb()
+    .select({
+      hashedEmail: users.hashedEmail,
+      hashedPhone: users.hashedPhone,
+      publicKey: users.publicKey,
+      phone: users.phone,
+      refreshToken: users.refreshToken,
+      emailSignature: users.emailSignature,
+      autoForwardTo: users.autoForwardTo,
+    })
+    .from(users)
+    .where(eq(users.id, inserted.id))
+    .limit(1);
+
+  const values = [
+    email,
+    derived.phone,
+    derived.publicKey,
+    derived.refreshToken,
+    derived.emailSignature,
+    derived.autoForwardTo,
+    derived.hashedEmail,
+    derived.hashedPhone,
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+  expect(values).toHaveLength(8);
+
+  return { term, username, id: inserted.id, values };
+}
+
+function search(query: string): Promise<SearchResponse> {
   const address = server.address() as AddressInfo;
+  const queryString = new URLSearchParams({ query, limit: '10' });
   return new Promise((resolve, reject) => {
-    const req = http.request({ method: 'GET', host: '127.0.0.1', port: address.port, path }, (res) => {
-      let raw = '';
-      res.on('data', (chunk) => {
-        raw += chunk;
-      });
-      res.on('end', () => {
-        try {
-          resolve({ status: res.statusCode ?? 0, raw, body: raw.length > 0 ? JSON.parse(raw) : {} });
-        } catch (err) {
-          reject(err);
-        }
-      });
-    });
+    const req = http.request(
+      { method: 'GET', host: '127.0.0.1', port: address.port, path: `/search?${queryString}` },
+      (res) => {
+        let raw = '';
+        res.on('data', (chunk) => {
+          raw += chunk;
+        });
+        res.on('end', () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            raw,
+            body: raw.length > 0 ? JSON.parse(raw) : {},
+          }),
+        );
+      },
+    );
     req.on('error', reject);
     req.end();
   });
 }
 
-let server: http.Server;
-
-beforeAll((done) => {
+beforeAll(async () => {
+  await connectPostgres();
   const app = express();
-  app.use(searchRouter);
+  app.use(express.json());
+  app.use('/search', searchRouter);
   app.use(errorHandler);
-  server = app.listen(0, done);
-});
-
-afterAll((done) => {
-  server.close(done);
-});
-
-beforeEach(() => {
-  jest.clearAllMocks();
-  // Run the route's OWN $project against the full stored document.
-  mockUserAggregate.mockImplementation((pipeline: Array<Record<string, unknown>>) => {
-    const projection = pipeline.find((stage) => '$project' in stage)?.$project as
-      | Record<string, unknown>
-      | undefined;
-    if (!projection) {
-      throw new Error('GET /search pipeline has no $project stage — the public row is unprojected');
-    }
-    return Promise.resolve([applyProjection({ ...STORED_USER }, projection)]);
+  await new Promise<void>((resolve) => {
+    server = app.listen(0, '127.0.0.1', resolve);
   });
 });
 
-describe('GET /search public projection', () => {
-  it('never emits a private field on the unauthenticated response', async () => {
-    const res = await requestJson(server, '/?query=nate&type=users&page=1&limit=10');
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  await closePostgres();
+});
+
+describe('GET /search — protected columns', () => {
+  it('emits no protected column on the unauthenticated response, by key or by value', async () => {
+    const seeded = await seedUserWithEverySecret();
+
+    const res = await search(seeded.term);
 
     expect(res.status).toBe(200);
-    const user = res.body.users?.[0];
-    expect(user).toBeDefined();
-
-    for (const path of PRIVATE_PATHS) {
-      expect(user).not.toHaveProperty(path);
+    const row = res.body.users?.[0];
+    expect(row).toBeDefined();
+    for (const column of USERS_PROTECTED_COLUMNS) {
+      expect(row).not.toHaveProperty(column);
     }
-    // Guard the serialized bytes too: a private value must not survive under any
-    // key, including one a future serializer might rename it to.
-    expect(res.raw).not.toContain('nate@oxy.so');
-    expect(res.raw).not.toContain('rt_secret');
-    expect(res.raw).not.toContain('048295c46ffc47451');
-    expect(res.raw).not.toContain('+34600000000');
+    expect(row).not.toHaveProperty('email');
+    expect(row).not.toHaveProperty('publicKey');
+    for (const secret of seeded.values) {
+      expect(res.raw).not.toContain(secret);
+    }
   });
 
-  it('still returns the fields the search row renders', async () => {
-    const res = await requestJson(server, '/?query=nate&type=users&page=1&limit=10');
-    const user = res.body.users?.[0] as Record<string, unknown>;
+  it('emits ONLY the public fediverseSharing leaf under privacySettings', async () => {
+    const seeded = await seedUserWithEverySecret();
 
-    expect(user.id).toBe(STORED_USER._id.toString());
-    expect(user.username).toBe('nate');
-    expect(user.avatar).toBe('file_123');
-    expect(user.color).toBe('orange');
-    expect(user.bio).toBe('hello');
-    expect(user.description).toBe('desc');
-    expect(user.verified).toBe(true);
-    expect(user.links).toEqual(['https://oxy.so']);
-    expect(user.name).toMatchObject({ first: 'Nate', last: 'Isern' });
-    expect(user.createdAt).toBe(STORED_USER.createdAt);
+    const res = await search(seeded.term);
+
+    expect(res.body.users?.[0]?.privacySettings).toEqual({ fediverseSharing: true });
   });
 
-  it('exposes only the public fediverseSharing leaf of privacySettings', async () => {
-    const res = await requestJson(server, '/?query=nate&type=users&page=1&limit=10');
-    const user = res.body.users?.[0] as Record<string, unknown>;
+  it('still emits the public fields the search row renders', async () => {
+    const seeded = await seedUserWithEverySecret();
 
-    expect(user.privacySettings).toEqual({ fediverseSharing: true });
+    const res = await search(seeded.term);
+
+    // The vacuity floor for the assertions above.
+    const row = res.body.users?.[0];
+    expect(row?.id).toBe(seeded.id);
+    expect(row?.username).toBe(seeded.username);
+    expect(row?.avatar).toBe('file_public');
+    expect(row?.bio).toBe('public bio');
+    expect(row?.description).toBe('public description');
+    expect(row?.name).toEqual({ displayName: 'Secretive', first: 'Secretive', full: 'Secretive' });
   });
 
-  it('strips the native-first pipeline sort keys', async () => {
-    const res = await requestJson(server, '/?query=nate&type=users&page=1&limit=10');
-    const user = res.body.users?.[0];
+  it('emits none of the ordering/gate columns the query reads', async () => {
+    const seeded = await seedUserWithEverySecret();
 
-    expect(user).not.toHaveProperty('_nativePriority');
-    expect(user).not.toHaveProperty('_reputationRank');
+    const res = await search(seeded.term);
+
+    const row = res.body.users?.[0];
+    expect(row).not.toHaveProperty('accountStatus');
+    expect(row).not.toHaveProperty('reputationTier');
+    expect(row).not.toHaveProperty('reputationRankWeight');
   });
 });
