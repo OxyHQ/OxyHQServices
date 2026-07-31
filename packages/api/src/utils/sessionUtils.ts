@@ -6,6 +6,23 @@ const REFRESH_TOKEN_EXPIRES_IN = '7d'; // Longer refresh tokens
 
 /**
  * Generate JWT tokens for a session
+ *
+ * KNOWN PROPERTY — the minted pair is DETERMINISTIC within one second. The
+ * payload is `{userId, sessionId, deviceId, type}` with no nonce, and a JWT's
+ * `iat`/`exp` carry one-second resolution, so two mints for the same session
+ * inside the same second produce BYTE-IDENTICAL tokens. The consequence is on
+ * the rotation path: `sessionService.refreshTokens` writes the outgoing token
+ * to `previous_refresh_token` and the new one to `refresh_token`, so a rotation
+ * that fast leaves the two EQUAL and does not invalidate a presented token.
+ *
+ * This is long-standing behaviour, unchanged by the Postgres port, and is
+ * reported/escalated rather than patched here: adding a per-mint nonce (`jti`)
+ * changes the token format, which is a wire contract every ecosystem app parses.
+ * `services/__tests__/session.service.test.ts` crosses a second boundary in its
+ * rotation cases specifically so they exercise a real rotation instead of
+ * passing against this collision — see the `nextSecond` helper there before
+ * changing either side.
+ *
  * @param userId - The user ID
  * @param sessionId - The session ID
  * @param deviceId - The device ID

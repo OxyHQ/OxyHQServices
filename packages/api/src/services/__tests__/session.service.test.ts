@@ -93,12 +93,25 @@ const deviceId = () => `dev-${randomUUID()}`;
 /**
  * Wait until the wall-clock SECOND advances.
  *
- * `generateSessionTokens` signs a payload of `{userId, sessionId, deviceId,
- * type}` with no nonce, and a JWT's `iat`/`exp` have one-second resolution — so
- * a rotation completed inside the same second re-mints a BYTE-IDENTICAL token
- * and `previous_refresh_token` ends up equal to `refresh_token`. That is
- * pre-existing behaviour of the token minter, not of this port, but a rotation
- * test that does not cross a second boundary is asserting nothing.
+ * ## This is a WORKAROUND for an open token-minter defect. Do not "fix" it here.
+ *
+ * `generateSessionTokens` (`utils/sessionUtils.ts`) signs a payload of
+ * `{userId, sessionId, deviceId, type}` with NO nonce, and a JWT's `iat`/`exp`
+ * have one-second resolution. So a rotation that completes inside the same
+ * second re-mints a BYTE-IDENTICAL refresh token and leaves
+ * `previous_refresh_token === refresh_token` — meaning **a rotation that fast
+ * does not actually invalidate a stolen refresh token**.
+ *
+ * That is a defect in the MINTER, not in this port and not in this test: the
+ * behaviour predates the Drizzle migration and is unchanged by it. It is
+ * reported and escalated; the fix (a per-mint nonce / `jti`) changes the token
+ * format, which is a wire-contract change and deliberately out of scope here.
+ *
+ * These sleeps exist ONLY so the rotation cases exercise a REAL rotation
+ * instead of silently passing against the collision. If you are here because
+ * they look slow or superfluous: the correct change is to give
+ * `generateSessionTokens` a nonce and then DELETE this helper — not to relax
+ * the assertions that depend on it.
  */
 async function nextSecond(): Promise<void> {
   const start = Math.floor(Date.now() / 1000);
