@@ -14,30 +14,22 @@
  * ORIGINAL object, runs the real Sharp resize, and uploads the resized
  * bytes.
  *
- * S3Service and the File model are stubbed at the module boundary; no AWS or
- * DB access occurs. Sharp runs for real so the assertions cover actual output
- * dimensions and byte sizes.
+ * S3 is stubbed; Sharp runs for real so the assertions cover actual output
+ * dimensions and byte sizes, and the rendition is written to a REAL
+ * `file_variants` row — which is the part that changed: a variant used to be an
+ * element of the parent document's array, so "was it persisted" and "was it
+ * returned" were the same object. They are now a row and a return value, and the
+ * last case checks they agree.
  */
 
 import sharp from 'sharp';
+import { randomBytes } from 'node:crypto';
+import { eq } from 'drizzle-orm';
+import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
+import { fileVariants, files, users } from '../../db/schema';
 import { VariantService } from '../variantService';
 import type { S3Service } from '../s3Service';
-import type { IFile } from '../../models/File';
-
-jest.mock('../../utils/logger', () => ({
-  logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
-}));
-
-// commitVariants persists via File.updateOne(...).exec(); stub it so no DB is
-// needed and the happy path returns the freshly generated variant.
-jest.mock('../../models/File', () => ({
-  File: {
-    updateOne: jest.fn(() => ({ exec: jest.fn(() => Promise.resolve({})) })),
-    findById: jest.fn(() => Promise.resolve(null)),
-    findOne: jest.fn(() => Promise.resolve(null)),
-  },
-  FileVisibility: {},
-}));
+import type { FileRecord } from '../../types/file.types';
 
 interface CapturedUpload {
   key: string;
@@ -64,16 +56,39 @@ function makeFakeS3(originalBuffer: Buffer): FakeS3 {
   };
 }
 
-function makeFile(): IFile {
-  return {
-    _id: 'test-file-id',
-    sha256: 'a'.repeat(64),
-    mime: 'image/png',
-    visibility: 'public',
-    storageKey: 'public/uploads/2026/07/aa/original.png',
-    variants: [],
-  } as unknown as IFile;
+/**
+ * A real `files` row, so `ensureImageVariant` writes its rendition to a real
+ * child row. Each call gets its own RANDOM content hash: `files_sha256_live_key`
+ * allows one live row per hash across the whole table, and Jest runs suites in
+ * parallel against one database.
+ */
+async function makeFile(): Promise<FileRecord> {
+  const [owner] = await getDb()
+    .insert(users)
+    .values({ color: 'teal' })
+    .returning({ id: users.id });
+  const [row] = await getDb()
+    .insert(files)
+    .values({
+      sha256: randomBytes(32).toString('hex'),
+      size: 1024,
+      mime: 'image/png',
+      ext: 'png',
+      visibility: 'public',
+      storageKey: 'public/uploads/2026/07/aa/original.png',
+      ownerUserId: owner.id,
+    })
+    .returning();
+  return { ...row, links: [], variants: [] };
 }
+
+beforeAll(async () => {
+  await connectPostgres();
+});
+
+afterAll(async () => {
+  await closePostgres();
+});
 
 async function makeSquarePng(size: number): Promise<Buffer> {
   return sharp({
@@ -94,7 +109,7 @@ describe('VariantService imageVariants — w128 variant', () => {
     const fakeS3 = makeFakeS3(original);
     const service = new VariantService(fakeS3 as unknown as S3Service);
 
-    const variant = await service.ensureImageVariant(makeFile(), 'w128');
+    const variant = await service.ensureImageVariant(await makeFile(), 'w128');
 
     expect(variant.type).toBe('w128');
     expect(variant.width).toBe(128);
@@ -116,13 +131,13 @@ describe('VariantService imageVariants — w128 variant', () => {
 
     const w128S3 = makeFakeS3(original);
     const w128 = await new VariantService(w128S3 as unknown as S3Service).ensureImageVariant(
-      makeFile(),
+      await makeFile(),
       'w128',
     );
 
     const thumbS3 = makeFakeS3(original);
     const thumb = await new VariantService(thumbS3 as unknown as S3Service).ensureImageVariant(
-      makeFile(),
+      await makeFile(),
       'thumb',
     );
 
@@ -143,7 +158,7 @@ describe('VariantService imageVariants — w128 variant', () => {
 
     const w96S3 = makeFakeS3(original);
     const w96 = await new VariantService(w96S3 as unknown as S3Service).ensureImageVariant(
-      makeFile(),
+      await makeFile(),
       'w96',
     );
 
@@ -161,7 +176,7 @@ describe('VariantService imageVariants — w128 variant', () => {
 
     const w128S3 = makeFakeS3(original);
     const w128 = await new VariantService(w128S3 as unknown as S3Service).ensureImageVariant(
-      makeFile(),
+      await makeFile(),
       'w128',
     );
     const w96Bytes = uploaded?.buffer.length ?? 0;
@@ -171,11 +186,55 @@ describe('VariantService imageVariants — w128 variant', () => {
     expect(w96Bytes).toBeLessThan(w128Bytes);
   });
 
+  it('persists the rendition as a row whose key matches the returned variant', async () => {
+    // The rendition is a `file_variants` row now, not an element of the parent
+    // document. A path that returned a correct-looking variant without writing
+    // the row would serve a key nothing points at on the next read.
+    const original = await makeSquarePng(512);
+    const fakeS3 = makeFakeS3(original);
+    const file = await makeFile();
+
+    const variant = await new VariantService(
+      fakeS3 as unknown as S3Service
+    ).ensureImageVariant(file, 'w128');
+
+    const stored = await getDb()
+      .select()
+      .from(fileVariants)
+      .where(eq(fileVariants.fileId, file.id));
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ id: variant.id, type: 'w128', key: variant.key });
+    expect(stored[0].readyAt).toBeInstanceOf(Date);
+    // The caller's in-hand record is kept consistent with what was stored.
+    expect(file.variants.map((v) => v.id)).toEqual([variant.id]);
+  });
+
+  it('replaces the row of the same type on a regeneration rather than duplicating it', async () => {
+    const original = await makeSquarePng(512);
+    const file = await makeFile();
+    const service = new VariantService(makeFakeS3(original) as unknown as S3Service);
+
+    const first = await service.ensureImageVariant(file, 'w128');
+    // `fileExists` is false in the fake, so the second call regenerates rather
+    // than reusing — exactly the path that used to re-`$set` the whole array.
+    const second = await service.ensureImageVariant(file, 'w128');
+
+    const stored = await getDb()
+      .select()
+      .from(fileVariants)
+      .where(eq(fileVariants.fileId, file.id));
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0].id).toBe(second.id);
+    expect(second.id).not.toBe(first.id);
+  });
+
   it('rejects a variant key that is not in the imageVariants config', async () => {
     const original = await makeSquarePng(512);
     const service = new VariantService(makeFakeS3(original) as unknown as S3Service);
 
-    await expect(service.ensureImageVariant(makeFile(), 'not-a-real-variant')).rejects.toThrow(
+    await expect(service.ensureImageVariant(await makeFile(), 'not-a-real-variant')).rejects.toThrow(
       /Unsupported image variant/,
     );
   });

@@ -9,7 +9,6 @@ import sessionRouter from "./routes/session";
 import sessionDeviceRouter from "./routes/sessionDevice";
 import dotenv from "dotenv";
 import User, { type IUser } from "./models/User";
-import { ensureFileSha256LiveUniqueIndex } from "./models/File";
 import searchRoutes from "./routes/search";
 import { rateLimiter, authRateLimiter, userRateLimiter, federationServiceLimiter, bruteForceProtection, securityHeaders } from "./middleware/security";
 import privacyRoutes from "./routes/privacy";
@@ -411,9 +410,15 @@ const mongoOptions = {
   bufferCommands: false, // Don't buffer commands if not connected - fail fast
 };
 
+// `ensureFileSha256LiveUniqueIndex()` used to run here: boot-time index
+// reconciliation that dropped the legacy global `sha256_1` index and recreated
+// the live-rows-only partial unique on every start — and CRASHED the API on a
+// fresh empty database, because `.indexes()` on a collection that does not exist
+// yet throws and this `.catch` exits the process. `files_sha256_live_key` is
+// declared in the schema and created by a migration, which is what index
+// reconciliation is for; there is nothing left for a boot hook to do.
 mongoose.connect(process.env.MONGODB_URI as string, mongoOptions)
 .then(async () => {
-  await ensureFileSha256LiveUniqueIndex();
   logger.info("Connected to MongoDB successfully", {
     maxPoolSize: mongoOptions.maxPoolSize,
     minPoolSize: mongoOptions.minPoolSize,

@@ -131,10 +131,9 @@ export const LINK_PREVIEW_PREVIEW_RATE_MAX = getEnvNumber('LINK_PREVIEW_PREVIEW_
 export const LINK_PREVIEW_BATCH_RATE_MAX = getEnvNumber('LINK_PREVIEW_BATCH_RATE_MAX', 600);
 
 /**
- * Reserved synthetic owner id for every re-hosted link-preview image. NOT a
- * valid Mongo ObjectId, so it can never collide with a real user `_id` and the
- * media-privacy block checks short-circuit it (mirrors the federation-cache
- * owner). Keeps link-preview assets in their own namespace, distinct from
- * user media and from the federation media cache.
+ * The reserved owner of every re-hosted link-preview image is
+ * `__link_preview_cache__`, one of `FILE_SYSTEM_OWNERS` in `schema/files.ts`. It
+ * used to be declared here as `LINK_PREVIEW_OWNER_ID`, a sentinel string stored
+ * in the user-id column; it is now a value of `files.system_owner`, so the
+ * namespace is a real column rather than a naming convention.
  */
-export const LINK_PREVIEW_OWNER_ID = '__link_preview_cache__';

@@ -809,14 +809,14 @@ class EmailService {
           { source: 'email-inbound' }
         );
         storedAttachments.push({
-          fileId: file._id.toString(),
+          fileId: file.id,
           name: file.originalName || att.filename,
           contentType: file.mime,
           size: file.size,
           ...(att.contentId ? { contentId: att.contentId } : {}),
           isInline: att.isInline ?? false,
         });
-        uploadedFiles.push({ fileId: file._id.toString() });
+        uploadedFiles.push({ fileId: file.id });
       }
     }
 
@@ -1954,14 +1954,14 @@ class EmailService {
               { source: 'email-import' }
             );
             storedAttachments.push({
-              fileId: uploadedFile._id.toString(),
+              fileId: uploadedFile.id,
               name: uploadedFile.originalName || att.filename || 'attachment',
               contentType: uploadedFile.mime,
               size: uploadedFile.size,
               ...(att.contentId ? { contentId: att.contentId } : {}),
               isInline: att.related ?? false,
             });
-            importedFileIds.push(uploadedFile._id.toString());
+            importedFileIds.push(uploadedFile.id);
           }
         }
 
