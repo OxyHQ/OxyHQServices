@@ -98,6 +98,17 @@ function booleanValue(value: unknown): boolean | undefined {
 export interface UserIdentitySource {
   _id?: unknown;
   /**
+   * Drizzle returns the users row FLAT — `name_first` / `name_last` columns, not
+   * the nested `name` object Mongoose's schema produced. Both shapes reach this
+   * one serializer during the Postgres port, and `name.displayName` is the
+   * canonical API contract every ecosystem app reads, so the flat form is
+   * accepted here rather than reassembled by each caller. `formatUserResponse`
+   * takes `unknown`, so a caller that got this wrong would not fail tsc — it
+   * would silently emit `name: {}` and surface as a zod error inside the SDK.
+   */
+  nameFirst?: unknown;
+  nameLast?: unknown;
+  /**
    * Present only on objects that already went through the User schema's
    * toObject/toJSON transform, which deletes `_id` and folds the identifier into
    * `id` (e.g. a keyless managed/org account).
@@ -141,9 +152,19 @@ function resolveIdentityId(source: UserIdentitySource): string | undefined {
   return fromObjectId || safeFallback || undefined;
 }
 
-/** Narrow a raw `name` value to the structured `NameParts` the composer reads. */
-function identityNameSource(name: unknown): NameParts | undefined {
-  return typeof name === 'object' && name !== null ? (name as NameParts) : undefined;
+/**
+ * Narrow a source's name to the structured `NameParts` the composer reads,
+ * accepting either the nested Mongoose shape or the flat Drizzle columns.
+ * Returns `undefined` when neither yields anything, so a nameless account still
+ * omits `displayName` and consumers fall back to the handle.
+ */
+function identityNameSource(source: UserIdentitySource): NameParts | undefined {
+  if (typeof source.name === 'object' && source.name !== null) {
+    return source.name as NameParts;
+  }
+  const first = typeof source.nameFirst === 'string' ? source.nameFirst : '';
+  const last = typeof source.nameLast === 'string' ? source.nameLast : '';
+  return first || last ? { first, last } : undefined;
 }
 
 /**
@@ -168,7 +189,7 @@ export function userIdentityFields(source: UserIdentitySource): UserIdentityFiel
   return {
     id: resolveIdentityId(source),
     name: formatUserNameResponse({
-      name: identityNameSource(source.name),
+      name: identityNameSource(source),
       username: stringValue(source.username),
       publicKey: stringValue(source.publicKey),
     }),
