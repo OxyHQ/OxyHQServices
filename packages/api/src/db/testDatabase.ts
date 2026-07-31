@@ -7,10 +7,11 @@
  * opens against it — a test therefore exercises the same pool, casing and
  * schema wiring `config/postgres.ts` uses in production, not a parallel copy.
  *
- * Migrations are applied by shelling out to `bun run db:migrate` (drizzle-kit),
- * which is the single migration mechanism in this package. There is no second
- * programmatic migrator: what CI and a developer run is exactly what the test
- * harness runs.
+ * Migrations are applied by shelling out to `bun run db:migrate`
+ * (`src/db/migrate.ts`), the single migration mechanism in this package. There
+ * is no second migrator: what a developer runs, what CI runs, what the test
+ * harness runs, and what the production one-shot ECS task runs are all the same
+ * code — the compiled form of that file, over the same `drizzle/` files.
  *
  * `DATABASE_URL` is the ONLY channel between create and drop — jest's global
  * setup and teardown share a process, and an env var the harness already has to
@@ -33,7 +34,7 @@ const NAME_ENTROPY_BYTES = 8;
 const TEST_DATABASE_NAME = /^oxy_test_[0-9a-f]{16}$/;
 /** Seconds an admin connection waits before giving up on close. */
 const ADMIN_CLOSE_TIMEOUT_SECONDS = 5;
-/** Milliseconds `drizzle-kit migrate` may take before the run is abandoned. */
+/** Milliseconds `bun run db:migrate` may take before the run is abandoned. */
 const MIGRATE_TIMEOUT_MS = 60_000;
 
 /**
@@ -46,9 +47,9 @@ const PACKAGE_ROOT = join(__dirname, '..', '..');
 /**
  * Run `bun run db:migrate` against `databaseUrl`.
  *
- * @throws {Error} Carrying drizzle-kit's own output when the migration fails —
- *   a silent migration failure would leave every test querying an empty
- *   database and failing for the wrong reason.
+ * @throws {Error} Carrying the migrator's own output when it fails — a silent
+ *   migration failure would leave every test querying an empty database and
+ *   failing for the wrong reason.
  */
 function runMigrations(databaseUrl: string): Promise<void> {
   return new Promise((resolve, reject) => {

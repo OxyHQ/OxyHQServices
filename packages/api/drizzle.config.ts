@@ -5,11 +5,14 @@ import { DATABASE_CASING } from './src/db/casing';
  * drizzle-kit configuration.
  *
  * - `bun run db:generate` diffs `schema` against `out/` and writes a new SQL
- *   migration. It never opens a database.
- * - `bun run db:migrate` applies pending migrations from `out/` to
- *   `DATABASE_URL`. This is the ONLY way migrations are applied anywhere: dev,
- *   CI, and the jest harness all shell out to this same command, so tests
- *   exercise the tool production uses rather than a parallel runner.
+ *   migration. It never opens a database. This is the ONLY drizzle-kit command
+ *   this package runs, and it only ever runs on a developer's machine.
+ * - Migrations are APPLIED by `bun run db:migrate` (`src/db/migrate.ts`), which
+ *   uses drizzle-orm's own migrator over the files in `out/` — not
+ *   `drizzle-kit migrate`. drizzle-kit depends on esbuild, whose arm64/alpine
+ *   postinstall breaks the production image (PR #261), so the CLI cannot ship
+ *   and could never apply a migration in production. Dev, CI, the jest harness
+ *   and production all run that one migrator; see its docblock.
  *
  * `casing` decides what the DDL CREATES; the same value passed to `drizzle()` in
  * `src/config/postgres.ts` decides what queries REFERENCE. Both read it from

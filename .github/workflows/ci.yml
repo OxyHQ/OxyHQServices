@@ -177,6 +177,28 @@ jobs:
       - run: bun scripts/test-check-lockfile-sync.mjs
       - run: bun scripts/check-lockfile-sync.mjs
 
+  # Every secret the API needs at boot must actually reach SSM
+  # (see scripts/check-deploy-secrets-sync.mjs).
+  #
+  # deploy-aws.yml syncs GitHub secrets through two hand-maintained allowlists,
+  # and a name missing from either is silent: nothing is written, the deploy is
+  # green, and the ECS task later fails to start with
+  # `ResourceInitializationError: unable to pull secrets`. DATABASE_URL was in
+  # neither. Runs here rather than in the deploy workflow so the mismatch is
+  # caught on the pull request, before anything is pushed to main.
+  deploy-secrets-sync:
+    name: Deploy Secrets Sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      # The gate's own fixture tests — mutated copies of the real workflow and
+      # env module. No install: the gate reads files and shells out to nothing.
+      - run: bun scripts/test-check-deploy-secrets-sync.mjs
+      - run: bun scripts/check-deploy-secrets-sync.mjs
+
   # Contracts package tests (Jest — no MongoDB)
   contracts-test:
     name: Contracts Tests
