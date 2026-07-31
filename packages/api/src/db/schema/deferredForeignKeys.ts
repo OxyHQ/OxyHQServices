@@ -31,7 +31,10 @@ import { conductStrikes } from './conductStrikes';
 import { devicePairingSessions } from './devicePairingSessions';
 import { deviceSessionAccounts } from './deviceSessionAccounts';
 import { deviceSessions } from './deviceSessions';
+import { fileLinks } from './fileLinks';
 import { identityBindings } from './identityBindings';
+import { messageAttachments } from './messageAttachments';
+import { messages } from './messages';
 import { moderationEffects } from './moderationEffects';
 import { notifications } from './notifications';
 import { pushTokens } from './pushTokens';
@@ -462,5 +465,28 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
     table: conductStrikes,
     column: conductStrikes.decisionId,
     reason: 'Same external decision id as on `moderation_effects`.',
+  },
+  {
+    table: messages,
+    column: messages.messageId,
+    reason:
+      'The RFC 5322 `Message-ID` header, minted by whichever server sent the ' +
+      'mail. It identifies a MESSAGE in the global email namespace, not a row ' +
+      'here — most values name mail this database has never held.',
+  },
+  {
+    table: messageAttachments,
+    column: messageAttachments.contentId,
+    reason:
+      'The MIME `Content-ID` header, which an HTML body references as `cid:`. ' +
+      'Scoped to one message and id-shaped by name only.',
+  },
+  {
+    table: fileLinks,
+    column: fileLinks.entityId,
+    reason:
+      "The entity's id in the CONSUMING application's database (a Mention " +
+      'post, an Alia thread). Meaningful only together with `app` and ' +
+      '`entity_type`, and never resolvable here.',
   },
 ];

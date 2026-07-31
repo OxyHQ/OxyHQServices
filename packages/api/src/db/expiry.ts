@@ -68,6 +68,7 @@ import {
   SECURITY_ACTIVITY_RETENTION_SECONDS,
   securityActivities,
 } from './schema/securityActivities';
+import { senderAvatars } from './schema/senderAvatars';
 import { sessions } from './schema/sessions';
 import { webauthnChallenges } from './schema/webauthnChallenges';
 
@@ -188,6 +189,16 @@ export const EXPIRY_SWEEP_TARGETS: readonly ExpirySweepTarget[] = [
       'Two-year audit retention measured from the EVENT, bounding growth ' +
       'while keeping enough history for the activity surface. No read filters ' +
       'on it — an old entry is stale, never unsafe.',
+  },
+  {
+    table: senderAvatars,
+    column: senderAvatars.expiresAt,
+    retentionSeconds: 0,
+    reason:
+      'Bounds the avatar cache. Housekeeping ONLY because the port adds the ' +
+      'read-side filter Mongo never had — `senderAvatarIsFresh()`. Without ' +
+      'that filter this entry would be the sole thing keeping a stale avatar ' +
+      'off the screen, which is the class-(B) read this module warns about.',
   },
 ];
 
