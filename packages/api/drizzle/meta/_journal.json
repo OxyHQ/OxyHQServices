@@ -15,6 +15,13 @@
       "when": 1785483344527,
       "tag": "0001_worthless_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785488652272,
+      "tag": "0002_outstanding_shaman",
+      "breakpoints": true
     }
   ]
 }
