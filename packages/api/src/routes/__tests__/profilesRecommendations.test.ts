@@ -78,6 +78,7 @@ jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
+import { inArray } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
 import { appAffinityEdges } from '../../db/schema/appAffinityEdges';
 import { applications } from '../../db/schema/applications';
@@ -153,6 +154,27 @@ async function curatedAccount(fields: Partial<typeof users.$inferInsert> = {}): 
 
 async function follow(followerId: string, followedId: string): Promise<void> {
   await getDb().insert(userFollows).values({ followerId, followedId });
+}
+
+/**
+ * Followers given to an account that must rank FIRST in the popularity
+ * fallback. The fallback ranks over the whole graph — every account any suite
+ * has seeded — and breaks a tie on `id` ASCENDING, which a freshly-created
+ * account always loses. A count far above anything the rest of the repo's
+ * fixtures produce is what makes the ranking assertion deterministic instead of
+ * merely likely.
+ */
+const DOMINANT_FOLLOWER_COUNT = 60;
+
+/** An eligible account with more followers than any other row in the database. */
+async function mostFollowedAccount(): Promise<string> {
+  const id = await curatedAccount();
+  const fans: Array<{ followerId: string; followedId: string }> = [];
+  for (let index = 0; index < DOMINANT_FOLLOWER_COUNT; index += 1) {
+    fans.push({ followerId: await curatedAccount(), followedId: id });
+  }
+  await getDb().insert(userFollows).values(fans);
+  return id;
 }
 
 async function application(ownerAccountId: string): Promise<string> {
@@ -357,13 +379,12 @@ describe('GET /profiles/recommendations — eligibility bar', () => {
 
 describe('GET /profiles/recommendations — anonymous fallback', () => {
   it('returns eligible public profiles for an anonymous caller and gates the rest', async () => {
-    const popular = await curatedAccount();
+    const popular = await mostFollowedAccount();
     const privateAccount = await curatedAccount({ privacyIsPrivateAccount: true });
     const archived = await curatedAccount({ accountStatus: 'archived' });
     const shell = await account({ username: handle('shell') });
     for (let index = 0; index < 3; index += 1) {
       const fan = await curatedAccount();
-      await follow(fan, popular);
       await follow(fan, privateAccount);
       await follow(fan, archived);
       await follow(fan, shell);
@@ -373,18 +394,43 @@ describe('GET /profiles/recommendations — anonymous fallback', () => {
 
     expect(res.status).toBe(200);
     const returned = ids(res);
-    expect(returned).toContain(popular);
+    expect(returned[0]).toBe(popular);
     expect(returned).not.toContain(privateAccount);
     expect(returned).not.toContain(archived);
     expect(returned).not.toContain(shell);
   });
 
-  it('stamps the uniform scored-row fields so the fallback and the scored path share a shape', async () => {
-    const popular = await curatedAccount();
-    for (let index = 0; index < 3; index += 1) {
-      const fan = await curatedAccount();
-      await follow(fan, popular);
+  it('returns ONLY eligible accounts, whoever the popularity ranking happens to pick', async () => {
+    // The fallback ranks over the whole graph, so the row set is not this
+    // test's to choose. The GATE is, and it holds for every row returned.
+    const res = await getRecommendations('?limit=100');
+
+    expect(res.status).toBe(200);
+    const returned = ids(res);
+    expect(returned.length).toBeGreaterThan(0);
+    const rows = await getDb()
+      .select({
+        id: users.id,
+        username: users.username,
+        accountStatus: users.accountStatus,
+        reputationTier: users.reputationTier,
+        privacyIsPrivateAccount: users.privacyIsPrivateAccount,
+        isSensitive: users.isSensitive,
+      })
+      .from(users)
+      .where(inArray(users.id, returned));
+    expect(rows).toHaveLength(returned.length);
+    for (const row of rows) {
+      expect(row.accountStatus).toBe('active');
+      expect(row.reputationTier).not.toBe('restricted');
+      expect(row.privacyIsPrivateAccount).toBe(false);
+      expect(row.isSensitive).toBe(false);
+      expect(row.username).not.toBeNull();
     }
+  });
+
+  it('stamps the uniform scored-row fields so the fallback and the scored path share a shape', async () => {
+    const popular = await mostFollowedAccount();
 
     const res = await getRecommendations('?limit=100');
 

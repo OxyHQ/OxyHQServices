@@ -324,6 +324,13 @@ describe('POST /federation/actor-delete — purge', () => {
 
     expect(await userExists(actor)).toBe(false);
     expect(await edgesTouching(actor)).toBe(0);
+    // MEASURED, NOT CLAIMED: `blocks`/`restrictions` reference `users.id` with
+    // `ON DELETE CASCADE`, so on THIS route the end state below is guaranteed by
+    // the constraint whether or not `purgeUserSocialGraph` deletes them itself —
+    // deleting that delete leaves these two green. They are asserted because the
+    // end state is what a client observes; they are NOT coverage of the
+    // service's own delete, which belongs with `purgeUserSocialGraph`'s suite on
+    // a path that does not remove the user row.
     expect(await blocksTouching(actor)).toBe(0);
     expect(await restrictionsTouching(actor)).toBe(0);
     // The unrelated edge is untouched — and each counterparty still exists.
