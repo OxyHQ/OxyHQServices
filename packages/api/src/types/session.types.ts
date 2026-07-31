@@ -4,13 +4,18 @@
  * Centralized type definitions for session-related operations.
  */
 
-import type { ISession } from '../models/Session';
+import type { CachedSession } from '../utils/sessionCache';
+// Mongoose-shaped, matching the ONE remaining Mongoose read in
+// `session.service.getSessionWithUser` — see the note at its `models/User`
+// import. `middleware/auth.ts` reads `_id` off this value.
+import type { IUser } from '../models/User';
 import type { DeviceFingerprintInput } from '../utils/deviceUtils';
+import type { SessionTokenPayload } from '../utils/sessionUtils';
 
 export interface SessionValidationResult {
-  session: ISession;
-  user: any;
-  payload: any;
+  session: CachedSession;
+  user: IUser;
+  payload: SessionTokenPayload;
 }
 
 export interface SessionCreateOptions {
@@ -42,6 +47,6 @@ export interface SessionCreateOptions {
 export interface SessionRefreshResult {
   accessToken: string;
   refreshToken: string;
-  session: ISession;
+  session: CachedSession;
 }
 
