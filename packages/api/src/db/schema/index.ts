@@ -15,7 +15,19 @@
  * keys, expiry, protected columns — are in `CONVENTIONS.md`. Read it before
  * adding a table.
  */
+export * from './accountCredentials';
+export * from './accountMembers';
+export * from './apiKeyUsageEvents';
+export * from './appAffinityEdges';
 export * from './appAffinitySeenEvents';
+export * from './appEndorsementEdges';
+export * from './appGrants';
+export * from './appUpdateAssets';
+export * from './appUpdates';
+export * from './appUserSignals';
+export * from './applicationCredentials';
+export * from './applicationModerationTrust';
+export * from './applications';
 export * from './authChallenges';
 export * from './authCodes';
 export * from './authSessions';
@@ -27,6 +39,7 @@ export * from './bundles';
 export * from './civicNonces';
 export * from './conductStrikes';
 export * from './contacts';
+export * from './developerApiKeys';
 export * from './devicePairingSessions';
 export * from './deviceSessionAccounts';
 export * from './deviceSessions';
@@ -72,6 +85,9 @@ export * from './subscriptions';
 export * from './topics';
 export * from './transactions';
 export * from './transparencyCheckpoints';
+export * from './updateAssets';
+export * from './updateChannelRollbacks';
+export * from './updateChannels';
 export * from './userAnalytics';
 export * from './userAncestors';
 export * from './userAppData';

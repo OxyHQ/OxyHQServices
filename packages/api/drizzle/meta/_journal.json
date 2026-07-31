@@ -43,6 +43,13 @@
       "when": 1785503463572,
       "tag": "0005_transparency_immutability",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785504661556,
+      "tag": "0006_workable_blonde_phantom",
+      "breakpoints": true
     }
   ]
 }

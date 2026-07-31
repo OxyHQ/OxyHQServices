@@ -58,6 +58,7 @@ import {
   text,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { applications } from './applications';
 import { createdAt, generatedId, inList, timestamptz, updatedAt } from './columns';
 import { reputationTransactions } from './reputationTransactions';
 import { users } from './users';
@@ -94,7 +95,8 @@ export const validationRequests = pgTable(
     /** What is being validated. Drives the award and the slash. */
     actionType: text().notNull(),
     /** The opening application. Constraint deferred until `applications` lands. */
-    applicationId: text(),
+    applicationId: text()
+      .references(() => applications.id, { onDelete: 'set null' }),
     /** Idempotency / dedup key for the underlying action. */
     sourceActionId: text().notNull(),
     /** The claim body the jurors inspect. */

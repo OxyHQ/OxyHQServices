@@ -52,6 +52,8 @@ import {
   REPUTATION_TRANSACTION_STATUSES as CONTRACT_TRANSACTION_STATUSES,
 } from '@oxyhq/contracts';
 import type { ReputationTargetEntityType, ReputationTransactionStatus } from '@oxyhq/contracts';
+import { applicationCredentials } from './applicationCredentials';
+import { applications } from './applications';
 import { createdAt, generatedId, inList, timestamptz, updatedAt } from './columns';
 import { REPUTATION_CATEGORIES } from './reputationRules';
 import { users } from './users';
@@ -92,9 +94,11 @@ export const reputationTransactions = pgTable(
     actionType: text().notNull(),
     category: text({ enum: REPUTATION_CATEGORIES }).notNull(),
     /** Reporting application. Constraint deferred until `applications` lands. */
-    applicationId: text(),
+    applicationId: text()
+      .references(() => applications.id, { onDelete: 'set null' }),
     /** The specific credential used. Constraint deferred with `application_credentials`. */
-    credentialId: text(),
+    credentialId: text()
+      .references(() => applicationCredentials.id, { onDelete: 'set null' }),
     /** Opaque id of the originating action in the source system — the idempotency key. */
     sourceActionId: text(),
     /** Source-system action type, e.g. `report_confirmed`. */

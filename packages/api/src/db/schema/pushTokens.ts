@@ -7,6 +7,7 @@
 
 import { sql } from 'drizzle-orm';
 import { check, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
+import { applications } from './applications';
 import { createdAt, generatedId, updatedAt } from './columns';
 import { users } from './users';
 
@@ -25,8 +26,16 @@ export const pushTokens = pgTable(
     platform: text({ enum: PUSH_TOKEN_PLATFORMS }).notNull(),
     /** Central device id of the install (same id space as `DeviceSession.deviceId`). */
     deviceId: text(),
-    /** FK to `applications` — see `deferredForeignKeys.ts`. NULL means "unscoped". */
-    applicationId: text(),
+    /**
+     * The application whose install this is. NULL means "not scoped to any
+     * application".
+     *
+     * `CASCADE`, not `SET NULL`, exactly as the deferred-FK ledger decided
+     * before `applications` landed: NULL already MEANS something here, so
+     * `SET NULL` would promote a dead app's install into the unscoped delivery
+     * set instead of retiring it.
+     */
+    applicationId: text().references(() => applications.id, { onDelete: 'cascade' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

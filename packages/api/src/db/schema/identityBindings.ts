@@ -24,6 +24,8 @@
 import { sql } from 'drizzle-orm';
 import { check, index, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 import { IDENTITY_BINDING_STATUSES, IDENTITY_BINDING_TYPES } from '@oxyhq/contracts';
+import { applicationCredentials } from './applicationCredentials';
+import { applications } from './applications';
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
 import { users } from './users';
 
@@ -33,9 +35,15 @@ export const identityBindings = pgTable(
     id: generatedId(),
     /**
      * The application the binding is scoped to. Never cross-application.
-     * FK to `applications` — see `deferredForeignKeys.ts`.
+     *
+     * `CASCADE`, as the deferred-FK ledger decided before `applications`
+     * landed: a binding proves nothing once its application is gone. Note
+     * applications are SOFT-deleted (`status: 'deleted'`) on the normal path,
+     * so this fires only on a hard delete.
      */
-    applicationId: text().notNull(),
+    applicationId: text()
+      .notNull()
+      .references(() => applications.id, { onDelete: 'cascade' }),
     /** The bound Oxy user. `CASCADE` — a binding to a deleted account binds nothing. */
     userId: text()
       .notNull()
@@ -49,11 +57,14 @@ export const identityBindings = pgTable(
     /**
      * The credential that presented the proof, for AUDIT only — deliberately not
      * part of the check, so a credential rotation cannot invalidate a binding
-     * the user consented to. FK to `application_credentials` — see
-     * `deferredForeignKeys.ts`, `SET NULL`: NULL here already means "not
-     * recorded", and losing the audit pointer must not destroy the binding.
+     * the user consented to. `SET NULL`, as the deferred-FK ledger decided
+     * before `application_credentials` landed: NULL here already means "not
+     * recorded", so losing the audit pointer costs the trail and nothing else,
+     * where CASCADE would delete the evidence a past moderation effect rests on.
      */
-    credentialId: text(),
+    credentialId: text().references(() => applicationCredentials.id, {
+      onDelete: 'set null',
+    }),
     revokedAt: timestamptz(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

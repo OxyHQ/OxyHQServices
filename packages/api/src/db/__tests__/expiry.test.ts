@@ -15,10 +15,32 @@ import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
 import { sqlColumnName } from '../casing';
 import { EXPIRY_SWEEP_TARGETS, sweepAllExpiredRows, sweepExpiredRows } from '../expiry';
 import { appAffinitySeenEvents } from '../schema/appAffinitySeenEvents';
+import { applications } from '../schema/applications';
 import { authChallenges } from '../schema/authChallenges';
+import { users } from '../schema/users';
 import { AFFINITY_EVENT_SEEN_TTL_SECONDS } from '../../utils/recommendationWeights';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A real `applications` row.
+ *
+ * `app_affinity_seen_events.application_id` used to take any string; it carries
+ * a real foreign key now that `applications` has landed, and that is the point
+ * of the constraint. Each call mints its own owning account and application, so
+ * no assertion here depends on another test's rows.
+ */
+async function application(): Promise<string> {
+  const [owner] = await getDb()
+    .insert(users)
+    .values({ color: 'teal' })
+    .returning({ id: users.id });
+  const [row] = await getDb()
+    .insert(applications)
+    .values({ name: `Affinity ${randomUUID()}`, ownerAccountId: owner.id })
+    .returning({ id: applications.id });
+  return row.id;
+}
 
 /** `retentionSeconds: 0` — the column IS the deadline. */
 const challengeTarget = EXPIRY_SWEEP_TARGETS.find(
@@ -117,7 +139,7 @@ describe('sweep with a retention window (birth column)', () => {
       throw new Error('app_affinity_seen_events is not registered for sweeping');
     }
 
-    const applicationId = `app-${randomUUID()}`;
+    const applicationId = await application();
     const retentionDays = AFFINITY_EVENT_SEEN_TTL_SECONDS / 86_400;
     const stale = `stale-${randomUUID()}`;
     const fresh = `fresh-${randomUUID()}`;

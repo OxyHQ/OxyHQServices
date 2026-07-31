@@ -22,6 +22,8 @@
 
 import type { PgColumn, PgTable, UpdateDeleteAction } from 'drizzle-orm/pg-core';
 import { appAffinitySeenEvents } from './appAffinitySeenEvents';
+import { appEndorsementEdges } from './appEndorsementEdges';
+import { appUpdates } from './appUpdates';
 import { authCodes } from './authCodes';
 import { authSessions } from './authSessions';
 import { billingSubscriptions } from './billingSubscriptions';
@@ -81,140 +83,6 @@ export interface IdColumnWithoutForeignKey {
  */
 
 export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
-  {
-    table: pushTokens,
-    column: pushTokens.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason:
-      'NULL here means "not scoped to any application", so SET NULL would ' +
-      'promote a dead app\'s install into the unscoped delivery set instead of ' +
-      'retiring it.',
-  },
-  {
-    table: appAffinitySeenEvents,
-    column: appAffinitySeenEvents.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason: 'The ledger only dedupes ingest for an application that still exists.',
-  },
-  {
-    table: authCodes,
-    column: authCodes.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason:
-      'An authorization code is a grant TO an application. With the ' +
-      'application gone there is nobody to exchange it, and the code is ' +
-      'unusable within five minutes anyway.',
-  },
-  {
-    table: authSessions,
-    column: authSessions.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason:
-      'The whole approval screen — name, icon, scopes — is resolved from the ' +
-      'application. A request that can no longer name who is asking must not ' +
-      'be approvable.',
-  },
-  {
-    table: identityBindings,
-    column: identityBindings.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason:
-      'A binding is scoped to one application and never cross-application, so ' +
-      'it proves nothing once that application is gone. Note applications are ' +
-      "SOFT-deleted (`status: 'deleted'`) on the normal path, so this fires " +
-      'only on a hard delete.',
-  },
-  {
-    table: identityBindings,
-    column: identityBindings.credentialId,
-    parentTable: 'application_credentials',
-    parentColumn: 'id',
-    onDelete: 'set null',
-    reason:
-      'AUDIT pointer only, deliberately not part of the binding check — a ' +
-      'credential rotation must not invalidate a binding the user consented ' +
-      'to. NULL already means "not recorded", so SET NULL loses the audit ' +
-      'trail and nothing else; CASCADE would delete the evidence a past ' +
-      'moderation effect rests on.',
-  },
-  {
-    table: moderationEffects,
-    column: moderationEffects.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'restrict',
-    reason:
-      'The emitting application is resolved from its credential and is part of ' +
-      'the provenance an effect exists to record. Deleting it must fail rather ' +
-      'than erase or orphan the audit trail of what it caused.',
-  },
-  {
-    table: moderationEffects,
-    column: moderationEffects.credentialId,
-    parentTable: 'application_credentials',
-    parentColumn: 'id',
-    onDelete: 'set null',
-    reason:
-      'Which credential the event arrived on is provenance detail, not the ' +
-      'effect itself; NULL already means "not recorded" on rows predating the ' +
-      'field. Unlike `application_id`, a rotated-out credential may legitimately ' +
-      'be removed without invalidating the effect.',
-  },
-  {
-    table: conductStrikes,
-    column: conductStrikes.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'set null',
-    reason:
-      'Which application\'s report started the incident is attribution, and the ' +
-      'column is already nullable — a strike stands on its own decision, so an ' +
-      'unattributed one is a real state rather than a corrupted one.',
-  },
-  {
-    table: reputationTransactions,
-    column: reputationTransactions.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'set null',
-    reason:
-      'The ledger entry is about the SUBJECT, not the reporter. NULL already ' +
-      'means "not attributed to an application" (every staff and civic award), ' +
-      'so a retired app leaves an unattributed entry rather than silently ' +
-      "deleting a user's earned points.",
-  },
-  {
-    table: reputationTransactions,
-    column: reputationTransactions.credentialId,
-    parentTable: 'application_credentials',
-    parentColumn: 'id',
-    onDelete: 'set null',
-    reason:
-      'Audit detail of WHICH credential reported the action. Credentials are ' +
-      'rotated routinely, and a rotation must not delete the ledger entries ' +
-      'the retired key produced.',
-  },
-  {
-    table: validationRequests,
-    column: validationRequests.applicationId,
-    parentTable: 'applications',
-    parentColumn: 'id',
-    onDelete: 'set null',
-    reason:
-      'The opening application is provenance on a jury decision that stands on ' +
-      'its own. NULL is already the normal state for a request opened by Oxy ' +
-      'itself, so an app going away must not erase the verdict.',
-  },
 ];
 
 export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[] = [
@@ -534,5 +402,21 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
       'published evidence, which is the exact tampering the log exists to ' +
       'detect — so the reference is deliberately unenforced and the row is ' +
       'immutable by trigger instead.',
+  },
+  {
+    table: appUpdates,
+    column: appUpdates.updateId,
+    reason:
+      "The update's OWN public handle — the UUID served as the expo-updates " +
+      'manifest `id`, not a reference to another row. It is the TARGET of ' +
+      '`app_updates.promoted_from_update_id`, which does carry a constraint.',
+  },
+  {
+    table: appEndorsementEdges,
+    column: appEndorsementEdges.sourceId,
+    reason:
+      "The consuming application's own key for the object the endorsement came " +
+      'from (a list id, a pack id). Opaque to Oxy, part of the idempotency key ' +
+      'only, and never dereferenced.',
   },
 ];

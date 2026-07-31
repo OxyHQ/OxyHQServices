@@ -72,6 +72,10 @@ import { senderAvatars } from './schema/senderAvatars';
 import { sessions } from './schema/sessions';
 import { webauthnChallenges } from './schema/webauthnChallenges';
 
+import {
+  API_KEY_USAGE_RETENTION_SECONDS,
+  apiKeyUsageEvents,
+} from './schema/apiKeyUsageEvents';
 /**
  * Rows deleted per statement. Bounded so a large backlog cannot hold one long
  * transaction open — Mongo's TTL monitor deleted incrementally for the same
@@ -199,6 +203,16 @@ export const EXPIRY_SWEEP_TARGETS: readonly ExpirySweepTarget[] = [
       'read-side filter Mongo never had — `senderAvatarIsFresh()`. Without ' +
       'that filter this entry would be the sole thing keeping a stale avatar ' +
       'off the screen, which is the class-(B) read this module warns about.',
+  },
+  {
+    table: apiKeyUsageEvents,
+    column: apiKeyUsageEvents.createdAt,
+    retentionSeconds: API_KEY_USAGE_RETENTION_SECONDS,
+    reason:
+      'Ninety days of request telemetry, exactly as the Mongo TTL kept. The ' +
+      'two readers already bound their own window (`timestamp: { $gte: since }`, ' +
+      '`routes/credits.ts:59` and `routes/applications.ts:961`), so the sweep ' +
+      'is housekeeping and no reported figure depends on it running.',
   },
 ];
 

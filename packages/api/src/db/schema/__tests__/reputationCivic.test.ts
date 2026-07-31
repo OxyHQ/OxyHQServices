@@ -26,6 +26,7 @@ import {
 } from '@oxyhq/contracts';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { closePostgres, connectPostgres, getDb } from '../../../config/postgres';
+import { applications } from '../applications';
 import { personhoodVouches } from '../personhoodVouches';
 import {
   CONDUCT_STANDINGS,
@@ -508,7 +509,14 @@ describe('validator_affinities — the canonical pair', () => {
 describe('reputation_transactions — idempotency without a partial index', () => {
   it('rejects a repeat of the same (application, source action)', async () => {
     const userId = await owner();
-    const applicationId = `app-${randomUUID()}`;
+    // `reputation_transactions.application_id` carries a real foreign key now
+    // that the applications batch has landed, so a synthetic id no longer
+    // satisfies it.
+    const [application] = await getDb()
+      .insert(applications)
+      .values({ name: `App ${randomUUID()}`, ownerAccountId: userId })
+      .returning({ id: applications.id });
+    const applicationId = application.id;
     const sourceActionId = `act-${randomUUID()}`;
 
     await getDb()
