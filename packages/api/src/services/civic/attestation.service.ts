@@ -41,8 +41,8 @@ const MAX_ATTESTATION_ATTEMPTS = 4;
 
 /** The minimal transaction shape an attestation references. */
 export interface AttestableTransaction {
-  _id: unknown;
-  userId: unknown;
+  id: string;
+  userId: string;
   actionType: string;
   points: number;
   category: string;
@@ -72,8 +72,8 @@ export async function attestAward(
     return null;
   }
 
-  const subjectUserId = String(txn.userId);
-  const txnId = String(txn._id);
+  const subjectUserId = txn.userId;
+  const txnId = txn.id;
   const subjectDid = buildUserDid(subjectUserId);
 
   // Idempotency: at most one attestation per txn (keyed by rkey = txnId).

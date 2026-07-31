@@ -44,7 +44,7 @@
  * are corrected.
  */
 
-import mongoose, { type ClientSession } from 'mongoose';
+import { and, asc, eq, gte, inArray, lte, ne } from 'drizzle-orm';
 import type {
   ModerationDecisionEvent,
   ModerationEffectSkipReason,
@@ -53,20 +53,16 @@ import type {
   ModerationSeverity,
 } from '@oxyhq/contracts';
 
-import { ApplicationModerationTrust } from '../models/ApplicationModerationTrust';
-import { ConductStrike, type IConductStrike } from '../models/ConductStrike';
-import {
-  ModerationEffect,
-  type IModerationEffect,
-} from '../models/ModerationEffect';
-import {
-  ModerationPolicy,
-  type IConductStandingThreshold,
-  type IModerationPolicy,
-  type IModerationSeverityRule,
-} from '../models/ModerationPolicy';
-import { ReputationTransaction } from '../models/ReputationTransaction';
-import reputationService from './reputation.service';
+import { getDb } from '../config/postgres';
+import { isUniqueViolation } from '../db/pgErrors';
+import { applicationModerationTrust } from '../db/schema/applicationModerationTrust';
+import { conductStrikes } from '../db/schema/conductStrikes';
+import { moderationEffects } from '../db/schema/moderationEffects';
+import { moderationPolicies } from '../db/schema/moderationPolicies';
+import { moderationPolicySeverityRules } from '../db/schema/moderationPolicySeverityRules';
+import { moderationPolicyStandingThresholds } from '../db/schema/moderationPolicyStandingThresholds';
+import { reputationTransactions } from '../db/schema/reputationTransactions';
+import reputationService, { type ReputationTransactionHandle } from './reputation.service';
 import { attestModerationEffect } from './civic/attestation.service';
 import { resolveBindingProof } from './identityBinding.service';
 import {
@@ -80,6 +76,84 @@ import { BadRequestError, NotFoundError } from '../utils/error';
 import { logger } from '../utils/logger';
 import { resolveUserIdToObjectId } from '../utils/validation';
 
+/** A stored conduct strike. */
+export type ConductStrikeRow = typeof conductStrikes.$inferSelect;
+/** A stored moderation effect. */
+export type ModerationEffectRow = typeof moderationEffects.$inferSelect;
+/** One severity band's figures within a policy version. */
+export type ModerationSeverityRule = typeof moderationPolicySeverityRules.$inferSelect;
+/** One standing threshold within a policy version. */
+export type ConductStandingThreshold = typeof moderationPolicyStandingThresholds.$inferSelect;
+
+/**
+ * A published policy version with its two child tables loaded.
+ *
+ * The Mongo document embedded `severityRules[]` and `standingThresholds[]`; both
+ * are real tables now, so a reader that needs the whole version asks for this
+ * rather than re-joining at each call site. A version is IMMUTABLE once
+ * published, so loading it whole is a read of frozen data.
+ */
+export interface ModerationPolicyView {
+  id: string;
+  policyVersion: string;
+  conductFamilies: string[];
+  repetitionMultipliers: number[];
+  repetitionWindowDays: number;
+  multiFindingSecondaryShare: number;
+  multiFindingCap: number;
+  provisionalEffectsAllowed: boolean;
+  severityRules: ModerationSeverityRule[];
+  standingThresholds: ConductStandingThreshold[];
+}
+
+/**
+ * The seed shape of one severity band — the figures without the surrogate id and
+ * `policy_id` the child row gets on insert.
+ */
+export type SeedSeverityRule = Omit<ModerationSeverityRule, 'id' | 'policyId'>;
+
+/** The seed shape of one standing threshold. */
+export type SeedStandingThreshold = Omit<ConductStandingThreshold, 'id' | 'policyId'>;
+
+/** The two unique indexes that make "one penalty per incident" true. */
+const EFFECT_SEMANTIC_UNIQUE = 'moderation_effects_incident_principal_type_revision_key';
+const EFFECT_EVENT_UNIQUE = 'moderation_effects_event_id_key';
+
+/** Load a policy version with its severity rules and standing thresholds. */
+async function loadPolicy(policyVersion: string): Promise<ModerationPolicyView | null> {
+  const [policy] = await getDb()
+    .select()
+    .from(moderationPolicies)
+    .where(eq(moderationPolicies.policyVersion, policyVersion))
+    .limit(1);
+  if (!policy) {
+    return null;
+  }
+  const [severityRules, standingThresholds] = await Promise.all([
+    getDb()
+      .select()
+      .from(moderationPolicySeverityRules)
+      .where(eq(moderationPolicySeverityRules.policyId, policy.id)),
+    getDb()
+      .select()
+      .from(moderationPolicyStandingThresholds)
+      .where(eq(moderationPolicyStandingThresholds.policyId, policy.id))
+      .orderBy(asc(moderationPolicyStandingThresholds.minRisk)),
+  ]);
+  return {
+    id: policy.id,
+    policyVersion: policy.policyVersion,
+    conductFamilies: policy.conductFamilies,
+    repetitionMultipliers: policy.repetitionMultipliers,
+    repetitionWindowDays: policy.repetitionWindowDays,
+    multiFindingSecondaryShare: policy.multiFindingSecondaryShare,
+    multiFindingCap: policy.multiFindingCap,
+    provisionalEffectsAllowed: policy.provisionalEffectsAllowed,
+    severityRules,
+    standingThresholds,
+  };
+}
+
 /** Identity of the service credential the event arrived on. */
 export interface ModerationEventContext {
   /** The emitting application (the moderation service), from its credential. */
@@ -91,14 +165,14 @@ export interface ModerationEventContext {
 /** Outcome of {@link applyModerationDecision}. */
 export interface ApplyResult {
   applied: boolean;
-  effect?: IModerationEffect;
+  effect?: ModerationEffectRow;
   skipReason?: ModerationEffectSkipReason;
   idempotent: boolean;
 }
 
 /** Outcome of {@link reverseModerationDecision}. */
 export interface ReverseResult {
-  reversed: IModerationEffect[];
+  reversed: ModerationEffectRow[];
   idempotent: boolean;
 }
 
@@ -314,7 +388,7 @@ class ModerationReputationService {
     const ids = readEventIdentifiers(event);
 
     // (2a) Transport-level replay: answer from the stored effect.
-    const alreadySeen = await ModerationEffect.findOne({ eventId: ids.eventId });
+    const alreadySeen = await this.findEffectByEventId(ids.eventId);
     if (alreadySeen) {
       return { applied: true, effect: alreadySeen, idempotent: true };
     }
@@ -335,9 +409,7 @@ class ModerationReputationService {
     // (6a) The named policy version must exist. Falling back to the current one
     // would apply today's tuning to a decision made under another, which is
     // precisely what versioning exists to prevent.
-    const policy = await ModerationPolicy.findOne({
-      policyVersion: ids.oxyConductVersion,
-    });
+    const policy = await loadPolicy(ids.oxyConductVersion);
     if (!policy) {
       throw new BadRequestError(
         `Unknown Oxy conduct policy version: ${ids.oxyConductVersion}`
@@ -354,10 +426,15 @@ class ModerationReputationService {
     // effects. An absent trust document is treated as `sandbox`: a newly
     // integrated application moderates locally and touches nothing global, so
     // forgetting to configure one fails safe.
-    const reportedApplicationId = this.resolveApplicationId(ids.reportedApplicationId);
-    const trust = await ApplicationModerationTrust.findOne({
-      applicationId: reportedApplicationId,
-    });
+    const reportedApplicationId = ids.reportedApplicationId;
+    const [trust] = await getDb()
+      .select({
+        globalReputationEffectsAllowed:
+          applicationModerationTrust.globalReputationEffectsAllowed,
+      })
+      .from(applicationModerationTrust)
+      .where(eq(applicationModerationTrust.applicationId, reportedApplicationId))
+      .limit(1);
     if (!trust?.globalReputationEffectsAllowed) {
       return { applied: false, skipReason: 'application_not_permitted', idempotent: false };
     }
@@ -395,7 +472,7 @@ class ModerationReputationService {
     // (7) One effect per incident, principal, axis and revision. The pre-check
     // makes the common retry cheap; the unique index is what makes it correct
     // under concurrency.
-    const existing = await ModerationEffect.findOne({
+    const existing = await this.findEffectBySemanticKey({
       incidentId: ids.incidentId,
       principalId: principalObjectId,
       effectType,
@@ -435,7 +512,7 @@ class ModerationReputationService {
         idempotencyKey,
         principalObjectId,
         reportedApplicationId,
-        bindingId: binding.binding._id,
+        bindingId: String(binding.binding._id),
         riskExpiryDays: rule.riskExpiryDays,
       });
       return { applied: true, effect, idempotent: false };
@@ -469,19 +546,16 @@ class ModerationReputationService {
   async finalizeModerationDecision(
     decisionId: string,
     decisionRevision: number
-  ): Promise<IModerationEffect[]> {
+  ): Promise<ModerationEffectRow[]> {
     // Coerced for the same reason `readEventIdentifiers` exists: this method is
     // exported, and a filter handed an operator object here would report on
     // effects belonging to other decisions entirely.
-    const effects = await ModerationEffect.find({
-      decisionId: String(decisionId),
-      decisionRevision: toDecisionRevision(decisionRevision),
-    });
+    const effects = await this.findEffectsByDecision(decisionId, decisionRevision);
     if (effects.length === 0) {
       throw new NotFoundError('No moderation effect exists for that decision revision');
     }
 
-    const subjects = new Set(effects.map((effect) => effect.principalId.toString()));
+    const subjects = new Set(effects.map((effect) => effect.principalId));
     for (const subject of subjects) {
       await reputationService.recalculateBalance(subject);
     }
@@ -514,10 +588,7 @@ class ModerationReputationService {
     // Coerced before it reaches the filter: reversing on an operator object
     // would compensate an unrelated decision's consequence, which is the worst
     // failure available on this path.
-    const effects = await ModerationEffect.find({
-      decisionId: String(decisionId),
-      decisionRevision: toDecisionRevision(decisionRevision),
-    });
+    const effects = await this.findEffectsByDecision(decisionId, decisionRevision);
     if (effects.length === 0) {
       throw new NotFoundError('No moderation effect exists for that decision revision');
     }
@@ -527,27 +598,38 @@ class ModerationReputationService {
       return { reversed: effects, idempotent: true };
     }
 
+    const reversedEffects: ModerationEffectRow[] = [];
     for (const effect of pending) {
       if (effect.strikeId) {
-        await ConductStrike.updateOne(
-          { _id: effect.strikeId, status: 'active' },
-          { $set: { status: 'reversed', resolvedAt: new Date() } }
-        );
+        // `status` and `resolved_at` move in ONE statement: the table's
+        // `conduct_strikes_resolution_complete_check` requires them to agree, so
+        // "not active but never resolved" is now unrepresentable rather than a
+        // state every reader had to guard for.
+        await getDb()
+          .update(conductStrikes)
+          .set({ status: 'reversed', resolvedAt: new Date() })
+          .where(and(eq(conductStrikes.id, effect.strikeId), eq(conductStrikes.status, 'active')));
       }
 
       const { reversal } = await reputationService.reverseTransaction(
-        effect.transactionId.toString(),
+        effect.transactionId,
         { reason: `Moderation decision reversed: ${reason}` }
       );
 
-      effect.status = 'reversed';
-      effect.reversalTransactionId = reversal._id;
-      effect.reversedAt = new Date();
-      effect.reversalReason = reason;
-      await effect.save();
+      const [updated] = await getDb()
+        .update(moderationEffects)
+        .set({
+          status: 'reversed',
+          reversalTransactionId: reversal.id,
+          reversedAt: new Date(),
+          reversalReason: reason,
+        })
+        .where(eq(moderationEffects.id, effect.id))
+        .returning();
+      reversedEffects.push(updated);
     }
 
-    return { reversed: effects, idempotent: false };
+    return { reversed: reversedEffects, idempotent: false };
   }
 
   /**
@@ -564,9 +646,11 @@ class ModerationReputationService {
    */
   async reconcileModerationIncident(incidentId: string): Promise<ReconcileResult> {
     const incident = String(incidentId);
-    const effects = await ModerationEffect.find({ incidentId: incident }).sort({
-      decisionRevision: 1,
-    });
+    const effects = await getDb()
+      .select()
+      .from(moderationEffects)
+      .where(eq(moderationEffects.incidentId, incident))
+      .orderBy(asc(moderationEffects.decisionRevision));
 
     const latestRevision = effects.reduce(
       (max, effect) => Math.max(max, effect.decisionRevision),
@@ -586,7 +670,7 @@ class ModerationReputationService {
           `Superseded by revision ${latestRevision}`
         );
         supersededReversed += 1;
-        touched.add(effect.principalId.toString());
+        touched.add(effect.principalId);
         continue;
       }
 
@@ -596,15 +680,15 @@ class ModerationReputationService {
 
       // The strike is what carries active risk. Without it the points were
       // deducted and the standing never moved.
-      const strike = effect.strikeId
-        ? await ConductStrike.findById(effect.strikeId)
-        : null;
+      const strike = effect.strikeId ? await this.findStrikeById(effect.strikeId) : null;
       if (!strike) {
         const repaired = await this.repairStrike(effect);
-        effect.strikeId = repaired._id;
-        await effect.save();
+        await getDb()
+          .update(moderationEffects)
+          .set({ strikeId: repaired.id })
+          .where(eq(moderationEffects.id, effect.id));
         strikesRepaired += 1;
-        touched.add(effect.principalId.toString());
+        touched.add(effect.principalId);
       }
     }
 
@@ -634,11 +718,11 @@ class ModerationReputationService {
    *   stall a scheduled tick.
    */
   async expireConductStrikes(limit: number): Promise<{ expired: number; subjects: number }> {
-    const due = await ConductStrike.find({
-      status: 'active',
-      expiresAt: { $lte: new Date() },
-    })
-      .sort({ expiresAt: 1 })
+    const due = await getDb()
+      .select({ id: conductStrikes.id, userId: conductStrikes.userId })
+      .from(conductStrikes)
+      .where(and(eq(conductStrikes.status, 'active'), lte(conductStrikes.expiresAt, new Date())))
+      .orderBy(asc(conductStrikes.expiresAt))
       .limit(limit);
 
     if (due.length === 0) {
@@ -647,10 +731,14 @@ class ModerationReputationService {
 
     const subjects = new Set<string>();
     for (const strike of due) {
-      strike.status = 'expired';
-      strike.resolvedAt = new Date();
-      await strike.save();
-      subjects.add(strike.userId.toString());
+      // Predicated on `status = 'active'` so a concurrent reversal wins rather
+      // than being overwritten by the sweep, and both fields move together for
+      // the resolution CHECK.
+      await getDb()
+        .update(conductStrikes)
+        .set({ status: 'expired', resolvedAt: new Date() })
+        .where(and(eq(conductStrikes.id, strike.id), eq(conductStrikes.status, 'active')));
+      subjects.add(strike.userId);
     }
 
     for (const subject of subjects) {
@@ -674,30 +762,55 @@ class ModerationReputationService {
    */
   async seedBaselinePolicy(params: {
     policyVersion: string;
-    severityRules: readonly IModerationSeverityRule[];
+    severityRules: readonly SeedSeverityRule[];
     conductFamilies: readonly string[];
     repetitionMultipliers: readonly number[];
     repetitionWindowDays: number;
     multiFindingSecondaryShare: number;
     multiFindingCap: number;
-    standingThresholds: readonly IConductStandingThreshold[];
-  }): Promise<IModerationPolicy> {
-    const existing = await ModerationPolicy.findOne({ policyVersion: params.policyVersion });
+    standingThresholds: readonly SeedStandingThreshold[];
+  }): Promise<ModerationPolicyView> {
+    const existing = await loadPolicy(params.policyVersion);
     if (existing) {
       return existing;
     }
-    return ModerationPolicy.create({
-      policyVersion: params.policyVersion,
-      status: 'active',
-      severityRules: [...params.severityRules],
-      conductFamilies: [...params.conductFamilies],
-      repetitionMultipliers: [...params.repetitionMultipliers],
-      repetitionWindowDays: params.repetitionWindowDays,
-      multiFindingSecondaryShare: params.multiFindingSecondaryShare,
-      multiFindingCap: params.multiFindingCap,
-      standingThresholds: [...params.standingThresholds],
-      provisionalEffectsAllowed: false,
+
+    // The version and its two child tables land in ONE transaction: a policy row
+    // with no severity rules would be a published version under which no
+    // consequence can be derived, and `applyModerationDecision` would answer
+    // `finding_not_in_policy` for every event rather than failing visibly.
+    await getDb().transaction(async (tx) => {
+      const [policy] = await tx
+        .insert(moderationPolicies)
+        .values({
+          policyVersion: params.policyVersion,
+          status: 'active',
+          conductFamilies: [...params.conductFamilies],
+          repetitionMultipliers: [...params.repetitionMultipliers],
+          repetitionWindowDays: params.repetitionWindowDays,
+          multiFindingSecondaryShare: params.multiFindingSecondaryShare,
+          multiFindingCap: params.multiFindingCap,
+          provisionalEffectsAllowed: false,
+        })
+        .returning({ id: moderationPolicies.id });
+
+      if (params.severityRules.length > 0) {
+        await tx.insert(moderationPolicySeverityRules).values(
+          params.severityRules.map((rule) => ({ policyId: policy.id, ...rule }))
+        );
+      }
+      if (params.standingThresholds.length > 0) {
+        await tx.insert(moderationPolicyStandingThresholds).values(
+          params.standingThresholds.map((threshold) => ({ policyId: policy.id, ...threshold }))
+        );
+      }
     });
+
+    const seeded = await loadPolicy(params.policyVersion);
+    if (!seeded) {
+      throw new Error('Baseline conduct policy seed produced no policy');
+    }
+    return seeded;
   }
 
   // -------------------------------------------------------------------------
@@ -713,12 +826,12 @@ class ModerationReputationService {
    */
   private selectEffectiveFindings(
     findings: readonly ModerationFinding[],
-    policy: IModerationPolicy
+    policy: ModerationPolicyView
   ):
     | {
         ok: true;
         primary: ModerationFinding;
-        rule: IModerationSeverityRule;
+        rule: ModerationSeverityRule;
         effectiveCount: number;
       }
     | { ok: false; reason: ModerationEffectSkipReason } {
@@ -769,7 +882,7 @@ class ModerationReputationService {
     principalId: string,
     family: string,
     incidentId: string,
-    policy: IModerationPolicy
+    policy: ModerationPolicyView
   ): Promise<number> {
     const multipliers = policy.repetitionMultipliers;
     if (multipliers.length === 0) {
@@ -777,13 +890,18 @@ class ModerationReputationService {
     }
 
     const since = new Date(Date.now() - policy.repetitionWindowDays * 24 * 60 * 60 * 1000);
-    const priors = await ConductStrike.find({
-      userId: new mongoose.Types.ObjectId(principalId),
-      family: String(family),
-      status: { $ne: 'reversed' },
-      incidentId: { $ne: String(incidentId) },
-      createdAt: { $gte: since },
-    }).select('incidentId');
+    const priors = await getDb()
+      .select({ incidentId: conductStrikes.incidentId })
+      .from(conductStrikes)
+      .where(
+        and(
+          eq(conductStrikes.userId, principalId),
+          eq(conductStrikes.family, String(family)),
+          ne(conductStrikes.status, 'reversed'),
+          ne(conductStrikes.incidentId, String(incidentId)),
+          gte(conductStrikes.createdAt, since)
+        )
+      );
 
     const distinctIncidents = new Set(priors.map((strike) => strike.incidentId));
     const ordinal = Math.min(distinctIncidents.size, multipliers.length - 1);
@@ -804,7 +922,7 @@ class ModerationReputationService {
     /** The event's identifiers, already coerced at the service boundary. */
     ids: EventIdentifiers;
     context: ModerationEventContext;
-    policy: IModerationPolicy;
+    policy: ModerationPolicyView;
     primary: ModerationFinding;
     effectType: ModerationEffectType;
     points: number;
@@ -813,10 +931,10 @@ class ModerationReputationService {
     multiFindingMultiplier: number;
     idempotencyKey: string;
     principalObjectId: string;
-    reportedApplicationId: mongoose.Types.ObjectId;
-    bindingId: mongoose.Types.ObjectId;
+    reportedApplicationId: string;
+    bindingId: string;
     riskExpiryDays: number | null;
-  }): Promise<IModerationEffect> {
+  }): Promise<ModerationEffectRow> {
     // Only what this method itself logs or attests. The three writes take the
     // whole `params` object, so destructuring the rest here would be a second,
     // drifting copy of the same values.
@@ -834,33 +952,12 @@ class ModerationReputationService {
       bindingId,
     } = params;
 
-    const session = await mongoose.startSession();
-    let effect: IModerationEffect | undefined;
-    try {
-      await session.withTransaction(async () => {
-        effect = await this.writeEffectInSession(params, session);
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const transactionsUnsupported =
-        message.includes('Transaction numbers are only allowed') ||
-        message.includes('replica set') ||
-        message.includes('does not support transactions');
-      if (!transactionsUnsupported) {
-        throw error;
-      }
-      logger.warn(
-        'Moderation effect written without a transaction (deployment does not support them)',
-        { component: 'moderationReputation' }
-      );
-      effect = await this.writeEffectInSession(params, undefined);
-    } finally {
-      await session.endSession();
-    }
-
-    if (!effect) {
-      throw new Error('Moderation effect write produced no record');
-    }
+    // ONE real transaction, no fallback. The Mongo version re-ran the three
+    // writes SESSION-LESS whenever the deployment had no replica set, which is
+    // precisely the case where a half-applied consequence — points deducted, no
+    // strike, no effect record — could survive an interruption and be invisible
+    // to every one of the three idempotency guards.
+    const effect = await getDb().transaction(async (tx) => this.writeEffectInTransaction(params, tx));
 
     // Provenance, deliberately minimal: a severity BAND, the points, the hash of
     // the private decision and the policy version. No taxonomy code, no victim,
@@ -868,7 +965,7 @@ class ModerationReputationService {
     // categories would be worse than no attestation at all.
     try {
       await attestModerationEffect({
-        transactionId: effect.transactionId.toString(),
+        transactionId: effect.transactionId,
         subjectUserId: principalObjectId,
         severityBand: primary.severity,
         points,
@@ -879,7 +976,7 @@ class ModerationReputationService {
     } catch (error) {
       logger.warn('Moderation attestation emission failed (non-fatal)', {
         component: 'moderationReputation',
-        effectId: effect._id.toString(),
+        effectId: effect.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -892,19 +989,19 @@ class ModerationReputationService {
       severity: primary.severity,
       points,
       activeRisk,
-      reportedApplicationId: reportedApplicationId.toString(),
+      reportedApplicationId,
       emitterApplicationId: context.emitterApplicationId,
-      bindingId: bindingId.toString(),
+      bindingId,
     });
 
     return effect;
   }
 
-  /** The three writes themselves, so they can run with or without a session. */
-  private async writeEffectInSession(
+  /** The three writes themselves, inside the caller's transaction. */
+  private async writeEffectInTransaction(
     params: Parameters<ModerationReputationService['writeEffect']>[0],
-    session: ClientSession | undefined
-  ): Promise<IModerationEffect> {
+    tx: ReputationTransactionHandle
+  ): Promise<ModerationEffectRow> {
     const {
       ids,
       context,
@@ -925,7 +1022,7 @@ class ModerationReputationService {
     const transaction = await reputationService.award({
       userId: principalObjectId,
       actionType: actionTypeFor(effectType, primary.severity),
-      applicationId: reportedApplicationId.toString(),
+      applicationId: reportedApplicationId,
       // The idempotency key IS the ledger's `sourceActionId`, so the existing
       // unique `(applicationId, sourceActionId)` index becomes the third guard
       // against a double penalty. Reused rather than reinvented.
@@ -949,81 +1046,73 @@ class ModerationReputationService {
         description: `Moderation conduct effect (${primary.severity})`,
         policyVersion: policy.policyVersion,
       },
-      session,
+      tx,
     });
 
-    let strike: IConductStrike | undefined;
+    let strike: ConductStrikeRow | undefined;
     if (activeRisk !== 0) {
       const expiresAt =
         riskExpiryDays === null
           ? undefined
           : new Date(Date.now() + riskExpiryDays * 24 * 60 * 60 * 1000);
-      const created = await ConductStrike.create(
-        [
-          {
-            userId: new mongoose.Types.ObjectId(principalObjectId),
-            incidentId: ids.incidentId,
-            decisionId: ids.decisionId,
-            decisionRevision: ids.decisionRevision,
-            applicationId: reportedApplicationId,
-            effectType,
-            severity: primary.severity,
-            riskPoints: activeRisk,
-            family: primary.family,
-            status: 'active',
-            expiresAt,
-            policyVersion: policy.policyVersion,
-            transactionId: transaction._id,
-          },
-        ],
-        session ? { session } : {}
-      );
-      strike = created[0];
-    }
-
-    const createdEffect = await ModerationEffect.create(
-      [
-        {
-          eventId: ids.eventId,
+      const [created] = await tx
+        .insert(conductStrikes)
+        .values({
+          userId: principalObjectId,
           incidentId: ids.incidentId,
-          caseId: ids.caseId,
           decisionId: ids.decisionId,
           decisionRevision: ids.decisionRevision,
-          principalId: new mongoose.Types.ObjectId(principalObjectId),
-          bindingId,
           applicationId: reportedApplicationId,
-          credentialId: context.emitterCredentialId
-            ? new mongoose.Types.ObjectId(context.emitterCredentialId)
-            : undefined,
           effectType,
-          status: 'applied',
-          points,
-          activeRisk,
           severity: primary.severity,
+          riskPoints: activeRisk,
           family: primary.family,
-          repetitionMultiplier,
-          multiFindingMultiplier,
-          idempotencyKey,
-          transactionId: transaction._id,
-          strikeId: strike?._id,
-          policyVersions: {
-            universal: String(params.event.policyVersions.universal),
-            application: String(params.event.policyVersions.application),
-            oxyConduct: ids.oxyConductVersion,
-          },
-          proofHash: ids.proofHash,
-          appliedAt: new Date(),
-        },
-      ],
-      session ? { session } : {}
-    );
+          status: 'active',
+          expiresAt,
+          policyVersion: policy.policyVersion,
+          transactionId: transaction.id,
+        })
+        .returning();
+      strike = created;
+    }
+
+    const [createdEffect] = await tx
+      .insert(moderationEffects)
+      .values({
+        eventId: ids.eventId,
+        incidentId: ids.incidentId,
+        caseId: ids.caseId,
+        decisionId: ids.decisionId,
+        decisionRevision: ids.decisionRevision,
+        principalId: principalObjectId,
+        bindingId,
+        applicationId: reportedApplicationId,
+        credentialId: context.emitterCredentialId,
+        effectType,
+        status: 'applied',
+        points,
+        activeRisk,
+        severity: primary.severity,
+        family: primary.family,
+        repetitionMultiplier,
+        multiFindingMultiplier,
+        idempotencyKey,
+        transactionId: transaction.id,
+        strikeId: strike?.id,
+        policyVersionUniversal: String(params.event.policyVersions.universal),
+        policyVersionApplication: String(params.event.policyVersions.application),
+        policyVersionOxyConduct: ids.oxyConductVersion,
+        proofHash: ids.proofHash,
+        appliedAt: new Date(),
+      })
+      .returning();
 
     // The strike changed the subject's active risk, so the snapshot must be
     // recomputed inside the same unit of work — otherwise a reader between the
     // two sees points deducted and standing unchanged.
-    await reputationService.recalculateBalance(principalObjectId, session);
+    await reputationService.recalculateBalance(principalObjectId, tx);
 
-    return createdEffect[0];
+    return createdEffect;
   }
 
   /**
@@ -1042,24 +1131,83 @@ class ModerationReputationService {
       effectType: ModerationEffectType;
       decisionRevision: number;
     }
-  ): Promise<IModerationEffect | null> {
-    const code =
-      error && typeof error === 'object' && 'code' in error
-        ? (error as { code?: number }).code
-        : undefined;
-    if (code !== 11000) {
+  ): Promise<ModerationEffectRow | null> {
+    // Either of the two unique indexes may have fired, and which one does not
+    // matter: the stored effect is the answer either way. Named rather than a
+    // bare `unique_violation` so a future index on this table cannot silently
+    // start being answered as "already applied".
+    if (
+      !isUniqueViolation(error, EFFECT_EVENT_UNIQUE) &&
+      !isUniqueViolation(error, EFFECT_SEMANTIC_UNIQUE)
+    ) {
       return null;
     }
-    const byEvent = await ModerationEffect.findOne({ eventId: String(key.eventId) });
+    const byEvent = await this.findEffectByEventId(key.eventId);
     if (byEvent) {
       return byEvent;
     }
-    return ModerationEffect.findOne({
-      incidentId: String(key.incidentId),
-      principalId: new mongoose.Types.ObjectId(key.principalId),
-      effectType: key.effectType,
-      decisionRevision: Number(key.decisionRevision),
-    });
+    return this.findEffectBySemanticKey(key);
+  }
+
+  /** The effect a transport `eventId` already produced, or `null`. */
+  private async findEffectByEventId(eventId: string): Promise<ModerationEffectRow | null> {
+    const [effect] = await getDb()
+      .select()
+      .from(moderationEffects)
+      .where(eq(moderationEffects.eventId, String(eventId)))
+      .limit(1);
+    return effect ?? null;
+  }
+
+  /** The effect for one incident, principal, axis and revision, or `null`. */
+  private async findEffectBySemanticKey(key: {
+    incidentId: string;
+    principalId: string;
+    effectType: ModerationEffectType;
+    decisionRevision: number;
+  }): Promise<ModerationEffectRow | null> {
+    const [effect] = await getDb()
+      .select()
+      .from(moderationEffects)
+      .where(
+        and(
+          eq(moderationEffects.incidentId, String(key.incidentId)),
+          eq(moderationEffects.principalId, key.principalId),
+          eq(moderationEffects.effectType, key.effectType),
+          eq(moderationEffects.decisionRevision, Number(key.decisionRevision))
+        )
+      )
+      .limit(1);
+    return effect ?? null;
+  }
+
+  /** Every effect a decision revision produced. */
+  private async findEffectsByDecision(
+    decisionId: string,
+    decisionRevision: number
+  ): Promise<ModerationEffectRow[]> {
+    // Coerced for the same reason `readEventIdentifiers` exists: these methods
+    // are exported, and a filter handed an operator object would report on
+    // effects belonging to other decisions entirely.
+    return getDb()
+      .select()
+      .from(moderationEffects)
+      .where(
+        and(
+          eq(moderationEffects.decisionId, String(decisionId)),
+          eq(moderationEffects.decisionRevision, toDecisionRevision(decisionRevision))
+        )
+      );
+  }
+
+  /** One conduct strike by id, or `null`. */
+  private async findStrikeById(strikeId: string): Promise<ConductStrikeRow | null> {
+    const [strike] = await getDb()
+      .select()
+      .from(conductStrikes)
+      .where(eq(conductStrikes.id, strikeId))
+      .limit(1);
+    return strike ?? null;
   }
 
   /**
@@ -1083,10 +1231,8 @@ class ModerationReputationService {
    * invent a consequence. A `null` expiry (critical severity) stays absent, which
    * is the one case where a permanent strike is correct.
    */
-  private async repairStrike(effect: IModerationEffect): Promise<IConductStrike> {
-    const policy = await ModerationPolicy.findOne({
-      policyVersion: effect.policyVersions.oxyConduct,
-    });
+  private async repairStrike(effect: ModerationEffectRow): Promise<ConductStrikeRow> {
+    const policy = await loadPolicy(effect.policyVersionOxyConduct);
     const rule = policy?.severityRules.find((entry) => entry.severity === effect.severity);
     const expiryDays = rule?.riskExpiryDays ?? null;
 
@@ -1096,30 +1242,26 @@ class ModerationReputationService {
         : new Date(effect.appliedAt.getTime() + expiryDays * 24 * 60 * 60 * 1000);
     const hasLapsed = expiresAt !== undefined && expiresAt.getTime() <= Date.now();
 
-    return ConductStrike.create({
-      userId: effect.principalId,
-      incidentId: effect.incidentId,
-      decisionId: effect.decisionId,
-      decisionRevision: effect.decisionRevision,
-      applicationId: effect.applicationId,
-      effectType: effect.effectType,
-      severity: effect.severity,
-      riskPoints: effect.activeRisk,
-      family: effect.family,
-      status: hasLapsed ? 'expired' : 'active',
-      expiresAt,
-      policyVersion: effect.policyVersions.oxyConduct,
-      transactionId: effect.transactionId,
-      resolvedAt: hasLapsed ? new Date() : undefined,
-    });
-  }
-
-  /** Validate and convert an application id from the event. */
-  private resolveApplicationId(value: string): mongoose.Types.ObjectId {
-    if (!mongoose.Types.ObjectId.isValid(value)) {
-      throw new BadRequestError('Invalid reportedApplicationId');
-    }
-    return new mongoose.Types.ObjectId(value);
+    const [repaired] = await getDb()
+      .insert(conductStrikes)
+      .values({
+        userId: effect.principalId,
+        incidentId: effect.incidentId,
+        decisionId: effect.decisionId,
+        decisionRevision: effect.decisionRevision,
+        applicationId: effect.applicationId,
+        effectType: effect.effectType,
+        severity: effect.severity,
+        riskPoints: effect.activeRisk,
+        family: effect.family,
+        status: hasLapsed ? 'expired' : 'active',
+        expiresAt,
+        policyVersion: effect.policyVersionOxyConduct,
+        transactionId: effect.transactionId,
+        resolvedAt: hasLapsed ? new Date() : undefined,
+      })
+      .returning();
+    return repaired;
   }
 
   /**
@@ -1127,8 +1269,13 @@ class ModerationReputationService {
    * surface. Kept here rather than on the reputation service because the join
    * from effect to transaction is a bridge concern.
    */
-  async getEffectTransaction(effect: IModerationEffect) {
-    return ReputationTransaction.findById(effect.transactionId);
+  async getEffectTransaction(effect: ModerationEffectRow) {
+    const [transaction] = await getDb()
+      .select()
+      .from(reputationTransactions)
+      .where(eq(reputationTransactions.id, effect.transactionId))
+      .limit(1);
+    return transaction ?? null;
   }
 }
 

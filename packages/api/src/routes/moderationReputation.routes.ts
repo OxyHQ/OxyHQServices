@@ -59,7 +59,10 @@ import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { ForbiddenError, UnauthorizedError } from '../utils/error';
 import { resolveUserIdToObjectId } from '../utils/validation';
 import type { IIdentityBinding } from '../models/IdentityBinding';
-import type { IModerationEffect } from '../models/ModerationEffect';
+import { asc, desc, eq } from 'drizzle-orm';
+import { getDb } from '../config/postgres';
+import { moderationEffects } from '../db/schema/moderationEffects';
+import type { ModerationEffectRow } from '../services/moderationReputation.service';
 import { ModerationEffect } from '../models/ModerationEffect';
 import moderationReputationService from '../services/moderationReputation.service';
 import { registerIdentityBinding } from '../services/identityBinding.service';
@@ -136,14 +139,14 @@ function requireServiceScope(req: ServiceAuthRequest, scope: string): void {
  */
 
 /** Shape an effect for the HTTP response. */
-function serializeEffect(effect: IModerationEffect): ModerationEffectDto {
+function serializeEffect(effect: ModerationEffectRow): ModerationEffectDto {
   const dto: ModerationEffectDto = {
-    id: effect._id.toString(),
+    id: effect.id,
     incidentId: effect.incidentId,
     caseId: effect.caseId,
     decisionId: effect.decisionId,
     decisionRevision: effect.decisionRevision,
-    principalId: effect.principalId.toString(),
+    principalId: effect.principalId,
     effectType: effect.effectType,
     status: effect.status,
     points: effect.points,
@@ -152,13 +155,15 @@ function serializeEffect(effect: IModerationEffect): ModerationEffectDto {
     repetitionMultiplier: effect.repetitionMultiplier,
     multiFindingMultiplier: effect.multiFindingMultiplier,
     idempotencyKey: effect.idempotencyKey,
-    transactionId: effect.transactionId.toString(),
-    strikeId: effect.strikeId?.toString(),
-    reversalTransactionId: effect.reversalTransactionId?.toString(),
+    transactionId: effect.transactionId,
+    strikeId: effect.strikeId ?? undefined,
+    reversalTransactionId: effect.reversalTransactionId ?? undefined,
+    // The three policy versions were one embedded subdocument; they are three
+    // columns now, and the WIRE shape is unchanged.
     policyVersions: {
-      universal: effect.policyVersions.universal,
-      application: effect.policyVersions.application,
-      oxyConduct: effect.policyVersions.oxyConduct,
+      universal: effect.policyVersionUniversal,
+      application: effect.policyVersionApplication,
+      oxyConduct: effect.policyVersionOxyConduct,
     },
     appliedAt: effect.appliedAt.toISOString(),
     reversedAt: effect.reversedAt?.toISOString(),
@@ -363,8 +368,11 @@ router.get(
   readLimiter,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const callerId = requireUserId(req);
-    const effects = await ModerationEffect.find({ principalId: callerId })
-      .sort({ appliedAt: -1 })
+    const effects = await getDb()
+      .select()
+      .from(moderationEffects)
+      .where(eq(moderationEffects.principalId, callerId))
+      .orderBy(desc(moderationEffects.appliedAt))
       .limit(100);
     sendSuccess(res, { effects: effects.map(serializeEffect) });
   })
@@ -400,9 +408,11 @@ router.get(
   staffLimiter,
   requireStaff,
   asyncHandler(async (req, res) => {
-    const effects = await ModerationEffect.find({ incidentId: req.params.incidentId }).sort({
-      decisionRevision: 1,
-    });
+    const effects = await getDb()
+      .select()
+      .from(moderationEffects)
+      .where(eq(moderationEffects.incidentId, req.params.incidentId))
+      .orderBy(asc(moderationEffects.decisionRevision));
     sendSuccess(res, { effects: effects.map(serializeEffect) });
   })
 );

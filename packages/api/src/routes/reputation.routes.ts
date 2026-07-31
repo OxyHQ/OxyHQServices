@@ -38,8 +38,8 @@ import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler'
 import { ForbiddenError, UnauthorizedError } from '../utils/error';
 import { resolveUserIdToObjectId, validatePagination } from '../utils/validation';
 import { logger } from '../utils/logger';
-import { formatUserNameResponse } from '../utils/displayName';
-import reputationService from '../services/reputation.service';
+import { userIdentityFields } from '../utils/userTransform';
+import reputationService, { readMetadata } from '../services/reputation.service';
 import {
   DEFAULT_TRANSACTION_LIMIT,
   MAX_TRANSACTION_LIMIT,
@@ -172,24 +172,27 @@ function authUserOrService(
 function serializeTransaction(
   txn: Awaited<ReturnType<typeof reputationService.listTransactions>>['items'][number]
 ): ReputationTransaction {
+  // A nullable column reads as `null`; the contract spells an absent field
+  // `undefined`. `?? undefined` at the boundary keeps `exactOptionalPropertyTypes`
+  // honest and stops a `null` reaching a client that types the field optional.
   const dto: ReputationTransaction = {
-    id: txn._id.toString(),
-    userId: txn.userId.toString(),
+    id: txn.id,
+    userId: txn.userId,
     points: txn.points,
     actionType: txn.actionType,
     category: txn.category,
-    applicationId: txn.applicationId?.toString(),
-    credentialId: txn.credentialId?.toString(),
-    sourceActionId: txn.sourceActionId,
-    sourceActionType: txn.sourceActionType,
-    targetEntityId: txn.targetEntityId,
-    targetEntityType: txn.targetEntityType,
+    applicationId: txn.applicationId ?? undefined,
+    credentialId: txn.credentialId ?? undefined,
+    sourceActionId: txn.sourceActionId ?? undefined,
+    sourceActionType: txn.sourceActionType ?? undefined,
+    targetEntityId: txn.targetEntityId ?? undefined,
+    targetEntityType: txn.targetEntityType ?? undefined,
     status: txn.status,
-    reversedTransactionId: txn.reversedTransactionId?.toString(),
-    reason: txn.reason,
-    metadata: txn.metadata,
-    createdByUserId: txn.createdByUserId?.toString(),
-    reviewedByUserId: txn.reviewedByUserId?.toString(),
+    reversedTransactionId: txn.reversedTransactionId ?? undefined,
+    reason: txn.reason ?? undefined,
+    metadata: readMetadata(txn.metadata),
+    createdByUserId: txn.createdByUserId ?? undefined,
+    reviewedByUserId: txn.reviewedByUserId ?? undefined,
     reviewedAt: txn.reviewedAt?.toISOString(),
     createdAt: txn.createdAt.toISOString(),
     updatedAt: txn.updatedAt.toISOString(),
@@ -209,7 +212,7 @@ function serializeBalance(
   balance: Awaited<ReturnType<typeof reputationService.getBalance>>
 ): ReputationBalance {
   const dto: ReputationBalance = {
-    userId: balance.userId.toString(),
+    userId: balance.userId,
     total: balance.total,
     positive: balance.positive,
     negative: balance.negative,
@@ -271,7 +274,7 @@ function serializePublicBalance(
   balance: Awaited<ReturnType<typeof reputationService.getBalance>>
 ): ReputationBalanceSummary {
   const dto: ReputationBalanceSummary = {
-    userId: balance.userId.toString(),
+    userId: balance.userId,
     total: balance.total,
     trustTier: balance.trustTier,
   };
@@ -283,14 +286,14 @@ function serializeDispute(
   dispute: Awaited<ReturnType<typeof reputationService.createDispute>>
 ): ReputationDispute {
   const dto: ReputationDispute = {
-    id: dispute._id.toString(),
-    transactionId: dispute.transactionId.toString(),
-    userId: dispute.userId.toString(),
+    id: dispute.id,
+    transactionId: dispute.transactionId,
+    userId: dispute.userId,
     reason: dispute.reason,
     status: dispute.status,
-    evidence: dispute.evidence,
+    evidence: dispute.evidence ?? undefined,
     resolvedAt: dispute.resolvedAt?.toISOString(),
-    resolvedByUserId: dispute.resolvedByUserId?.toString(),
+    resolvedByUserId: dispute.resolvedByUserId ?? undefined,
     createdAt: dispute.createdAt.toISOString(),
     updatedAt: dispute.updatedAt.toISOString(),
   };
@@ -302,7 +305,7 @@ function serializeRule(
   rule: Awaited<ReturnType<typeof reputationService.upsertRule>>
 ): ReputationRule {
   const dto: ReputationRule = {
-    id: rule._id.toString(),
+    id: rule.id,
     actionType: rule.actionType,
     points: rule.points,
     category: rule.category,
@@ -326,20 +329,18 @@ function serializeLeaderboardEntry(
   balance: Awaited<ReturnType<typeof reputationService.getLeaderboard>>['items'][number],
   rank: number
 ): ReputationLeaderboardEntry {
-  const user = balance.userId as unknown as {
-    _id: { toString(): string };
-    username: string;
-    name?: { first?: string; last?: string; full?: string; displayName?: string };
-    avatar?: string;
-    publicKey?: string;
-  };
+  // `userIdentityFields` is the SOLE definition of `id`/`name`/`username`/
+  // `avatar` for every user DTO and reads the flat `name_first`/`name_last`
+  // columns directly, so this surface cannot drift from the rest on
+  // `name.displayName` — the field every ecosystem app reads.
+  const identity = userIdentityFields(balance.user);
   const dto: ReputationLeaderboardEntry = {
     user: {
-      id: user._id.toString(),
-      username: user.username,
-      name: formatUserNameResponse({ username: user.username, name: user.name }),
-      avatar: user.avatar,
-      publicKey: user.publicKey,
+      id: balance.user.id,
+      username: identity.username ?? '',
+      name: identity.name,
+      avatar: identity.avatar,
+      publicKey: balance.user.publicKey ?? undefined,
     },
     total: balance.total,
     trustTier: balance.trustTier,
