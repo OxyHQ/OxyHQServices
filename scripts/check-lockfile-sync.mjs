@@ -162,10 +162,18 @@ function readManifest(workspacePath) {
  * the comparison below quietly stop covering those packages.
  */
 function declaredWorkspacePaths(rootManifest) {
-  const patterns = Array.isArray(rootManifest.workspaces) ? rootManifest.workspaces : [];
+  // `workspaces` is either the array shorthand or the object form that also
+  // carries the catalog. Reading only the array shape does not fail when the
+  // manifest uses the object one — it enumerates nothing, and a layer that
+  // enumerates nothing passes everything.
+  const declared = Array.isArray(rootManifest.workspaces)
+    ? rootManifest.workspaces
+    : rootManifest.workspaces?.packages;
+  const patterns = Array.isArray(declared) ? declared : [];
   if (patterns.length === 0) {
-    console.error('package.json declares no workspaces array, so the packages bun.lock');
-    console.error('should describe cannot be enumerated.');
+    console.error('package.json declares no workspace paths (neither the "workspaces"');
+    console.error('array nor "workspaces.packages"), so the packages bun.lock should');
+    console.error('describe cannot be enumerated.');
     process.exit(1);
   }
 
