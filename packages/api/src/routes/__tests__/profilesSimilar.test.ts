@@ -52,7 +52,7 @@ jest.mock('../../services/user.service', () => ({
   userService: {
     getUserStats: jest.fn(),
     formatUserResponse: jest.fn(),
-    getUserById: jest.fn(),
+    getPublicUserById: jest.fn(),
   },
 }));
 jest.mock('../../services/federation.service', () => ({
@@ -85,7 +85,7 @@ import profilesRouter from '../profiles';
 import { errorHandler } from '../../middleware/errorHandler';
 import { userService } from '../../services/user.service';
 
-const mockGetUserById = userService.getUserById as jest.MockedFunction<typeof userService.getUserById>;
+const mockGetPublicUserById = userService.getPublicUserById as jest.MockedFunction<typeof userService.getPublicUserById>;
 
 interface ProfileResult {
   id: unknown;
@@ -257,7 +257,7 @@ afterAll((done) => {
 beforeEach(() => {
   jest.clearAllMocks();
   currentUserId = caller.toHexString();
-  mockGetUserById.mockResolvedValue({
+  mockGetPublicUserById.mockResolvedValue({
     _id: target,
     accountStatus: 'active',
     privacySettings: { isPrivateAccount: false },
@@ -388,7 +388,7 @@ describe('GET /profiles/:userId/similar discovery gate', () => {
   });
 
   it('returns 404 for an archived target without querying the follower graph', async () => {
-    mockGetUserById.mockResolvedValueOnce({
+    mockGetPublicUserById.mockResolvedValueOnce({
       _id: target,
       accountStatus: 'archived',
     } as never);
@@ -401,7 +401,7 @@ describe('GET /profiles/:userId/similar discovery gate', () => {
   });
 
   it('returns 404 for a restricted target without querying the follower graph', async () => {
-    mockGetUserById.mockResolvedValueOnce({
+    mockGetPublicUserById.mockResolvedValueOnce({
       _id: target,
       accountStatus: 'active',
       reputationTier: 'restricted',
@@ -415,7 +415,7 @@ describe('GET /profiles/:userId/similar discovery gate', () => {
   });
 
   it('returns 404 for a private-account target without querying the follower graph', async () => {
-    mockGetUserById.mockResolvedValueOnce({
+    mockGetPublicUserById.mockResolvedValueOnce({
       _id: target,
       accountStatus: 'active',
       privacySettings: { isPrivateAccount: true },

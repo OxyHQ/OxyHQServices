@@ -75,16 +75,20 @@ export const PUBLIC_USER_PROFILE_SELECT = ALL_PUBLIC_USER_PROFILE_PATHS.join(' '
 
 /**
  * `$project` stage for a public user row, for the surfaces that read through an
- * aggregation pipeline rather than a query (`GET /search`).
+ * aggregation pipeline rather than a query (`GET /search`, `GET /profiles/search`).
  *
- * Derived from the SAME {@link PUBLIC_USER_PROFILE_PATHS} as
- * {@link PUBLIC_USER_PROFILE_SELECT} so the two forms cannot drift, and
- * INCLUSION-ONLY for the same reason: an exclusion `$project` listing the
- * private fields to drop is one forgotten field away from leaking, and every
- * field later added to the `User` model defaults to exposed. `GET /search`
- * shipped exactly that bug — a `{ password: 0, refreshToken: 0 }` denylist put
- * `email`, `publicKey` and the full `privacySettings` on an unauthenticated
- * response.
+ * Derived from {@link PUBLIC_USER_PROFILE_PATHS} only — NOT
+ * {@link PUBLIC_USER_PROFILE_GATE_PATHS}. Gate paths (`accountStatus`,
+ * `reputationTier`, `privacySettings.isPrivateAccount`) are read from
+ * {@link PUBLIC_USER_PROFILE_SELECT} when a handler must decide discoverability
+ * before serializing, but they must never reach a public DTO. Search/profile
+ * pipelines already filter those rows in `$match` (`peopleSearchMongoMatch`).
+ *
+ * INCLUSION-ONLY for the same reason as {@link PUBLIC_USER_PROFILE_SELECT}: an
+ * exclusion `$project` listing the private fields to drop is one forgotten field
+ * away from leaking. `GET /search` shipped exactly that bug — a
+ * `{ password: 0, refreshToken: 0 }` denylist put `email`, `publicKey` and the
+ * full `privacySettings` on an unauthenticated response.
  *
  * `_id` is included implicitly by MongoDB, which is what `formatUserResponse`
  * anchors the DTO `id` on. The sort-only fields a native-first pipeline adds
@@ -92,7 +96,7 @@ export const PUBLIC_USER_PROFILE_SELECT = ALL_PUBLIC_USER_PROFILE_PATHS.join(' '
  * projection emits nothing it does not name.
  */
 export const PUBLIC_USER_PROFILE_PROJECTION: Record<string, 1> = Object.fromEntries(
-  ALL_PUBLIC_USER_PROFILE_PATHS.map((path) => [path, 1]),
+  PUBLIC_USER_PROFILE_PATHS.map((path) => [path, 1]),
 );
 
 /**

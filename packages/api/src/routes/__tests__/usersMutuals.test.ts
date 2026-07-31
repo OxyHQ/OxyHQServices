@@ -22,7 +22,7 @@ import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
 
-const mockGetUserById = jest.fn();
+const mockGetPublicUserById = jest.fn();
 const mockGetUserMutuals = jest.fn();
 
 // Mutable viewer the stubbed `resolveViewerId` returns — set per test to model
@@ -55,7 +55,7 @@ jest.mock('../../services/assetServiceSingleton', () => ({
 }));
 jest.mock('../../services/user.service', () => ({
   userService: {
-    getUserById: mockGetUserById,
+    getPublicUserById: mockGetPublicUserById,
     getUserMutuals: mockGetUserMutuals,
   },
 }));
@@ -142,7 +142,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   currentViewerId = undefined;
   mockGetUserMutuals.mockReset();
-  mockGetUserById.mockResolvedValue({
+  mockGetPublicUserById.mockResolvedValue({
     _id: '5f000000000000000000000a',
     accountStatus: 'active',
     reputationTier: 'trusted',

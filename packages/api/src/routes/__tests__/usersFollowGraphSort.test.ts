@@ -11,7 +11,7 @@ import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
 
-const mockGetUserById = jest.fn();
+const mockGetPublicUserById = jest.fn();
 const mockGetUserFollowers = jest.fn();
 const mockGetUserFollowing = jest.fn();
 const mockGetUserMutuals = jest.fn();
@@ -41,7 +41,7 @@ jest.mock('../../services/assetServiceSingleton', () => ({
 }));
 jest.mock('../../services/user.service', () => ({
   userService: {
-    getUserById: mockGetUserById,
+    getPublicUserById: mockGetPublicUserById,
     getUserFollowers: mockGetUserFollowers,
     getUserFollowing: mockGetUserFollowing,
     getUserMutuals: mockGetUserMutuals,
@@ -127,7 +127,7 @@ const emptyPage = { data: [], total: 0, hasMore: false, limit: 50, offset: 0 };
 beforeEach(() => {
   jest.clearAllMocks();
   currentViewerId = VIEWER;
-  mockGetUserById.mockResolvedValue({
+  mockGetPublicUserById.mockResolvedValue({
     _id: TARGET,
     accountStatus: 'active',
     reputationTier: 'active',

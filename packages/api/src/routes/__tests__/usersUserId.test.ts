@@ -11,7 +11,7 @@ import type { AddressInfo } from 'net';
 
 import { Types } from 'mongoose';
 
-const mockGetUserById = jest.fn();
+const mockGetPublicUserById = jest.fn();
 const mockGetUserStats = jest.fn();
 const mockFormatUserResponse = jest.fn();
 const mockGetViewerRelationship = jest.fn();
@@ -41,7 +41,7 @@ jest.mock('../../services/assetServiceSingleton', () => ({
 }));
 jest.mock('../../services/user.service', () => ({
   userService: {
-    getUserById: mockGetUserById,
+    getPublicUserById: mockGetPublicUserById,
     getUserStats: mockGetUserStats,
     formatUserResponse: mockFormatUserResponse,
     getViewerRelationship: mockGetViewerRelationship,
@@ -139,7 +139,7 @@ describe('GET /users/:userId', () => {
   });
 
   it('returns 404 for a restricted-tier user', async () => {
-    mockGetUserById.mockResolvedValue({
+    mockGetPublicUserById.mockResolvedValue({
       _id: targetUserId,
       username: 'abuser',
       accountStatus: 'active',
@@ -153,7 +153,7 @@ describe('GET /users/:userId', () => {
   });
 
   it('returns 404 for an archived user', async () => {
-    mockGetUserById.mockResolvedValue({
+    mockGetPublicUserById.mockResolvedValue({
       _id: targetUserId,
       username: 'gone',
       accountStatus: 'archived',
@@ -165,7 +165,7 @@ describe('GET /users/:userId', () => {
   });
 
   it('omits relationship for anonymous viewers', async () => {
-    mockGetUserById.mockResolvedValue({
+    mockGetPublicUserById.mockResolvedValue({
       _id: targetUserId,
       username: 'nate',
       accountStatus: 'active',
@@ -182,7 +182,7 @@ describe('GET /users/:userId', () => {
   it('omits relationship on a self-view', async () => {
     const selfId = targetUserId.toHexString();
     currentViewerId = selfId;
-    mockGetUserById.mockResolvedValue({
+    mockGetPublicUserById.mockResolvedValue({
       _id: targetUserId,
       username: 'nate',
       accountStatus: 'active',
@@ -197,7 +197,7 @@ describe('GET /users/:userId', () => {
   it('includes relationship when an authenticated viewer fetches another profile', async () => {
     const viewerId = new Types.ObjectId().toHexString();
     currentViewerId = viewerId;
-    mockGetUserById.mockResolvedValue({
+    mockGetPublicUserById.mockResolvedValue({
       _id: targetUserId,
       username: 'nate',
       accountStatus: 'active',
