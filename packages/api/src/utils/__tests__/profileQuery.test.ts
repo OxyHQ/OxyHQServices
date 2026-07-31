@@ -1,72 +1,432 @@
+/**
+ * Profile-discovery predicates, executed against a REAL Postgres.
+ *
+ * The suite this replaces asserted the SHAPE of a Mongo match object —
+ * `expect(match.$and).toEqual(expect.arrayContaining([{ accountStatus: { $ne:
+ * 'archived' } }]))`. That assertion could not distinguish a predicate that
+ * excludes archived accounts from one that merely mentions them, and both of
+ * its subjects (`buildPeopleSearchOrClause`, `eligibleUserMatch`) were deleted
+ * by the port. Every case below instead seeds rows whose visibility is KNOWN,
+ * runs the predicate as the `where` of a real query, and asserts exactly which
+ * ids come back.
+ *
+ * Two of these can only be caught against a database:
+ *
+ * - **The correlated subquery in {@link peopleSearchMatch}.** A drizzle column
+ *   interpolated into `sql` renders BARE when its table is not in that
+ *   statement's `FROM`, so `where ${userLocations.userId} = ${users.id}`
+ *   becomes `where "user_id" = "id"` — both resolve against the subquery's own
+ *   table, the predicate compares two of its own columns, and the query returns
+ *   nothing WITH NO ERROR (`db/schema/CONVENTIONS.md`). The location cases
+ *   below fail if `qualified()` is dropped.
+ * - **{@link peopleSearchOrder} is a STRICT TOTAL ORDER.** Its third key
+ *   (`id asc`) is what stops an `OFFSET`/`LIMIT` page from repeating or
+ *   skipping a row when the first two keys tie. Rows with IDENTICAL type and
+ *   rank weight are the only input that can tell a total order from a partial
+ *   one.
+ *
+ * The whole run shares one database, so every row carries a per-test random id
+ * and every query is scoped to the ids the test wrote — no assertion depends on
+ * a table being empty.
+ */
+
+import { randomUUID } from 'node:crypto';
+import { and, inArray, type SQL } from 'drizzle-orm';
+import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
+import { userLocations } from '../../db/schema/userLocations';
+import { users } from '../../db/schema/users';
 import {
-  buildPeopleSearchOrClause,
-  eligibleUserMatch,
+  discoverableUserPredicate,
+  eligibleUserPredicate,
   FEDERATED_RECOMMENDATION_MAX_AGE_MS,
+  federatedRecommendationEligibility,
   isDiscoverableUser,
   isFederatableUser,
   isPublicGraphTarget,
+  peopleSearchMatch,
+  peopleSearchOrder,
+  peopleSearchPredicate,
+  profileQualityPredicate,
 } from '../profileQuery';
 
-describe('buildPeopleSearchOrClause', () => {
-  it('matches username, first, last, and description by default', () => {
-    const pattern = { $regex: 'moon', $options: 'i' };
-    expect(buildPeopleSearchOrClause(pattern)).toEqual([
-      { username: pattern },
-      { 'name.first': pattern },
-      { 'name.last': pattern },
-      { description: pattern },
-    ]);
+const uniqueId = () => randomUUID().replace(/-/g, '');
+
+/**
+ * A row that clears every quality/eligibility gate, so a test only has to state
+ * the ONE property it is about. Without this a "rejects archived" case could
+ * pass because the fixture also failed the profile-quality bar.
+ */
+function eligibleDefaults(id: string): typeof users.$inferInsert {
+  return {
+    id,
+    // The FULL id, because `users` is unique on `lower(btrim(username))` and
+    // ids that share a prefix are exactly what the ordering test needs.
+    username: `u${id}`,
+    nameFirst: 'Ada',
+    nameLast: 'Lovelace',
+    avatar: 'file-1',
+    bio: 'Analytical engines',
+    description: 'Mathematician',
+  };
+}
+
+async function makeUser(
+  overrides: Partial<typeof users.$inferInsert> = {}
+): Promise<string> {
+  const id = uniqueId();
+  await getDb().insert(users).values({ ...eligibleDefaults(id), ...overrides });
+  return id;
+}
+
+/** Ids matching `predicate`, restricted to the ids this test wrote. */
+async function idsMatching(predicate: SQL, scope: string[]): Promise<string[]> {
+  const rows = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(and(inArray(users.id, scope), predicate));
+  return rows.map((row) => row.id).sort();
+}
+
+beforeAll(async () => {
+  await connectPostgres();
+});
+
+afterAll(async () => {
+  await closePostgres();
+});
+
+describe('discoverableUserPredicate', () => {
+  it('returns active accounts and excludes archived and restricted ones', async () => {
+    const active = await makeUser();
+    const archived = await makeUser({ accountStatus: 'archived' });
+    const restricted = await makeUser({ reputationTier: 'restricted' });
+    const scope = [active, archived, restricted];
+
+    expect(await idsMatching(discoverableUserPredicate(), scope)).toEqual([active]);
   });
 
-  it('can include location fields for legacy GET /search', () => {
-    const pattern = { $regex: 'paris', $options: 'i' };
-    expect(buildPeopleSearchOrClause(pattern, { includeLocations: true })).toEqual(
-      expect.arrayContaining([
-        { 'locations.name': pattern },
-        { 'locations.address.city': pattern },
-        { 'locations.address.country': pattern },
-      ]),
+  it('keeps an account whose tier is punitive-adjacent but not `restricted`', async () => {
+    const trusted = await makeUser({ reputationTier: 'trusted' });
+    const brandNew = await makeUser({ reputationTier: 'new' });
+    const scope = [trusted, brandNew];
+
+    expect(await idsMatching(discoverableUserPredicate(), scope)).toEqual(
+      [trusted, brandNew].sort()
     );
   });
 });
 
-describe('eligibleUserMatch', () => {
-  const minResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
+describe('peopleSearchPredicate', () => {
+  it('adds the private-account opt-out on top of discoverability', async () => {
+    const findable = await makeUser();
+    const priv = await makeUser({ privacyIsPrivateAccount: true });
+    const archived = await makeUser({ accountStatus: 'archived' });
+    const scope = [findable, priv, archived];
 
-  it('excludes archived accounts from discovery pipelines', () => {
-    const match = eligibleUserMatch(minResolvedAt);
-    expect(match.$and).toEqual(
-      expect.arrayContaining([
-        { accountStatus: { $ne: 'archived' } },
-      ]),
+    expect(await idsMatching(peopleSearchPredicate(), scope)).toEqual([findable]);
+    // The private account IS still discoverable — the two gates are distinct,
+    // and conflating them would silently hide private accounts from the follow
+    // graph too.
+    expect(await idsMatching(discoverableUserPredicate(), scope)).toEqual(
+      [findable, priv].sort()
+    );
+  });
+});
+
+describe('peopleSearchMatch', () => {
+  it('matches username, first name, last name and description, case-insensitively', async () => {
+    const marker = uniqueId().slice(0, 10);
+    const byUsername = await makeUser({
+      username: `zz${marker}`,
+      nameFirst: 'None',
+      nameLast: 'None',
+      description: 'nothing',
+    });
+    const byFirst = await makeUser({
+      nameFirst: marker.toUpperCase(),
+      nameLast: 'None',
+      description: 'nothing',
+    });
+    const byLast = await makeUser({
+      nameFirst: 'None',
+      nameLast: `${marker}son`,
+      description: 'nothing',
+    });
+    const byDescription = await makeUser({
+      nameFirst: 'None',
+      nameLast: 'None',
+      description: `Writes about ${marker} daily`,
+    });
+    const unrelated = await makeUser({
+      nameFirst: 'None',
+      nameLast: 'None',
+      description: 'nothing',
+    });
+    const scope = [byUsername, byFirst, byLast, byDescription, unrelated];
+
+    expect(await idsMatching(peopleSearchMatch(marker), scope)).toEqual(
+      [byUsername, byFirst, byLast, byDescription].sort()
     );
   });
 
-  it('excludes restricted-tier accounts from discovery pipelines', () => {
-    const match = eligibleUserMatch(minResolvedAt);
-    expect(match.$and).toEqual(
-      expect.arrayContaining([
-        { reputationTier: { $ne: 'restricted' } },
-      ]),
+  it('drops description from the match when includeDescription is false', async () => {
+    const marker = uniqueId().slice(0, 10);
+    const byName = await makeUser({ nameFirst: marker, description: 'nothing' });
+    const byDescription = await makeUser({
+      nameFirst: 'None',
+      description: `about ${marker}`,
+    });
+    const scope = [byName, byDescription];
+
+    expect(
+      await idsMatching(peopleSearchMatch(marker, { includeDescription: false }), scope)
+    ).toEqual([byName]);
+  });
+
+  it('matches a location name, city or country only under includeLocations', async () => {
+    const marker = uniqueId().slice(0, 10);
+    const byLocationName = await makeUser({ nameFirst: 'None', description: 'nothing' });
+    const byCity = await makeUser({ nameFirst: 'None', description: 'nothing' });
+    const byCountry = await makeUser({ nameFirst: 'None', description: 'nothing' });
+    const elsewhere = await makeUser({ nameFirst: 'None', description: 'nothing' });
+    const scope = [byLocationName, byCity, byCountry, elsewhere];
+
+    await getDb()
+      .insert(userLocations)
+      .values([
+        { userId: byLocationName, locationKey: 'home', name: `Cafe ${marker}` },
+        { userId: byCity, locationKey: 'home', name: 'Home', city: marker },
+        { userId: byCountry, locationKey: 'home', name: 'Home', country: marker },
+        { userId: elsewhere, locationKey: 'home', name: 'Home', city: 'Nowhere' },
+      ]);
+
+    // Without `includeLocations` a location must NOT widen the match.
+    expect(await idsMatching(peopleSearchMatch(marker), scope)).toEqual([]);
+
+    // With it, exactly the three located users come back. This is the assertion
+    // that fails if the correlated subquery's references stop being qualified:
+    // the bare-identifier form compares the subquery's own columns and returns
+    // an empty set with no error, so the result would be `[]` here too.
+    expect(
+      await idsMatching(peopleSearchMatch(marker, { includeLocations: true }), scope)
+    ).toEqual([byLocationName, byCity, byCountry].sort());
+  });
+
+  it('correlates each location to ITS OWN user, never to any located user', async () => {
+    // The bare-identifier bug's OTHER failure mode: a subquery that ignores the
+    // correlation matches every outer row as soon as ANY location matches. A
+    // fixture with one located user cannot tell that from a correct answer.
+    const marker = uniqueId().slice(0, 10);
+    const located = await makeUser({ nameFirst: 'None', description: 'nothing' });
+    const unlocated = await makeUser({ nameFirst: 'None', description: 'nothing' });
+    const scope = [located, unlocated];
+
+    await getDb()
+      .insert(userLocations)
+      .values({ userId: located, locationKey: 'home', name: 'Home', city: marker });
+
+    expect(
+      await idsMatching(peopleSearchMatch(marker, { includeLocations: true }), scope)
+    ).toEqual([located]);
+  });
+
+  it('treats LIKE metacharacters in the term as literal text', async () => {
+    const marker = uniqueId().slice(0, 8);
+    // `%` and `_` are LIKE wildcards; if the term is not escaped, `a%b` matches
+    // this row's neighbour and the search silently widens.
+    const literal = await makeUser({ nameFirst: `a%_${marker}`, description: 'nothing' });
+    const decoy = await makeUser({ nameFirst: `axyb${marker}`, description: 'nothing' });
+    const scope = [literal, decoy];
+
+    expect(await idsMatching(peopleSearchMatch(`a%_${marker}`), scope)).toEqual([literal]);
+    // A backslash must not escape the following character either.
+    expect(await idsMatching(peopleSearchMatch(`a\\%_${marker}`), scope)).toEqual([]);
+  });
+});
+
+describe('peopleSearchOrder', () => {
+  it('orders native before federated, then by rank weight, then by id', async () => {
+    const scope: string[] = [];
+    // Three rows sharing type AND rank weight: the ONLY input that can tell the
+    // `id asc` tiebreak from its absence. Ids are supplied and digits-only so
+    // JS and every Postgres collation agree on their order. The shared prefix
+    // keeps them adjacent in id order while staying unique across runs, which
+    // the run-wide database requires.
+    const tiedPrefix = uniqueId().replace(/\D/g, '').padEnd(20, '0').slice(0, 20);
+    const tiedIds = ['3', '1', '2'].map((n) => `${tiedPrefix}${n.padStart(4, '0')}`);
+    for (const id of tiedIds) {
+      await getDb()
+        .insert(users)
+        .values({ ...eligibleDefaults(id), reputationRankWeight: 5 });
+      scope.push(id);
+    }
+
+    const federated = await makeUser({ type: 'federated', reputationRankWeight: 99 });
+    const highRankNative = await makeUser({ reputationRankWeight: 50 });
+    scope.push(federated, highRankNative);
+
+    const rows = await getDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(inArray(users.id, scope))
+      .orderBy(...peopleSearchOrder());
+
+    expect(rows.map((row) => row.id)).toEqual([
+      // Native first, highest rank weight first...
+      highRankNative,
+      // ...then the tied trio in ID order, which only the third key can produce.
+      ...[...tiedIds].sort(),
+      // ...and the federated account last despite the highest rank weight.
+      federated,
+    ]);
+  });
+});
+
+describe('profileQualityPredicate', () => {
+  it('requires a username plus at least one curated signal', async () => {
+    const curatedByAvatar = await makeUser({
+      avatar: 'file-1',
+      nameFirst: null,
+      nameLast: null,
+      bio: null,
+      description: null,
+    });
+    const curatedByVerified = await makeUser({
+      avatar: null,
+      nameFirst: null,
+      nameLast: null,
+      bio: null,
+      description: null,
+      verified: true,
+    });
+    const shell = await makeUser({
+      avatar: null,
+      nameFirst: null,
+      nameLast: null,
+      bio: null,
+      description: null,
+    });
+    const keyOnly = await makeUser({ username: null });
+    const scope = [curatedByAvatar, curatedByVerified, shell, keyOnly];
+
+    expect(await idsMatching(profileQualityPredicate(), scope)).toEqual(
+      [curatedByAvatar, curatedByVerified].sort()
     );
   });
 
-  it('prefixes the archived exclusion when nested under user.', () => {
-    const match = eligibleUserMatch(minResolvedAt, 'user.');
-    expect(match.$and).toEqual(
-      expect.arrayContaining([
-        { 'user.accountStatus': { $ne: 'archived' } },
-      ]),
-    );
+  it('rejects a value the backfill carried over as the empty string', async () => {
+    // `''` is forbidden as a DEFAULT but reaches this predicate from migrated
+    // rows, which is why the check is `is not null and <> ''` and not just
+    // `is not null`. A row whose every curated field is `''` is a shell.
+    const emptyStrings = await makeUser({
+      avatar: '',
+      nameFirst: '',
+      nameLast: '',
+      bio: '',
+      description: '',
+    });
+    const emptyUsername = await makeUser({ username: '' });
+    const scope = [emptyStrings, emptyUsername];
+
+    expect(await idsMatching(profileQualityPredicate(), scope)).toEqual([]);
+  });
+});
+
+describe('federatedRecommendationEligibility', () => {
+  const minResolvedAt = () => new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
+
+  /** `federation_actor_uri` is UNIQUE, so every fixture needs its own. */
+  const federatedActor = (overrides: Partial<typeof users.$inferInsert> = {}) => ({
+    type: 'federated' as const,
+    federationActorUri: `https://remote.test/users/${uniqueId()}`,
+    federationDomain: 'remote.test',
+    federationLastResolvedAt: new Date(),
+    ...overrides,
   });
 
-  it('prefixes the restricted-tier exclusion when nested under user.', () => {
-    const match = eligibleUserMatch(minResolvedAt, 'user.');
-    expect(match.$and).toEqual(
-      expect.arrayContaining([
-        { 'user.reputationTier': { $ne: 'restricted' } },
-      ]),
+  it('passes a non-federated account unconditionally', async () => {
+    const local = await makeUser();
+    expect(await idsMatching(federatedRecommendationEligibility(minResolvedAt()), [local])).toEqual([
+      local,
+    ]);
+  });
+
+  it('passes a federated actor that is complete, fresh and available', async () => {
+    const fresh = await makeUser(federatedActor());
+    expect(await idsMatching(federatedRecommendationEligibility(minResolvedAt()), [fresh])).toEqual([
+      fresh,
+    ]);
+  });
+
+  it('rejects a federated actor that is stale, unavailable, or missing its identifiers', async () => {
+    const stale = await makeUser(
+      federatedActor({
+        federationLastResolvedAt: new Date(
+          Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS - 60_000
+        ),
+      })
     );
+    const unavailable = await makeUser(
+      federatedActor({ federationUnavailableAt: new Date() })
+    );
+    const noUri = await makeUser(federatedActor({ federationActorUri: null }));
+    const noDomain = await makeUser(federatedActor({ federationDomain: null }));
+    const neverResolved = await makeUser(
+      federatedActor({ federationLastResolvedAt: null })
+    );
+    const scope = [stale, unavailable, noUri, noDomain, neverResolved];
+
+    expect(await idsMatching(federatedRecommendationEligibility(minResolvedAt()), scope)).toEqual(
+      []
+    );
+  });
+});
+
+describe('eligibleUserPredicate', () => {
+  const minResolvedAt = () => new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
+
+  it('admits an account that clears every gate at once', async () => {
+    const eligible = await makeUser();
+    expect(await idsMatching(eligibleUserPredicate(minResolvedAt()), [eligible])).toEqual([
+      eligible,
+    ]);
+  });
+
+  it('rejects an account failing ANY ONE gate while passing the rest', async () => {
+    // Each fixture differs from the eligible one above in exactly one property,
+    // so a gate that stopped being enforced fails here by name rather than
+    // hiding behind another gate that happens to reject the same row.
+    const archived = await makeUser({ accountStatus: 'archived' });
+    const restricted = await makeUser({ reputationTier: 'restricted' });
+    const sensitive = await makeUser({ isSensitive: true });
+    const shell = await makeUser({
+      avatar: null,
+      nameFirst: null,
+      nameLast: null,
+      bio: null,
+      description: null,
+    });
+    const staleFederated = await makeUser({
+      type: 'federated',
+      federationActorUri: `https://remote.test/users/${uniqueId()}`,
+      federationDomain: 'remote.test',
+      federationLastResolvedAt: new Date(
+        Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS - 60_000
+      ),
+    });
+    const scope = [archived, restricted, sensitive, shell, staleFederated];
+
+    expect(await idsMatching(eligibleUserPredicate(minResolvedAt()), scope)).toEqual([]);
+  });
+
+  it('does NOT read the account-sensitive flag off the viewer preference column', async () => {
+    // `is_sensitive` is the moderation flag; `privacy_sensitive_content` is the
+    // viewer's own preference. Confusing the two would hide every account that
+    // merely opted into seeing sensitive content.
+    const optedIntoSeeingSensitive = await makeUser({ privacySensitiveContent: true });
+    expect(
+      await idsMatching(eligibleUserPredicate(minResolvedAt()), [optedIntoSeeingSensitive])
+    ).toEqual([optedIntoSeeingSensitive]);
   });
 });
 
@@ -80,7 +440,36 @@ describe('isDiscoverableUser', () => {
   });
 
   it('rejects restricted-tier accounts', () => {
-    expect(isDiscoverableUser({ accountStatus: 'active', reputationTier: 'restricted' })).toBe(false);
+    expect(isDiscoverableUser({ accountStatus: 'active', reputationTier: 'restricted' })).toBe(
+      false
+    );
+  });
+
+  it('rejects a null or undefined user', () => {
+    expect(isDiscoverableUser(null)).toBe(false);
+    expect(isDiscoverableUser(undefined)).toBe(false);
+  });
+
+  it('agrees with the SQL predicate over the same stored rows', async () => {
+    // The in-memory predicate and the SQL one are two spellings of one rule and
+    // are applied to the same accounts at different layers; a divergence shows
+    // up as a row that a list query returns and the hydrated check then hides.
+    const active = await makeUser();
+    const archived = await makeUser({ accountStatus: 'archived' });
+    const restricted = await makeUser({ reputationTier: 'restricted' });
+    const scope = [active, archived, restricted];
+
+    const rows = await getDb()
+      .select({
+        id: users.id,
+        accountStatus: users.accountStatus,
+        reputationTier: users.reputationTier,
+      })
+      .from(users)
+      .where(inArray(users.id, scope));
+
+    const inMemory = rows.filter(isDiscoverableUser).map((row) => row.id).sort();
+    expect(inMemory).toEqual(await idsMatching(discoverableUserPredicate(), scope));
   });
 });
 
@@ -95,20 +484,24 @@ describe('isPublicGraphTarget', () => {
         accountStatus: 'active',
         reputationTier: 'trusted',
         privacySettings: { isPrivateAccount: true },
-      }),
+      })
     ).toBe(false);
   });
 
   it('rejects archived and restricted users', () => {
     expect(isPublicGraphTarget({ accountStatus: 'archived' })).toBe(false);
-    expect(isPublicGraphTarget({ accountStatus: 'active', reputationTier: 'restricted' })).toBe(false);
+    expect(isPublicGraphTarget({ accountStatus: 'active', reputationTier: 'restricted' })).toBe(
+      false
+    );
   });
 });
 
 describe('isFederatableUser', () => {
   it('accepts discoverable users with sharing enabled or unset', () => {
     expect(isFederatableUser({ accountStatus: 'active' })).toBe(true);
-    expect(isFederatableUser({ accountStatus: 'active', privacySettings: { fediverseSharing: true } })).toBe(true);
+    expect(
+      isFederatableUser({ accountStatus: 'active', privacySettings: { fediverseSharing: true } })
+    ).toBe(true);
   });
 
   it('rejects users who opted out of fediverse sharing', () => {
@@ -116,7 +509,7 @@ describe('isFederatableUser', () => {
       isFederatableUser({
         accountStatus: 'active',
         privacySettings: { fediverseSharing: false },
-      }),
+      })
     ).toBe(false);
   });
 
@@ -125,14 +518,14 @@ describe('isFederatableUser', () => {
       isFederatableUser({
         accountStatus: 'archived',
         privacySettings: { fediverseSharing: true },
-      }),
+      })
     ).toBe(false);
     expect(
       isFederatableUser({
         accountStatus: 'active',
         reputationTier: 'restricted',
         privacySettings: { fediverseSharing: true },
-      }),
+      })
     ).toBe(false);
   });
 });
