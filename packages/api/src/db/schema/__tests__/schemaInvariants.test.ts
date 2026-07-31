@@ -14,9 +14,9 @@ import { sql } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../../../config/postgres';
 
 /** Tables in this batch. A traversal returning fewer than this is broken. */
-const MINIMUM_TABLES = 8;
+const MINIMUM_TABLES = 14;
 /** Columns across those tables. Same purpose. */
-const MINIMUM_COLUMNS = 60;
+const MINIMUM_COLUMNS = 190;
 
 beforeAll(async () => {
   await connectPostgres();

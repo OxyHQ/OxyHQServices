@@ -12,13 +12,16 @@
 
 import { index, pgTable, text } from 'drizzle-orm/pg-core';
 import { createdAt, generatedId, updatedAt } from './columns';
+import { users } from './users';
 
 export const bookmarks = pgTable(
   'bookmarks',
   {
     id: generatedId(),
-    /** FK to `users` — see `deferredForeignKeys.ts`. */
-    userId: text().notNull(),
+    /** Bookmarks are private to their owner and outlive nothing. */
+    userId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     /** Mention's `Post` id. Cross-service, so no foreign key is possible. */
     postId: text().notNull(),
     createdAt: createdAt(),

@@ -16,6 +16,7 @@
 import { sql } from 'drizzle-orm';
 import { integer, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 import { createdAt, generatedId, updatedAt } from './columns';
+import { users } from './users';
 
 /** Applied when a label is created without one. */
 export const DEFAULT_LABEL_COLOR = '#4285f4';
@@ -24,8 +25,10 @@ export const labels = pgTable(
   'labels',
   {
     id: generatedId(),
-    /** FK to `users` — see `deferredForeignKeys.ts`. */
-    userId: text().notNull(),
+    /** A label belongs to exactly one mailbox owner. */
+    userId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     /** Stored exactly as the user typed it; uniqueness ignores case. */
     name: text().notNull(),
     color: text().notNull().default(DEFAULT_LABEL_COLOR),

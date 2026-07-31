@@ -8,6 +8,7 @@
 import { sql } from 'drizzle-orm';
 import { check, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { createdAt, generatedId, updatedAt } from './columns';
+import { users } from './users';
 
 /** The platforms a push install can be registered for. */
 export const PUSH_TOKEN_PLATFORMS = ['ios', 'android', 'web'] as const;
@@ -16,8 +17,10 @@ export const pushTokens = pgTable(
   'push_tokens',
   {
     id: generatedId(),
-    /** FK to `users` — see `deferredForeignKeys.ts`. */
-    userId: text().notNull(),
+    /** A deleted account must stop receiving push notifications. */
+    userId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     token: text().notNull(),
     platform: text({ enum: PUSH_TOKEN_PLATFORMS }).notNull(),
     /** Central device id of the install (same id space as `DeviceSession.deviceId`). */

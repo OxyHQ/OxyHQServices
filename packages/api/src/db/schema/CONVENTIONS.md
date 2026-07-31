@@ -182,6 +182,28 @@ The cost, and it is real: **every lookup must be written
 `where user_id = $1 and lower(name) = lower($2)`.** A plain `name = $2` is
 correct-looking, case-sensitive, and will not use the index.
 
+**The same expression-index shape is how `trim`/`lowercase` survives on an
+IDENTIFIER.** `users.username`, `users.email` and `users.public_key` are unique
+on `lower(btrim(...))`. For `email` and `public_key` that is equivalent to a
+plain unique on existing data (Mongoose's setters already stored them trimmed and
+lower-cased) and it additionally survives a call site that forgets to normalize.
+
+`username` is the one that CHANGES behaviour, deliberately: Mongo indexed it
+case-SENSITIVELY while every lookup runs `exactCaseInsensitiveUsernameRegex`, so
+`Nate` and `nate` could coexist AND each lookup was a collection scan (an
+anchored `/i` regex cannot use a b-tree index). **Backfill consequence:** if two
+production accounts differ only by case, the backfill fails on this index and
+names them — the correct outcome, since the application cannot tell them apart
+today.
+
+`btrim` is in the expression and not just `lower` because `hashed_email` is
+canonicalized with `lower(btrim(...))`: two rows that hash to the same
+contact-discovery token must not be able to exist as separate accounts.
+
+This is deliberately NOT applied to every trimmed/lower-cased column — only where
+the value is an IDENTITY the system resolves an account by. Everything else
+re-applies normalization at the call site, per the section above.
+
 ## Arrays and objects
 
 - A scalar array (`transports: [String]`) → a native `type[]`. Postgres arrays
@@ -209,8 +231,137 @@ normalization into a 500.
 so `db.select().from(t)` returns EVERYTHING — including
 `link_previews.origin_image_url`, which is server-only and would leak the
 viewer's IP to the origin if serialized. Reads that feed a client DTO must select
-columns explicitly. (The global mechanism for the 11 `select: false` columns on
-User/Message is decided separately in the contract.)
+columns explicitly. The GLOBAL mechanism for the columns where that leak is a
+security failure rather than a privacy smell is the next section.
+
+Two Mongoose behaviours DID find a schema counterpart on `users`, and both are
+better there than they were as application code — see "Generated columns" and
+the identifier indexes under "Unique constraints".
+
+## Protected columns — the `select: false` replacement
+
+**Binding on every table and every repo. Decided once, in
+`protectedColumns.ts`; do not invent a second mechanism.**
+
+Eleven columns across `User` and `Message` were `select: false`, and two of them
+(`hashedEmail`, `hashedPhone`) had a SECOND guard — a `delete` in both `toJSON`
+transforms. A naive drizzle port keeps NEITHER: `db.select().from(users)` returns
+the raw phone number, the contact-discovery hashes and the refresh token, without
+naming any of them.
+
+Four parts, and the third is the one a convention could not give you:
+
+1. **The registry is data.** `PROTECTED_COLUMNS_BY_TABLE` (machine-readable) plus
+   `PROTECTED_COLUMNS` (the same set with a reason per column). Same shape as
+   `DEFERRED_FOREIGN_KEYS`, for the same reason.
+2. **`publicColumns(table)` is the sanctioned read.**
+   `db.select(publicColumns(users)).from(users)`.
+3. **The exclusion is at the TYPE level.** The resulting row type has no `phone`
+   property, so a serializer that reads one fails `tsc` rather than shipping it.
+4. **Opting in is explicit and greppable.** A server-only path names the column:
+   `db.select({ id: users.id, phone: users.phone }).from(users)`. There is
+   deliberately no helper for this — it must read differently from an ordinary
+   select.
+
+`publicColumns` cannot defend against not being called, so
+`__tests__/protectedColumns.test.ts` scans `src/` for the two shapes that return
+every column IMPLICITLY — a bare `select()` and the relational `db.query.<table>`
+API — against any table in the registry, and fails naming the `file:line`.
+
+This restores the FIRST of the two guards. The `toJSON` transform is the API
+RESPONSE contract (`ret.id = _id`, then `delete` of `password`, `_id`,
+`hashedEmail`, `hashedPhone`) and must be reproduced at the serializer.
+
+## Generated columns
+
+Where Mongoose derived a value in a hook, the derivation belongs in the schema —
+not because it is tidier, but because a hook is bypassable and a
+`GENERATED ALWAYS ... STORED` column is not. No write path (route, service,
+backfill, `psql`) can produce a row whose derived value disagrees with its
+source, and the column is not writable at all: an attempt fails with SQLSTATE
+`428C9`.
+
+Two on `users`/`user_locations`:
+
+- `hashed_email` / `hashed_phone`, replacing the `pre('validate')`
+  `syncContactHashes` hook whose own doc comment called it the single source of
+  truth "precisely because bypassing it is the known failure mode".
+- `user_locations.search_vector`, replacing the Mongo text index.
+
+**The trap: the expression must be IMMUTABLE, and the obvious spellings are not.**
+
+| Want | Rejected | Use |
+|---|---|---|
+| UTF-8 bytes of a text value | `convert_to(x, 'UTF8')` — STABLE | `decode(replace(x, '\', '\\'), 'escape')` |
+| a `tsvector` | `to_tsvector(x)` — STABLE, reads `default_text_search_config` | `to_tsvector('english', x)` with a LITERAL config |
+
+The backslash doubling is what makes `decode(…, 'escape')` an exact inverse
+rather than an approximate one — `decode` interprets `\nnn` and `\\`, so
+pre-doubling every backslash round-trips any input byte for byte. Verified
+against `convert_to` over ASCII, multibyte UTF-8, literal backslashes and
+octal-looking sequences.
+
+The alternative — an `IMMUTABLE` SQL wrapper function — was rejected: it is DDL
+`drizzle-kit generate` cannot emit from a schema file, so it would need a
+hand-written migration ordered before every table that uses it, in every
+environment. The same objection as an extension.
+
+A generated column is what `sha256(bytea)` forces; note core Postgres marks
+`md5(text)` IMMUTABLE while `convert_to` is STABLE, so the labelling is a
+conservatism about the server encoding rather than a semantic difference.
+
+**Known boundary, accepted:** `lower()` applies simple case mapping, JS
+`toLowerCase()` applies full Unicode case mapping. They differ for a handful of
+codepoints (U+0130 `İ` is the classic), so an email local part containing one
+would hash differently on the client and in the database. Non-ASCII local parts
+are vanishingly rare; hashing in application code to avoid it would reintroduce
+the bypassable hook this replaces. The agreement is pinned by test over a
+realistic corpus.
+
+## Text search
+
+A Mongo text index becomes a `tsvector` GENERATED column plus a GIN index —
+never `LIKE '%…%'`, which is not a port of a text index but a table scan wearing
+one's clothes. Mongo's `default_language` maps to the `to_tsvector`
+configuration; `user_locations` uses `'english'` for Mongo's
+`default_language: "en"`.
+
+## PostGIS — not adopted, and not deferred
+
+`User.locations.coordinates` had a `2dsphere` index and `findLocationsNear` is a
+real `$near`/`$maxDistance` query. Its Postgres equivalent would need PostGIS
+(`geography(Point, 4326)` + GiST). It does not travel, for two independent
+reasons and the SECOND is the deciding one:
+
+1. PostGIS is not available here — `postgres:17-alpine`, the image in both
+   `docker-compose.dev.yml` and the CI service container, ships `btree_gist`,
+   `citext`, `cube`, `earthdistance`, `pg_trgm` and `uuid-ossp`, and no
+   `postgis`. Adopting it means a new base image in dev AND CI plus an RDS
+   extension: the install-ordering dependency in every environment this file
+   already refused for `citext`.
+2. **Nothing calls it.** `@oxyhq/core`, `@oxyhq/services` and all seven consuming
+   apps contain zero references to `location-search` / `locationSearch` /
+   `findLocationsNear`. The routes are mounted (`server.ts:586`, behind auth) and
+   unreachable from the ecosystem.
+
+So `user_locations` has NAMED `latitude` / `longitude` columns with range CHECKs
+and NO spatial index — not pending infrastructure, simply not required. No
+`earthdistance`/`cube` stand-in and no bounding box dressed up as a distance: a
+wrong "nearby" is worse than an absent one, and a query that looks like a
+distance search while answering a narrower question is the failure mode to avoid.
+If a client ever needs one, adding it is purely additive against these columns:
+`add column geo geography(Point, 4326)` backfilled from
+`ST_MakePoint(longitude, latitude)`, plus a GiST index.
+
+The naming is itself the fix for a live bug. Mongo stored `{ lat, lon }` and a
+`2dsphere` index reads such a pair POSITIONALLY as `[longitude, latitude]` — the
+first field is longitude — so the existing index has almost certainly had every
+point transposed. Named columns make that class of bug unrepresentable: there is
+no ordering left to get wrong.
+
+The location DATA is live even though the location ENDPOINTS are dead — people
+search matches on `name`, `city` and `country` (`utils/profileQuery.ts:97-102`)
+— so the non-spatial indexes stay.
 
 ## Indexes
 
@@ -244,6 +395,9 @@ Not by discipline — these fail the build.
 | No `''` default; no `__v` / `_id` | same |
 | Case-insensitive unique, compound unique, CHECK sets, bytea round-trip, id format and ordering, `updated_at` maintenance | `schema/__tests__/constraints.test.ts` |
 | Sweep semantics, batching, and the index each swept column requires | `db/__tests__/expiry.test.ts` |
+| Protected-column registry, `publicColumns` filter, and no implicit whole-row read anywhere in `src/` | `schema/__tests__/protectedColumns.test.ts` |
+| Generated contact hashes match `contactHash.ts` byte for byte; identifier uniqueness; closed value sets and value CHECKs on `users`; constants still equal the Mongoose model's | `schema/__tests__/users.test.ts` |
+| Child-table relations, the coordinate fix, the search vector, ancestor-path ordering, and what deleting an account actually does | `schema/__tests__/userChildTables.test.ts` |
 
 All of them run against a real Postgres through the application's own pool. Each
 has been mutation-tested: break the thing it guards and it goes red naming the

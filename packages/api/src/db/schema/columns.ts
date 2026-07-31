@@ -76,3 +76,22 @@ export const bytea = customType<{ data: Buffer; driverData: Uint8Array }>({
   toDriver: (value) => value,
   fromDriver: (value) => Buffer.from(value),
 });
+
+/**
+ * `tsvector` — the replacement for a Mongo text index.
+ *
+ * Drizzle has no built-in for it. Every use is a GENERATED column plus a GIN
+ * index, never a value the application writes, so the TypeScript type is the
+ * `string` Postgres renders it as and there is no `toDriver` direction to get
+ * wrong. Declared here because "Mongo text index becomes `tsvector` + GIN" is a
+ * schema-wide rule, not one table's detail — a `LIKE '%…%'` scan is not the
+ * port of a text index.
+ *
+ * The generating expression MUST use the two-argument
+ * `to_tsvector('<config>', …)` with a literal configuration: the one-argument
+ * form reads `default_text_search_config` at runtime and is therefore STABLE,
+ * which Postgres refuses in a generated column.
+ */
+export const tsvector = customType<{ data: string; driverData: string }>({
+  dataType: () => 'tsvector',
+});

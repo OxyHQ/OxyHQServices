@@ -13,6 +13,7 @@
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { bytea, createdAt, generatedId, timestamptz } from './columns';
+import { users } from './users';
 
 /** Whether the credential is bound to one authenticator or syncs across devices. */
 export const WEBAUTHN_DEVICE_TYPES = ['singleDevice', 'multiDevice'] as const;
@@ -21,8 +22,10 @@ export const webauthnCredentials = pgTable(
   'webauthn_credentials',
   {
     id: generatedId(),
-    /** FK to `users` — see `deferredForeignKeys.ts`. */
-    userId: text().notNull(),
+    /** A passkey with no account behind it can never be asserted. */
+    userId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     /** Browser-supplied base64url credential id. A public handle, not a secret. */
     credentialID: text().notNull(),
     /** COSE-encoded public key bytes, fed back to `verifyAuthenticationResponse`. */

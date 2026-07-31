@@ -6,15 +6,20 @@
 
 import { index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { createdAt, generatedId } from './columns';
+import { users } from './users';
 
 export const blocks = pgTable(
   'blocks',
   {
     id: generatedId(),
-    /** The user who blocked. FK to `users` — see `deferredForeignKeys.ts`. */
-    userId: text().notNull(),
-    /** The user who was blocked. FK to `users` — see `deferredForeignKeys.ts`. */
-    blockedId: text().notNull(),
+    /** The user who blocked. A deleted account cannot be blocking anyone. */
+    userId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The user who was blocked. A block on a deleted account enforces nothing. */
+    blockedId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     createdAt: createdAt(),
   },
   (t) => [

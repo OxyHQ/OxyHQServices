@@ -18,6 +18,7 @@ import { blocks } from '../blocks';
 import { labels } from '../labels';
 import { linkPreviews } from '../linkPreviews';
 import { pushTokens } from '../pushTokens';
+import { users } from '../users';
 import { webauthnCredentials } from '../webauthnCredentials';
 
 /** Postgres `unique_violation`. */
@@ -25,8 +26,16 @@ const UNIQUE_VIOLATION = '23505';
 /** Postgres `check_violation`. */
 const CHECK_VIOLATION = '23514';
 
-/** A distinct owner per test, so parallel suites cannot collide. */
-const owner = () => `test-${randomUUID()}`;
+/**
+ * A real `users` row, since every `user_id` in this file now carries a foreign
+ * key. A fabricated id used to be enough; it is not any more, and that is the
+ * point of the constraint. Each call mints its own account, so no assertion
+ * depends on another test's rows.
+ */
+async function owner(): Promise<string> {
+  const [row] = await getDb().insert(users).values({ color: 'teal' }).returning({ id: users.id });
+  return row.id;
+}
 
 /**
  * The SQLSTATE a driver error carries.
@@ -70,23 +79,23 @@ afterAll(async () => {
 describe('id column', () => {
   it('stores a 24-hex ObjectId verbatim — the whole reason ids are `text`', async () => {
     const legacyId = 'a1b2c3d4e5f60718293a4b5c';
-    const userId = owner();
+    const userId = await owner();
 
-    await getDb().insert(blocks).values({ id: legacyId, userId, blockedId: owner() });
+    await getDb().insert(blocks).values({ id: legacyId, userId, blockedId: await owner() });
     const [row] = await getDb().select().from(blocks).where(eq(blocks.id, legacyId));
 
     expect(row.id).toBe(legacyId);
   });
 
   it('generates a time-sortable uuid v7 when none is supplied', async () => {
-    const userId = owner();
+    const userId = await owner();
     const [first] = await getDb()
       .insert(blocks)
-      .values({ userId, blockedId: owner() })
+      .values({ userId, blockedId: await owner() })
       .returning({ id: blocks.id });
     const [second] = await getDb()
       .insert(blocks)
-      .values({ userId, blockedId: owner() })
+      .values({ userId, blockedId: await owner() })
       .returning({ id: blocks.id });
 
     // Version nibble 7, and lexicographically increasing — v4 would satisfy the
@@ -111,7 +120,7 @@ describe('id column', () => {
 
 describe('labels — case-insensitive unique (Mongo collation strength 2)', () => {
   it('rejects a second label differing only by case', async () => {
-    const userId = owner();
+    const userId = await owner();
     await getDb().insert(labels).values({ userId, name: 'Work' });
 
     const error = await rejection(getDb().insert(labels).values({ userId, name: 'wOrK' }));
@@ -120,14 +129,14 @@ describe('labels — case-insensitive unique (Mongo collation strength 2)', () =
 
   it('scopes the uniqueness to one user', async () => {
     const name = `Shared-${randomUUID()}`;
-    await getDb().insert(labels).values({ userId: owner(), name });
+    await getDb().insert(labels).values({ userId: await owner(), name });
     await expect(
-      getDb().insert(labels).values({ userId: owner(), name })
+      getDb().insert(labels).values({ userId: await owner(), name })
     ).resolves.toBeDefined();
   });
 
   it('stores the name exactly as typed — only the comparison ignores case', async () => {
-    const userId = owner();
+    const userId = await owner();
     await getDb().insert(labels).values({ userId, name: 'PayPal' });
 
     const [row] = await getDb().select().from(labels).where(eq(labels.userId, userId));
@@ -137,7 +146,7 @@ describe('labels — case-insensitive unique (Mongo collation strength 2)', () =
   });
 
   it('is the index a lookup must use — `lower(name)`, not `name`', async () => {
-    const userId = owner();
+    const userId = await owner();
     await getDb().insert(labels).values({ userId, name: 'Receipts' });
 
     const found = await getDb()
@@ -151,8 +160,8 @@ describe('labels — case-insensitive unique (Mongo collation strength 2)', () =
 
 describe('blocks — compound unique', () => {
   it('rejects the same (user, blocked) pair twice', async () => {
-    const userId = owner();
-    const blockedId = owner();
+    const userId = await owner();
+    const blockedId = await owner();
     await getDb().insert(blocks).values({ userId, blockedId });
 
     const error = await rejection(getDb().insert(blocks).values({ userId, blockedId }));
@@ -160,8 +169,8 @@ describe('blocks — compound unique', () => {
   });
 
   it('treats the reverse direction as a different block', async () => {
-    const a = owner();
-    const b = owner();
+    const a = await owner();
+    const b = await owner();
     await getDb().insert(blocks).values({ userId: a, blockedId: b });
     await expect(
       getDb().insert(blocks).values({ userId: b, blockedId: a })
@@ -171,7 +180,7 @@ describe('blocks — compound unique', () => {
 
 describe('closed value sets — text + CHECK, not a pg enum', () => {
   it('accepts every declared platform', async () => {
-    const userId = owner();
+    const userId = await owner();
     await expect(
       getDb()
         .insert(pushTokens)
@@ -190,7 +199,7 @@ describe('closed value sets — text + CHECK, not a pg enum', () => {
     const error = await rejection(
       getDb().execute(sql`
         insert into push_tokens (id, user_id, token, platform)
-        values (${randomUUID()}, ${owner()}, ${randomUUID()}, 'desktop')
+        values (${randomUUID()}, ${await owner()}, ${randomUUID()}, 'desktop')
       `)
     );
 
@@ -201,7 +210,7 @@ describe('closed value sets — text + CHECK, not a pg enum', () => {
     const error = await rejection(
       getDb().execute(sql`
         insert into auth_challenges (id, public_key, challenge, purpose, expires_at)
-        values (${randomUUID()}, ${owner()}, ${randomUUID()}, 'mint_admin_token', now() + interval '5 minutes')
+        values (${randomUUID()}, ${randomUUID()}, ${randomUUID()}, 'mint_admin_token', now() + interval '5 minutes')
       `)
     );
 
@@ -215,7 +224,7 @@ describe('webauthn_credentials — Buffer becomes bytea', () => {
     const credentialID = `cred-${randomUUID()}`;
 
     await getDb().insert(webauthnCredentials).values({
-      userId: owner(),
+      userId: await owner(),
       credentialID,
       credentialPublicKey: key,
       deviceType: 'multiDevice',
@@ -234,7 +243,7 @@ describe('webauthn_credentials — Buffer becomes bytea', () => {
   it('keeps transports as a native array and distinguishes absent from empty', async () => {
     const withHints = `cred-${randomUUID()}`;
     const withoutHints = `cred-${randomUUID()}`;
-    const userId = owner();
+    const userId = await owner();
 
     await getDb().insert(webauthnCredentials).values([
       {
@@ -279,7 +288,7 @@ describe('webauthn_credentials — Buffer becomes bytea', () => {
 
 describe('updated_at is maintained by the application', () => {
   it('advances on update and leaves created_at alone', async () => {
-    const userId = owner();
+    const userId = await owner();
     const [inserted] = await getDb()
       .insert(labels)
       .values({ userId, name: 'Before' })

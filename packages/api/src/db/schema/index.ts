@@ -7,11 +7,13 @@
  * the relational query API — a table that is not re-exported here is invisible
  * to both, so it gets neither a migration nor a typed query.
  *
- * Only TABLE modules belong here. `columns.ts` and `deferredForeignKeys.ts` are
- * schema support, imported directly by the code that needs them.
+ * Only TABLE modules belong here. `columns.ts`, `deferredForeignKeys.ts` and
+ * `protectedColumns.ts` are schema support, imported directly by the code that
+ * needs them.
  *
  * The conventions every table follows — naming, ids, enums, timestamps, foreign
- * keys, expiry — are in `CONVENTIONS.md`. Read it before adding a table.
+ * keys, expiry, protected columns — are in `CONVENTIONS.md`. Read it before
+ * adding a table.
  */
 export * from './appAffinitySeenEvents';
 export * from './authChallenges';
@@ -20,4 +22,10 @@ export * from './bookmarks';
 export * from './labels';
 export * from './linkPreviews';
 export * from './pushTokens';
+export * from './userAncestors';
+export * from './userAuthMethods';
+export * from './userLinkMetadata';
+export * from './userLocations';
+export * from './users';
+export * from './userVerifiedDomains';
 export * from './webauthnCredentials';

@@ -2,9 +2,9 @@
  * Foreign Keys This Schema Cannot Declare Yet
  *
  * The migration is landing table by table, so a table can arrive before its
- * parent does — `blocks.user_id` points at `users`, which no module in this
- * schema defines yet. Drizzle cannot express a forward reference, so the column
- * ships without its constraint.
+ * parent does — `push_tokens.application_id` points at `applications`, which no
+ * module in this schema defines yet. Drizzle cannot express a forward reference,
+ * so the column ships without its constraint.
  *
  * "Add the FK when `users` lands" written in a comment is a convention nothing
  * checks, and those get violated. So it is written HERE as data, and
@@ -21,11 +21,12 @@
  */
 
 import type { PgColumn, PgTable, UpdateDeleteAction } from 'drizzle-orm/pg-core';
-import { blocks } from './blocks';
 import { bookmarks } from './bookmarks';
 import { appAffinitySeenEvents } from './appAffinitySeenEvents';
-import { labels } from './labels';
 import { pushTokens } from './pushTokens';
+import { userAuthMethods } from './userAuthMethods';
+import { userLocations } from './userLocations';
+import { users } from './users';
 import { webauthnCredentials } from './webauthnCredentials';
 
 /** A foreign key that is decided but not yet expressible. */
@@ -49,39 +50,14 @@ export interface IdColumnWithoutForeignKey {
   readonly reason: string;
 }
 
+/**
+ * `users` landed, so every entry that owed it a constraint has been converted to
+ * a real `.references()` and deleted from this list — `blocks.user_id`,
+ * `blocks.blocked_id`, `bookmarks.user_id`, `push_tokens.user_id`,
+ * `labels.user_id` and `webauthn_credentials.user_id`. What remains is owed to
+ * `applications`, which has not landed yet.
+ */
 export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
-  {
-    table: blocks,
-    column: blocks.userId,
-    parentTable: 'users',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason: 'A deleted account cannot be blocking anyone.',
-  },
-  {
-    table: blocks,
-    column: blocks.blockedId,
-    parentTable: 'users',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason: 'A block on a deleted account has nothing left to enforce.',
-  },
-  {
-    table: bookmarks,
-    column: bookmarks.userId,
-    parentTable: 'users',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason: 'Bookmarks are private to their owner and outlive nothing.',
-  },
-  {
-    table: pushTokens,
-    column: pushTokens.userId,
-    parentTable: 'users',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason: 'A deleted account must stop receiving push notifications.',
-  },
   {
     table: pushTokens,
     column: pushTokens.applicationId,
@@ -92,22 +68,6 @@ export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
       'NULL here means "not scoped to any application", so SET NULL would ' +
       'promote a dead app\'s install into the unscoped delivery set instead of ' +
       'retiring it.',
-  },
-  {
-    table: labels,
-    column: labels.userId,
-    parentTable: 'users',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason: 'A label belongs to exactly one mailbox owner.',
-  },
-  {
-    table: webauthnCredentials,
-    column: webauthnCredentials.userId,
-    parentTable: 'users',
-    parentColumn: 'id',
-    onDelete: 'cascade',
-    reason: 'A passkey with no account behind it can never be asserted.',
   },
   {
     table: appAffinitySeenEvents,
@@ -147,5 +107,34 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
     reason:
       'An id minted by the CONSUMING application for its own event. Oxy stores ' +
       'it to dedupe and never resolves it to anything.',
+  },
+  {
+    table: users,
+    column: users.federationActorId,
+    reason:
+      "`FederatedActor._id` in the CONSUMING app's database (Mention's), not " +
+      'in this one. Oxy stores it and never resolves it.',
+  },
+  {
+    table: userAuthMethods,
+    column: userAuthMethods.methodCredentialId,
+    reason:
+      'The browser-supplied base64url WebAuthn credential handle, mirrored ' +
+      'from `webauthn_credentials.credential_id`. It identifies an ' +
+      'authenticator credential, not an Oxy row.',
+  },
+  {
+    table: userLocations,
+    column: userLocations.placeId,
+    reason:
+      "A third-party geocoder's identifier for a place (Nominatim, Google " +
+      'Places). Opaque, external, and never dereferenced by Oxy.',
+  },
+  {
+    table: userLocations,
+    column: userLocations.osmId,
+    reason:
+      'An OpenStreetMap element id, meaningful only together with `osm_type`. ' +
+      'External to Oxy entirely.',
   },
 ];

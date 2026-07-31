@@ -29,7 +29,7 @@ import {
  * Vacuity floor. If the barrel traversal below ever breaks, it would find zero
  * tables and every assertion in this file would pass by examining nothing.
  */
-const MINIMUM_TABLES = 8;
+const MINIMUM_TABLES = 14;
 
 const tables = Object.values(schema).filter((value): value is PgTable =>
   is(value, PgTable)
