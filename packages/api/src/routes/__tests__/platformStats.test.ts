@@ -222,16 +222,27 @@ beforeAll(async () => {
   await insertSession(owner, { isActive: false, expiresAt: new Date(Date.now() + HOUR_MS) });
   await insertSession(owner, { isActive: true, expiresAt: new Date(Date.now() - HOUR_MS) });
 
+  before = await reference();
+  body = await getStats();
+  after = await reference();
+
+  // The UNFILTERED counts are read LAST, and the ordering is load-bearing.
+  //
+  // Every assertion below compares an unfiltered count against a FILTERED one
+  // taken at a different instant, and this suite shares its database with the
+  // whole run — so other suites are inserting `is_active` sessions and `active`
+  // applications throughout. Reading unfiltered FIRST let those inserts inflate
+  // the filtered figure afterwards until it caught up, and
+  // `unfiltered > filtered` flaked. Read last, a concurrent insert can only
+  // inflate the unfiltered side, and the strict inequality is then carried by
+  // the expired session and the `deleted` application THIS suite seeded — which
+  // is the property the assertions are actually about.
   [sessionsIgnoringExpiry] = (
     await db.select({ n: count() }).from(sessions).where(eq(sessions.isActive, true))
   ).map((row) => row.n);
   [applicationsIgnoringStatus] = (await db.select({ n: count() }).from(applications)).map(
     (row) => row.n
   );
-
-  before = await reference();
-  body = await getStats();
-  after = await reference();
 });
 
 afterAll(async () => {

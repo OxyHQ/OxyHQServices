@@ -30,7 +30,6 @@ import { eq } from 'drizzle-orm';
 jest.mock('jsonwebtoken', () => jest.requireActual('jsonwebtoken'));
 
 const mockVerifyActingAs = jest.fn();
-const mockUserFindById = jest.fn();
 const mockLogDeviceAdded = jest.fn();
 
 jest.mock('../account.service.js', () => ({
@@ -41,19 +40,12 @@ jest.mock('../securityActivityService', () => ({
   __esModule: true,
   default: { logDeviceAdded: (...a: unknown[]) => mockLogDeviceAdded(...a) },
 }));
-jest.mock('../../models/User', () => ({
-  __esModule: true,
-  User: {
-    findById: (id: string) => ({
-      select: () => ({ lean: () => Promise.resolve(mockUserFindById(id)) }),
-    }),
-  },
-}));
 
 import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
 import { sessions } from '../../db/schema/sessions';
 import { users } from '../../db/schema/users';
 import sessionCache from '../../utils/sessionCache';
+import userCache from '../../utils/userCache';
 import { validateAccessToken } from '../../utils/sessionUtils';
 import sessionService from '../session.service';
 
@@ -71,10 +63,10 @@ function request(headers: Record<string, string> = {}): Request {
   } as unknown as Request;
 }
 
-async function account(): Promise<string> {
+async function account(over: Partial<typeof users.$inferInsert> = {}): Promise<string> {
   const [row] = await getDb()
     .insert(users)
-    .values({ username: `u-${randomUUID().slice(0, 12)}` })
+    .values({ username: `u-${randomUUID().slice(0, 12)}`, ...over })
     .returning({ id: users.id });
   return row.id;
 }
@@ -539,10 +531,10 @@ describe("managed-account sessions stay bound to the operator's act_as", () => {
 
 describe('validateSession / getSessionWithUser', () => {
   it('resolves the session and its user from a live access token', async () => {
-    const user = await account();
+    const user = await account({ username: `nate-${randomUUID().slice(0, 8)}` });
     const created = await sessionService.createSession(user, request(), { deviceId: deviceId() });
-    mockUserFindById.mockReturnValue({ _id: user, username: 'nate' });
     sessionCache.clear();
+    userCache.clear();
 
     const result = await sessionService.validateSession(created.accessToken);
 
@@ -550,7 +542,33 @@ describe('validateSession / getSessionWithUser', () => {
     // `session.userId` stays the id it is declared to be — Mongo replaced it
     // with the populated user document here; that swap does not travel.
     expect(result?.session.userId).toBe(user);
-    expect(result?.user).toEqual({ _id: user, username: 'nate' });
+    // The user half is the REAL account document, hydrated through
+    // `userService.readAccountDocument` — the same serializer
+    // `GET /users/me/data` returns. `_id` is the account id, which is the field
+    // `middleware/auth.ts` puts on `req.user`.
+    expect(result?.user._id).toBe(user);
+    expect(result?.user.privacySettings).toEqual(expect.objectContaining({
+      isPrivateAccount: expect.any(Boolean),
+    }));
+  });
+
+  it('withholds every protected column from the user it hands the request path', async () => {
+    const user = await account({ phone: '+15551234567' });
+    const created = await sessionService.createSession(user, request(), { deviceId: deviceId() });
+    sessionCache.clear();
+    userCache.clear();
+
+    const result = await sessionService.validateSession(created.accessToken);
+
+    // `readAccountDocument` reads through `publicColumns(users)`, which is
+    // strictly narrower than the `.select('-password')` this replaced: the raw
+    // phone number and both contact-discovery hashes used to ride on
+    // `req.user` and no longer do.
+    expect(result?.user).not.toHaveProperty('phone');
+    expect(result?.user).not.toHaveProperty('hashedEmail');
+    expect(result?.user).not.toHaveProperty('hashedPhone');
+    expect(result?.user).not.toHaveProperty('refreshToken');
+    expect(result?.user).not.toHaveProperty('password');
   });
 
   it('returns null when the token is not a session token', async () => {
@@ -560,8 +578,12 @@ describe('validateSession / getSessionWithUser', () => {
   it("returns null when the session's user no longer exists", async () => {
     const user = await account();
     const created = await sessionService.createSession(user, request(), { deviceId: deviceId() });
-    mockUserFindById.mockReturnValue(null);
     sessionCache.clear();
+    userCache.clear();
+
+    // Deleting the account cascades the session row away too; the token is
+    // still syntactically valid, which is exactly the case this guards.
+    await getDb().delete(users).where(eq(users.id, user));
 
     expect(await sessionService.validateSession(created.accessToken)).toBeNull();
   });

@@ -1,5 +1,23 @@
+/**
+ * Two-tier cache (process-local map + Redis) for the authenticated account
+ * document — the value `middleware/auth.ts` attaches to `req.user`.
+ *
+ * `session.service` is the ONLY writer and the only reader of `get`/`set`; the
+ * ~20 other importers call `invalidate` alone. That is what makes the value's
+ * type a decision made in one place: it is whatever
+ * `userService.readAccountDocument` returns.
+ *
+ * KNOWN BOUNDARY, unchanged by the Postgres port and called out because the
+ * type now names it: the Redis tier round-trips through JSON, so a `Date` read
+ * back from Redis is an ISO STRING while the same field read from the local map
+ * (or straight from the database) is a `Date`. No consumer of `req.user` reads a
+ * date field — the request path reads `_id`, `id`, `isStaff` and `email` — so
+ * this costs nothing today. Anything that starts reading a timestamp off
+ * `req.user` must normalize it rather than assume `Date`.
+ */
+
 import { getRedisClient } from '../config/redis';
-import type { IUser } from '../models/User';
+import type { AccountDocument } from '../services/user.service';
 import { logger } from './logger';
 
 const DEFAULT_TTL = 5 * 60; // 5 minutes in seconds
@@ -7,7 +25,7 @@ const MAX_LOCAL_SIZE = 10000;
 const LOG_COMPONENT = 'UserCache';
 
 class UserCache {
-  private local: Map<string, { user: IUser; timestamp: number; ttl: number }> = new Map();
+  private local: Map<string, { user: AccountDocument; timestamp: number; ttl: number }> = new Map();
   private cleanupTimer: NodeJS.Timeout;
 
   constructor() {
@@ -15,7 +33,7 @@ class UserCache {
     this.cleanupTimer.unref?.();
   }
 
-  get(userId: string): IUser | null {
+  get(userId: string): AccountDocument | null {
     if (!userId) return null;
 
     const local = this.getLocal(userId);
@@ -30,9 +48,9 @@ class UserCache {
       // entry doesn't poison the local map.
       redis.get(`user:${userId}`).then(data => {
         if (!data) return;
-        let parsed: IUser | null = null;
+        let parsed: AccountDocument | null = null;
         try {
-          parsed = JSON.parse(data) as IUser;
+          parsed = JSON.parse(data) as AccountDocument;
         } catch (parseError) {
           logger.warn('userCache: failed to parse Redis blob; skipping warm-fill', {
             component: LOG_COMPONENT,
@@ -56,7 +74,7 @@ class UserCache {
     return null;
   }
 
-  set(userId: string, user: IUser, ttl?: number): void {
+  set(userId: string, user: AccountDocument, ttl?: number): void {
     if (!userId || !user) return;
     const ttlSec = ttl ? Math.ceil(ttl / 1000) : DEFAULT_TTL;
     this.setLocal(userId, user, ttl);
@@ -91,7 +109,7 @@ class UserCache {
 
   // --- Local cache helpers ---
 
-  private getLocal(userId: string): IUser | null {
+  private getLocal(userId: string): AccountDocument | null {
     const cached = this.local.get(userId);
     if (!cached) return null;
     if (Date.now() - cached.timestamp > cached.ttl) {
@@ -101,7 +119,7 @@ class UserCache {
     return cached.user;
   }
 
-  private setLocal(userId: string, user: IUser, ttl?: number): void {
+  private setLocal(userId: string, user: AccountDocument, ttl?: number): void {
     if (this.local.size >= MAX_LOCAL_SIZE) {
       const entries = Array.from(this.local.entries());
       entries.sort((a, b) => a[1].timestamp - b[1].timestamp);

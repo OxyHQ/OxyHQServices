@@ -2,42 +2,16 @@ import { and, desc, asc, eq, gt, gte, ne } from 'drizzle-orm';
 import { getDb } from '../config/postgres';
 import { sessions } from '../db/schema/sessions';
 /**
- * The ONE Mongoose dependency left in this file, and it is a deliberate,
- * reported gap rather than an oversight — every `sessions` query below is
- * Drizzle.
+ * The user half of `getSessionWithUser` — the value that becomes `req.user`.
  *
- * `getSessionWithUser` hydrates the USER, and that user is what
- * `middleware/auth.ts` assigns to `req.user` through an `as IUser & Document`
- * CAST. 183 call sites across 45 files then read `req.user._id`.
- *
- * The blocker is not the DATA — `userService.readAccountDocument(userId)`
- * already returns exactly the nested shape `.lean()` produced, `_id` included,
- * built from `publicColumns(users)` plus the four child tables. It is the TYPE,
- * and this was MEASURED rather than assumed:
- *
- *  - Give `SessionValidationResult.user` any type other than `IUser` and
- *    `middleware/auth.ts:144` fails `TS2352` — "Conversion of type 'X' to type
- *    'IUser & Document' may be a mistake because neither type sufficiently
- *    overlaps … missing the following properties from type 'IUser':
- *    privacySettings, createdAt, updatedAt, addLocation, and 58 more". A string
- *    index signature on the source does NOT satisfy those; three shapes were
- *    tried (interface, type alias, `Record<string, unknown> & { _id: string }`)
- *    and all three fail identically.
- *  - Widening it to `unknown` fixes that cast and breaks
- *    `middleware/auth.ts:321` instead, which reads
- *    `validationResult.user?._id?.toString()` directly.
- *
- * So the read cannot move without editing `middleware/auth.ts` and
- * `AuthRequest` — the two files the `req.user` pass owns. It is left here
- * ALONE, and deliberately: a wrong guess about that cast fails silently as
- * "not authenticated", API-wide, because `tsc` sees through none of it.
- *
- * The pass that lands it needs exactly: `AuthRequest.user` and
- * `SessionValidationResult.user` retyped off `readAccountDocument`'s return,
- * `utils/userCache.ts` (typed `IUser`, and the ONLY get/set caller is this
- * file) retyped with it, and this import deleted.
+ * `userService.readAccountDocument` is the SAME serializer `GET /users/me/data`
+ * and `PUT /users/resolve` return, so the authenticated request's view of an
+ * account and the API's own document view of it cannot describe it differently.
+ * It reads through `publicColumns(users)`, which is strictly narrower than the
+ * `.select('-password')` this replaces: the contact-discovery hashes, the raw
+ * phone number and the refresh token no longer ride on `req.user` at all.
  */
-import { User, type IUser } from '../models/User';
+import { userService, type AccountDocument } from './user.service';
 import { logger } from '../utils/logger';
 import sessionCache, { type CachedSession } from '../utils/sessionCache';
 import userCache from '../utils/userCache';
@@ -268,19 +242,19 @@ class SessionService {
    * @param sessionId - The session ID to lookup
    * @param options - Configuration options
    * @param options.useCache - Whether to use cache (default: true)
-   * @param options.select - User fields to select (default: '-password')
    * @returns Session and user object, or null if not found
    */
   async getSessionWithUser(
     sessionId: string,
     options: { useCache?: boolean } = {}
-  ): Promise<{ session: CachedSession; user: IUser } | null> {
+  ): Promise<{ session: CachedSession; user: AccountDocument } | null> {
     try {
       const { useCache = true } = options;
-      // Mongoose projection strings do not travel to Postgres; the only caller
-      // ever passed the default, so the `select` option is dropped rather than
-      // translated. `-password` is preserved below as an explicit exclusion.
-      const select = '-password';
+      // Mongoose projection strings do not travel to Postgres, and the only
+      // caller ever passed the default, so the `select` option is dropped
+      // rather than translated. `readAccountDocument` reads through
+      // `publicColumns(users)`, which withholds strictly more than
+      // `-password` did.
 
       // Try cache first for session (fast path)
       if (useCache) {
@@ -288,7 +262,7 @@ class SessionService {
         if (cached) {
           // Extract userId from cached session (handles various formats)
           const userId = extractUserId(cached.userId);
-          
+
           if (!userId) {
             sessionCache.invalidate(sessionId);
           } else {
@@ -296,13 +270,13 @@ class SessionService {
             if (cachedUser) {
               return { session: cached, user: cachedUser };
             }
-            
-            const user = await User.findById(userId).select(select).lean<IUser>();
+
+            const user = await userService.readAccountDocument(userId);
             if (user) {
               userCache.set(userId, user);
               return { session: cached, user };
             }
-            
+
             sessionCache.invalidate(sessionId);
             return null;
           }
@@ -333,12 +307,12 @@ class SessionService {
       let user = userCache.get(userId);
 
       if (!user) {
-        const userDoc = await User.findById(userId).select(select).lean<IUser>();
+        const userDoc = await userService.readAccountDocument(userId);
         if (!userDoc) {
           return null;
         }
         user = userDoc;
-        if (useCache && user) {
+        if (useCache) {
           userCache.set(userId, user);
         }
       }
@@ -962,7 +936,7 @@ class SessionService {
   async validateSessionById(
     sessionId: string, 
     populateUser = true
-  ): Promise<{ session: CachedSession; user?: any } | null> {
+  ): Promise<{ session: CachedSession; user?: AccountDocument } | null> {
     try {
       if (populateUser) {
         const result = await this.getSessionWithUser(sessionId, { useCache: true });

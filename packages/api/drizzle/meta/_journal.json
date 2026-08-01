@@ -71,6 +71,13 @@
       "when": 1785527614824,
       "tag": "0009_signed_records_fork_mirror",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785552684467,
+      "tag": "0010_icy_madame_hydra",
+      "breakpoints": true
     }
   ]
 }

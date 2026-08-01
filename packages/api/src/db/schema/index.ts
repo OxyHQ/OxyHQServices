@@ -48,6 +48,7 @@ export * from './emailFilterActions';
 export * from './emailFilterConditions';
 export * from './emailFilters';
 export * from './emailTemplates';
+export * from './federationKeyPairs';
 export * from './fileLinks';
 export * from './fileVariants';
 export * from './files';

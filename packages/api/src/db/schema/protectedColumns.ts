@@ -58,6 +58,7 @@
 import { getTableColumns, getTableName } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { authSessions } from './authSessions';
+import { federationKeyPairs } from './federationKeyPairs';
 import { messages } from './messages';
 import { sessions } from './sessions';
 import { users } from './users';
@@ -112,6 +113,19 @@ export const SESSIONS_PROTECTED_COLUMNS = [
 export const AUTH_SESSIONS_PROTECTED_COLUMNS = ['sessionToken'] as const;
 
 /**
+ * `federation_key_pairs` columns holding a LIVE SIGNING KEY.
+ *
+ * Not `select: false` in the inline Mongoose model this table replaces —
+ * nothing was — and here anyway, for the same reason `sessions` is: the
+ * subject is the module title, not the Mongoose keyword. Possession of
+ * `private_key_pem` lets the holder sign ActivityPub activities AS the actor it
+ * belongs to, on Oxy's own domain or on a relying app's. The one route that
+ * publishes key material (`GET /federation/public-key/:username`) returns the
+ * PUBLIC half by name, so nothing legitimate loses a field.
+ */
+export const FEDERATION_KEY_PAIRS_PROTECTED_COLUMNS = ['privateKeyPem'] as const;
+
+/**
  * `messages` columns that must not reach a client.
  *
  * The first four were `select: false` in `models/Message.ts`. The fifth was
@@ -137,6 +151,7 @@ export const PROTECTED_COLUMNS_BY_TABLE = {
   users: USERS_PROTECTED_COLUMNS,
   sessions: SESSIONS_PROTECTED_COLUMNS,
   auth_sessions: AUTH_SESSIONS_PROTECTED_COLUMNS,
+  federation_key_pairs: FEDERATION_KEY_PAIRS_PROTECTED_COLUMNS,
   messages: MESSAGES_PROTECTED_COLUMNS,
 } as const;
 
@@ -229,6 +244,14 @@ export const PROTECTED_COLUMNS: readonly ProtectedColumn[] = [
       'The secret claim credential for a pending authorization. ' +
       '`POST /auth/session/claim` requires no bearer, so this value alone ' +
       "exchanges an approved request for the approving account's access token.",
+  },
+  {
+    table: federationKeyPairs,
+    column: federationKeyPairs.privateKeyPem,
+    reason:
+      'The live RSA signing key for a federated actor. Whoever reads it can ' +
+      "sign ActivityPub activities as that actor, on Oxy's domain or a " +
+      "relying app's. Only the public half is ever published.",
   },
   {
     table: messages,

@@ -661,7 +661,17 @@ describe('POST /profiles/recommendations — interaction affinity', () => {
 
     // A zero edge injects no candidate, so the viewer falls through to the
     // popularity fallback rather than being handed a bogus suggestion.
-    expect(ids(res)).not.toContain(affine);
+    //
+    // The assertion is about the SIGNAL, not about set membership. The fallback
+    // ranks over the whole graph — every account any suite has seeded — and
+    // breaks ties on `id` ascending, so whether a zero-follower account happens
+    // to land inside the first 50 depends on how many eligible rows the rest of
+    // the run created first. `not.toContain(affine)` therefore passed or failed
+    // on the shared database's population rather than on the decayed edge: it
+    // flaked the moment other suites seeded more accounts. What the decayed edge
+    // actually guarantees is that `affine` is never credited with `affinity`.
+    const affineRow = res.body.data?.find((row) => row.id === affine);
+    expect(affineRow?.matchedSignals ?? []).not.toContain('affinity');
   });
 });
 

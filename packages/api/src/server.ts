@@ -104,7 +104,8 @@ import { initializeIO, socketRoomsFor } from './utils/socket';
 import { resolveSocketIdentity } from './utils/socketAuth';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
-import { waitForMongoConnection } from './utils/dbConnection';
+import { isDatabaseReachable, waitForDatabaseConnection } from './utils/dbConnection';
+import { closePostgres } from './config/postgres';
 import { isFederatableUser } from './utils/profileQuery';
 import { exactCaseInsensitiveUsernameRegex } from './utils/resolveUserIdentifier';
 import { errorHandler } from './middleware/errorHandler';
@@ -473,6 +474,7 @@ async function gracefulShutdown(signal: string) {
   await stopSmtpInbound();
   smtpOutbound.shutdown();
   await closeRedis();
+  await closePostgres();
   await mongoose.connection.close();
 
   logger.info('All connections closed, exiting');
@@ -497,21 +499,30 @@ app.get("/", async (req, res) => {
 });
 
 // Health check endpoint
+//
+// This is the ALB target-group check: a 503 here drains the task out of the
+// load balancer, so its meaning must stay exactly what it was — the DATABASE
+// being unusable is the only condition that returns 503.
+//
+// The probe is a real `select 1` round trip, NOT the existence of a connection
+// object. `mongoose.connection.readyState === 1` reported "connected" from a
+// driver-side flag, which is why this endpoint could report a healthy database
+// while it was refusing work. `isDatabaseReachable()` cannot: it either gets a
+// row back over the same pool real requests use, or it does not.
 app.get("/health", async (req, res) => {
   try {
-    // Check MongoDB connection
-    const isMongoConnected = mongoose.connection.readyState === 1;
+    const isDatabaseUp = await isDatabaseReachable();
     const redisClient = getRedisClient();
     const redisStatus = redisClient ? (redisClient.status === 'ready' ? "connected" : "disconnected") : "not configured";
 
-    // Only MongoDB being down is truly unhealthy (503).
+    // Only the database being down is truly unhealthy (503).
     // Redis is used for caching/sockets — brief reconnections are "degraded" not "down".
     const isRedisDown = redisClient && redisClient.status !== 'ready';
 
-    res.status(isMongoConnected ? 200 : 503).json({
-      status: isMongoConnected ? (isRedisDown ? "degraded" : "operational") : "down",
+    res.status(isDatabaseUp ? 200 : 503).json({
+      status: isDatabaseUp ? (isRedisDown ? "degraded" : "operational") : "down",
       timestamp: new Date().toISOString(),
-      database: isMongoConnected ? "connected" : "disconnected",
+      database: isDatabaseUp ? "connected" : "disconnected",
       redis: redisStatus,
     });
   } catch (error) {
@@ -835,14 +846,17 @@ app.use(errorHandler);
 // side by side on one machine.
 const PORT = getEnvNumber('PORT', 4100);
 if (require.main === module) {
-  // Wait for MongoDB connection before starting server
-  // This prevents queries from executing before the database is ready
-  waitForMongoConnection(30000)
+  // Open the Postgres pool and wait for it to actually answer before starting
+  // the server. This prevents queries from executing before the database is
+  // ready, and it retries inside the deadline because `postgres.js` makes a
+  // single connection attempt where the Mongo driver retried internally.
+  waitForDatabaseConnection(30000)
     .then(async () => {
       // Build the dynamic CORS origin snapshot from the Application registry now
-      // that Mongo is connected. The registry boot-seeds from the bootstrap-core
-      // set synchronously at import, so requests before this resolves are still
-      // safe; this adds the registered first-party/third-party app origins.
+      // that the database is connected. The registry boot-seeds from the
+      // bootstrap-core set synchronously at import, so requests before this
+      // resolves are still safe; this adds the registered
+      // first-party/third-party app origins.
       // Background-safe (fail-soft) — never blocks startup.
       await refreshOriginRegistry();
       await reconcileOfficialRedirectUris();
@@ -943,12 +957,12 @@ if (require.main === module) {
 
       server.listen(PORT, '0.0.0.0', () => {
         logger.info(`Server running on port ${PORT}`, {
-          mongodb: 'connected',
+          database: 'connected',
         });
       });
     })
     .catch((error) => {
-      logger.error('Failed to start server - MongoDB connection failed:', error);
+      logger.error('Failed to start server - database startup failed:', error);
       process.exit(1);
     });
 }

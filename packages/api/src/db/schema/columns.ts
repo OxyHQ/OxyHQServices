@@ -10,8 +10,30 @@
  * each encodes a rule that a hand-written column could silently get wrong.
  */
 
+import type { PgColumn } from 'drizzle-orm/pg-core';
 import { customType, text, timestamp } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
+
+/**
+ * The row type a named-column selection object produces.
+ *
+ * ```ts
+ * const COLUMNS = { id: users.id, avatar: users.avatar } as const;
+ * type Row = SelectedRow<typeof COLUMNS>;   // { id: string; avatar: string | null }
+ * ```
+ *
+ * Exists because the obvious spelling is WRONG in the dangerous direction:
+ * `column['_']['data']` is the non-null data type, so a hand-written
+ * `{ [K in keyof T]: T[K]['_']['data'] }` silently declares every nullable
+ * column non-nullable — a `null` then flows into code that was type-checked as
+ * if it could not, and `tsc` never says a word. Nullability lives in the
+ * separate `notNull` flag, which is what this reads.
+ */
+export type SelectedRow<T extends Record<string, PgColumn>> = {
+  [K in keyof T]: T[K]['_']['notNull'] extends true
+    ? T[K]['_']['data']
+    : T[K]['_']['data'] | null;
+};
 
 /**
  * `timestamptz`, always, handed back to TypeScript as a `Date`.

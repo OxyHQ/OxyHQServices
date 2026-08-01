@@ -33,6 +33,7 @@ import { conductStrikes } from './conductStrikes';
 import { devicePairingSessions } from './devicePairingSessions';
 import { deviceSessionAccounts } from './deviceSessionAccounts';
 import { deviceSessions } from './deviceSessions';
+import { federationKeyPairs } from './federationKeyPairs';
 import { fileLinks } from './fileLinks';
 import { identityBindings } from './identityBindings';
 import { messageAttachments } from './messageAttachments';
@@ -106,6 +107,14 @@ export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[
     reason:
       'The browser-supplied base64url WebAuthn credential handle. Id-shaped by ' +
       'name only — it identifies an authenticator credential, not an Oxy row.',
+  },
+  {
+    table: federationKeyPairs,
+    column: federationKeyPairs.keyId,
+    reason:
+      'An ActivityPub keyId URI (`https://<domain>/ap/users/<name>#main-key`). ' +
+      'It names an actor on some domain — often a relying app Oxy signs for, ' +
+      'not an Oxy account — so there is no local row to reference.',
   },
   {
     table: appAffinitySeenEvents,

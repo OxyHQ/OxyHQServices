@@ -28,7 +28,7 @@ import { userAncestors } from '../db/schema/userAncestors';
 import { userFollows } from '../db/schema/userFollows';
 import { userLinkMetadata } from '../db/schema/userLinkMetadata';
 import { USER_LOCATION_TYPES, userLocations } from '../db/schema/userLocations';
-import { users } from '../db/schema/users';
+import { ACCOUNT_KINDS, ACCOUNT_STATUSES, USER_TYPES, users } from '../db/schema/users';
 import { userVerifiedDomains } from '../db/schema/userVerifiedDomains';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
@@ -519,9 +519,46 @@ const PRIVACY_SETTING_PROPERTIES: Record<PrivacySettingKey, string> = {
  * the model's `id` virtual (`publicKey ?? _id`) and `did` its `did` virtual.
  */
 export interface AccountDocument {
+  /**
+   * The ACCOUNT ID (`users.id`) — unconditionally, on this document and on
+   * `req.user`. Distinct from {@link AccountDocument.id} below, which is the
+   * model's old `id` virtual and is the PUBLIC KEY whenever the account has
+   * one. `middleware/auth.ts` documents why the authenticated call sites read
+   * this one.
+   */
   _id: string;
+  /** The old `id` virtual: `publicKey ?? _id`. NOT reliably the account id. */
   id: string;
   did: string;
+
+  /**
+   * The fields below are the ones the REQUEST PATH reads off `req.user`, and
+   * they are declared rather than left to the index signature for a specific
+   * reason: `middleware/auth.ts` used to attach this value through an
+   * `as IUser & Document` cast, so `tsc` checked none of these reads. Removing
+   * the cast without declaring them would have turned each into an `unknown`
+   * error at the call site; declaring them is what makes the reads CHECKED
+   * instead — the values were always these types, only the type was missing.
+   *
+   * Everything else stays behind the index signature: this document carries the
+   * whole account, and enumerating all of it here would be a second copy of the
+   * schema that drifts.
+   */
+  username?: string;
+  email?: string;
+  publicKey?: string;
+  avatar?: string;
+  name: { first?: string; last?: string };
+  kind: (typeof ACCOUNT_KINDS)[number];
+  type: (typeof USER_TYPES)[number];
+  accountStatus: (typeof ACCOUNT_STATUSES)[number];
+  isStaff: boolean;
+  verified: boolean;
+  federation: { actorUri?: string; domain?: string };
+  privacySettings: PrivacySettingsResponse;
+  createdAt: Date;
+  updatedAt: Date;
+
   [key: string]: unknown;
 }
 

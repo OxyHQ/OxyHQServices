@@ -124,6 +124,20 @@ export function getDb(): Database {
 }
 
 /**
+ * Whether `connectPostgres()` has published a handle.
+ *
+ * SYNCHRONOUS and cheap, so a hot synchronous caller (the CORS origin
+ * registry's background refresh gate) can ask "is there a pool at all?"
+ * without a round trip. It is deliberately NOT a liveness check: a pool can
+ * exist while the server is unreachable. Anything that must know the database
+ * ANSWERS — the health endpoint, the startup gate — uses
+ * {@link checkPostgresHealth}, which issues a real query.
+ */
+export function isPostgresConnected(): boolean {
+  return db !== null;
+}
+
+/**
  * Whether the database answers a trivial query right now. Backs `GET /health`.
  *
  * Never throws: an unreachable database is a health-check RESULT, not an error
