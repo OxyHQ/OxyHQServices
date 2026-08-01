@@ -109,6 +109,58 @@ const SPACE_SEPARATORS = '\\p{Zs}';
 const LETTERS = '\\p{L}';
 
 /**
+ * Punctuation code points that JOIN two letters inside a single real name. Every
+ * one of them is General_Category P, so the `scripts ∩ General_Category L`
+ * intersection strips them by default — they are re-admitted here explicitly,
+ * and ONLY between two letters (see {@link DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE}
+ * in `validationUtils.ts`).
+ *
+ * WHY THESE FOUR, AND WHY CONDITIONALLY
+ * -------------------------------------
+ * Measured, not guessed: a DRY_RUN of the display-name backfill over 59,210
+ * production users found 119 fields that would change. Almost every stripped
+ * code point in that tally is decoration and is correctly removed (`。`, the
+ * CJK brackets `【】「」『』`, `〜 〰 、 ۞ ㊙`, script digits, and the swastika
+ * ideographs the denylist above catches). These four are the exception: they
+ * carry orthographic function, and stripping them SPLITS a real name in two.
+ *
+ *   U+00B7  ·  ×26  French inclusive writing — `Codeur·euses en Liberté`
+ *   U+30FB  ・ ×20  Japanese name separator — `お坐・エガード`
+ *   U+05BE  ־  ×1   Hebrew maqaf, compound surname — `אברמסקי־קרוננברג`
+ *   U+0F0B  ་  ×1   Tibetan tsheg, a MANDATORY syllable separator — `འོད་ཟེར`
+ *
+ * The same characters are also used decoratively, and the same tally caught
+ * that too: `Michał rysiek Woźniak ·` and `Roberto ·` are trailing ornaments
+ * that are correctly trimmed today and must KEEP being trimmed. So membership in
+ * this class is not on its own permission to appear — the flanking rule is what
+ * separates the two uses, and it is the entire point. Admitting these
+ * unconditionally would regress the decorative cases.
+ *
+ * NOT included: the ASCII hyphen U+002D. `Jean-Luc` stays rejected — the
+ * production tally found ZERO ASCII hyphens, so there is no evidence to reopen
+ * that decision. U+05BE is General_Category Pd (a dash) but is a DIFFERENT code
+ * point, so admitting it leaves the ASCII-hyphen rule untouched.
+ *
+ * Entries are emitted sorted by code point, so authoring order cannot change the
+ * generated file.
+ */
+const NAME_SEPARATORS = [
+  { codePoint: 0x00b7, char: '·', name: 'MIDDLE DOT' },
+  { codePoint: 0x05be, char: '־', name: 'HEBREW PUNCTUATION MAQAF' },
+  { codePoint: 0x0f0b, char: '་', name: 'TIBETAN MARK INTERSYLLABIC TSHEG' },
+  { codePoint: 0x30fb, char: '・', name: 'KATAKANA MIDDLE DOT' },
+];
+
+/**
+ * The name separators as a character-class body of explicit `\u{…}` code-point
+ * escapes (never property escapes), sorted ascending.
+ */
+const NAME_SEPARATORS_BODY = [...NAME_SEPARATORS]
+  .sort((a, b) => a.codePoint - b.codePoint)
+  .map(({ codePoint }) => `\\u{${codePoint.toString(16).toUpperCase()}}`)
+  .join('');
+
+/**
  * Code points that Unicode classifies as LETTERS of an allowlisted script, but
  * that function as standalone hate SYMBOLS in real use. They are subtracted from
  * the allowlist after the {@link LETTERS} intersection.
@@ -252,6 +304,7 @@ const combiningMarks = transpileClassBody(COMBINING_MARKS);
 const spaceSeparators = transpileClassBody(SPACE_SEPARATORS);
 const letters = transpileClassBody(LETTERS);
 const deniedSymbolLetters = transpileClassBody(SYMBOL_LETTER_DENYLIST_BODY);
+const nameSeparators = transpileClassBody(NAME_SEPARATORS_BODY);
 
 /**
  * The allowlist WITHOUT the denylist subtracted. Never emitted — it exists only
@@ -317,6 +370,42 @@ for (const { codePoint, char, name } of SYMBOL_LETTER_DENYLIST) {
   }
 }
 
+/*
+ * Name-separator assertions. Same honesty rules as the denylist above: an entry
+ * must be a real ADDITION to the policy and must not collide with a class that
+ * already means something else.
+ *
+ *   1. It must be absent from the allowlist — otherwise the letters intersection
+ *      already admits it unconditionally and re-admitting it conditionally would
+ *      be a no-op that reads as load-bearing.
+ *   2. It must not be a letter, a combining mark, or a space separator. Those
+ *      three classes are admitted UNCONDITIONALLY, so a separator that also
+ *      belonged to one of them could never be subject to the flanking rule —
+ *      the conditional admission would be silently dead.
+ */
+const spaceProbe = new RegExp(`[${spaceSeparators}]`, 'u');
+const markProbe = new RegExp(`[${combiningMarks}]`, 'u');
+const separatorProbe = new RegExp(`[${nameSeparators}]`, 'u');
+for (const { codePoint, char, name } of NAME_SEPARATORS) {
+  const label = `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')} ${char} (${name})`;
+  const ch = String.fromCodePoint(codePoint);
+  if (allowedProbe.test(ch)) {
+    throw new Error(
+      `name separator ${label} is already in the allowlist, so admitting it ` +
+        'conditionally changes nothing. Remove it.'
+    );
+  }
+  if (letterProbe.test(ch) || markProbe.test(ch) || spaceProbe.test(ch)) {
+    throw new Error(
+      `name separator ${label} is also a letter, mark or space separator — those ` +
+        'are admitted unconditionally, so the flanking rule could never apply to it.'
+    );
+  }
+  if (!separatorProbe.test(ch)) {
+    throw new Error(`name separator ${label} is missing from the emitted separator class`);
+  }
+}
+
 /**
  * Emit a class-body string as a single-quoted TS string literal, escaping
  * backslashes (the bodies are ASCII escape sequences like `\xA0`, `\u{20000}`)
@@ -362,6 +451,15 @@ const header = `/**
  *     from the allowlist above, so the policy enforces them with no extra probe.
  *     It is emitted so tests can enumerate what is denied and assert each entry
  *     is actually rejected.
+ *   - DISPLAY_NAME_NAME_SEPARATORS_RANGES: the four punctuation code points that
+ *     JOIN two letters inside one real name
+ *     (${NAME_SEPARATORS.map((e) => e.char).join(' ')}). All are General_Category P,
+ *     so the letters intersection strips them by default; they are re-admitted
+ *     ONLY between two letters. Unlike the denylist, this class DOES build a
+ *     runtime regex — the conditional half lives in
+ *     \`DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE\`, which strips any of them that
+ *     is not letter-flanked on both sides, so decorative use
+ *     (a trailing \`Roberto ·\`) keeps being trimmed.
  *   - DISPLAY_NAME_COMBINING_MARKS_RANGES: General_Category M (combining marks).
  *   - DISPLAY_NAME_SPACE_SEPARATORS_RANGES: General_Category Zs (space
  *     separators).
@@ -387,6 +485,9 @@ export const DISPLAY_NAME_LETTERS_RANGES =
 
 export const DISPLAY_NAME_DENIED_SYMBOL_LETTERS_RANGES =
   ${toStringLiteral(deniedSymbolLetters)};
+
+export const DISPLAY_NAME_NAME_SEPARATORS_RANGES =
+  ${toStringLiteral(nameSeparators)};
 `;
 
 // Defensive: the whole point is a property-escape-free output.
@@ -404,6 +505,11 @@ console.log(
 );
 console.log(
   `  denied symbol letters: ${SYMBOL_LETTER_DENYLIST.map(
+    ({ codePoint, char }) => `U+${codePoint.toString(16).toUpperCase()} ${char}`
+  ).join(', ')}`
+);
+console.log(
+  `  name separators (letter-flanked only): ${NAME_SEPARATORS.map(
     ({ codePoint, char }) => `U+${codePoint.toString(16).toUpperCase()} ${char}`
   ).join(', ')}`
 );

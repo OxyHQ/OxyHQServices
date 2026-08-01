@@ -13,6 +13,7 @@ import {
   DISPLAY_NAME_ALLOWED_SCRIPTS,
   DISPLAY_NAME_DISALLOWED_SOURCE,
   DISPLAY_NAME_ORPHANED_MARK_SOURCE,
+  DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE,
   isValidUUID,
   isValidDate,
   isValidFileSize,
@@ -29,6 +30,7 @@ import {
 import {
   DISPLAY_NAME_DENIED_SYMBOL_LETTERS_RANGES,
   DISPLAY_NAME_LETTERS_RANGES,
+  DISPLAY_NAME_NAME_SEPARATORS_RANGES,
 } from '../displayNamePolicyRanges.generated';
 
 describe('Validation Utils', () => {
@@ -223,6 +225,7 @@ describe('Validation Utils', () => {
       expect(PROPERTY_ESCAPE.test(DISPLAY_NAME_ALLOWED_SCRIPTS)).toBe(false);
       expect(PROPERTY_ESCAPE.test(DISPLAY_NAME_DISALLOWED_SOURCE)).toBe(false);
       expect(PROPERTY_ESCAPE.test(DISPLAY_NAME_ORPHANED_MARK_SOURCE)).toBe(false);
+      expect(PROPERTY_ESCAPE.test(DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE)).toBe(false);
     });
 
     it('only uses code-point escapes (\\x / \\u) in the class bodies', () => {
@@ -230,7 +233,11 @@ describe('Validation Utils', () => {
       // code-point escapes. Every backslash-escape in the runtime sources must
       // be one of those forms — never a property escape.
       const escapeLeads = new Set<string>();
-      for (const src of [DISPLAY_NAME_DISALLOWED_SOURCE, DISPLAY_NAME_ORPHANED_MARK_SOURCE]) {
+      for (const src of [
+        DISPLAY_NAME_DISALLOWED_SOURCE,
+        DISPLAY_NAME_ORPHANED_MARK_SOURCE,
+        DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE,
+      ]) {
         for (const [, lead] of src.matchAll(/\\(.)/g)) {
           escapeLeads.add(lead);
         }
@@ -459,6 +466,127 @@ describe('Validation Utils', () => {
     ])('rejects %p (%s) via the intersection, not the denylist', (ch) => {
       expect(isValidDisplayName(ch)).toBe(false);
       expect(denied.test(ch)).toBe(false);
+    });
+  });
+
+  // Four punctuation code points JOIN two letters inside one real name. All are
+  // General_Category P, so `scripts ∩ L` strips them by default and stripping
+  // SPLITS the name (`Codeur·euses` → `Codeur euses`). They are re-admitted, but
+  // ONLY between two letters — the same characters are also used as ornament
+  // (a trailing `Roberto ·`), which must keep being trimmed. The conditional is
+  // the whole rule, so it is tested from both sides.
+  describe('display-name name separators — allowed only between letters', () => {
+    // Visually confusable with each other and with ASCII punctuation.
+    it('the fixtures below really are U+00B7 U+05BE U+0F0B U+30FB', () => {
+      expect('·'.codePointAt(0)).toBe(0x00b7);
+      expect('־'.codePointAt(0)).toBe(0x05be);
+      expect('་'.codePointAt(0)).toBe(0x0f0b);
+      expect('・'.codePointAt(0)).toBe(0x30fb);
+    });
+
+    it.each([
+      ['Codeur·euses en Liberté', 'U+00B7 French inclusive writing (production value)'],
+      ['Codeur·euses', 'U+00B7 bare'],
+      ['Pouet·te', 'U+00B7 short form'],
+      ['お坐・エガード', 'U+30FB Japanese name separator (production value)'],
+      ['אייר אברמסקי־קרוננברג', 'U+05BE Hebrew maqaf compound surname (production value)'],
+      ['འོད་ཟེར', 'U+0F0B Tibetan intersyllabic tsheg (production value)'],
+    ])('accepts letter-flanked %p (%s)', (name) => {
+      expect(isValidDisplayName(name)).toBe(true);
+    });
+
+    // A base letter can carry a combining mark, and that mark sits between the
+    // letter and the separator. If the flanking test only looked for a letter,
+    // these would be misread as unflanked and the separator stripped. Both
+    // fixtures use marks that do NOT recompose under NFC, so the mark really
+    // reaches the flanking test instead of being folded into a precomposed
+    // letter — the Tibetan one is the ordinary shape of Tibetan text.
+    it.each([
+      ['ཀི་ཁ', 'Tibetan letter + vowel sign U+0F72 + tsheg + letter'],
+      ['مُ·م', 'Arabic letter + damma U+064F + middle dot + letter'],
+    ])('accepts %p where a combining mark precedes the separator (%s)', (name) => {
+      expect(isValidDisplayName(name)).toBe(true);
+    });
+
+    it.each([
+      ['Roberto ·', 'trailing ornament (production value)'],
+      ['Michał rysiek Woźniak ·', 'trailing ornament (production value)'],
+      ['·Roberto', 'leading'],
+      ['a··b', 'doubled — neither is letter-flanked on both sides'],
+      ['·', 'alone'],
+      ['お坐・', 'trailing katakana middle dot'],
+      ['・エガード', 'leading katakana middle dot'],
+      ['a ·b', 'space on the left'],
+      ['a· b', 'space on the right'],
+    ])('rejects unflanked %p (%s)', (name) => {
+      expect(isValidDisplayName(name)).toBe(false);
+    });
+
+    // Enumerate what is ACTUALLY admitted from the generated class rather than
+    // trusting the literals above, and exercise both sides of the rule for each.
+    const separator = new RegExp(`[${DISPLAY_NAME_NAME_SEPARATORS_RANGES}]`, 'u');
+    const separatorCodePoints: number[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue; // lone surrogates
+      if (separator.test(String.fromCodePoint(cp))) separatorCodePoints.push(cp);
+    }
+
+    it('admits exactly the four name separators', () => {
+      expect(separatorCodePoints).toEqual([0x00b7, 0x05be, 0x0f0b, 0x30fb]);
+    });
+
+    it('every separator is valid between letters and invalid unflanked', () => {
+      const wrongWhenFlanked: string[] = [];
+      const wrongWhenUnflanked: string[] = [];
+      for (const cp of separatorCodePoints) {
+        const ch = String.fromCodePoint(cp);
+        const label = `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`;
+        if (!isValidDisplayName(`a${ch}b`)) wrongWhenFlanked.push(label);
+        if (isValidDisplayName(`a ${ch}`)) wrongWhenUnflanked.push(label);
+      }
+      expect({ wrongWhenFlanked, wrongWhenUnflanked }).toEqual({
+        wrongWhenFlanked: [],
+        wrongWhenUnflanked: [],
+      });
+      // Vacuity floor: an empty separator class would satisfy both loops above.
+      expect(separatorCodePoints.length).toBe(4);
+    });
+
+    // The ASCII hyphen decision is untouched: U+05BE is General_Category Pd like
+    // U+002D, but admitting one says nothing about the other.
+    it('does not admit the ASCII hyphen', () => {
+      expect(separator.test('-')).toBe(false);
+      expect(isValidDisplayName('Jean-Luc')).toBe(false);
+      expect(isValidDisplayName('a-b')).toBe(false);
+    });
+
+    // Hermes safety for the new pattern (see the property-escape block above).
+    it('the unflanked-separator source contains NO Unicode property escape', () => {
+      expect(/\\[pP]\{/.test(DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE)).toBe(false);
+      expect(/\\[pP]\{/.test(DISPLAY_NAME_NAME_SEPARATORS_RANGES)).toBe(false);
+      expect(() => new RegExp(DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE, 'u')).not.toThrow();
+      // Global variant is what @oxyhq/api compiles for the strip path.
+      expect(() => new RegExp(DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE, 'gu')).not.toThrow();
+    });
+
+    // Nothing the policy already rejected may become valid.
+    it.each([
+      ['卐', 'denied symbol letter'],
+      ['卍', 'denied symbol letter'],
+      ['Agent007', 'digit'],
+      ['J.R.', 'dot'],
+      ['ᯅ', 'non-allowlisted script'],
+      ['nixCraft \u{1f427}', 'emoji'],
+    ])('still rejects %p (%s)', (name) => {
+      expect(isValidDisplayName(name)).toBe(false);
+    });
+
+    it.each([
+      ['山田太郎', 'Han'],
+      ['김철수', 'Hangul'],
+      ["Renée O'Brien", 'Latin with accent + apostrophe'],
+    ])('still accepts %p (%s)', (name) => {
+      expect(isValidDisplayName(name)).toBe(true);
     });
   });
 

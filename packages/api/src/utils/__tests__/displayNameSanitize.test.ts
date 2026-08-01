@@ -286,6 +286,72 @@ describe('displayNameSanitize', () => {
     });
   });
 
+  // Four punctuation code points JOIN two letters inside one real name (all are
+  // General_Category P, so `scripts ∩ L` stripped them by default and stripping
+  // SPLIT the name in two). They are re-admitted, but ONLY between two letters:
+  // the same characters are also used as ornament, and those must keep being
+  // trimmed. Both halves are tested because the conditional IS the rule.
+  describe('cleanDisplayName — name separators', () => {
+    it('the fixtures below really are U+00B7 U+05BE U+0F0B U+30FB', () => {
+      expect('·'.codePointAt(0)).toBe(0x00b7);
+      expect('־'.codePointAt(0)).toBe(0x05be);
+      expect('་'.codePointAt(0)).toBe(0x0f0b);
+      expect('・'.codePointAt(0)).toBe(0x30fb);
+    });
+
+    // The production values from the backfill DRY_RUN that this rule exists for.
+    it.each([
+      ['Codeur·euses en Liberté', 'U+00B7 French inclusive writing'],
+      ['Codeur·euses', 'U+00B7 bare'],
+      ['Pouet·te', 'U+00B7 short form'],
+      ['お坐・エガード', 'U+30FB Japanese name separator'],
+      ['אייר אברמסקי־קרוננברג', 'U+05BE Hebrew maqaf compound surname'],
+      ['འོད་ཟེར', 'U+0F0B Tibetan intersyllabic tsheg'],
+      ['ཀི་ཁ', 'U+0F0B after a Tibetan vowel sign (combining mark) on the base letter'],
+      ['مُ·م', 'U+00B7 after Arabic damma (combining mark) on the base letter'],
+    ])('leaves letter-flanked %p untouched (%s)', (input) => {
+      expect(cleanDisplayName(input)).toBe(input);
+      // The gate agrees, from the same policy source.
+      expect(isValidDisplayName(input)).toBe(true);
+    });
+
+    it.each([
+      ['Roberto ·', 'Roberto', 'trailing ornament'],
+      ['Michał rysiek Woźniak ·', 'Michał rysiek Woźniak', 'trailing ornament'],
+      ['·Roberto', 'Roberto', 'leading'],
+      ['a··b', 'a b', 'doubled — both stripped, tokens stay apart'],
+      ['·', '', 'alone'],
+      ['お坐・', 'お坐', 'trailing katakana middle dot'],
+      ['・エガード', 'エガード', 'leading katakana middle dot'],
+      ['a ·b', 'a b', 'space on the left'],
+      ['a· b', 'a b', 'space on the right'],
+    ])('strips unflanked %p → %p (%s)', (input, expected) => {
+      expect(cleanDisplayName(input)).toBe(expected);
+      expect(isValidDisplayName(input)).toBe(false);
+    });
+
+    // Step order: a character stripped in step 3 vacates the position next to a
+    // separator, which must then read as unflanked.
+    it('strips a separator left unflanked by an earlier strip', () => {
+      expect(cleanDisplayName('a\u{1f427}·b')).toBe('a b');
+    });
+
+    it('does not reopen the ASCII hyphen', () => {
+      expect(cleanDisplayName('Jean-Luc')).toBe('Jean Luc');
+      expect(isValidDisplayName('Jean-Luc')).toBe(false);
+    });
+
+    it.each([
+      ['卐 Glowniggers 卐', 'Glowniggers', 'denied symbol letters still stripped'],
+      ['Agent007', 'Agent', 'digits still stripped'],
+      ['山田太郎', '山田太郎', 'ordinary Han untouched'],
+      ['김철수', '김철수', 'Hangul untouched'],
+      ["Renée O'Brien", "Renée O'Brien", 'accent + apostrophe untouched'],
+    ])('regression: %p → %p (%s)', (input, expected) => {
+      expect(cleanDisplayName(input)).toBe(expected);
+    });
+  });
+
   describe('cleanDisplayName — XSS safety', () => {
     it.each([
       '<script>alert(1)</script>',

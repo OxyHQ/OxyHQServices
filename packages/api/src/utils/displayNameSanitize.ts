@@ -11,7 +11,12 @@
  *   - Unicode space separators (`\p{Zs}`: the ASCII space, NBSP, ideographic
  *     space, …) — but NOT control whitespace such as tab, newline, or carriage
  *     return, which would break layout or enable multi-line spoofing,
- *   - the straight apostrophe (`'`, e.g. "O'Brien").
+ *   - the straight apostrophe (`'`, e.g. "O'Brien"),
+ *   - four name separators (`·` U+00B7, `־` U+05BE, `་` U+0F0B, `・` U+30FB) —
+ *     but ONLY directly between two letters. `Codeur·euses`, `お坐・エガード`,
+ *     `אברמסקי־קרוננברג` and `འོད་ཟེར` survive intact; the same characters used
+ *     as ornament (`Roberto ·`) are still stripped. See
+ *     {@link UNFLANKED_SEPARATOR_PATTERN}. The ASCII hyphen is NOT among them.
  *
  * Everything else is removed: emoji (🐧), symbols (⁂ ⏚), `:emoji:` shortcodes,
  * digits, hyphens, dots, control whitespace (tab/newline/CR), letters from
@@ -65,6 +70,7 @@
 import {
   DISPLAY_NAME_DISALLOWED_SOURCE,
   DISPLAY_NAME_ORPHANED_MARK_SOURCE,
+  DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE,
   MAX_DISPLAY_NAME_LENGTH,
   normalizeInlineText,
 } from '@oxyhq/core';
@@ -102,6 +108,24 @@ const DISALLOWED_PATTERN = new RegExp(DISPLAY_NAME_DISALLOWED_SOURCE, 'gu');
 const ORPHANED_MARK_PATTERN = new RegExp(DISPLAY_NAME_ORPHANED_MARK_SOURCE, 'gu');
 
 /**
+ * Matches a name separator (`·` U+00B7, `־` U+05BE, `་` U+0F0B, `・` U+30FB) that
+ * is NOT directly between two letters. Those four are admitted by the character
+ * class above because they JOIN two letters inside one real name
+ * (`Codeur·euses`, `お坐・エガード`); this pattern is the other half of that rule
+ * and removes the same characters when they are used as ornament instead
+ * (`Roberto ·`). Compiled (global) from the same core source as the reject gate,
+ * so the strip path and the gate cannot disagree about placement any more than
+ * they can about the character set.
+ *
+ * A preceding combining mark counts as letter-like, so an accent between the base
+ * letter and the separator does not make it look unflanked.
+ */
+const UNFLANKED_SEPARATOR_PATTERN = new RegExp(
+  DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE,
+  'gu'
+);
+
+/**
  * Produce a clean display name from arbitrary (possibly federated/untrusted)
  * input. The transformation order is significant:
  *
@@ -115,13 +139,23 @@ const ORPHANED_MARK_PATTERN = new RegExp(DISPLAY_NAME_ORPHANED_MARK_SOURCE, 'gu'
  *      letter (e.g. a lone Tibetan mark `U+0F18`, or a `U+FE0F` variation
  *      selector left after its emoji base was stripped in step 3). Marks that
  *      are still attached to a base letter are kept.
- *   5. Collapse whitespace and trim — delegated to {@link normalizeInlineText}, the
+ *   5. Replace every name separator that is not letter-flanked with a space,
+ *      keeping the ones that join two letters. This runs AFTER steps 3 and 4,
+ *      and the order is load-bearing in both directions: step 3 can vacate the
+ *      position next to a separator (`a☺·b` → `a ·b`, now genuinely unflanked),
+ *      and step 4 can remove an orphaned mark that would otherwise have posed as
+ *      the separator's left-hand flank. A space, not deletion, because these are
+ *      separators — deleting would silently fuse two tokens the author kept
+ *      apart (`a··b` → `a b`, never `ab`). Orphaned marks ARE deleted outright
+ *      one step earlier, because a base-less accent is noise rather than a
+ *      boundary.
+ *   6. Collapse whitespace and trim — delegated to {@link normalizeInlineText}, the
  *      ecosystem's canonical single-line normalizer. A display name is a
  *      one-line value, so every whitespace run (including a `\n` smuggled in by
  *      a federated actor) becomes a single space. The explicit NFC pass in step 1
- *      is kept because the character policy in steps 3–4 must see the composed
+ *      is kept because the character policy in steps 3–5 must see the composed
  *      form; `normalizeInlineText` re-normalizing an already-NFC string is a no-op.
- *   6. Cap the length to {@link MAX_DISPLAY_NAME_LENGTH}, trimming again in case
+ *   7. Cap the length to {@link MAX_DISPLAY_NAME_LENGTH}, trimming again in case
  *      the slice landed on a boundary space.
  */
 export function cleanDisplayName(raw: string): string {
@@ -131,6 +165,7 @@ export function cleanDisplayName(raw: string): string {
       .replace(SHORTCODE_PATTERN, ' ')
       .replace(DISALLOWED_PATTERN, ' ')
       .replace(ORPHANED_MARK_PATTERN, '')
+      .replace(UNFLANKED_SEPARATOR_PATTERN, ' ')
   );
 
   if (collapsed.length <= MAX_DISPLAY_NAME_LENGTH) {

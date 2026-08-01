@@ -7,6 +7,7 @@ import {
   DISPLAY_NAME_COMBINING_MARKS_RANGES,
   DISPLAY_NAME_SPACE_SEPARATORS_RANGES,
   DISPLAY_NAME_LETTERS_RANGES,
+  DISPLAY_NAME_NAME_SEPARATORS_RANGES,
 } from './displayNamePolicyRanges.generated';
 
 /**
@@ -67,7 +68,16 @@ export function isValidPassword(password: string): boolean {
  *     ideographic space, …) — but NOT control whitespace such as tab, newline,
  *     or carriage return, which would break layout or enable multi-line
  *     spoofing,
- *   - the straight apostrophe (`'`, e.g. "O'Brien").
+ *   - the straight apostrophe (`'`, e.g. "O'Brien"),
+ *   - four name SEPARATORS — `·` U+00B7, `־` U+05BE, `་` U+0F0B, `・` U+30FB —
+ *     but ONLY directly between two letters (`Codeur·euses`, `お坐・エガード`,
+ *     `אברמסקי־קרוננברג`, `འོད་ཟེར`). Every one is General_Category P, so the
+ *     letters intersection strips them by default; they are re-admitted because
+ *     stripping them SPLITS a real name in two. The flanking condition is not a
+ *     refinement but the whole point: the same characters are also used as
+ *     ornament (a trailing `Roberto ·`), and unconditional admission would let
+ *     that through. See {@link DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE}. The
+ *     ASCII hyphen is NOT among them — `Jean-Luc` stays rejected.
  *
  * Everything else is rejected: emoji (🐧), symbols (⁂ ⏚), `:emoji:` shortcodes,
  * digits, hyphens, dots, control whitespace (tab/newline/CR), letters from
@@ -148,12 +158,17 @@ export const DISPLAY_NAME_ALLOWED_SCRIPTS = DISPLAY_NAME_ALLOWED_SCRIPTS_RANGES;
 /**
  * Source of the disallowed-character pattern: the negation of the full allowed
  * set (allowlisted scripts + combining marks + space separators + the straight
- * apostrophe). Consumers compile this with the `u` flag (and `g` for a global
- * strip). The whitespace class is space separators only (General_Category Zs),
- * NOT `\s` — the latter would admit tab/newline/carriage return, which break
- * layout and enable multi-line spoofing.
+ * apostrophe + the name separators). Consumers compile this with the `u` flag
+ * (and `g` for a global strip). The whitespace class is space separators only
+ * (General_Category Zs), NOT `\s` — the latter would admit tab/newline/carriage
+ * return, which break layout and enable multi-line spoofing.
+ *
+ * The name separators are admitted here only as CHARACTERS. Their position rule
+ * is a separate pattern ({@link DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE}), for
+ * the same reason combining marks are: a negated character class cannot express
+ * "allowed only in this context". Both halves must be applied together.
  */
-export const DISPLAY_NAME_DISALLOWED_SOURCE = `[^${DISPLAY_NAME_ALLOWED_SCRIPTS}${DISPLAY_NAME_COMBINING_MARKS_RANGES}${DISPLAY_NAME_SPACE_SEPARATORS_RANGES}']`;
+export const DISPLAY_NAME_DISALLOWED_SOURCE = `[^${DISPLAY_NAME_ALLOWED_SCRIPTS}${DISPLAY_NAME_COMBINING_MARKS_RANGES}${DISPLAY_NAME_SPACE_SEPARATORS_RANGES}${DISPLAY_NAME_NAME_SEPARATORS_RANGES}']`;
 
 /**
  * Source of the orphaned combining-mark pattern: a run of combining marks NOT
@@ -168,29 +183,68 @@ export const DISPLAY_NAME_DISALLOWED_SOURCE = `[^${DISPLAY_NAME_ALLOWED_SCRIPTS}
  */
 export const DISPLAY_NAME_ORPHANED_MARK_SOURCE = `(?<![${DISPLAY_NAME_LETTERS_RANGES}${DISPLAY_NAME_COMBINING_MARKS_RANGES}])[${DISPLAY_NAME_COMBINING_MARKS_RANGES}]+`;
 
+/**
+ * Source of the unflanked name-separator pattern — the positional half of the
+ * name-separator rule, and the exact counterpart of
+ * {@link DISPLAY_NAME_ORPHANED_MARK_SOURCE}: a combining mark is allowed only
+ * when it rides a base letter, and a name separator is allowed only when it JOINS
+ * two letters. Matches a separator that is missing a letter on either side, so
+ * consumers can reject it (non-global probe) or strip it (`g` flag).
+ *
+ * Two alternatives, one per side, because JS has no "not surrounded by" atom:
+ *   - `(?<![letters][marks])[sep]` — nothing letter-like immediately BEFORE.
+ *   - `[sep](?![letters])`        — no letter immediately AFTER.
+ *
+ * The left-hand class deliberately includes combining marks as well as letters:
+ * a base letter can carry an accent (`Renée·euses`, or a decomposed `e`+◌́), and
+ * that mark sits between the letter and the separator. Treating a mark as
+ * letter-like is what stops an accent from defeating the flanking test — the
+ * same reason the orphaned-mark lookbehind uses the identical pair of classes.
+ * The right-hand class is letters only: a mark AFTER a separator has no base and
+ * is removed by the orphaned-mark rule, so the separator is genuinely unflanked.
+ *
+ * Both lookarounds are single-character (no variable-length lookbehind), and the
+ * classes are explicit code-point ranges, so the compiled regex is within what
+ * Hermes accepts.
+ *
+ * `Codeur·euses` and `お坐・エガード` match NOTHING here and survive. A leading
+ * `·Roberto`, a trailing `Roberto ·`, and a doubled `a··b` each match and are
+ * stripped — which is what keeps a decorative middle dot from riding in on the
+ * back of the orthographic one.
+ */
+export const DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE = `(?<![${DISPLAY_NAME_LETTERS_RANGES}${DISPLAY_NAME_COMBINING_MARKS_RANGES}])[${DISPLAY_NAME_NAME_SEPARATORS_RANGES}]|[${DISPLAY_NAME_NAME_SEPARATORS_RANGES}](?![${DISPLAY_NAME_LETTERS_RANGES}])`;
+
 /** Non-global probe for the presence of a disallowed character. */
 const DISALLOWED_PROBE = new RegExp(DISPLAY_NAME_DISALLOWED_SOURCE, 'u');
 
 /** Non-global probe for the presence of an orphaned combining mark. */
 const ORPHANED_MARK_PROBE = new RegExp(DISPLAY_NAME_ORPHANED_MARK_SOURCE, 'u');
 
+/** Non-global probe for the presence of an unflanked name separator. */
+const UNFLANKED_SEPARATOR_PROBE = new RegExp(DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE, 'u');
+
 /**
  * Whether `raw` already satisfies the display-name policy, i.e. it contains no
- * disallowed characters AND no orphaned combining marks. Used to REJECT native
- * (signup / profile edit) names with a 400 rather than silently stripping them,
- * and to validate inline in the client editor.
+ * disallowed characters, no orphaned combining marks, and no unflanked name
+ * separator. Used to REJECT native (signup / profile edit) names with a 400
+ * rather than silently stripping them, and to validate inline in the client
+ * editor.
  *
- * The orphaned-mark probe runs on the NFC-normalized form so a legitimate
- * decomposed accent (`e`+◌́) — which normalization recomposes into `é` — is NOT
- * rejected, while a lone, base-less mark (e.g. `"༘"`) IS.
+ * The two positional probes run on the NFC-normalized form, the character probe
+ * on the raw input. Normalization matters for both: a legitimate decomposed
+ * accent (`e`+◌́) recomposes into `é`, so it is NOT rejected as an orphaned mark,
+ * and a separator after that accent sees a base letter rather than a mark.
  *
- * The function only checks the character set; an empty or whitespace-only string
- * is considered valid (`true`). Call sites that require a non-empty name enforce
- * that separately.
+ * The function only checks the character set and separator placement; an empty
+ * or whitespace-only string is considered valid (`true`). Call sites that require
+ * a non-empty name enforce that separately.
  */
 export function isValidDisplayName(raw: string): boolean {
+  const normalized = raw.normalize('NFC');
   return (
-    !DISALLOWED_PROBE.test(raw) && !ORPHANED_MARK_PROBE.test(raw.normalize('NFC'))
+    !DISALLOWED_PROBE.test(raw) &&
+    !ORPHANED_MARK_PROBE.test(normalized) &&
+    !UNFLANKED_SEPARATOR_PROBE.test(normalized)
   );
 }
 

@@ -32,6 +32,15 @@
  *     from the allowlist above, so the policy enforces them with no extra probe.
  *     It is emitted so tests can enumerate what is denied and assert each entry
  *     is actually rejected.
+ *   - DISPLAY_NAME_NAME_SEPARATORS_RANGES: the four punctuation code points that
+ *     JOIN two letters inside one real name
+ *     (· ־ ་ ・). All are General_Category P,
+ *     so the letters intersection strips them by default; they are re-admitted
+ *     ONLY between two letters. Unlike the denylist, this class DOES build a
+ *     runtime regex — the conditional half lives in
+ *     `DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE`, which strips any of them that
+ *     is not letter-flanked on both sides, so decorative use
+ *     (a trailing `Roberto ·`) keeps being trimmed.
  *   - DISPLAY_NAME_COMBINING_MARKS_RANGES: General_Category M (combining marks).
  *   - DISPLAY_NAME_SPACE_SEPARATORS_RANGES: General_Category Zs (space
  *     separators).
@@ -55,3 +64,6 @@ export const DISPLAY_NAME_LETTERS_RANGES =
 
 export const DISPLAY_NAME_DENIED_SYMBOL_LETTERS_RANGES =
   '\\u{534D}\\u{5350}';
+
+export const DISPLAY_NAME_NAME_SEPARATORS_RANGES =
+  '\\u{B7}\\u{5BE}\\u{F0B}\\u{30FB}';
