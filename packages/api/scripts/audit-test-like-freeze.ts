@@ -31,20 +31,22 @@ import mongoose from 'mongoose';
 import { User } from '../src/models/User';
 import Follow from '../src/models/Follow';
 import Session from '../src/models/Session';
-import { RefreshToken } from '../src/models/RefreshToken';
 import Notification from '../src/models/Notification';
+import { rawDb } from './account-migration-lib';
 import { logger } from '../src/utils/logger';
 
 type ObjId = mongoose.Types.ObjectId;
 
 // ── "local" criterion: type === 'local' OR type absent/null. ──
+// Deliberately NOT `as const`: mongoose's FilterQuery requires a mutable `$or`
+// array, and a readonly tuple is not assignable to it.
 const LOCAL_FILTER = {
   $or: [
     { type: 'local' },
     { type: { $exists: false } },
     { type: null },
   ],
-} as const;
+};
 
 // ── CRITERION_NEW (user's exact spec) ──
 // 4 email domains, exact, anchored to end, case-insensitive.
@@ -189,7 +191,12 @@ async function audit(): Promise<void> {
     const username = asString(u.username);
     const email = asString(u.email);
 
-    const refreshTokens = await RefreshToken.countDocuments({ userId });
+    // `refreshtokens` was orphaned by the zero-cookie cutover (the RefreshToken
+    // model was deleted with the refresh-token family), so it is read RAW.
+    // `userId` was stored as an ObjectId, so the driver needs no extra casting.
+    const refreshTokens = await rawDb()
+      .collection('refreshtokens')
+      .countDocuments({ userId });
     const notifications = await Notification.countDocuments({
       $or: [{ recipientId: userId }, { actorId: userId }],
     });
