@@ -63,7 +63,6 @@ import { asc, desc, eq } from 'drizzle-orm';
 import { getDb } from '../config/postgres';
 import { moderationEffects } from '../db/schema/moderationEffects';
 import type { ModerationEffectRow } from '../services/moderationReputation.service';
-import { ModerationEffect } from '../models/ModerationEffect';
 import moderationReputationService from '../services/moderationReputation.service';
 import { registerIdentityBinding } from '../services/identityBinding.service';
 import reputationService from '../services/reputation.service';

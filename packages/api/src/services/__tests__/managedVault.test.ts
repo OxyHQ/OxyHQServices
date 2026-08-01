@@ -143,6 +143,21 @@ async function settleProbe(userId: string): Promise<void> {
   }
 }
 
+/**
+ * Poll until a probe reaches `safeFetch` on a node that has ALREADY been probed
+ * once, where `last_probe_at` can no longer distinguish "probed again" from
+ * "probed before". Fails loudly rather than silently.
+ */
+async function settleSecondProbe(): Promise<void> {
+  const deadline = Date.now() + 3_000;
+  while (mockSafeFetch.mock.calls.length === 0) {
+    if (Date.now() > deadline) {
+      throw new Error('timed out waiting for the re-provision liveness probe');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 describe('provisionManagedVault — the vault is a chain registration', () => {
   it('custodial-signs a node record onto the chain and projects it into the cache', async () => {
     const userId = await account();
@@ -319,7 +334,12 @@ describe('provisionManagedVault — idempotent re-provision', () => {
     expect(await chainRecords(userId)).toHaveLength(1);
     // …but the cache is still refreshed and the node re-probed.
     expect(invalidateSpy).toHaveBeenCalledWith(userId);
-    await settleProbe(userId);
+    // NOT `settleProbe`: `last_probe_at` is already set from the FIRST
+    // provision, so it returns immediately and says nothing about whether the
+    // SECOND probe has run. The probe is fire-and-forget and does a database
+    // round trip before it reaches `safeFetch`, so under any load that lands
+    // after this line. Wait for the signal actually being asserted.
+    await settleSecondProbe();
     expect(mockSafeFetch).toHaveBeenCalled();
   });
 

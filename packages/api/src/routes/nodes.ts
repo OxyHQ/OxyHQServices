@@ -15,12 +15,14 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import { and, eq, ne } from 'drizzle-orm';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError, ErrorCodes, InternalServerError, NotFoundError, UnauthorizedError } from '../utils/error';
 import { rateLimit } from '../middleware/rateLimiter';
 import { hashedIpKey } from '../utils/ipKey';
-import { isValidObjectId } from '../utils/validation';
+import { getDb } from '../config/postgres';
+import { userNodes } from '../db/schema/userNodes';
 import {
   getUserNode,
   removeNode,
@@ -28,7 +30,6 @@ import {
   type UserNodeRecord,
 } from '../services/nodeRegistry.service';
 import { enqueueNodeIngest } from '../queue/nodeIngest.queue';
-import UserNode from '../models/UserNode';
 
 const router = Router();
 
@@ -189,17 +190,27 @@ router.post(
  * Unauthenticated by design (it only re-pulls the user's OWN node and changes
  * nothing without cryptographic verification), but rate-limited hard by IP. The
  * read path is untouched — this only schedules background work.
+ *
+ * The `isValidObjectId` pre-filter is DELETED, not ported. It existed to keep a
+ * non-ObjectId path param out of a Mongoose `CastError`; here `user_id` is
+ * `text`, so an unknown or malformed id simply selects no row. Keeping it would
+ * have been worse than useless: every account minted since the cutover carries a
+ * uuid v7, which the 24-hex predicate rejects — the notify would have silently
+ * enqueued nothing for exactly those accounts, with a 202 either way. Same trap
+ * the chain-head route hit (`routes/__tests__/chainHead.test.ts`).
  */
 router.post(
   '/ingest/notify/:userId',
   nodeIngestNotifyLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
-    if (isValidObjectId(userId)) {
-      const hasNode = await UserNode.exists({ userId, status: { $ne: 'revoked' } });
-      if (hasNode) {
-        enqueueNodeIngest(userId);
-      }
+    const [node] = await getDb()
+      .select({ userId: userNodes.userId })
+      .from(userNodes)
+      .where(and(eq(userNodes.userId, userId), ne(userNodes.status, 'revoked')))
+      .limit(1);
+    if (node) {
+      enqueueNodeIngest(userId);
     }
     res.status(202).json({ accepted: true });
   }),

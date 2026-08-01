@@ -1,6 +1,6 @@
 import express from "express";
 import http from "http";
-import mongoose from "mongoose";
+import { count, ne, sql } from "drizzle-orm";
 import { Server as SocketIOServer, type Socket } from "socket.io";
 import profilesRouter from "./routes/profiles";
 import usersRouter from "./routes/users";
@@ -8,7 +8,6 @@ import notificationsRouter from "./routes/notifications.routes";
 import sessionRouter from "./routes/session";
 import sessionDeviceRouter from "./routes/sessionDevice";
 import dotenv from "dotenv";
-import User, { type IUser } from "./models/User";
 import searchRoutes from "./routes/search";
 import { rateLimiter, authRateLimiter, userRateLimiter, federationServiceLimiter, bruteForceProtection, securityHeaders } from "./middleware/security";
 import privacyRoutes from "./routes/privacy";
@@ -89,7 +88,6 @@ import {
   stopSubscriptionExpiryJobs,
 } from './queue/subscriptionExpiry.queue';
 import { getEnvBoolean, validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
-import { getDbName } from './config/db';
 import { logger } from './utils/logger';
 import type { Response } from 'express';
 import { authMiddleware } from './middleware/auth';
@@ -102,12 +100,12 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedisClient, closeRedis } from './config/redis';
 import { initializeIO, socketRoomsFor } from './utils/socket';
 import { resolveSocketIdentity } from './utils/socketAuth';
-import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
+import performanceMiddleware, { getMemoryStats, getDatabaseStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
 import { isDatabaseReachable, waitForDatabaseConnection } from './utils/dbConnection';
-import { closePostgres } from './config/postgres';
+import { closePostgres, getDb } from './config/postgres';
+import { users } from './db/schema/users';
 import { isFederatableUser } from './utils/profileQuery';
-import { exactCaseInsensitiveUsernameRegex } from './utils/resolveUserIdentifier';
 import { errorHandler } from './middleware/errorHandler';
 import compression from 'compression';
 import swaggerUi from 'swagger-ui-express';
@@ -395,61 +393,28 @@ export function emitSessionUpdate(userId: string, payload: any) {
   io.to(room).emit('session_update', payload);
 }
 
-// MongoDB Connection with optimized connection pooling for scale
-const dbName = getDbName();
-const mongoOptions = {
-  dbName,
-  autoIndex: true,
-  autoCreate: true,
-  // Connection pool settings for handling millions of users
-  maxPoolSize: getEnvNumber('MONGO_MAX_POOL_SIZE', 100),
-  minPoolSize: getEnvNumber('MONGO_MIN_POOL_SIZE', 10),
-  maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
-  serverSelectionTimeoutMS: 5000, // How long to try selecting a server before timing out
-  socketTimeoutMS: 45000, // How long a send or receive on a socket can take before timing out
-  connectTimeoutMS: 10000, // How long to wait for initial connection
-  heartbeatFrequencyMS: 10000, // Frequency of server heartbeat checks
-  retryWrites: true, // Retry write operations on network errors
-  retryReads: true, // Retry read operations on network errors
-  // Disable command buffering to fail fast instead of timing out
-  bufferCommands: false, // Don't buffer commands if not connected - fail fast
-};
-
-// `ensureFileSha256LiveUniqueIndex()` used to run here: boot-time index
+// The database connection lives entirely in the startup gate below
+// (`waitForDatabaseConnection` → `connectPostgres`), which is what removing
+// Mongoose from this file finally allowed.
+//
+// What used to sit here was a SECOND, independent connect: a module-level
+// `mongoose.connect(...)` with its own pool options, its own `process.exit(1)`
+// on failure, and four `mongoose.connection.on(...)` monitors — running at
+// import time, in parallel with the Postgres gate, and in EVERY process that
+// imported this module (including jest). It is deleted rather than translated:
+// `connectPostgres()` is idempotent and the single place a pool is opened in
+// this package, and pool sizing belongs there (`PG_MAX_POOL_SIZE`) rather than
+// in a second copy here. The connection-event monitors have no `postgres.js`
+// counterpart — `GET /health` reports reachability with a real round trip,
+// which is strictly better than a driver-side flag.
+//
+// `ensureFileSha256LiveUniqueIndex()` also used to run here: boot-time index
 // reconciliation that dropped the legacy global `sha256_1` index and recreated
 // the live-rows-only partial unique on every start — and CRASHED the API on a
 // fresh empty database, because `.indexes()` on a collection that does not exist
 // yet throws and this `.catch` exits the process. `files_sha256_live_key` is
 // declared in the schema and created by a migration, which is what index
 // reconciliation is for; there is nothing left for a boot hook to do.
-mongoose.connect(process.env.MONGODB_URI as string, mongoOptions)
-.then(async () => {
-  logger.info("Connected to MongoDB successfully", {
-    maxPoolSize: mongoOptions.maxPoolSize,
-    minPoolSize: mongoOptions.minPoolSize,
-  });
-})
-.catch((error) => {
-  logger.error("MongoDB connection error:", error);
-  process.exit(1);
-});
-
-// MongoDB connection event handlers for monitoring
-mongoose.connection.on('connected', () => {
-  logger.info('MongoDB connection established');
-});
-
-mongoose.connection.on('error', (err) => {
-  logger.error('MongoDB connection error:', err);
-});
-
-mongoose.connection.on('disconnected', () => {
-  logger.warn('MongoDB disconnected');
-});
-
-mongoose.connection.on('reconnected', () => {
-  logger.info('MongoDB reconnected');
-});
 
 // Graceful shutdown
 async function gracefulShutdown(signal: string) {
@@ -475,7 +440,6 @@ async function gracefulShutdown(signal: string) {
   smtpOutbound.shutdown();
   await closeRedis();
   await closePostgres();
-  await mongoose.connection.close();
 
   logger.info('All connections closed, exiting');
   process.exit(0);
@@ -487,7 +451,7 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 // API Routes
 app.get("/", async (req, res) => {
   try {
-    const usersCount = await User.countDocuments();
+    const [{ value: usersCount }] = await getDb().select({ value: count() }).from(users);
     res.json({
       message: "Welcome to the API",
       users: usersCount,
@@ -509,6 +473,13 @@ app.get("/", async (req, res) => {
 // driver-side flag, which is why this endpoint could report a healthy database
 // while it was refusing work. `isDatabaseReachable()` cannot: it either gets a
 // row back over the same pool real requests use, or it does not.
+//
+// A mutation test on `isDatabaseReachable` that stops the database BEFORE
+// startup SURVIVES — no pool is ever published, so both the honest and the
+// broken implementation answer "down". The honest test drops the database out
+// from under a LIVE pool; that is the only way the difference between "the
+// pool object exists" and "the server answers" becomes observable. See
+// `src/__tests__/healthGate.test.ts`.
 app.get("/health", async (req, res) => {
   try {
     const isDatabaseUp = await isDatabaseReachable();
@@ -539,7 +510,7 @@ app.get("/health", async (req, res) => {
 app.get("/metrics", authMiddleware, (req: any, res: Response) => {
   try {
     const memoryStats = getMemoryStats();
-    const connectionStats = getConnectionPoolStats(mongoose.connection);
+    const connectionStats = getDatabaseStats();
     const perfSummary = performanceMonitor.getSummary();
     const slowOperations = performanceMonitor.getSlowOperations(1000);
     
@@ -680,6 +651,51 @@ import federationRoutes from './routes/federation';
 // Federation domain constant — used by nodeinfo, webfinger, and actor endpoints
 const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
 
+/**
+ * The one account whose username matches, case-insensitively, or `undefined`.
+ *
+ * Written against the EXPRESSION `users_lower_username_key` is built on
+ * (`lower(btrim(username))`), which is what makes it an index seek. Mongo
+ * indexed `username` case-SENSITIVELY while both callers below ran an anchored
+ * `/i` regex, so each actor/WebFinger lookup was a full collection scan.
+ *
+ * The projection is exactly the union of what `isFederatableUser` gates on and
+ * what `getUserActor` renders — `select: false` does not survive into drizzle,
+ * so a bare `select()` here would pull `phone`, `refresh_token` and the contact
+ * hashes into a public, unauthenticated handler.
+ */
+async function findFederatableUserByUsername(username: string) {
+  const [row] = await getDb()
+    .select({
+      username: users.username,
+      nameFirst: users.nameFirst,
+      nameLast: users.nameLast,
+      avatar: users.avatar,
+      bio: users.bio,
+      description: users.description,
+      kind: users.kind,
+      accountStatus: users.accountStatus,
+      reputationTier: users.reputationTier,
+      fediverseSharing: users.privacyFediverseSharing,
+    })
+    .from(users)
+    .where(sql`lower(btrim(${users.username})) = lower(btrim(${username}))`)
+    .limit(1);
+
+  if (!row) {
+    return undefined;
+  }
+
+  // `isFederatableUser` is the SHARED discovery predicate (`utils/profileQuery.ts`),
+  // and it reads the Mongo-shaped `privacySettings.fediverseSharing`. Reshaping
+  // here keeps ONE authority for "may this account be discovered over
+  // ActivityPub" rather than a second copy of the rule written in SQL.
+  return {
+    ...row,
+    privacySettings: { fediverseSharing: row.fediverseSharing },
+  };
+}
+
 // Instance actor
 app.get('/ap/actor', async (_req: any, res: Response) => {
   try {
@@ -706,10 +722,17 @@ app.get('/ap/users/:username', async (req: any, res: Response) => {
     }
 
     // Per-user actor
-    const user = await User.findOne({ username: exactCaseInsensitiveUsernameRegex(username) }).lean() as unknown as IUser | null;
+    const user = await findFederatableUserByUsername(username);
     if (!user || !isFederatableUser(user)) return res.status(404).json({ error: 'User not found' });
 
-    const actor = await getUserActor(user);
+    const actor = await getUserActor({
+      username: user.username,
+      name: { first: user.nameFirst, last: user.nameLast },
+      avatar: user.avatar,
+      bio: user.bio,
+      description: user.description,
+      kind: user.kind,
+    });
     if (!actor) return res.status(500).json({ error: 'Failed to build actor' });
 
     res.setHeader('Content-Type', 'application/activity+json');
@@ -735,7 +758,10 @@ app.get('/.well-known/nodeinfo', (_req: any, res: Response) => {
 
 app.get('/nodeinfo/2.0', async (_req: any, res: Response) => {
   try {
-    const total = await User.countDocuments({ accountStatus: { $ne: 'archived' } });
+    const [{ value: total }] = await getDb()
+      .select({ value: count() })
+      .from(users)
+      .where(ne(users.accountStatus, 'archived'));
     res.json({
       version: '2.0',
       software: { name: 'oxy', version: '2.0.0' },
@@ -764,7 +790,7 @@ app.get('/.well-known/webfinger', async (req: any, res: Response) => {
 
     if (!isOwnFederationDomain(domain)) return res.status(404).json({ error: 'Domain not served here' });
 
-    const user = await User.findOne({ username: exactCaseInsensitiveUsernameRegex(canonicalUsername) }).lean();
+    const user = await findFederatableUserByUsername(canonicalUsername);
     if (!user || !isFederatableUser(user)) return res.status(404).json({ error: 'User not found' });
 
     res.setHeader('Content-Type', 'application/jrd+json');
@@ -839,132 +865,162 @@ app.use((_req: express.Request, res: express.Response) => {
 // Must be registered last so it catches errors from all routes and middleware above
 app.use(errorHandler);
 
-// Only call listen if this module is run directly.
 // The 4100 default is a LOCAL DEV default only — ECS injects PORT explicitly
 // (oxy-infra terraform-uswest2/app-services.tf sets it to 8080). 4100 is
 // oxy-api's slot in the per-app port map so several Oxy backends can run
 // side by side on one machine.
 const PORT = getEnvNumber('PORT', 4100);
-if (require.main === module) {
+
+/** How long startup keeps retrying the database before the process gives up. */
+const DATABASE_STARTUP_TIMEOUT_MS = 30_000;
+
+/**
+ * The startup gate, and everything chained behind it.
+ *
+ * **`server.listen` MUST stay inside this function, after the `await`.** A task
+ * that listens before the database answers joins the ALB target group and
+ * starts serving 500s; the gate is what makes "in the target group" mean "can
+ * actually serve". `waitForDatabaseConnection` RETRIES inside the deadline
+ * because `postgres.js` makes a single connection attempt where the Mongo
+ * driver retried internally — on ECS a task can start before RDS finishes a
+ * failover, and a single attempt would turn seconds of unavailability into a
+ * crash loop.
+ *
+ * Exported, and taking the deadline as a parameter, for exactly one reason:
+ * this body used to live inside `if (require.main === module)`, where it could
+ * never run under a test runner — so the gate, the single most consequential
+ * ordering in the file, was unreachable by any in-process test and every version
+ * of that test was really a test of something else. `__tests__/bootGate.test.ts`
+ * calls it directly, with a short deadline for the unreachable-database case.
+ * The entry point below is unchanged in behaviour.
+ */
+export async function bootstrap(
+  startupTimeoutMs: number = DATABASE_STARTUP_TIMEOUT_MS,
+): Promise<void> {
   // Open the Postgres pool and wait for it to actually answer before starting
   // the server. This prevents queries from executing before the database is
-  // ready, and it retries inside the deadline because `postgres.js` makes a
-  // single connection attempt where the Mongo driver retried internally.
-  waitForDatabaseConnection(30000)
-    .then(async () => {
-      // Build the dynamic CORS origin snapshot from the Application registry now
-      // that the database is connected. The registry boot-seeds from the
-      // bootstrap-core set synchronously at import, so requests before this
-      // resolves are still safe; this adds the registered
-      // first-party/third-party app origins.
-      // Background-safe (fail-soft) — never blocks startup.
-      await refreshOriginRegistry();
-      await reconcileOfficialRedirectUris();
+  // ready.
+  await waitForDatabaseConnection(startupTimeoutMs);
 
-      // Seed platform-default reputation rules (idempotent) — currently the
-      // cross-app `endorsement_received` rule awarded by /app-signals/ingest.
-      await reputationService.seedDefaultRules();
+  // Build the dynamic CORS origin snapshot from the Application registry now
+  // that the database is connected. The registry boot-seeds from the
+  // bootstrap-core set synchronously at import, so requests before this
+  // resolves are still safe; this adds the registered
+  // first-party/third-party app origins.
+  // Background-safe (fail-soft) — never blocks startup.
+  await refreshOriginRegistry();
+  await reconcileOfficialRedirectUris();
 
-      // Seed the baseline Oxy Conduct Policy (idempotent, and NOT an upsert of
-      // the values — a published policy version is immutable, so an existing
-      // document is left untouched). Without it the bridge rejects every event
-      // naming that version rather than silently applying today's tuning.
-      await moderationReputationService.seedBaselinePolicy({
-        policyVersion: BASELINE_OXY_CONDUCT_POLICY_VERSION,
-        severityRules: BASELINE_SEVERITY_RULES,
-        conductFamilies: BASELINE_CONDUCT_FAMILIES,
-        repetitionMultipliers: BASELINE_REPETITION_MULTIPLIERS,
-        repetitionWindowDays: BASELINE_REPETITION_WINDOW_DAYS,
-        multiFindingSecondaryShare: BASELINE_MULTI_FINDING_SECONDARY_SHARE,
-        multiFindingCap: BASELINE_MULTI_FINDING_CAP,
-        standingThresholds: BASELINE_STANDING_THRESHOLDS,
+  // Seed platform-default reputation rules (idempotent) — currently the
+  // cross-app `endorsement_received` rule awarded by /app-signals/ingest.
+  await reputationService.seedDefaultRules();
+
+  // Seed the baseline Oxy Conduct Policy (idempotent, and NOT an upsert of
+  // the values — a published policy version is immutable, so an existing
+  // document is left untouched). Without it the bridge rejects every event
+  // naming that version rather than silently applying today's tuning.
+  await moderationReputationService.seedBaselinePolicy({
+    policyVersion: BASELINE_OXY_CONDUCT_POLICY_VERSION,
+    severityRules: BASELINE_SEVERITY_RULES,
+    conductFamilies: BASELINE_CONDUCT_FAMILIES,
+    repetitionMultipliers: BASELINE_REPETITION_MULTIPLIERS,
+    repetitionWindowDays: BASELINE_REPETITION_WINDOW_DAYS,
+    multiFindingSecondaryShare: BASELINE_MULTI_FINDING_SECONDARY_SHARE,
+    multiFindingCap: BASELINE_MULTI_FINDING_CAP,
+    standingThresholds: BASELINE_STANDING_THRESHOLDS,
+  });
+
+  // Periodically re-tally / expire stale civic validation requests. Unref'd
+  // so it never keeps the process alive; failures are logged, never thrown.
+  const validationSweep = setInterval(() => {
+    sweepValidations().catch((err) =>
+      logger.error('Civic validation sweep failed', err instanceof Error ? err : new Error(String(err))),
+    );
+  }, VALIDATION_SWEEP_INTERVAL_MS);
+  validationSweep.unref();
+
+  // Periodically open random personhood audits (Fase 3) for a sample of
+  // confirmed real persons — REUSES the validator jury; a failed audit
+  // triggers the staking slash cascade. Unref'd + failures logged, like the
+  // validation sweep above.
+  const personhoodAuditSweep = setInterval(() => {
+    sweepPersonhoodAudits().catch((err) =>
+      logger.error('Civic personhood audit sweep failed', err instanceof Error ? err : new Error(String(err))),
+    );
+  }, PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS);
+  personhoodAuditSweep.unref();
+
+  // Periodically re-probe registered user nodes (F5a) so the cached liveness
+  // badge stays current WITHOUT any request ever touching a node. All probes
+  // are SSRF-safe `safeFetch`es. Unref'd + failures logged, like the sweeps
+  // above.
+  const nodeLivenessSweep = setInterval(() => {
+    sweepNodeLiveness().catch((err) =>
+      logger.error('User-node liveness sweep failed', err instanceof Error ? err : new Error(String(err))),
+    );
+  }, NODE_LIVENESS_SWEEP_INTERVAL_MS);
+  nodeLivenessSweep.unref();
+
+  // Start SMTP inbound server if enabled
+  if (getEnvBoolean('SMTP_ENABLED', false)) {
+    try {
+      startSmtpInbound();
+      logger.info('SMTP inbound server enabled');
+    } catch (err) {
+      logger.error('SMTP inbound server failed to start', err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  // Start background jobs: durable BullMQ scheduling when REDIS_URL is set,
+  // otherwise the in-process cron fallback. Never throws.
+  await startBackgroundJobs();
+
+  // Start the F5b node-ingest subsystem (node → Oxy two-way sync): a
+  // fleet-wide pull sweep + on-demand per-user ingests, BullMQ when REDIS_URL
+  // is set else an in-process interval. All node I/O is background-only —
+  // never in a request's read path. Never throws.
+  await startNodeIngestJobs();
+
+  // Publish the periodic transparency checkpoint: one signed Merkle
+  // commitment to every subject's chain head, so anyone can prove their own
+  // history was not rewritten or suppressed without trusting this server.
+  // Never throws; a failed publish retries on the next tick.
+  await startTransparencyCheckpointJobs();
+
+  // Start the ecosystem link-preview warm subsystem: per-URL background
+  // resolves (BullMQ when REDIS_URL is set, else an in-process pending set).
+  // All remote I/O is background-only — never on a request's read path.
+  await startLinkPreviewWarmJobs();
+
+  // Let active moderation consequences lapse on schedule. The ledger row
+  // stays permanently; only the active risk decays, so a minor error does
+  // not become a life sentence. Idempotent — a missed tick only delays a
+  // recovery. Never throws.
+  await startConductRiskExpiryJobs();
+
+  // Materialize `status = 'expired'` on lapsed subscriptions. This REPLACES
+  // a Mongo TTL index that DELETED the subscription record when its period
+  // closed; nothing is deleted now. Entitlement never depends on this
+  // running — every read derives expiry from `end_date` itself — so a missed
+  // tick delays a label and nothing more. Never throws.
+  await startSubscriptionExpiryJobs();
+
+  await new Promise<void>((resolve) => {
+    server.listen(PORT, '0.0.0.0', () => {
+      logger.info(`Server running on port ${PORT}`, {
+        database: 'connected',
       });
-
-      // Periodically re-tally / expire stale civic validation requests. Unref'd
-      // so it never keeps the process alive; failures are logged, never thrown.
-      const validationSweep = setInterval(() => {
-        sweepValidations().catch((err) =>
-          logger.error('Civic validation sweep failed', err instanceof Error ? err : new Error(String(err))),
-        );
-      }, VALIDATION_SWEEP_INTERVAL_MS);
-      validationSweep.unref();
-
-      // Periodically open random personhood audits (Fase 3) for a sample of
-      // confirmed real persons — REUSES the validator jury; a failed audit
-      // triggers the staking slash cascade. Unref'd + failures logged, like the
-      // validation sweep above.
-      const personhoodAuditSweep = setInterval(() => {
-        sweepPersonhoodAudits().catch((err) =>
-          logger.error('Civic personhood audit sweep failed', err instanceof Error ? err : new Error(String(err))),
-        );
-      }, PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS);
-      personhoodAuditSweep.unref();
-
-      // Periodically re-probe registered user nodes (F5a) so the cached liveness
-      // badge stays current WITHOUT any request ever touching a node. All probes
-      // are SSRF-safe `safeFetch`es. Unref'd + failures logged, like the sweeps
-      // above.
-      const nodeLivenessSweep = setInterval(() => {
-        sweepNodeLiveness().catch((err) =>
-          logger.error('User-node liveness sweep failed', err instanceof Error ? err : new Error(String(err))),
-        );
-      }, NODE_LIVENESS_SWEEP_INTERVAL_MS);
-      nodeLivenessSweep.unref();
-
-      // Start SMTP inbound server if enabled
-      if (getEnvBoolean('SMTP_ENABLED', false)) {
-        try {
-          startSmtpInbound();
-          logger.info('SMTP inbound server enabled');
-        } catch (err) {
-          logger.error('SMTP inbound server failed to start', err instanceof Error ? err : new Error(String(err)));
-        }
-      }
-
-      // Start background jobs: durable BullMQ scheduling when REDIS_URL is set,
-      // otherwise the in-process cron fallback. Never throws.
-      await startBackgroundJobs();
-
-      // Start the F5b node-ingest subsystem (node → Oxy two-way sync): a
-      // fleet-wide pull sweep + on-demand per-user ingests, BullMQ when REDIS_URL
-      // is set else an in-process interval. All node I/O is background-only —
-      // never in a request's read path. Never throws.
-      await startNodeIngestJobs();
-
-      // Publish the periodic transparency checkpoint: one signed Merkle
-      // commitment to every subject's chain head, so anyone can prove their own
-      // history was not rewritten or suppressed without trusting this server.
-      // Never throws; a failed publish retries on the next tick.
-      await startTransparencyCheckpointJobs();
-
-      // Start the ecosystem link-preview warm subsystem: per-URL background
-      // resolves (BullMQ when REDIS_URL is set, else an in-process pending set).
-      // All remote I/O is background-only — never on a request's read path.
-      await startLinkPreviewWarmJobs();
-
-      // Let active moderation consequences lapse on schedule. The ledger row
-      // stays permanently; only the active risk decays, so a minor error does
-      // not become a life sentence. Idempotent — a missed tick only delays a
-      // recovery. Never throws.
-      await startConductRiskExpiryJobs();
-
-      // Materialize `status = 'expired'` on lapsed subscriptions. This REPLACES
-      // a Mongo TTL index that DELETED the subscription record when its period
-      // closed; nothing is deleted now. Entitlement never depends on this
-      // running — every read derives expiry from `end_date` itself — so a missed
-      // tick delays a label and nothing more. Never throws.
-      await startSubscriptionExpiryJobs();
-
-      server.listen(PORT, '0.0.0.0', () => {
-        logger.info(`Server running on port ${PORT}`, {
-          database: 'connected',
-        });
-      });
-    })
-    .catch((error) => {
-      logger.error('Failed to start server - database startup failed:', error);
-      process.exit(1);
+      resolve();
     });
+  });
+}
+
+// Only boot if this module is run directly.
+if (require.main === module) {
+  bootstrap().catch((error) => {
+    logger.error('Failed to start server - database startup failed:', error);
+    process.exit(1);
+  });
 }
 
 export default server;
