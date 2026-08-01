@@ -82,6 +82,8 @@ const STORED_USER = {
   linksMetadata: [{ url: 'https://oxy.so' }],
   verified: true,
   type: 'local',
+  accountStatus: 'active',
+  reputationTier: 'trusted',
   privacySettings: {
     isPrivateAccount: false,
     fediverseSharing: true,
@@ -216,6 +218,8 @@ describe('GET /profiles/search public projection', () => {
     for (const path of PRIVATE_PATHS) {
       expect(profile).not.toHaveProperty(path);
     }
+    expect(profile).not.toHaveProperty('accountStatus');
+    expect(profile).not.toHaveProperty('reputationTier');
     expect(res.raw).not.toContain('nate@oxy.so');
     expect(res.raw).not.toContain('rt_secret');
     expect(res.raw).not.toContain('048295c46ffc47451');

@@ -58,6 +58,8 @@ const STORED_USER = {
   linksMetadata: [{ url: 'https://oxy.so' }],
   verified: true,
   type: 'local',
+  accountStatus: 'active',
+  reputationTier: 'trusted',
   privacySettings: {
     isPrivateAccount: false,
     fediverseSharing: true,
@@ -179,6 +181,8 @@ describe('GET /search public projection', () => {
     for (const path of PRIVATE_PATHS) {
       expect(user).not.toHaveProperty(path);
     }
+    expect(user).not.toHaveProperty('accountStatus');
+    expect(user).not.toHaveProperty('reputationTier');
     // Guard the serialized bytes too: a private value must not survive under any
     // key, including one a future serializer might rename it to.
     expect(res.raw).not.toContain('nate@oxy.so');

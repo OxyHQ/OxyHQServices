@@ -83,6 +83,7 @@ import dotenv from 'dotenv';
 import { normalizeMultilineText } from '@oxyhq/core';
 import { getDbName } from '../config/db.js';
 import { logger } from '../utils/logger.js';
+import userCache from '../utils/userCache.js';
 import { cleanDisplayName } from '../utils/displayNameSanitize.js';
 import {
   normalizeLinks,
@@ -312,8 +313,12 @@ async function backfill(): Promise<void> {
 
   const flush = async (): Promise<void> => {
     if (batch.length === 0) return;
+    const userIds = batch.map((op) => op.updateOne.filter._id.toString());
     if (!dryRun) {
       await users.bulkWrite(batch, { ordered: false });
+      for (const userId of userIds) {
+        userCache.invalidate(userId);
+      }
     }
     updated += batch.length;
     batch = [];
