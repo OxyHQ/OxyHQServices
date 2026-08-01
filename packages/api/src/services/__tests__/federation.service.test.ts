@@ -841,20 +841,3 @@ describe('isOwnFederationDomain', () => {
     expect(isOwnFederationDomain('www.mastodon.social')).toBe(false);
   });
 });
-
-describe('isOwnFederationDomain', () => {
-  it('accepts the apex domain case-insensitively', () => {
-    expect(isOwnFederationDomain('oxy.so')).toBe(true);
-    expect(isOwnFederationDomain('OXY.SO')).toBe(true);
-  });
-
-  it('accepts a leading www. alias of the apex domain', () => {
-    expect(isOwnFederationDomain('www.oxy.so')).toBe(true);
-    expect(isOwnFederationDomain('WWW.OXY.SO')).toBe(true);
-  });
-
-  it('rejects unrelated domains', () => {
-    expect(isOwnFederationDomain('mastodon.social')).toBe(false);
-    expect(isOwnFederationDomain('www.mastodon.social')).toBe(false);
-  });
-});

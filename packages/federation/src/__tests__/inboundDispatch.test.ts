@@ -1,3 +1,4 @@
+import { createDomainPolicy } from '../apUri';
 import {
   createInboundDispatcher,
   ActorResolutionPendingError,
@@ -40,11 +41,14 @@ function makeRig(overrides: {
   const outboundRejected: Array<[string, string | undefined]> = [];
   const onInboundFollowAcceptedCalls: Array<[string, string, string]> = [];
   const onOutboundFollowAcceptedCalls: string[] = [];
-  const blockedHosts = new Set(overrides.blockedHosts ?? []);
+  const domainPolicy =
+    overrides.blockedHosts === undefined
+      ? createDomainPolicy({ domain: 'mention.earth' })
+      : createDomainPolicy({ domain: 'mention.earth', blockedDomains: overrides.blockedHosts });
   const validatedActivities: Array<Record<string, unknown>> = [];
 
   const config: InboundDispatcherConfig = {
-    isBlockedDomain: (host) => blockedHosts.has(host),
+    isBlockedDomain: domainPolicy.isBlockedDomain,
     validateActivity: (activity) => {
       validatedActivities.push(activity);
       if (overrides.validate) return overrides.validate(activity);
@@ -301,6 +305,39 @@ describe('blocked-origin domain policy', () => {
     );
     expect(rig.outboundAcceptedByActivityId).toHaveLength(0);
     expect(rig.onOutboundFollowAcceptedCalls).toHaveLength(0);
+  });
+
+  it('drops Undo(Follow) from a blocked origin — no unbridge or follow-row delete', async () => {
+    const rig = makeRig({
+      blockedHosts: ['spam.example'],
+      inboundFollow: { _id: 'row1', localUserId: 'u-alice' },
+      actorOxyUserIdForUndo: 'u-mallory',
+    });
+    await rig.dispatcher.processInboxActivity(
+      { type: 'Undo', actor: BLOCKED_ACTOR, object: { type: 'Follow', object: LOCAL_ACTOR } },
+      BLOCKED_ACTOR,
+    );
+    expect(rig.bridgeUnfollowCalls).toHaveLength(0);
+    expect(rig.deletedFollowIds).toHaveLength(0);
+    expect(rig.validatedActivities).toHaveLength(0);
+  });
+
+  it('drops Reject(Follow) from a blocked origin — no outbound rejection is recorded', async () => {
+    const rig = makeRig({ blockedHosts: ['spam.example'] });
+    await rig.dispatcher.processInboxActivity(
+      { type: 'Reject', actor: BLOCKED_ACTOR, object: { type: 'Follow', id: 'follow-1' } },
+      BLOCKED_ACTOR,
+    );
+    expect(rig.outboundRejected).toHaveLength(0);
+    expect(rig.validatedActivities).toHaveLength(0);
+  });
+
+  it('blocks a www.-prefixed host via createDomainPolicy canonicalization', async () => {
+    const rig = makeRig({ blockedHosts: ['spam.example'] });
+    const wwwActor = 'https://www.spam.example/users/mallory';
+    await rig.dispatcher.processInboxActivity({ type: 'Create', actor: wwwActor }, wwwActor);
+    expect(rig.contentActivities).toHaveLength(0);
+    expect(rig.validatedActivities).toHaveLength(0);
   });
 
   it('refuses the origin BEFORE the payload is parsed', async () => {
