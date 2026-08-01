@@ -1605,6 +1605,137 @@ export function resolvableFixtures(): FixtureSet {
 }
 
 /**
+ * Documents whose FOREIGN KEYS dangle — the shape that stopped the first
+ * production run.
+ *
+ * A fourth class, and the one no audit could see until
+ * `referentialIntegrity.ts` existed: every document below is perfectly valid on
+ * its own (right enums, no collisions, complete fields) and names a parent that
+ * does not exist. Mongo enforced no foreign key, so an account deleted years ago
+ * leaves its rows behind; Postgres answers `23503`.
+ *
+ * Built on the clean set, so the ONLY dangling references are the three injected
+ * here and every other relation is a live control. Three, because the schema's
+ * own `ON DELETE` makes them three genuinely different questions — see
+ * `OrphanResolvability`:
+ *
+ * | document | relation | column | ON DELETE |
+ * |---|---|---|---|
+ * | {@link ORPHAN_BUNDLE} | `bundles.user_id -> users.id` | NOT NULL | cascade |
+ * | {@link ORPHAN_REMINDER} | `reminders.related_message_id -> messages.id` | NULLABLE | set null |
+ * | {@link ORPHAN_PUSH_TOKEN} | `push_tokens.application_id -> applications.id` | NULLABLE | cascade |
+ *
+ * Each sits beside a healthy sibling of the SAME shape (the clean set's own
+ * bundle, reminder and push token), so a check that reported every row of a
+ * relation rather than the dangling one would be caught here rather than in
+ * production.
+ */
+export function orphanFixtures(): FixtureSet {
+  const fixtures = cleanFixtures();
+  return {
+    ...fixtures,
+    bundles: [
+      ...(fixtures.bundles ?? []),
+      {
+        // THE PRODUCTION SHAPE, verbatim: a bundle whose owner is gone.
+        _id: oid(ORPHAN_BUNDLE),
+        userId: oid(DELETED_USER),
+        name: 'Orphaned',
+        icon: 'folder-outline',
+        color: '#5F6368',
+        matchLabels: [],
+        enabled: true,
+        collapsed: true,
+        order: 1,
+        createdAt: T0,
+        updatedAt: T0,
+      },
+    ],
+    reminders: [
+      ...(fixtures.reminders ?? []),
+      {
+        _id: oid(ORPHAN_REMINDER),
+        userId: oid(USER_A),
+        text: 'Reply to a message that no longer exists',
+        remindAt: FUTURE,
+        completed: false,
+        pinned: false,
+        relatedMessageId: oid(DELETED_MESSAGE),
+        createdAt: T0,
+        updatedAt: T0,
+      },
+    ],
+    pushtokens: [
+      ...(fixtures.pushtokens ?? []),
+      {
+        _id: oid(ORPHAN_PUSH_TOKEN),
+        userId: oid(USER_A),
+        token: 'ExponentPushToken[orphan]',
+        platform: 'android',
+        deviceId: 'dev-2',
+        applicationId: oid(DELETED_APPLICATION),
+        createdAt: T0,
+        updatedAt: T0,
+      },
+    ],
+    topics: [
+      ...(fixtures.topics ?? []),
+      // A HEALTHY self-reference that points FORWARD in `_id` order: the child
+      // sorts before the parent, so at the instant the child's row is built the
+      // parent has not been read yet. `topics.parent_topic_id` is one of the
+      // seven self-referencing columns the copy defers to a second pass for
+      // exactly this reason. A check that decided orphanhood at emit time would
+      // report this — and reporting a reference that resolves is the failure
+      // that gets a gate switched off.
+      {
+        _id: oid(FORWARD_CHILD_TOPIC),
+        name: 'mobile',
+        slug: 'mobile',
+        displayName: 'Mobile',
+        type: 'category',
+        source: 'seed',
+        aliases: [],
+        parentTopicId: oid(FORWARD_PARENT_TOPIC),
+        isActive: true,
+        createdAt: T0,
+        updatedAt: T0,
+      },
+      {
+        _id: oid(FORWARD_PARENT_TOPIC),
+        name: 'devices',
+        slug: 'devices',
+        displayName: 'Devices',
+        type: 'category',
+        source: 'seed',
+        aliases: [],
+        isActive: true,
+        createdAt: T0,
+        updatedAt: T0,
+      },
+    ],
+  };
+}
+
+/** A bundle whose `userId` names an account the source no longer holds. */
+export const ORPHAN_BUNDLE = '68ad000000000000000000b1';
+/** A reminder pointing at a message that is gone. NULLABLE, ON DELETE SET NULL. */
+export const ORPHAN_REMINDER = '68ad000000000000000000b2';
+/** A push token registered by an application that is gone. NULLABLE, ON DELETE cascade. */
+export const ORPHAN_PUSH_TOKEN = '68ad000000000000000000b3';
+
+/** The account id no `users` document carries. */
+export const DELETED_USER = '68ad0000000000000000ffa1';
+/** The message id no `messages` document carries. */
+export const DELETED_MESSAGE = '68ad0000000000000000ffa2';
+/** The application id no `applications` document carries. */
+export const DELETED_APPLICATION = '68ad0000000000000000ffa3';
+
+/** A topic naming a parent that sorts AFTER it — a healthy forward reference. */
+export const FORWARD_CHILD_TOPIC = '68ad000000000000000000c1';
+/** That parent. Streamed second, so the child's reference resolves only at the end. */
+export const FORWARD_PARENT_TOPIC = '68ad000000000000000000c2';
+
+/**
  * One member of a duplicate-open group.
  *
  * `createdAt: null` means the field is ABSENT from the document, not null —

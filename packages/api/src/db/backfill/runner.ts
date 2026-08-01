@@ -56,6 +56,11 @@ import {
 import { planLevels, selfReferencingColumns } from './order';
 import { planTables, tableName, type CollectionPlan } from './plan';
 import {
+  auditReferentialIntegrity,
+  referentialIntegrityNotRun,
+  type ReferentialIntegrityReport,
+} from './referentialIntegrity';
+import {
   createResolutionContext,
   planResolutions,
   ResolutionLog,
@@ -187,12 +192,23 @@ export async function discover(source: MongoSource): Promise<Discovery> {
  * the audit phase and the copy phase provably share ONE set of decisions — the
  * `--audit-only` report would otherwise be able to disagree with what the copy
  * then does.
+ *
+ * The referential-integrity audit runs LAST and once, over everything. It is
+ * also the expensive one: it streams every mapped collection and runs its
+ * transform, so this phase now costs roughly the read half of a copy rather
+ * than a handful of index-assisted aggregations. That is deliberate — the run
+ * it exists to prevent got three levels in before a `23503` stopped it.
  */
 export async function runAudits(
   source: MongoSource,
   discovery: Discovery,
-  resolutions: ResolutionContext
-): Promise<{ findings: AuditFinding[]; fileOwnerCensus: Record<string, number> }> {
+  resolutions: ResolutionContext,
+  options: { readonly batchSize?: number } = {}
+): Promise<{
+  findings: AuditFinding[];
+  fileOwnerCensus: Record<string, number>;
+  referentialIntegrity: ReferentialIntegrityReport;
+}> {
   const findings: AuditFinding[] = [];
   let fileOwnerCensus: Record<string, number> = {};
 
@@ -209,7 +225,32 @@ export async function runAudits(
     }
   }
 
-  return { findings, fileOwnerCensus };
+  // ONE pass over EVERY mapped collection, empty ones included, and outside the
+  // loop above on purpose: a foreign key is a relation between two collections,
+  // so it cannot be answered one collection at a time. The complete set is
+  // required — a referenced table fed by a plan that is not here holds no rows,
+  // and healthy references to it would then read as orphans.
+  //
+  // LAST, and only when nothing else blocks: this pass runs the plans' own
+  // transforms, and a transform THROWS on a document the schema refuses. Running
+  // it over data an earlier audit already reported on would replace that report
+  // with the first `BackfillValueError` — losing the enum value or the colliding
+  // pair the operator has to act on. The copy is refused either way; the report
+  // says NOT RUN rather than printing a clean answer.
+  const blocked = findings.filter(auditWouldBlockCopy);
+  const referentialIntegrity =
+    blocked.length > 0
+      ? referentialIntegrityNotRun(
+          `${blocked.length} earlier finding(s) already block the copy, and this ` +
+            'pass runs the transforms — which refuse exactly those documents. ' +
+            'Fix them and re-run: referential integrity is UNKNOWN, not clean.'
+        )
+      : await auditReferentialIntegrity(source, discovery.migrated, resolutions, {
+          batchSize: options.batchSize,
+        });
+  findings.push(...referentialIntegrity.findings);
+
+  return { findings, fileOwnerCensus, referentialIntegrity };
 }
 
 /** Per-collection copy result. */
@@ -516,6 +557,14 @@ export interface RunSummary {
   readonly discovery: Discovery;
   readonly findings: readonly AuditFinding[];
   readonly fileOwnerCensus: Record<string, number>;
+  /**
+   * What the referential-integrity audit inspected, orphans or not.
+   *
+   * Carried whole rather than folded into `findings` alone, because the COUNTS
+   * are the evidence that the check ran: `0 orphans` means something only next
+   * to the number of relations, documents and references it looked at.
+   */
+  readonly referentialIntegrity: ReferentialIntegrityReport;
   readonly copies: readonly CopyResult[];
   /**
    * What the documented resolutions were GOING to do, decided before the copy.
@@ -561,7 +610,12 @@ export async function runBackfill(
   const resolutionPlan = await planResolutions(options.source);
   const resolutions = createResolutionContext(resolutionPlan, resolutionLog);
 
-  const { findings, fileOwnerCensus } = await runAudits(options.source, discovery, resolutions);
+  const { findings, fileOwnerCensus, referentialIntegrity } = await runAudits(
+    options.source,
+    discovery,
+    resolutions,
+    { batchSize: options.batchSize }
+  );
   const blocking = findings.filter(auditWouldBlockCopy);
   if (blocking.length > 0) throw new AuditBlockedError(blocking);
 
@@ -619,6 +673,7 @@ export async function runBackfill(
     discovery,
     findings,
     fileOwnerCensus,
+    referentialIntegrity,
     copies,
     resolutionPlan,
     resolutions: resolutionLog.summary(),

@@ -29,10 +29,16 @@
  * | `--verify-only` | verify an already-copied database |
  *
  * `--audit-only` exists because the audits are the phase whose OUTPUT is a
- * decision: an enum value the CHECK refuses, or two names that collide
- * case-insensitively, has to be resolved by a human before a copy is worth
- * starting. Discovering that partway through 296,924 documents is the outcome
- * this separation prevents.
+ * decision: an enum value the CHECK refuses, two names that collide
+ * case-insensitively, or a row naming a parent that does not exist, has to be
+ * resolved by a human before a copy is worth starting. Discovering that partway
+ * through 296,924 documents is the outcome this separation prevents — and did
+ * not, until the referential-integrity audit was added: the first production
+ * run reported CLEAN here and then failed on `bundles_user_id_users_id_fk`.
+ *
+ * `--audit-only` is no longer cheap. The referential pass streams every mapped
+ * collection and runs its transform, so it costs roughly the read half of a
+ * copy. `--batch-size` applies to it.
  *
  * ## Safety
  *
@@ -53,6 +59,11 @@ import {
 } from '../src/db/backfill/collectionMap';
 import { connectMongoSource, redactUri, type Checkpoint } from '../src/db/backfill/mongoSource';
 import { auditWouldBlockCopy, type AuditFinding } from '../src/db/backfill/audit';
+import {
+  describeRelationColumns,
+  VacuousReferentialIntegrityError,
+  type ReferentialIntegrityReport,
+} from '../src/db/backfill/referentialIntegrity';
 import {
   createResolutionContext,
   planResolutions,
@@ -223,7 +234,12 @@ async function main(): Promise<number> {
     const resolutions = createResolutionContext(resolutionPlan, new ResolutionLog());
 
     heading('AUDIT');
-    const { findings, fileOwnerCensus } = await runAudits(source, discovery, resolutions);
+    const { findings, fileOwnerCensus, referentialIntegrity } = await runAudits(
+      source,
+      discovery,
+      resolutions,
+      { batchSize: options.batchSize }
+    );
     if (Object.keys(fileOwnerCensus).length > 0) {
       say('  files.ownerUserId system-owner census:');
       for (const [sentinel, count] of Object.entries(fileOwnerCensus).sort()) {
@@ -243,6 +259,7 @@ async function main(): Promise<number> {
           `${answered} answered by a documented resolution rule.`
       );
     }
+    reportReferentialIntegrity(referentialIntegrity);
     reportResolutionPlan(resolutionPlan);
 
     if (options.auditOnly) {
@@ -291,6 +308,13 @@ async function main(): Promise<number> {
       say(error.message);
       return 1;
     }
+    // A vacuous referential pass is not a data problem and not a clean run — it
+    // says the audit itself did not work, which must never read as "no orphans".
+    if (error instanceof VacuousReferentialIntegrityError) {
+      heading('AUDIT DID NOT RUN');
+      say(error.message);
+      return 1;
+    }
     throw error;
   } finally {
     await source.close();
@@ -317,6 +341,64 @@ function reportFinding(finding: AuditFinding): void {
   }
   say(`      RESOLVED by \`${finding.resolvedBy.id}\` — does not block.`);
   say(`      decision: ${finding.resolvedBy.decision}`);
+}
+
+/**
+ * The referential-integrity pass: what it inspected, then every orphan it found.
+ *
+ * The COUNTS print whether or not anything was found, and that is the point —
+ * "no orphans" is a claim about a check, so the operator has to be able to see
+ * that the check looked at 165 relations and half a million references rather
+ * than at nothing. The previous audit reported clean by having no such check at
+ * all.
+ *
+ * Orphans print by VALUE with the referencing document ids under each, because
+ * one deleted account is usually the whole explanation for a relation's findings
+ * and a flat list of 44 document ids hides that.
+ */
+function reportReferentialIntegrity(report: ReferentialIntegrityReport): void {
+  heading('REFERENTIAL INTEGRITY');
+  if (!report.ran) {
+    say('  NOT RUN — referential integrity is UNKNOWN, which is not the same as clean.');
+    say(`  ${report.skippedReason ?? '(no reason recorded)'}`);
+    return;
+  }
+  say(
+    `  ${report.relationsInspected} foreign key(s) derived from the schema, ` +
+      `${report.relationsExercised} of them exercised by this data; ` +
+      `${report.collectionsInspected} collection(s) streamed, ` +
+      `${report.documentsInspected} document(s) read, ${report.rowsInspected} row(s) ` +
+      `built, ${report.referencesChecked} non-NULL reference(s) resolved.`
+  );
+
+  if (report.orphans.length === 0) {
+    say('  Every reference names a row the migration produces.');
+    return;
+  }
+
+  say(`\n  ${report.orphans.length} relation(s) hold orphans:`);
+  for (const orphans of report.orphans) {
+    const relation = orphans.relation;
+    say(
+      `\n    ${describeRelationColumns(relation)}  [${relation.constraint}, ` +
+        `${relation.nullable ? 'NULLABLE' : 'NOT NULL'}, ON DELETE ${relation.onDelete}]`
+    );
+    say(
+      `      ${orphans.documents} row(s) from ${orphans.collection} across ` +
+        `${orphans.distinctValues} missing value(s) — resolvability: ${orphans.resolvability}`
+    );
+    for (const value of orphans.values) {
+      const ids = value.documentIds.join(', ');
+      const elided =
+        value.documents > value.documentIds.length
+          ? ` … and ${value.documents - value.documentIds.length} more`
+          : '';
+      say(`      missing ${JSON.stringify(value.value)} — referenced by ${ids}${elided}`);
+    }
+    if (orphans.distinctValues > orphans.values.length) {
+      say(`      … and ${orphans.distinctValues - orphans.values.length} more missing value(s)`);
+    }
+  }
 }
 
 /** What the resolutions are going to do, decided before anything is written. */

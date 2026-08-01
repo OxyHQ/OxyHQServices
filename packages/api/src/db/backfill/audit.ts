@@ -31,6 +31,16 @@
  * the real one" is a decision for a human and the report is what that decision
  * needs.
  *
+ * ## Why a referential-integrity audit is necessary
+ *
+ * It lives in `referentialIntegrity.ts` because it is the one audit that cannot
+ * be a query — it has to run the plans' own transforms — but it belongs to this
+ * phase and reports through the same {@link AuditFinding}. Its absence is what
+ * let a production run report CLEAN here and then die on
+ * `bundles_user_id_users_id_fk` partway through level 2 of 6: Mongo enforced no
+ * foreign key, so a document naming a deleted account was legal there and is
+ * `23503` here. That file's own header has the mechanism.
+ *
  * ## Findings are not warnings
  *
  * A finding blocks the copy unless a DOCUMENTED RESOLUTION RULE answers it. The
@@ -50,8 +60,8 @@ import type { ResolutionContext, ResolutionRule } from './resolutions';
 /** One thing the schema would refuse. */
 export interface AuditFinding {
   readonly collection: string;
-  /** `enum` | `uniqueness` | `file-system-owner`. */
-  readonly kind: 'enum' | 'uniqueness' | 'file-system-owner';
+  /** `enum` | `uniqueness` | `file-system-owner` | `referential-integrity`. */
+  readonly kind: 'enum' | 'uniqueness' | 'file-system-owner' | 'referential-integrity';
   /** Human-readable, and specific enough to act on without opening the code. */
   readonly detail: string;
   /** Documents affected, where the audit can count them. */
@@ -353,6 +363,11 @@ export function auditWouldBlockCopy(finding: AuditFinding): boolean {
   return (
     finding.kind === 'enum' ||
     finding.kind === 'uniqueness' ||
-    finding.kind === 'file-system-owner'
+    finding.kind === 'file-system-owner' ||
+    // A referential finding blocks whether or not the column is NULLABLE.
+    // Nullable means SQL NULL is accepted, not that a value naming no row is:
+    // both are `23503`. The nullability changes what the report RECOMMENDS —
+    // see `OrphanResolvability` — never whether the copy may start.
+    finding.kind === 'referential-integrity'
   );
 }
