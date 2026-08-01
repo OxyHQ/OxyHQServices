@@ -64,6 +64,21 @@ export const COLLECTION_PLANS: readonly CollectionPlan[] = [
  * and the group is the explanation.
  */
 export const NOT_MIGRATED: readonly ExcludedCollection[] = [
+  // --- bookkeeping for a Mongo-era migration that already ran ---------------
+  {
+    collection: 'accountmigrations',
+    reason:
+      'The idempotency LEDGER of the account-unification scripts ' +
+      '(`LEDGER_COLLECTION` in scripts/account-migration-lib.ts), which map an ' +
+      'old workspace/managed-account id to the User row that replaced it so a ' +
+      're-run is a no-op. It is bookkeeping ABOUT a migration, not application ' +
+      'data, and has no Postgres counterpart — every row it describes was ' +
+      'already moved into `users` by migrate-accounts-10/20/30/40, which is ' +
+      'why those source collections are themselves excluded here. Copying the ' +
+      'ledger would import a record of work that no longer needs doing. Note ' +
+      'MongoDB retains it either way (nothing in this migration deletes from ' +
+      'Mongo), so the old-id-to-new-id audit trail is preserved where it is.',
+  },
   // --- the zero-cookie cutover (ccfd1b68, PR #568) --------------------------
   {
     collection: 'refreshtokens',
