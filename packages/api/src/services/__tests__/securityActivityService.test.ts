@@ -205,7 +205,7 @@ describe('what a write stores', () => {
     await securityActivityService.logSecurityEvent({
       userId,
       eventType: 'profile_updated',
-      eventDescription: `bad value ${'x'.repeat(600)}`,
+      eventDescription: `bad\u0000\u0007value ${'x'.repeat(600)}`,
     });
 
     const [row] = await storedRows(userId);
@@ -220,7 +220,7 @@ describe('what a write stores', () => {
     await securityActivityService.logSecurityEvent({
       userId,
       eventType: 'sign_out',
-      eventDescription: ' ',
+      eventDescription: '\u0000\u0001\u0002',
     });
 
     const [row] = await storedRows(userId);

@@ -190,7 +190,7 @@ export class ResolutionLog {
   private readonly records = new Map<string, ResolutionRecord>();
 
   record(entry: ResolutionRecord): void {
-    this.records.set(`${entry.rule.id} ${entry.documentId}`, entry);
+    this.records.set(`${entry.rule.id}\u0000${entry.documentId}`, entry);
   }
 
   /**
