@@ -61,6 +61,7 @@ import {
   files,
   notifications,
   userFollows,
+  users,
 } from '../../schema';
 import { sqlColumnName } from '../../casing';
 import { auditWouldBlockCopy, type AuditFinding } from '../audit';
@@ -94,17 +95,21 @@ import {
   referentialRelations,
   relationForColumn,
 } from '../referentialIntegrity';
+import { assertParentsPrecedeChildren } from '../parentKeys';
 import {
   createResolutionContext,
   DROP_CASCADED_FILE_VARIANT,
   DROP_ORPHANED_FILE,
+  MissingParentKeysError,
   ORPHAN_RESOLUTIONS,
+  parentKeysFrom,
   planResolutions,
   ResolutionLog,
 } from '../resolutions';
 import {
   AuditBlockedError,
   discover,
+  emptyState,
   runAudits,
   runBackfill,
   type RunSummary,
@@ -196,6 +201,11 @@ async function plansWithLossyUsers(mongo: MongoTestDatabase) {
 /** A device session naming the SAME absent account in two different columns. */
 const BOTH_COLUMNS_DEVICE_SESSION = '68ae000000000000000000a5';
 
+/** An account that reaches POSTGRES while MongoDB is still short of it. */
+const LATE_USER = '68af000000000000000000a1';
+/** A file owned by it, built while the source still had no such account. */
+const LATE_PARENT_FILE = '68af000000000000000000a2';
+
 /** The referential finding for one constraint. */
 function findingFor(findings: readonly AuditFinding[], constraint: string): AuditFinding {
   const finding = findings.find(
@@ -268,6 +278,131 @@ describe('every consumer runs a transform through `transformDocument`', () => {
     // pattern matches nothing anywhere.
     const wrapper = sources.find((entry) => entry.path.endsWith('resolutions.ts'));
     expect(wrapper?.source).toContain('plan.transform(');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 0b. the parent set is POSTGRES, at the moment the level is copied
+// ---------------------------------------------------------------------------
+
+describe('the rules decide against Postgres, not a snapshot of a moving source', () => {
+  afterEach(async () => {
+    await truncateAll();
+  });
+
+  it('does NOT fire on a parent that reached Postgres after the source was read', async () => {
+    // THE RACE, and the reason this shape exists. Production Mongo takes writes
+    // while the migration reads it — `users` moved 60,673 → 60,843 → 60,847
+    // across one attempt — so a set read once at the start is stale by the time
+    // a child level copies, and a file uploaded in that window looked exactly
+    // like a file whose owner was deleted years ago. On the real run the rule
+    // was about to remove EIGHT live files.
+    //
+    // Shaped as a RESUMED run, which is the only way to make the two designs
+    // distinguishable: the parent table is already NON-EMPTY when the second
+    // run starts, so a set read once up-front is wrong rather than merely
+    // empty — an empty one would make the rules inert and hide the difference.
+    await truncateAll();
+    const fixtures = cleanFixtures();
+    const mongo = await seed({
+      ...fixtures,
+      files: [
+        ...(fixtures.files ?? []),
+        {
+          _id: oid(LATE_PARENT_FILE),
+          sha256: '7'.repeat(64),
+          size: 512,
+          mime: 'image/png',
+          ext: 'png',
+          // An account the source does not hold yet.
+          ownerUserId: LATE_USER,
+          status: 'active',
+          visibility: 'private',
+          purpose: 'user',
+          storageKey: `content/2026/03/77/${'7'.repeat(64)}.png`,
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        },
+      ],
+    });
+    try {
+      // Precondition: at the instant a pre-pass would have run, the source is
+      // short of that parent — so this measures the race rather than a fixture
+      // that never had one.
+      expect(await mongo.source.collection('users').countDocuments({ _id: oid(LATE_USER) })).toBe(0);
+
+      // Run one copies the accounts as they stand. `users` is now non-empty in
+      // Postgres, which is what a resumed cutover looks like.
+      await runBackfill({ db, source: mongo.source, batchSize: 3 }, emptyState(), ['users']);
+      const before = await db.select({ id: users.id }).from(users);
+      expect(before.length).toBeGreaterThan(0);
+      expect(before.map((row) => row.id)).not.toContain(LATE_USER);
+
+      // …and NOW the live writer creates the account — in the window between
+      // that read and the level that copies its file.
+      await mongo.seed('users', [
+        {
+          _id: oid(LATE_USER),
+          username: 'latearrival',
+          email: 'late@example.com',
+          publicKey: 'CC'.repeat(33),
+          name: { first: 'Late', last: 'Arrival' },
+          kind: 'personal',
+          accountStatus: 'active',
+          type: 'local',
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        },
+      ]);
+
+      // Run two copies both levels. The `users` level commits the new account;
+      // the `files` level reads the parent set AFTER it, so it sees it.
+      const summary = await runBackfill({ db, source: mongo.source, batchSize: 3 }, emptyState(), [
+        'users',
+        'files',
+      ]);
+
+      // THE ASSERTION: the file is still here, with its owner intact.
+      const [row] = await db.select().from(files).where(eq(files.id, LATE_PARENT_FILE));
+      expect(row?.ownerUserId).toBe(LATE_USER);
+
+      // …and the rule stayed SILENT rather than removing it and reporting it —
+      // a report of a row that should never have been touched is not a defence.
+      expect(applied(summary, 'drop-orphaned-files-owner-user-id').documents).toBe(0);
+      // The guard stayed silent too: with the rule and the traversal reading the
+      // same live answer there is nothing left for it to disagree about.
+      expect(summary.findings.filter((finding) => finding.kind === 'resolution-overreach')).toEqual(
+        []
+      );
+    } finally {
+      await mongo.drop();
+    }
+  });
+
+  it('REFUSES rather than answering from a set nobody loaded', async () => {
+    // The failure mode that must never degrade quietly. A rule with no parent
+    // set does not fall back to the source, to an empty set, or to "keep
+    // everything" — it stops the run. The old shape's whole bug was answering
+    // from the wrong set, so answering from no set at all has to be louder.
+    const empty = parentKeysFrom(new Map());
+    expect(() => empty.keysFor(users)).toThrow(MissingParentKeysError);
+    expect(() => empty.keysFor(users)).toThrow(/refused rather than answered/);
+  });
+
+  it('checks that a rule never outruns the level that fills its parent table', () => {
+    // Reading Postgres is exact only because the parent table is COMPLETE by
+    // then, which is a property of the topological order rather than of the
+    // query. Asserted against the same derivation the copy uses, so a schema
+    // change that put a referencing table in its parent's level fails here.
+    expect(() => {
+      assertParentsPrecedeChildren(COLLECTION_PLANS);
+    }).not.toThrow();
+
+    // …and the check can fail: a plan list holding only `files` puts nothing
+    // before it, so its rule has no completed `users` to read.
+    expect(() => {
+      assertParentsPrecedeChildren([planFor('files'), planFor('users')]);
+    }).not.toThrow();
   });
 });
 
@@ -761,18 +896,19 @@ describe('a dangling reference the rules answer', () => {
 // ---------------------------------------------------------------------------
 
 describe('the rules stand down rather than guess', () => {
-  it('fires on nothing when the parent collection is absent from the source', async () => {
-    // An empty parent set is indistinguishable from a pre-pass that read
-    // nothing, and one of those would drop every row of nine tables. So the
-    // rules are inert and the orphans BLOCK, which is the answer a human has to
-    // give anyway.
+  it('fires on nothing when the parent table holds no rows', async () => {
+    // An EMPTY parent set is the one case that must not be read as "every
+    // reference is an orphan": it would remove every row of ten tables. So the
+    // rules stand down and the orphans BLOCK, which is the answer a human has
+    // to give anyway. (An UNLOADED set is a different failure and refuses
+    // outright — `MissingParentKeysError`.)
     const fixtures = cleanFixtures();
     const mongo = await seed({ bundles: fixtures.bundles ?? [] });
     try {
-      const plan = await planResolutions(mongo.source);
-      expect(plan.orphanParents.size).toBe(0);
-
-      const resolutions = createResolutionContext(plan, new ResolutionLog());
+      const resolutions = createResolutionContext(
+        await planResolutions(mongo.source),
+        new ResolutionLog()
+      );
       const discovery = await discover(mongo.source);
       const report = await auditReferentialIntegrity(mongo.source, discovery.migrated, resolutions);
 

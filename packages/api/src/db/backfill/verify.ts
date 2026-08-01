@@ -45,11 +45,14 @@ import type { PgTable } from 'drizzle-orm/pg-core';
 import type { Database } from '../../config/postgres';
 import type { MongoSource } from './mongoSource';
 import { planTables, tableName, type CollectionPlan } from './plan';
+import { loadParentKeys } from './parentKeys';
 import {
   createResolutionContext,
+  parentTablesForRules,
   planResolutions,
   ResolutionLog,
   transformDocument,
+  type ParentKeys,
   type ResolutionContext,
 } from './resolutions';
 import type { MongoDocument } from './values';
@@ -140,14 +143,15 @@ export async function expectedRowCounts(
   source: MongoSource,
   plan: CollectionPlan,
   batchSize: number,
-  resolutions: ResolutionContext
+  resolutions: ResolutionContext,
+  parents: ParentKeys
 ): Promise<Record<string, number>> {
   const expected: Record<string, number> = {};
   for (const table of planTables(plan)) expected[tableName(table)] = 0;
 
   const cursor = source.collection(plan.collection).find({}, { batchSize });
   for await (const doc of cursor) {
-    transformDocument(plan, doc as MongoDocument, resolutions, (emitted) => {
+    transformDocument(plan, doc as MongoDocument, resolutions, parents, (emitted) => {
       // A row a documented rule removes is not expected in Postgres, and this
       // check would otherwise read its absence as the copy losing it. The
       // removal is reported by id under its own rule, and the referential audit
@@ -228,10 +232,21 @@ export async function verifyCollection(
   db: Database,
   source: MongoSource,
   plan: CollectionPlan,
-  options: { sampleSize: number; batchSize: number; resolutions: ResolutionContext }
+  options: {
+    sampleSize: number;
+    batchSize: number;
+    resolutions: ResolutionContext;
+    parents: ParentKeys;
+  }
 ): Promise<{ failures: VerificationFailure[]; comparedDocuments: number; comparedFields: number }> {
   const failures: VerificationFailure[] = [];
-  const expected = await expectedRowCounts(source, plan, options.batchSize, options.resolutions);
+  const expected = await expectedRowCounts(
+    source,
+    plan,
+    options.batchSize,
+    options.resolutions,
+    options.parents
+  );
 
   for (const table of planTables(plan)) {
     const name = tableName(table);
@@ -265,7 +280,7 @@ export async function verifyCollection(
     const documents = await sampleDocuments(source, plan.collection, options.sampleSize);
     const expectedRows = new Map<string, Record<string, unknown>>();
     for (const doc of documents) {
-      transformDocument(plan, doc, options.resolutions, (emitted) => {
+      transformDocument(plan, doc, options.resolutions, options.parents, (emitted) => {
         if (tableName(emitted.table) !== tableName(plan.table)) return;
         if (emitted.written === null) return;
         const rowId = emitted.written.id;
@@ -341,6 +356,11 @@ export async function verifyBackfill(
   // Making it an option would create a way to verify against decisions the
   // copy never made.
   const resolutions = createResolutionContext(await planResolutions(source), new ResolutionLog());
+  // The SAME set the copy decided against — read from the database being
+  // verified, after it was written. Recomputing the expectation from a Mongo
+  // snapshot would compare the copy against a different decision than the one
+  // it made, and report every correctly-removed row as a missing one.
+  const parents = await loadParentKeys(db, parentTablesForRules());
 
   const failures: VerificationFailure[] = [];
   let checkedTables = 0;
@@ -352,6 +372,7 @@ export async function verifyBackfill(
       sampleSize,
       batchSize,
       resolutions,
+      parents,
     });
     failures.push(...result.failures);
     checkedTables += planTables(plan).length;

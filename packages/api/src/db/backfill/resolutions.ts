@@ -100,9 +100,10 @@
  * prose:
  *
  * 1. **The predicate is narrow by construction.** A rule fires on ONE declared
- *    `(table, column)` and only when that column holds a value the parent
- *    collection does not, read from {@link ResolutionPlan.orphanParents}. Any
- *    other row is emitted byte-for-byte unchanged.
+ *    `(table, column)` and only when that column holds a value the PARENT TABLE
+ *    does not — read from {@link ParentKeys}, which is the rows Postgres holds
+ *    at the moment the level is copied and never a snapshot of a source that is
+ *    still taking writes. Any other row is emitted byte-for-byte unchanged.
  * 2. **The schema is the premise, and it is verified.** The decisions above rest
  *    on what each constraint declares; nothing here restates it —
  *    `assertOrphanResolutionsMatchSchema` derives each relation from the drizzle
@@ -120,10 +121,11 @@
  *    that acted on more rows than the traversal found orphaned blocks as an
  *    overreach — that is the guard against a widened predicate quietly deleting
  *    live data.
- * 4. **An empty parent set makes every rule INERT.** "The pre-pass read nothing"
- *    and "the parent collection is genuinely empty" are indistinguishable, and
- *    one of them would drop every row of ten tables. So the rules stand down
- *    and the orphans block instead.
+ * 4. **An empty parent set makes every rule INERT, and a MISSING one refuses.**
+ *    A parent table that holds nothing and a parent table nobody loaded are
+ *    different failures: the first stands the rules down and leaves the orphans
+ *    blocking, the second stops the run outright. Neither ever answers from a
+ *    different set.
  * 5. **A rule that DESTROYS a row emits what the row was the last handle on.**
  *    {@link OrphanRelation.carry} names columns copied verbatim into the record,
  *    so the report is a usable worklist rather than a list of ids to something
@@ -159,7 +161,7 @@ import {
   tableName,
   type CollectionPlan,
 } from './plan';
-import { date, describeId, id, isObjectId, type MongoDocument } from './values';
+import { date, describeId, isObjectId, type MongoDocument } from './values';
 
 /**
  * The live collection name of the validator-jury requests.
@@ -787,28 +789,24 @@ export interface DuplicateOpenValidationRequestGroup {
  * Whole-collection state the rules need, computed from the source before the
  * copy starts.
  *
- * Two of the rules need one, for the same reason: the question is about a SET
- * the document is not a member of. "Which of these is the most recent" is a
- * question about a GROUP, and "does this account still exist" is a question
- * about the whole `users` collection — neither is answerable from the document
- * in hand. The card rule is a per-document predicate and needs nothing.
+ * ONE rule needs it: "which of these is the most recent" is a question about a
+ * GROUP, and a per-document transform cannot see a group. The card rule is a
+ * per-document predicate and needs nothing.
+ *
+ * The orphan rules deliberately have NOTHING here. They used to read every
+ * parent `_id` from Mongo at this point, and that set went STALE: production
+ * MongoDB takes writes while the migration reads it — `users` grew from 60,673
+ * to 60,847 across three passes of one cutover attempt — so a file uploaded
+ * after the pre-pass, naming an account created after the pre-pass, looked
+ * exactly like a file whose owner had been deleted years ago. The overreach
+ * guard caught it: the rule was about to remove 8 LIVE files. A snapshot of a
+ * moving source cannot be made correct by taking it more carefully, so there is
+ * no snapshot — see {@link ParentKeys}.
  */
 export interface ResolutionPlan {
   readonly duplicateOpenValidationRequests: readonly DuplicateOpenValidationRequestGroup[];
   /** Every id that loses the most-recent-wins tie-break, across all groups. */
   readonly demotedValidationRequestIds: ReadonlySet<string>;
-  /**
-   * Every `_id` each parent collection of {@link ORPHAN_RESOLUTIONS} holds.
-   *
-   * Keyed by the LIVE collection name. A collection that is absent from the
-   * source, or that holds nothing, is absent from this map — which makes its
-   * rules INERT rather than making every reference to it an orphan. That
-   * direction is deliberate: "the pre-pass read nothing" and "the collection is
-   * empty" are indistinguishable here, and one of them would drop every row of
-   * nine tables. Standing down leaves the orphans blocking, which is the answer
-   * a human has to give anyway.
-   */
-  readonly orphanParents: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /**
@@ -854,7 +852,6 @@ export const OPEN_AFTER_COPY_MATCH: Readonly<Record<string, unknown>> = Object.f
  * ({@link MongoSource}), so this cannot touch the rollback source it reads.
  */
 export async function planResolutions(source: MongoSource): Promise<ResolutionPlan> {
-  const orphanParents = await readOrphanParents(source);
   const groups = await source
     .collection(VALIDATION_REQUESTS_COLLECTION)
     .aggregate([
@@ -904,50 +901,7 @@ export async function planResolutions(source: MongoSource): Promise<ResolutionPl
     });
   }
 
-  return { duplicateOpenValidationRequests: resolved, demotedValidationRequestIds, orphanParents };
-}
-
-/**
- * Every `_id` the parent collections hold, for the orphan rules' predicate.
- *
- * Projected to `_id` alone: `users` carries 81 emitted columns and this needs
- * one of them, so the read is served by the `_id` index rather than by fetching
- * the documents. The id is coerced through {@link id}, the SAME helper the
- * transforms use to build a reference — a set built with a different coercion
- * would answer "absent" for a parent that is present in another spelling, and
- * that direction deletes live rows.
- *
- * A collection missing from the source is SKIPPED rather than recorded empty,
- * and a collection that turns out to hold nothing is dropped from the map for
- * the same reason — see {@link ResolutionPlan.orphanParents}.
- */
-async function readOrphanParents(
-  source: MongoSource
-): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
-  const parents = new Map<string, ReadonlySet<string>>();
-  const live = new Set(await source.listCollections());
-
-  // `absent-parent` only. A cascade reads no parent set at all — its trigger is
-  // a removal this run performed, not an absence in Mongo — so listing its
-  // nominal parent collection here would build a set nothing consults and
-  // suggest a predicate that does not exist.
-  const collections = new Set(
-    ORPHAN_RESOLUTIONS.filter((entry) => entry.trigger === 'absent-parent').map(
-      (entry) => entry.parentCollection
-    )
-  );
-  for (const collection of collections) {
-    if (!live.has(collection)) continue;
-    const ids = new Set<string>();
-    const cursor = source.collection(collection).find({}, { projection: { _id: 1 } });
-    for await (const doc of cursor) {
-      const value = id(doc as MongoDocument, '_id');
-      if (value !== null) ids.add(value);
-    }
-    if (ids.size > 0) parents.set(collection, ids);
-  }
-
-  return parents;
+  return { duplicateOpenValidationRequests: resolved, demotedValidationRequestIds };
 }
 
 /** One `$push`ed group member, with the instant that orders it. */
@@ -1013,14 +967,6 @@ export interface ResolutionContext {
    * collision the rule was not written for matters.
    */
   readonly resolvesUniquenessGroup: (rule: ResolutionRule, ids: readonly string[]) => boolean;
-  /**
-   * Every `_id` each parent collection holds — {@link ResolutionPlan.orphanParents}.
-   *
-   * Read by {@link transformDocument}, never by a transform: the orphan rules
-   * are applied to the ROW a transform emits rather than inside it, so no plan
-   * has to remember to ask.
-   */
-  readonly orphanParents: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /** Bind a plan and a log into the context a transform is called with. */
@@ -1030,7 +976,6 @@ export function createResolutionContext(
 ): ResolutionContext {
   return {
     demotedValidationRequestIds: plan.demotedValidationRequestIds,
-    orphanParents: plan.orphanParents,
     record: (entry) => {
       log.record(entry);
     },
@@ -1046,6 +991,95 @@ export function createResolutionContext(
 // ---------------------------------------------------------------------------
 // running a transform under the rules
 // ---------------------------------------------------------------------------
+
+/**
+ * The parent rows a rule decides against — supplied per phase, never cached.
+ *
+ * ## Why this is a parameter and not a snapshot
+ *
+ * The rules answer one question: "will this reference name a row Postgres
+ * holds?" The only correct set to ask that of is the one the FOREIGN KEY will
+ * check against, and a set read from MongoDB minutes earlier is not it.
+ * Production Mongo takes writes throughout the cutover, so that set is stale by
+ * construction — measured at 60,673 → 60,843 → 60,847 `users` across one
+ * attempt — and a row created inside that window is indistinguishable from a
+ * parent deleted years ago. The overreach guard caught it live: 8 files with
+ * living owners were about to be removed.
+ *
+ * So there is no cached set. Each phase supplies the set it can PROVE:
+ *
+ * | phase | the set | why it is exact |
+ * |---|---|---|
+ * | copy | `select id from users` at the start of the level | the FK checks this same table microseconds later, and levels are topological so every parent row is already committed |
+ * | audit | the rows the traversal has emitted so far | nothing is written yet, and level order means the parents are complete before a child is inspected |
+ * | verify | the same query as the copy | it is checking what the copy wrote |
+ *
+ * ## It REFUSES rather than degrades
+ *
+ * {@link keysFor} throws for a table nobody loaded. There is deliberately no
+ * fallback: a rule that quietly answered from the wrong parent set is precisely
+ * the bug this replaced, and "the set was unavailable" must stop the run rather
+ * than change the answer. An EMPTY set is a different thing and is honoured —
+ * it means the parent table holds nothing, which makes the rules inert.
+ *
+ * ## What this does NOT fix
+ *
+ * It does not make the copy a snapshot. A row written to Mongo after its level
+ * is copied is not in Postgres, and a child of it copied later still dangles —
+ * that is a cutover-design problem (a write freeze, or a delta pass), not one a
+ * predicate can solve, and nothing here pretends otherwise.
+ */
+export interface ParentKeys {
+  /**
+   * Every primary key the parent table holds, for the phase asking.
+   *
+   * @throws {MissingParentKeysError} When that table was not loaded.
+   */
+  keysFor(table: PgTable): ReadonlySet<string>;
+}
+
+/** Raised when a rule needs a parent set nobody supplied. */
+export class MissingParentKeysError extends Error {
+  constructor(readonly table: string, readonly loaded: readonly string[]) {
+    super(
+      `No parent keys were loaded for ${table}, so a documented resolution ` +
+        'cannot decide whether a reference to it resolves. Loaded: ' +
+        `${loaded.join(', ') || '(none)'}. The run is refused rather than ` +
+        'answered from a different set — deciding against the wrong parents is ' +
+        'exactly the failure this contract exists to prevent.'
+    );
+    this.name = 'MissingParentKeysError';
+  }
+}
+
+/** Bind an already-loaded map of parent keys into a {@link ParentKeys}. */
+export function parentKeysFrom(loaded: ReadonlyMap<string, ReadonlySet<string>>): ParentKeys {
+  return {
+    keysFor(table) {
+      const keys = loaded.get(tableName(table));
+      if (keys === undefined) {
+        throw new MissingParentKeysError(tableName(table), [...loaded.keys()]);
+      }
+      return keys;
+    },
+  };
+}
+
+/** Every parent table an `absent-parent` rule decides against. */
+export function parentTablesForRules(): PgTable[] {
+  const seen = new Set<string>();
+  const tables: PgTable[] = [];
+  for (const relation of ORPHAN_RESOLUTIONS) {
+    // A cascade reads no parent set: its trigger is a removal this run
+    // performed, not a row's presence anywhere.
+    if (relation.trigger !== 'absent-parent') continue;
+    const name = tableName(relation.targetTable);
+    if (seen.has(name)) continue;
+    seen.add(name);
+    tables.push(relation.targetTable);
+  }
+  return tables;
+}
 
 /** One documented rule that fired on one emitted row. */
 export interface AppliedOrphanResolution {
@@ -1095,6 +1129,15 @@ export function transformDocument(
   plan: CollectionPlan,
   doc: MongoDocument,
   resolutions: ResolutionContext,
+  /**
+   * The parent rows to decide against — {@link ParentKeys}.
+   *
+   * A required PARAMETER rather than something the context carries, so no
+   * caller can run a transform without saying which set of parents it is
+   * entitled to answer from. The type system is the enforcement: the phase that
+   * knows is the phase that supplies.
+   */
+  parents: ParentKeys,
   emit: (row: ResolvedRow) => void
 ): void {
   const documentId = describeId(doc) ?? UNIDENTIFIED_DOCUMENT;
@@ -1118,7 +1161,7 @@ export function transformDocument(
   // Pass 1 — the rules that read the SOURCE: a value naming a parent MongoDB
   // does not hold.
   const resolved = built.map((entry) =>
-    resolveOrphanedReferences(entry.table, entry.row, documentId, resolutions)
+    resolveOrphanedReferences(entry.table, entry.row, documentId, resolutions, parents)
   );
 
   // Pass 2 — the declared CONSEQUENCES of pass 1, and only within this document.
@@ -1225,16 +1268,20 @@ const UNIDENTIFIED_DOCUMENT = '(document has no _id)';
  * - A NULL, absent or non-string value is left alone — under MATCH SIMPLE a NULL
  *   component satisfies the constraint unconditionally, so there is no orphan to
  *   answer.
- * - The value must be ABSENT from the parent set. A value the parent collection
- *   holds is not touched, which is the property the control rows in
- *   `__tests__/orphanResolutions.test.ts` assert and the mutation test breaks.
- * - An unknown or empty parent set stands the rule down entirely.
+ * - The value must be ABSENT from the parent set THIS PHASE supplied — the rows
+ *   Postgres holds when the level is copied, never a snapshot of Mongo taken
+ *   earlier. A value the parent table holds is not touched, which is the
+ *   property the control rows in `__tests__/orphanResolutions.test.ts` assert
+ *   and the mutation test breaks.
+ * - An EMPTY parent set stands the rule down entirely; an UNLOADED one refuses
+ *   the run ({@link MissingParentKeysError}).
  */
 function resolveOrphanedReferences(
   table: PgTable,
   row: Record<string, unknown>,
   documentId: string,
-  resolutions: ResolutionContext
+  resolutions: ResolutionContext,
+  parents: ParentKeys
 ): ResolvedRow {
   const declared = ORPHAN_RESOLUTIONS_BY_TABLE.get(tableName(table));
   if (declared === undefined) return { table, source: row, written: row, applied: [] };
@@ -1244,11 +1291,15 @@ function resolveOrphanedReferences(
   let written = row;
 
   for (const relation of declared) {
-    const parents = resolutions.orphanParents.get(relation.parentCollection);
-    if (parents === undefined || parents.size === 0) continue;
+    // THROWS for a table nobody loaded — never a fallback. An EMPTY set is a
+    // different answer and is honoured: it means the parent table holds
+    // nothing, and standing down leaves the orphans blocking, which is the
+    // decision a human has to make anyway.
+    const known = parents.keysFor(relation.targetTable);
+    if (known.size === 0) continue;
     const value = row[relation.property];
     if (typeof value !== 'string' || value.length === 0) continue;
-    if (parents.has(value)) continue;
+    if (known.has(value)) continue;
 
     applied.push({ relation, value });
     if (relation.action === 'drop-row') dropped = true;

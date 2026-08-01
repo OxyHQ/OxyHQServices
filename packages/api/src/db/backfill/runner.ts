@@ -60,11 +60,14 @@ import {
   referentialIntegrityNotRun,
   type ReferentialIntegrityReport,
 } from './referentialIntegrity';
+import { loadParentKeys, assertParentsPrecedeChildren } from './parentKeys';
 import {
   createResolutionContext,
+  parentTablesForRules,
   planResolutions,
   ResolutionLog,
   transformDocument,
+  type ParentKeys,
   type ResolutionContext,
   type ResolutionPlan,
   type ResolutionSummary,
@@ -290,6 +293,17 @@ export interface RunnerOptions {
    * to a throwaway log, which is correct but reports nothing.
    */
   readonly resolutions?: ResolutionContext;
+  /**
+   * The parent rows the documented resolutions decide against.
+   *
+   * Read from POSTGRES at the start of the LEVEL rather than per collection, so
+   * one `select id from users` serves the dozens of collections in it — and so
+   * the set is taken at a single, nameable instant rather than drifting between
+   * neighbours. `runBackfill` supplies it; a caller reaching `copyCollection`
+   * directly gets one loaded for that call. It is never a snapshot of Mongo:
+   * see `parentKeys.ts` for the 8 live files that cost.
+   */
+  readonly parents?: ParentKeys;
   /** Called after each committed batch, so a caller can persist the checkpoint. */
   readonly onCheckpoint?: (collection: string, checkpoint: Checkpoint) => Promise<void> | void;
   /** Progress reporting. Never the place for data — see `logger` usage in the CLI. */
@@ -354,6 +368,10 @@ export async function copyCollection(
   const resolutions =
     options.resolutions ??
     createResolutionContext(await planResolutions(source), new ResolutionLog());
+  // Loaded HERE when the caller supplied none, so a direct `copyCollection`
+  // still decides against Postgres rather than against nothing. There is no
+  // path that leaves it unset: `ParentKeys` throws for a table it was not given.
+  const parents = options.parents ?? (await loadParentKeys(db, parentTablesForRules()));
   const tables = orderPlanTables(plan);
   const deferredByTable = new Map<string, readonly string[]>();
   for (const table of tables) {
@@ -372,7 +390,7 @@ export async function copyCollection(
     }
 
     for (const doc of documents) {
-      transformDocument(plan, doc, resolutions, (emitted) => {
+      transformDocument(plan, doc, resolutions, parents, (emitted) => {
         const name = tableName(emitted.table);
         const bucket = collected.get(name);
         if (!bucket) {
@@ -414,7 +432,7 @@ export async function copyCollection(
   const selfReferencesFilled =
     deferredByTable.size === 0
       ? 0
-      : await fillSelfReferences(plan, options, tables, deferredByTable, resolutions);
+      : await fillSelfReferences(plan, options, tables, deferredByTable, resolutions, parents);
 
   return {
     collection: plan.collection,
@@ -456,7 +474,8 @@ async function fillSelfReferences(
   options: RunnerOptions,
   tables: readonly PgTable[],
   deferredByTable: ReadonlyMap<string, readonly string[]>,
-  resolutions: ResolutionContext
+  resolutions: ResolutionContext,
+  parents: ParentKeys
 ): Promise<number> {
   const { db, source } = options;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
@@ -467,7 +486,7 @@ async function fillSelfReferences(
     const updates: Array<{ table: PgTable; id: string; values: Record<string, unknown> }> = [];
 
     for (const doc of documents) {
-      transformDocument(plan, doc, resolutions, (emitted) => {
+      transformDocument(plan, doc, resolutions, parents, (emitted) => {
         const table = emitted.table;
         const name = tableName(table);
         const deferred = deferredByTable.get(name);
@@ -632,6 +651,10 @@ export async function runBackfill(
   const concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
   const copies: CopyResult[] = [];
 
+  // The topological order is the whole reason reading Postgres is exact, so it
+  // is checked rather than assumed — against the same derivation the copy uses.
+  assertParentsPrecedeChildren(selected);
+
   for (const [index, level] of levels.entries()) {
     const pending = level.filter((plan) => {
       if (!state.completed.includes(plan.collection)) return true;
@@ -645,6 +668,13 @@ export async function runBackfill(
         `up to ${concurrency} at a time`
     );
 
+    // ONE read of the parent tables per level, taken now — after every earlier
+    // level committed and before any row of this one is built. That instant is
+    // what makes the documented resolutions exact: the set they decide against
+    // is the set the foreign key will check, not a snapshot of a source that is
+    // still taking writes. `parentKeys.ts` has the 8 live files that cost.
+    const parents = await loadParentKeys(options.db, parentTablesForRules());
+
     // A simple worker pool over the level's queue. Bounded because the
     // Postgres pool is bounded (PG_MAX_POOL_SIZE, default 20) and a COPY holds
     // a connection for its whole stream.
@@ -655,7 +685,7 @@ export async function runBackfill(
         report(`${plan.collection}: copying`);
         const result = await copyCollection(
           plan,
-          { ...options, resolutions },
+          { ...options, resolutions, parents },
           state.checkpoints[plan.collection]
         );
         copies.push({ ...result, elapsedMs: Date.now() - startedAt });

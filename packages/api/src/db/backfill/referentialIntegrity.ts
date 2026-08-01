@@ -143,10 +143,12 @@ import { streamCollection, type MongoSource } from './mongoSource';
 import { planLevels } from './order';
 import { planTables, singlePrimaryKeyProperty, tableName, type CollectionPlan } from './plan';
 import {
+  MissingParentKeysError,
   ORPHAN_RESOLUTIONS,
   transformDocument,
   type AppliedOrphanResolution,
   type OrphanRelation,
+  type ParentKeys,
   type ResolutionContext,
   type ResolutionRule,
   type ResolvedRow,
@@ -942,6 +944,14 @@ export async function auditReferentialIntegrity(
   }
 
   const { targetSetsByTable, checkedByTable } = indexRelations(relations);
+  // The rules decide against the rows THIS PASS has emitted, which is what
+  // Postgres will hold — nothing is written yet, so there is nothing else that
+  // could be exact. Level order makes it complete: a parent collection is
+  // streamed before any collection that references it, so by the time a child
+  // row is built the set is whole. It is also the SAME set the traversal checks
+  // references against, which is the point: the rule and the audit can no
+  // longer disagree about what exists, because there is only one answer.
+  const parents = auditParentKeys(targetSetsByTable);
   const orphans = new Map<string, OrphanAccumulator>();
   const applied = new Map<OrphanRelation, AppliedTally>();
   const counters: PassCounters = {
@@ -973,7 +983,7 @@ export async function auditReferentialIntegrity(
         counters.documents += documents.length;
         emission.documentsRead += documents.length;
         for (const doc of documents) {
-          inspectDocument(plan, doc, resolutions, {
+          inspectDocument(plan, doc, resolutions, parents, {
             targetSetsByTable,
             checkedByTable,
             pending,
@@ -1162,6 +1172,38 @@ function indexRelations(relations: readonly Relation[]): {
   return { targetSetsByTable, checkedByTable };
 }
 
+/**
+ * The parent keys the AUDIT decides against: the rows it has emitted so far.
+ *
+ * Backed by the traversal's own target sets, so it is a LIVE view rather than a
+ * copy — a set still filling as a collection streams is exactly right, because
+ * level order guarantees it is complete before any collection that references it
+ * is read. Nothing is in Postgres during an audit, so this is the only set that
+ * can be exact; it is also the set the traversal itself checks against, which is
+ * what stops the rule and the report from disagreeing.
+ *
+ * A table with no `(table, primary key)` target set is one nothing references,
+ * so no rule can be deciding against it — asking is a bug, and it THROWS.
+ */
+function auditParentKeys(
+  targetSetsByTable: ReadonlyMap<string, readonly TargetSet[]>
+): ParentKeys {
+  return {
+    keysFor(table) {
+      const key = singlePrimaryKeyProperty(table);
+      const sets = targetSetsByTable.get(tableName(table)) ?? [];
+      const primary =
+        key === null
+          ? undefined
+          : sets.find((set) => set.properties.length === 1 && set.properties[0] === key);
+      if (primary === undefined) {
+        throw new MissingParentKeysError(tableName(table), [...targetSetsByTable.keys()]);
+      }
+      return primary.values;
+    },
+  };
+}
+
 /** Append to a `Map<string, T[]>`, creating the array on first use. */
 function push<T>(index: Map<string, T[]>, key: string, entry: T): void {
   const existing = index.get(key);
@@ -1174,10 +1216,11 @@ function inspectDocument(
   plan: CollectionPlan,
   doc: MongoDocument,
   resolutions: ResolutionContext,
+  parents: ParentKeys,
   state: PassState
 ): void {
   const documentId = describeId(doc) ?? '(document has no _id)';
-  transformDocument(plan, doc, resolutions, (emitted) => {
+  transformDocument(plan, doc, resolutions, parents, (emitted) => {
     state.counters.rows += 1;
     const name = tableName(emitted.table);
     const key = state.emission.primaryKeyProperty;
