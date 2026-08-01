@@ -36,8 +36,10 @@
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import User from '../src/models/User';
+import { closeRedis } from '../src/config/redis';
 import { sanitizePlainText } from '../src/utils/sanitize';
 import { logger } from '../src/utils/logger';
+import { userCache } from '../src/utils/userCache';
 
 dotenv.config();
 
@@ -99,15 +101,20 @@ async function backfillProfileText(): Promise<BackfillStats> {
       update: { $set: Record<string, string> };
     };
   }> = [];
+  const pendingUserIds: string[] = [];
 
   const flush = async (): Promise<void> => {
     if (pending.length === 0) return;
     if (dryRun) {
       pending.length = 0;
+      pendingUserIds.length = 0;
       return;
     }
     try {
       await User.bulkWrite(pending, { ordered: false });
+      for (const userId of pendingUserIds) {
+        userCache.invalidate(userId);
+      }
     } catch (error) {
       stats.errors += pending.length;
       logger.error(
@@ -117,6 +124,7 @@ async function backfillProfileText(): Promise<BackfillStats> {
       );
     } finally {
       pending.length = 0;
+      pendingUserIds.length = 0;
     }
   };
 
@@ -138,6 +146,7 @@ async function backfillProfileText(): Promise<BackfillStats> {
     if (Object.keys($set).length === 0) continue;
 
     stats.documentsUpdated += 1;
+    pendingUserIds.push(String(doc._id));
     pending.push({
       updateOne: {
         filter: { _id: doc._id as mongoose.Types.ObjectId },
@@ -176,6 +185,10 @@ async function main(): Promise<void> {
   } finally {
     await mongoose.connection.close();
     logger.info('MongoDB connection closed');
+    // `userCache.invalidate()` lazily opens the shared Redis client; close it so
+    // one-shot ECS tasks exit cleanly when REDIS_URL is set.
+    await closeRedis();
+    logger.info('Redis client closed');
   }
 }
 
