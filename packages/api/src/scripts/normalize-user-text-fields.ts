@@ -83,6 +83,7 @@ import dotenv from 'dotenv';
 import { normalizeMultilineText } from '@oxyhq/core';
 import { getDbName } from '../config/db.js';
 import { logger } from '../utils/logger.js';
+import { closeRedis } from '../config/redis.js';
 import userCache from '../utils/userCache.js';
 import { cleanDisplayName } from '../utils/displayNameSanitize.js';
 import {
@@ -377,21 +378,19 @@ async function main(): Promise<void> {
   } finally {
     await mongoose.disconnect();
     logger.info('MongoDB connection closed');
+    // `userCache.invalidate()` lazily opens the shared Redis client, whose live
+    // socket is a ref'd handle — without this the task sits RUNNING forever
+    // after the work is done. No-op when REDIS_URL is unset.
+    await closeRedis();
+    logger.info('Redis client closed');
   }
 }
 
 // Only auto-run when invoked directly as a script (bun run … / node dist/…), NOT
 // when imported — the unit test drives `buildUserTextUpdate` in isolation, with
 // no mongoose connection. Mirrors the guard in `set-seed-verifiers.ts`.
-//
-// The explicit `process.exit(0)`: imported singletons (Redis-backed caches,
-// BullMQ workers) keep the event loop alive, which would otherwise leave this
-// Fargate one-shot task running forever after the work is done.
 if (require.main === module) {
   main()
-    .then(() => {
-      process.exit(0);
-    })
     .catch((error) => {
       logger.error(
         'User text normalization failed',

@@ -313,6 +313,7 @@ class SmtpOutboundService {
   private ensureRetryTimer(): void {
     if (this.retryTimer) return;
     this.retryTimer = setInterval(() => this.processQueue(), 30_000);
+    this.retryTimer.unref?.();
   }
 
   private async processQueue(): Promise<void> {

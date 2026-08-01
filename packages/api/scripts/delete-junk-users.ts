@@ -34,6 +34,7 @@ import { Message } from '../src/models/Message';
 import { Mailbox } from '../src/models/Mailbox';
 import Notification from '../src/models/Notification';
 import { rawDb } from './account-migration-lib';
+import { closeRedis } from '../src/config/redis';
 import { logger } from '../src/utils/logger';
 
 type ObjId = mongoose.Types.ObjectId;
@@ -349,6 +350,9 @@ async function main(): Promise<void> {
   } finally {
     await mongoose.connection.close();
     logger.info('MongoDB connection closed');
+    // `emailService.deleteAllUserData` invalidates userCache, which opens Redis.
+    await closeRedis();
+    logger.info('Redis client closed');
   }
   process.exit(code);
 }

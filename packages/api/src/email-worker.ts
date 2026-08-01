@@ -21,6 +21,7 @@ import { logger } from './utils/logger';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { getDbName } from './config/db';
+import { closeRedis } from './config/redis';
 
 dotenv.config();
 
@@ -83,6 +84,7 @@ async function shutdown(): Promise<void> {
   await stopSmtpInbound();
   smtpOutbound.shutdown();
   await mongoose.connection.close();
+  await closeRedis();
   logger.info('Email Worker stopped');
   process.exit(0);
 }
