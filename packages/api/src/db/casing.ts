@@ -16,7 +16,7 @@
  * exist` at runtime, and in a catalogue query it silently matches nothing.
  */
 
-import type { Column } from 'drizzle-orm';
+import { getTableName, sql, type Column, type SQL } from 'drizzle-orm';
 import { CasingCache } from 'drizzle-orm/casing';
 import type { Casing } from 'drizzle-orm/utils';
 
@@ -34,4 +34,25 @@ const casingCache = new CasingCache(DATABASE_CASING);
  */
 export function sqlColumnName(column: Column): string {
   return casingCache.getColumnCasing(column);
+}
+
+/**
+ * A FULLY QUALIFIED `"table"."column"` reference, for use inside hand-written
+ * `sql` — the second guise of the trap above, and the one that costs DATA
+ * rather than raising an error.
+ *
+ * Interpolating a drizzle column into `sql` renders it BARE (`"user_id"`) when
+ * its table is not in that statement's `FROM`, which is exactly the case inside
+ * a correlated subquery. `where ${userLinkMetadata.userId} = ${users.id}`
+ * renders `where "user_id" = "id"`: both names then resolve against the
+ * SUBQUERY's own table, so the predicate compares two of ITS columns to each
+ * other, matches nothing, and returns an empty array with **no error at all**.
+ * That shipped — `linksMetadata` and both follow counts read empty/zero on
+ * every public profile until an assertion on real rows caught it.
+ *
+ * Qualify every correlated reference, and treat "a correlated subquery returned
+ * nothing" as a bug in the SQL until proven otherwise.
+ */
+export function qualified(column: Column): SQL {
+  return sql`${sql.identifier(getTableName(column.table))}.${sql.identifier(sqlColumnName(column))}`;
 }

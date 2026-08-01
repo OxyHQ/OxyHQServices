@@ -1,36 +1,40 @@
 /**
- * `POST /federation/follow` — the service-credential follow bridge.
+ * `POST /federation/follow` — the service-credential follow bridge, against a
+ * REAL Postgres on both halves.
  *
  * A FEDERATED (fediverse) actor that follows/unfollows a LOCAL user over
  * ActivityPub is mirrored into the Oxy follow graph by Mention's backend through
- * this route. The suite walks the trust boundary and the idempotency guarantees:
+ * this route.
  *
- *  - missing `federation:write` scope                      → 403
- *  - follower is not a `type:'federated'` user             → 403 (anti-impersonation)
- *  - unknown follower / unknown target                     → 404
- *  - target is federated (not a local user)                → 403
- *  - either side archived                                  → 409
- *  - a repeated follow/unfollow moves the graph exactly once
+ * ## The guarantee this file exists for
  *
- * ## This route is HALF-ported, and the suite is shaped around that
+ * **A remote Follow of an account created after the Postgres cutover must be
+ * mirrored.** Two independent defects stopped that, and either one alone was
+ * enough:
  *
- * `routes/federation.ts` still reads its guards through the Mongoose `User`
- * model (`User.findById(...).select(...).lean()`), while the write it delegates
- * to — `userService.followUser` / `unfollowUser` — is fully on Postgres. The
- * previous suite mocked BOTH halves with one in-memory store; when the write
- * half moved, the store stopped being consulted and the two idempotency cases
- * 500'd.
+ *  1. `federationFollowSchema` validated both ids with `/^[a-f0-9]{24}$/i`. That
+ *     runs inside `validate({ body })`, i.e. BEFORE the handler, so a
+ *     post-cutover account — whose id is the uuid v7 `generatedId()` mints —
+ *     was answered 400 without a single lookup.
+ *  2. The route's anti-impersonation guards read `User.findById(...)` (Mongo)
+ *     while the write they gate, `userService.followUser`, was already on
+ *     Postgres. The guard and the write disagreed about whether an account
+ *     exists at all: an account present only in Postgres 404'd at the guard,
+ *     and one present only in Mongo passed the guard and then failed the write.
  *
- * So: the guard half stays mocked (that is the un-ported code, and mocking it is
- * the only way to reach the handler at all), and the graph half runs for real.
- * The two are kept consistent by seeding a REAL `users` row FIRST and mirroring
- * it into the guard store under the same id.
+ * The previous suite could not have caught either. It mirrored every seeded row
+ * into an in-memory `guardUsers` map so the two halves agreed by construction,
+ * and every id in it was 24-hex by construction, so the schema was never asked
+ * a question it could get wrong. Here there is ONE store — the database — and
+ * `mirrors a Follow of a POST-CUTOVER account` seeds an account whose id is
+ * minted by the schema itself and asserts it is not 24-hex before using it, so
+ * nothing can pass vacuously.
  *
- * The ids are explicit 24-char ObjectId hex, which the route's schema
- * (`federationFollowSchema` → `objectIdSchema`) still requires and which the
- * migration contract preserves verbatim as a `text` primary key. That schema
- * will reject the uuid v7 every account minted after the cutover receives; the
- * fix belongs with this file's own port, and is reported rather than made here.
+ * ## What is still mocked, and why
+ *
+ * `serviceAuthMiddleware` only — minting a real service token would test the
+ * token mint, not this bridge, and the scope it grants is a test PARAMETER here.
+ * The guards, the graph, the schema and the error handler are all real.
  *
  * The denormalized `_count` assertions are GONE, not translated: those columns
  * were deliberately deleted (`db/schema/users.ts`) — `user_follows` is the
@@ -41,49 +45,6 @@ import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
 import { randomBytes } from 'node:crypto';
-
-/** The real service imports `Types`, which the global mongoose stub strips. */
-jest.mock('mongoose', () => {
-  const actual = jest.requireActual('mongoose');
-  return { __esModule: true, ...actual, default: actual };
-});
-
-/** The guard-read store standing in for the route's un-ported Mongo reads. */
-interface GuardUser {
-  _id: string;
-  type: 'local' | 'federated' | 'agent' | 'automated';
-  accountStatus: string;
-}
-
-const guardUsers = new Map<string, GuardUser>();
-
-const mockUserFindById = jest.fn((id: string) => {
-  const doc = guardUsers.get(id) ?? null;
-  return { select: () => ({ lean: () => Promise.resolve(doc) }) };
-});
-
-jest.mock('../../models/User', () => ({
-  __esModule: true,
-  default: { findById: (...args: [string]) => mockUserFindById(...args) },
-}));
-
-// Models / services the federation router pulls in but this suite never
-// exercises — stubbed so importing the router stays lightweight.
-jest.mock('../../models/Subscription', () => ({ __esModule: true, default: {} }));
-jest.mock('../../models/Application', () => ({ __esModule: true, default: {} }));
-jest.mock('../../utils/credentialDomainCache', () => ({
-  __esModule: true,
-  default: { getAllowedDomains: jest.fn() },
-}));
-jest.mock('../../services/securityActivityService', () => ({ __esModule: true, default: {} }));
-jest.mock('../../services/federation.service', () => ({
-  __esModule: true,
-  getUserPublicKey: jest.fn(),
-  signWithKeyId: jest.fn(),
-}));
-jest.mock('../../utils/logger', () => ({
-  logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
-}));
 
 /** The scopes the mocked service-auth middleware grants. */
 let currentScopes: string[] = ['federation:write'];
@@ -105,25 +66,29 @@ jest.mock('../../middleware/auth', () => ({
   },
 }));
 
+jest.mock('../../services/securityActivityService', () => ({ __esModule: true, default: {} }));
+jest.mock('../../services/federation.service', () => ({
+  __esModule: true,
+  getUserPublicKey: jest.fn(),
+  signWithKeyId: jest.fn(),
+}));
+jest.mock('../../utils/logger', () => ({
+  logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
+}));
+
 import { and, eq } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
 import { userFollows } from '../../db/schema/userFollows';
-import { users } from '../../db/schema/users';
+import { USER_TYPES, users } from '../../db/schema/users';
 import { errorHandler } from '../../middleware/errorHandler';
 import { userService } from '../../services/user.service';
 import federationRouter from '../federation';
 
+type UserType = (typeof USER_TYPES)[number];
+
 interface JsonResponse {
   status: number;
-  body: {
-    error?: string;
-    message?: string;
-    data?: {
-      created?: boolean;
-      removed?: boolean;
-      counts?: { followers: number; following: number };
-    };
-  };
+  body: unknown;
 }
 
 let server: http.Server;
@@ -159,29 +124,39 @@ function post(path: string, payload: unknown): Promise<JsonResponse> {
   });
 }
 
-/** A fresh 24-char ObjectId-hex id, which the route's schema still requires. */
-function objectIdHex(): string {
-  return randomBytes(12).toString('hex');
-}
-
 /**
- * A real `users` row PLUS its mirror in the guard store, under the same id — so
- * the route's Mongo-backed guards and the Postgres-backed write agree on which
- * account they are talking about.
+ * A PRE-cutover account: its id is a 24-char ObjectId hex, preserved verbatim in
+ * the `text` primary key exactly as the backfill leaves it.
  */
-async function seedUser(
-  type: GuardUser['type'],
+async function seedLegacyUser(
+  type: UserType,
   accountStatus: 'active' | 'archived' = 'active',
 ): Promise<string> {
-  const id = objectIdHex();
+  const id = randomBytes(12).toString('hex');
   await getDb().insert(users).values({ id, type, accountStatus });
-  guardUsers.set(id, { _id: id, type, accountStatus });
   return id;
 }
 
-/** An id that exists in NEITHER store. */
-function unknownUser(): string {
-  return objectIdHex();
+/**
+ * A POST-cutover account: the id is omitted so `generatedId()` mints the uuid v7
+ * every new row receives. Nothing in the test invents that shape.
+ */
+async function seedUser(
+  type: UserType,
+  accountStatus: 'active' | 'archived' = 'active',
+): Promise<string> {
+  const [row] = await getDb()
+    .insert(users)
+    .values({ type, accountStatus })
+    .returning({ id: users.id });
+  return row.id;
+}
+
+/** A well-formed account id that names no row, in the post-cutover shape. */
+async function unknownUser(): Promise<string> {
+  const id = await seedUser('local');
+  await getDb().delete(users).where(eq(users.id, id));
+  return id;
 }
 
 async function edgeCount(followerId: string, followedId: string): Promise<number> {
@@ -195,6 +170,8 @@ async function edgeCount(followerId: string, followedId: string): Promise<number
 async function edgeExists(followerId: string, followedId: string): Promise<boolean> {
   return (await edgeCount(followerId, followedId)) > 0;
 }
+
+const HEX24 = /^[0-9a-f]{24}$/i;
 
 beforeAll(async () => {
   await connectPostgres();
@@ -215,9 +192,79 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  guardUsers.clear();
-  mockUserFindById.mockClear();
   currentScopes = ['federation:write'];
+});
+
+describe('the id format must not decide whether a Follow is mirrored', () => {
+  it('mirrors a Follow of a POST-CUTOVER account, and its ids are not 24-hex', async () => {
+    const follower = await seedUser('federated');
+    const target = await seedUser('local');
+
+    // The premise. Without it, reinstating the 24-hex schema would leave this
+    // case green and prove nothing.
+    expect(follower).not.toMatch(HEX24);
+    expect(target).not.toMatch(HEX24);
+
+    const res = await post('/federation/follow', {
+      followerUserId: follower,
+      targetUserId: target,
+      action: 'follow',
+    });
+
+    // The 24-hex schema answered 400 here BEFORE the handler ran, so a remote
+    // Follow of any account created since the cutover was silently dropped.
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: { created: true, counts: { followers: 1, following: 1 } } });
+    expect(await edgeCount(follower, target)).toBe(1);
+  });
+
+  it('mirrors an Undo-Follow of a POST-CUTOVER account', async () => {
+    const follower = await seedUser('federated');
+    const target = await seedUser('local');
+    await getDb().insert(userFollows).values({ followerId: follower, followedId: target });
+
+    const res = await post('/federation/follow', {
+      followerUserId: follower,
+      targetUserId: target,
+      action: 'unfollow',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: { removed: true, counts: { followers: 0, following: 0 } } });
+    expect(await edgeExists(follower, target)).toBe(false);
+  });
+
+  it('still mirrors a Follow between PRE-cutover accounts, whose ids are 24-hex', async () => {
+    // The 24-char ObjectId hex is preserved verbatim as a `text` id, so both
+    // shapes are live at once and both must work.
+    const follower = await seedLegacyUser('federated');
+    const target = await seedLegacyUser('local');
+    expect(follower).toMatch(HEX24);
+    expect(target).toMatch(HEX24);
+
+    const res = await post('/federation/follow', {
+      followerUserId: follower,
+      targetUserId: target,
+      action: 'follow',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: { created: true, counts: { followers: 1, following: 1 } } });
+  });
+
+  it('mirrors a Follow ACROSS the cutover — a new federated actor following a legacy account', async () => {
+    const follower = await seedUser('federated');
+    const target = await seedLegacyUser('local');
+
+    const res = await post('/federation/follow', {
+      followerUserId: follower,
+      targetUserId: target,
+      action: 'follow',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: { created: true, counts: { followers: 1, following: 1 } } });
+  });
 });
 
 describe('POST /federation/follow — trust boundary', () => {
@@ -233,7 +280,10 @@ describe('POST /federation/follow — trust boundary', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(res.body.message).toMatch(/federation:write/i);
+    expect(res.body).toEqual({
+      error: 'FORBIDDEN',
+      message: 'Missing required scope: federation:write',
+    });
     expect(await edgeExists(follower, target)).toBe(false);
   });
 
@@ -248,21 +298,45 @@ describe('POST /federation/follow — trust boundary', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(res.body.message).toMatch(/follower must be a federated user/i);
+    expect(res.body).toEqual({
+      error: 'FORBIDDEN',
+      message: 'follower must be a federated user',
+    });
     expect(await edgeExists(follower, target)).toBe(false);
   });
+
+  it.each<UserType>(['agent', 'automated'])(
+    'rejects a %s follower — only a federated actor may be moved by a credential',
+    async (type) => {
+      const follower = await seedUser(type);
+      const target = await seedUser('local');
+
+      const res = await post('/federation/follow', {
+        followerUserId: follower,
+        targetUserId: target,
+        action: 'follow',
+      });
+
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({
+        error: 'FORBIDDEN',
+        message: 'follower must be a federated user',
+      });
+      expect(await edgeExists(follower, target)).toBe(false);
+    },
+  );
 
   it('404s an unknown follower', async () => {
     const target = await seedUser('local');
 
     const res = await post('/federation/follow', {
-      followerUserId: unknownUser(),
+      followerUserId: await unknownUser(),
       targetUserId: target,
       action: 'follow',
     });
 
     expect(res.status).toBe(404);
-    expect(res.body.message).toMatch(/follower user not found/i);
+    expect(res.body).toEqual({ error: 'NOT_FOUND', message: 'follower user not found' });
   });
 
   it('404s an unknown target', async () => {
@@ -270,12 +344,12 @@ describe('POST /federation/follow — trust boundary', () => {
 
     const res = await post('/federation/follow', {
       followerUserId: follower,
-      targetUserId: unknownUser(),
+      targetUserId: await unknownUser(),
       action: 'follow',
     });
 
     expect(res.status).toBe(404);
-    expect(res.body.message).toMatch(/target user not found/i);
+    expect(res.body).toEqual({ error: 'NOT_FOUND', message: 'target user not found' });
   });
 
   it('rejects a FEDERATED target — the bridge only mirrors remote → local', async () => {
@@ -289,7 +363,10 @@ describe('POST /federation/follow — trust boundary', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(res.body.message).toMatch(/local \(non-federated\) user/i);
+    expect(res.body).toEqual({
+      error: 'FORBIDDEN',
+      message: 'target must be a local (non-federated) user',
+    });
     expect(await edgeExists(follower, target)).toBe(false);
   });
 
@@ -304,7 +381,7 @@ describe('POST /federation/follow — trust boundary', () => {
     });
 
     expect(res.status).toBe(409);
-    expect(res.body.message).toMatch(/follower is archived/i);
+    expect(res.body).toEqual({ error: 'CONFLICT', message: 'follower is archived' });
     expect(await edgeExists(follower, target)).toBe(false);
   });
 
@@ -319,21 +396,66 @@ describe('POST /federation/follow — trust boundary', () => {
     });
 
     expect(res.status).toBe(409);
-    expect(res.body.message).toMatch(/target is archived/i);
+    expect(res.body).toEqual({ error: 'CONFLICT', message: 'target is archived' });
     expect(await edgeExists(follower, target)).toBe(false);
   });
+});
 
-  it('400s a body that fails schema validation, before any lookup runs', async () => {
+describe('POST /federation/follow — body validation is still a real 400 contract', () => {
+  it('400s an id that is neither shape, and writes nothing', async () => {
     const target = await seedUser('local');
 
     const res = await post('/federation/follow', {
-      followerUserId: 'not-an-object-id',
+      followerUserId: 'not-an-account-id',
       targetUserId: target,
       action: 'follow',
     });
 
+    // `Validation failed` can only come from `validate({ body })` — no handler
+    // emits it — so this is proof the rejection preceded every lookup.
     expect(res.status).toBe(400);
-    expect(mockUserFindById).not.toHaveBeenCalled();
+    expect(res.body).toEqual({
+      error: 'BAD_REQUEST',
+      message: 'Validation failed',
+      details: {
+        issues: [
+          {
+            path: 'followerUserId',
+            message: 'must be an Oxy account id',
+            code: 'custom',
+          },
+        ],
+      },
+    });
+  });
+
+  it('400s an unknown action', async () => {
+    const follower = await seedUser('federated');
+    const target = await seedUser('local');
+
+    const res = await post('/federation/follow', {
+      followerUserId: follower,
+      targetUserId: target,
+      action: 'block',
+    });
+
+    expect(res.status).toBe(400);
+    expect(await edgeExists(follower, target)).toBe(false);
+  });
+
+  it('trims surrounding whitespace rather than rejecting the id', async () => {
+    const follower = await seedUser('federated');
+    const target = await seedUser('local');
+
+    const res = await post('/federation/follow', {
+      followerUserId: `  ${follower}  `,
+      targetUserId: target,
+      action: 'follow',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: { created: true, counts: { followers: 1, following: 1 } } });
+    expect(await edgeCount(follower, target)).toBe(1);
   });
 });
 
@@ -348,11 +470,10 @@ describe('POST /federation/follow — idempotency', () => {
       action: 'follow',
     });
 
-    expect(first.status).toBe(200);
-    expect(first.body.data?.created).toBe(true);
     // `counts.followers` is the TARGET's follower total; `counts.following` is
     // the FOLLOWER's following total. Both are measured from `user_follows`.
-    expect(first.body.data?.counts).toEqual({ followers: 1, following: 1 });
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({ data: { created: true, counts: { followers: 1, following: 1 } } });
     expect(await edgeCount(follower, target)).toBe(1);
 
     const second = await post('/federation/follow', {
@@ -362,8 +483,9 @@ describe('POST /federation/follow — idempotency', () => {
     });
 
     expect(second.status).toBe(200);
-    expect(second.body.data?.created).toBe(false);
-    expect(second.body.data?.counts).toEqual({ followers: 1, following: 1 });
+    expect(second.body).toEqual({
+      data: { created: false, counts: { followers: 1, following: 1 } },
+    });
     expect(await edgeCount(follower, target)).toBe(1);
   });
 
@@ -379,8 +501,7 @@ describe('POST /federation/follow — idempotency', () => {
     });
 
     expect(first.status).toBe(200);
-    expect(first.body.data?.removed).toBe(true);
-    expect(first.body.data?.counts).toEqual({ followers: 0, following: 0 });
+    expect(first.body).toEqual({ data: { removed: true, counts: { followers: 0, following: 0 } } });
     expect(await edgeExists(follower, target)).toBe(false);
 
     const second = await post('/federation/follow', {
@@ -390,8 +511,9 @@ describe('POST /federation/follow — idempotency', () => {
     });
 
     expect(second.status).toBe(200);
-    expect(second.body.data?.removed).toBe(false);
-    expect(second.body.data?.counts).toEqual({ followers: 0, following: 0 });
+    expect(second.body).toEqual({
+      data: { removed: false, counts: { followers: 0, following: 0 } },
+    });
   });
 
   it("counts the whole of each side's graph, not just this pair", async () => {
@@ -407,7 +529,7 @@ describe('POST /federation/follow — idempotency', () => {
     });
 
     // The target now has TWO followers; the follower follows ONE account.
-    expect(res.body.data?.counts).toEqual({ followers: 2, following: 1 });
+    expect(res.body).toEqual({ data: { created: true, counts: { followers: 2, following: 1 } } });
   });
 });
 

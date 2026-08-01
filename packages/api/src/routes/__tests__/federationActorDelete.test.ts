@@ -1,36 +1,34 @@
 /**
  * `POST /federation/actor-delete` — the service-credential "hard-delete a dead
- * federated identity + its follow graph" bridge.
+ * federated identity + its follow graph" bridge, against a REAL Postgres.
  *
  * Mention is the only component that talks to the remote fediverse; when an
  * actor is permanently removed upstream (HTTP 410 Gone for a deleted/spam
  * account) it calls this route to ERASE the corresponding Oxy identity and every
  * social-graph edge it left behind — the irreversible counterpart to
- * `actor-gone` (which only archives). The suite walks the trust boundary, the
- * graph purge, and the idempotency guarantee:
+ * `actor-gone` (which only archives).
  *
- *  - missing `federation:write` scope                        → 403, no writes
- *  - body fails schema validation                            → 400
- *  - unknown user                                            → 200 no-op
- *  - target is NOT federated (local/agent/automated)         → 409, never deleted
- *  - a live federated actor is fully deleted, its edges in BOTH directions
- *    removed and its blocks/restrictions removed              → 200
- *  - a repeated call after deletion is a no-op               → 200 deleted:false
+ * ## The guarantee this file exists for
  *
- * ## This route is HALF-ported, and the suite is shaped around that
+ * **A dead federated actor must be erasable whichever side of the cutover its
+ * account was created on, and a real account must never be erasable at all.**
  *
- * `routes/federation.ts` still reads its guard through the Mongoose `User`
- * model, while the destructive write it delegates to —
- * `userService.deleteFederatedActor` → `purgeUserSocialGraph` — is fully on
- * Postgres. The previous suite mocked BOTH halves with one in-memory store; when
- * the write half moved, the store stopped being consulted and the two
- * destructive cases 500'd, which is exactly the shape a purge test must never
- * have: it passed while asserting a deletion that never happened anywhere.
+ * `federationActorDeleteSchema` validated `oxyUserId` with `/^[a-f0-9]{24}$/i`
+ * inside `validate({ body })`, so a post-cutover account — whose id is the uuid
+ * v7 `generatedId()` mints — was answered 400 before the handler ran; the ghost
+ * identity and its follow edges stayed. Separately, the route's guard read
+ * `User.findById` (Mongo) while the purge it gates,
+ * `userService.deleteFederatedActor`, was already on Postgres — so the read that
+ * decides whether the account is federated and the delete that acts on it lived
+ * in different databases, and an account present in only one of them made the
+ * two disagree.
  *
- * So the guard half stays mocked (the un-ported code) and the purge runs for
- * real, against rows this suite seeds and then re-reads. Ids are explicit
- * 24-char ObjectId hex because the route's schema still requires that shape —
- * see the note in `federationFollow.test.ts`.
+ * The previous suite mirrored every seeded row into an in-memory `guardUsers`
+ * map, which made the two halves agree by construction and made every id 24-hex
+ * by construction. It also had to hand-delete from that map to model the second
+ * call in the idempotency case — the tell that the route's read was not looking
+ * where the purge wrote. Here there is ONE store, so the repeat call converges
+ * because the row is genuinely gone.
  *
  * The denormalized counterparty `_count` repair is GONE, not translated: those
  * columns were deliberately deleted, so there is no counter to repair. What
@@ -42,46 +40,6 @@ import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
 import { randomBytes } from 'node:crypto';
-
-/** The real service imports `Types`, which the global mongoose stub strips. */
-jest.mock('mongoose', () => {
-  const actual = jest.requireActual('mongoose');
-  return { __esModule: true, ...actual, default: actual };
-});
-
-/** The guard-read store standing in for the route's un-ported Mongo read. */
-interface GuardUser {
-  _id: string;
-  type: 'local' | 'federated' | 'agent' | 'automated';
-}
-
-const guardUsers = new Map<string, GuardUser>();
-
-const mockUserFindById = jest.fn((id: string) => {
-  const doc = guardUsers.get(id) ?? null;
-  return { select: () => ({ lean: () => Promise.resolve(doc) }) };
-});
-
-jest.mock('../../models/User', () => ({
-  __esModule: true,
-  default: { findById: (...args: [string]) => mockUserFindById(...args) },
-}));
-
-jest.mock('../../models/Subscription', () => ({ __esModule: true, default: {} }));
-jest.mock('../../models/Application', () => ({ __esModule: true, default: {} }));
-jest.mock('../../utils/credentialDomainCache', () => ({
-  __esModule: true,
-  default: { getAllowedDomains: jest.fn() },
-}));
-jest.mock('../../services/securityActivityService', () => ({ __esModule: true, default: {} }));
-jest.mock('../../services/federation.service', () => ({
-  __esModule: true,
-  getUserPublicKey: jest.fn(),
-  signWithKeyId: jest.fn(),
-}));
-jest.mock('../../utils/logger', () => ({
-  logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
-}));
 
 /** The scopes the mocked service-auth middleware grants. */
 let currentScopes: string[] = ['federation:write'];
@@ -103,23 +61,31 @@ jest.mock('../../middleware/auth', () => ({
   },
 }));
 
+jest.mock('../../services/securityActivityService', () => ({ __esModule: true, default: {} }));
+jest.mock('../../services/federation.service', () => ({
+  __esModule: true,
+  getUserPublicKey: jest.fn(),
+  signWithKeyId: jest.fn(),
+}));
+jest.mock('../../utils/logger', () => ({
+  logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
+}));
+
 import { and, eq, or } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
 import { blocks } from '../../db/schema/blocks';
 import { restrictions } from '../../db/schema/restrictions';
 import { userFollows } from '../../db/schema/userFollows';
-import { users } from '../../db/schema/users';
+import { USER_TYPES, users } from '../../db/schema/users';
 import { errorHandler } from '../../middleware/errorHandler';
 import userCache from '../../utils/userCache';
 import federationRouter from '../federation';
 
+type UserType = (typeof USER_TYPES)[number];
+
 interface JsonResponse {
   status: number;
-  body: {
-    error?: string;
-    message?: string;
-    data?: { oxyUserId?: string; deleted?: boolean; followEdgesRemoved?: number };
-  };
+  body: unknown;
 }
 
 let server: http.Server;
@@ -156,16 +122,26 @@ function post(path: string, payload: unknown): Promise<JsonResponse> {
   });
 }
 
-/** A fresh 24-char ObjectId-hex id, which the route's schema still requires. */
-function objectIdHex(): string {
-  return randomBytes(12).toString('hex');
+/**
+ * A POST-cutover account: the id is omitted so `generatedId()` mints the uuid v7
+ * every new row receives. Nothing in the test invents that shape.
+ */
+async function seedUser(type: UserType): Promise<string> {
+  const [row] = await getDb().insert(users).values({ type }).returning({ id: users.id });
+  return row.id;
 }
 
-/** A real `users` row PLUS its mirror in the guard store, under the same id. */
-async function seedUser(type: GuardUser['type']): Promise<string> {
-  const id = objectIdHex();
+/** A PRE-cutover account, whose 24-char ObjectId hex is preserved verbatim. */
+async function seedLegacyUser(type: UserType): Promise<string> {
+  const id = randomBytes(12).toString('hex');
   await getDb().insert(users).values({ id, type });
-  guardUsers.set(id, { _id: id, type });
+  return id;
+}
+
+/** A well-formed account id that names no row. */
+async function unknownUser(): Promise<string> {
+  const id = await seedUser('federated');
+  await getDb().delete(users).where(eq(users.id, id));
   return id;
 }
 
@@ -211,6 +187,8 @@ async function edgeExists(followerId: string, followedId: string): Promise<boole
   return row !== undefined;
 }
 
+const HEX24 = /^[0-9a-f]{24}$/i;
+
 beforeAll(async () => {
   await connectPostgres();
   const app = express();
@@ -230,14 +208,48 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  guardUsers.clear();
-  mockUserFindById.mockClear();
   currentScopes = ['federation:write'];
   invalidateSpy = jest.spyOn(userCache, 'invalidate');
 });
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+describe('the id format must not decide whether a dead actor can be erased', () => {
+  it('erases a POST-CUTOVER federated actor and its edges, and its id is not 24-hex', async () => {
+    const actor = await seedUser('federated');
+    const followed = await seedUser('local');
+    await follow(actor, followed);
+
+    // The premise. Without it, reinstating the 24-hex schema would leave this
+    // case green and prove nothing.
+    expect(actor).not.toMatch(HEX24);
+
+    const res = await post('/federation/actor-delete', { oxyUserId: actor });
+
+    // The 24-hex schema answered 400 here BEFORE the handler ran, so a ghost
+    // identity created since the cutover could never be erased.
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      data: { oxyUserId: actor, deleted: true, followEdgesRemoved: 1 },
+    });
+    expect(await userExists(actor)).toBe(false);
+    expect(await edgesTouching(actor)).toBe(0);
+  });
+
+  it('still erases a PRE-cutover federated actor, whose id is 24-hex', async () => {
+    const actor = await seedLegacyUser('federated');
+    expect(actor).toMatch(HEX24);
+
+    const res = await post('/federation/actor-delete', { oxyUserId: actor });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      data: { oxyUserId: actor, deleted: true, followEdgesRemoved: 0 },
+    });
+    expect(await userExists(actor)).toBe(false);
+  });
 });
 
 describe('POST /federation/actor-delete — trust boundary', () => {
@@ -248,46 +260,62 @@ describe('POST /federation/actor-delete — trust boundary', () => {
     const res = await post('/federation/actor-delete', { oxyUserId: actor });
 
     expect(res.status).toBe(403);
-    expect(res.body.message).toMatch(/federation:write/i);
-    expect(mockUserFindById).not.toHaveBeenCalled();
+    expect(res.body).toEqual({
+      error: 'FORBIDDEN',
+      message: 'Missing required scope: federation:write',
+    });
     expect(await userExists(actor)).toBe(true);
-  });
-
-  it('400s a body that fails schema validation, before any lookup runs', async () => {
-    const res = await post('/federation/actor-delete', { oxyUserId: 'not-an-object-id' });
-
-    expect(res.status).toBe(400);
-    expect(mockUserFindById).not.toHaveBeenCalled();
-  });
-
-  it('409s a NON-federated account and leaves its whole graph intact', async () => {
-    const local = await seedUser('local');
-    const follower = await seedUser('local');
-    await follow(follower, local);
-    await getDb().insert(blocks).values({ userId: local, blockedId: follower });
-
-    const res = await post('/federation/actor-delete', { oxyUserId: local });
-
-    expect(res.status).toBe(409);
-    expect(res.body.message).toMatch(/not a federated actor/i);
-    expect(await userExists(local)).toBe(true);
-    expect(await edgesTouching(local)).toBe(1);
-    expect(await blocksTouching(local)).toBe(1);
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
+
+  it('400s an id that is neither shape, and deletes nothing', async () => {
+    const res = await post('/federation/actor-delete', { oxyUserId: 'not-an-account-id' });
+
+    // `Validation failed` can only come from `validate({ body })` — no handler
+    // emits it — so this is proof the rejection preceded every lookup.
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: 'BAD_REQUEST',
+      message: 'Validation failed',
+      details: {
+        issues: [{ path: 'oxyUserId', message: 'must be an Oxy account id', code: 'custom' }],
+      },
+    });
+    expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  it.each<UserType>(['local', 'agent', 'automated'])(
+    '409s a %s account and leaves its whole graph intact',
+    async (type) => {
+      const account = await seedUser(type);
+      const follower = await seedUser('local');
+      await follow(follower, account);
+      await getDb().insert(blocks).values({ userId: account, blockedId: follower });
+
+      const res = await post('/federation/actor-delete', { oxyUserId: account });
+
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({
+        error: 'CONFLICT',
+        message: 'user is not a federated actor and cannot be deleted',
+      });
+      expect(await userExists(account)).toBe(true);
+      expect(await edgesTouching(account)).toBe(1);
+      expect(await blocksTouching(account)).toBe(1);
+      expect(invalidateSpy).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('POST /federation/actor-delete — purge', () => {
-  it('is a 200 no-op for an unknown user, with no destructive write', async () => {
-    const unknownId = objectIdHex();
+  it('is a 200 no-op for an unknown account, with no destructive write', async () => {
+    const unknownId = await unknownUser();
 
     const res = await post('/federation/actor-delete', { oxyUserId: unknownId });
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({
-      oxyUserId: unknownId,
-      deleted: false,
-      followEdgesRemoved: 0,
+    expect(res.body).toEqual({
+      data: { oxyUserId: unknownId, deleted: false, followEdgesRemoved: 0 },
     });
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
@@ -316,10 +344,8 @@ describe('POST /federation/actor-delete — purge', () => {
     const res = await post('/federation/actor-delete', { oxyUserId: actor });
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({
-      oxyUserId: actor,
-      deleted: true,
-      followEdgesRemoved: 3,
+    expect(res.body).toEqual({
+      data: { oxyUserId: actor, deleted: true, followEdgesRemoved: 3 },
     });
 
     expect(await userExists(actor)).toBe(false);
@@ -351,20 +377,18 @@ describe('POST /federation/actor-delete — purge', () => {
     const first = await post('/federation/actor-delete', { oxyUserId: actor });
 
     expect(first.status).toBe(200);
-    expect(first.body.data?.deleted).toBe(true);
+    expect(first.body).toEqual({
+      data: { oxyUserId: actor, deleted: true, followEdgesRemoved: 0 },
+    });
     expect(await userExists(actor)).toBe(false);
 
-    // The guard store still holds the row — the route's un-ported read is what
-    // decides `deleted`, so drop it to model the second call honestly.
-    guardUsers.delete(actor);
-
+    // No store to fix up by hand: the guard now reads the same database the
+    // purge wrote to, so the second call sees the row genuinely gone.
     const second = await post('/federation/actor-delete', { oxyUserId: actor });
 
     expect(second.status).toBe(200);
-    expect(second.body.data).toEqual({
-      oxyUserId: actor,
-      deleted: false,
-      followEdgesRemoved: 0,
+    expect(second.body).toEqual({
+      data: { oxyUserId: actor, deleted: false, followEdgesRemoved: 0 },
     });
   });
 });

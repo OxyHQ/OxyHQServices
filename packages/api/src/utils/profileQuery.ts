@@ -23,19 +23,10 @@
  * rather than just `is not null`.
  */
 
-import { and, eq, getTableName, gte, isNull, ne, or, sql, type Column, type SQL } from 'drizzle-orm';
-import { sqlColumnName } from '../db/casing';
+import { and, eq, gte, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { qualified } from '../db/casing';
 import { users } from '../db/schema/users';
 import { userLocations } from '../db/schema/userLocations';
-
-/**
- * A FULLY QUALIFIED `"table"."column"` reference — see the identical helper in
- * `utils/publicUserProjection.ts` for why a bare interpolation is a silent bug
- * inside a correlated subquery.
- */
-function qualified(column: Column): SQL {
-  return sql`${sql.identifier(getTableName(column.table))}.${sql.identifier(sqlColumnName(column))}`;
-}
 
 export const FEDERATED_RECOMMENDATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 

@@ -8,16 +8,34 @@ import { sessions } from '../db/schema/sessions';
  *
  * `getSessionWithUser` hydrates the USER, and that user is what
  * `middleware/auth.ts` assigns to `req.user` through an `as IUser & Document`
- * CAST. 183 call sites across 45 files then read `req.user._id`. A Drizzle
- * `users` row exposes `id`, not `_id`, so switching this read would make every
- * one of those reads `undefined` — and because the assignment is a cast, `tsc`
- * would not report a single one of them. It fails silently as
- * "not authenticated", API-wide.
+ * CAST. 183 call sites across 45 files then read `req.user._id`.
  *
- * Porting it therefore requires `middleware/auth.ts`, `AuthRequest`, `IUser`
- * and `utils/userCache.ts` (typed `IUser`, imported by 21 files) to move
- * TOGETHER, which is outside this batch's file set. Until then the session half
- * is Postgres and the user half is Mongo.
+ * The blocker is not the DATA — `userService.readAccountDocument(userId)`
+ * already returns exactly the nested shape `.lean()` produced, `_id` included,
+ * built from `publicColumns(users)` plus the four child tables. It is the TYPE,
+ * and this was MEASURED rather than assumed:
+ *
+ *  - Give `SessionValidationResult.user` any type other than `IUser` and
+ *    `middleware/auth.ts:144` fails `TS2352` — "Conversion of type 'X' to type
+ *    'IUser & Document' may be a mistake because neither type sufficiently
+ *    overlaps … missing the following properties from type 'IUser':
+ *    privacySettings, createdAt, updatedAt, addLocation, and 58 more". A string
+ *    index signature on the source does NOT satisfy those; three shapes were
+ *    tried (interface, type alias, `Record<string, unknown> & { _id: string }`)
+ *    and all three fail identically.
+ *  - Widening it to `unknown` fixes that cast and breaks
+ *    `middleware/auth.ts:321` instead, which reads
+ *    `validationResult.user?._id?.toString()` directly.
+ *
+ * So the read cannot move without editing `middleware/auth.ts` and
+ * `AuthRequest` — the two files the `req.user` pass owns. It is left here
+ * ALONE, and deliberately: a wrong guess about that cast fails silently as
+ * "not authenticated", API-wide, because `tsc` sees through none of it.
+ *
+ * The pass that lands it needs exactly: `AuthRequest.user` and
+ * `SessionValidationResult.user` retyped off `readAccountDocument`'s return,
+ * `utils/userCache.ts` (typed `IUser`, and the ONLY get/set caller is this
+ * file) retyped with it, and this import deleted.
  */
 import { User, type IUser } from '../models/User';
 import { logger } from '../utils/logger';
@@ -99,32 +117,19 @@ const SESSION_COLUMNS = {
 } as const;
 
 /**
- * Normalize an id that may arrive as a plain string or as a Mongoose-shaped
- * object, to a string.
+ * An id column's value, or `undefined` when it holds none.
  *
- * Postgres hands back plain `text` ids, so the ObjectId branches this replaced
- * are gone along with the 24-hex length check — a 24-char check would now
- * REJECT every uuid v7 id minted after the cutover. The object branch survives
- * only because the USER half of `getSessionWithUser` is still a Mongoose
- * document (see the note there), so `session.userId` can be a populated user.
+ * Both columns this reads (`sessions.user_id`, `sessions.operated_by_user_id`)
+ * are `text`, so this is now only the empty-string/NULL check. The ObjectId
+ * branches are gone with the 24-hex length check that used to sit beside them
+ * — a 24-char test would REJECT every uuid v7 id minted after the cutover — and
+ * so are the "value may be a populated user document" branches: Mongo replaced
+ * `session.userId` with the user doc, and `getSessionWithUser` no longer does
+ * (see its closing note), so a document can no longer reach here.
  */
-function extractUserId(value: unknown): string | undefined {
+function extractUserId(value: string | null | undefined): string | undefined {
   if (!value) return undefined;
-  if (typeof value === 'string') return value.length > 0 ? value : undefined;
-  if (typeof value === 'object' && '_id' in value) {
-    const id = (value as { _id?: unknown })._id;
-    if (typeof id === 'string') return id.length > 0 ? id : undefined;
-    if (id && typeof id === 'object' && 'toString' in id) {
-      const text = String(id);
-      return text.length > 0 ? text : undefined;
-    }
-    return undefined;
-  }
-  if (typeof value === 'object' && 'id' in value) {
-    const id = (value as { id?: unknown }).id;
-    return typeof id === 'string' && id.length > 0 ? id : undefined;
-  }
-  return undefined;
+  return value.length > 0 ? value : undefined;
 }
 
 class SessionService {
@@ -145,7 +150,7 @@ class SessionService {
    * mongoose wholesale, and would couple every session consumer to them).
    */
   private async ensureManagedSessionAuthorized(
-    session: { sessionId: string; userId: unknown; operatedByUserId?: unknown },
+    session: Pick<CachedSession, 'sessionId' | 'userId' | 'operatedByUserId'>,
     opts: { force?: boolean } = {}
   ): Promise<boolean> {
     const operatorId = extractUserId(session.operatedByUserId);
@@ -161,8 +166,9 @@ class SessionService {
       }
     }
 
-    // `userId` may be a raw ObjectId (refresh path) or a populated user doc
-    // (validate path, where getSessionWithUser swaps in the user) — normalize.
+    // The account this session belongs to. Mongo could hand back a populated
+    // user document here (the validate path swapped one in); `sessions.user_id`
+    // is a plain `text` foreign key now, so the id is the id.
     const accountId = extractUserId(session.userId);
     if (!accountId) {
       return true;

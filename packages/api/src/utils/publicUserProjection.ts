@@ -38,8 +38,8 @@
  * public row needs no key material.
  */
 
-import { getTableName, sql, type Column, type SQL } from 'drizzle-orm';
-import { sqlColumnName } from '../db/casing';
+import { sql, type SQL } from 'drizzle-orm';
+import { qualified } from '../db/casing';
 import { userFollows } from '../db/schema/userFollows';
 import { userLinkMetadata } from '../db/schema/userLinkMetadata';
 import { users } from '../db/schema/users';
@@ -87,23 +87,6 @@ export interface PublicUserView {
   reputationTier?: string;
   createdAt?: Date;
   updatedAt?: Date;
-}
-
-/**
- * A FULLY QUALIFIED `"table"."column"` reference.
- *
- * Interpolating a drizzle column into `sql` renders it BARE (`"user_id"`) when
- * its table is not in the statement's `FROM` — which is exactly the case inside
- * a correlated subquery. The first port of this module wrote
- * `where ${userLinkMetadata.userId} = ${users.id}`, which rendered
- * `where "user_id" = "id"`: both names resolved against the SUBQUERY's own
- * table, so it compared two of its own columns, matched nothing, and returned an
- * empty array with no error. `link_metadata` silently disappeared from every
- * public profile. Same class of trap as `column.name` in `CONVENTIONS.md`, and
- * caught the same way — by an assertion on real rows.
- */
-function qualified(column: Column): SQL {
-  return sql`${sql.identifier(getTableName(column.table))}.${sql.identifier(sqlColumnName(column))}`;
 }
 
 /**

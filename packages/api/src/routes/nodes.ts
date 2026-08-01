@@ -21,9 +21,14 @@ import { ApiError, ErrorCodes, InternalServerError, NotFoundError, UnauthorizedE
 import { rateLimit } from '../middleware/rateLimiter';
 import { hashedIpKey } from '../utils/ipKey';
 import { isValidObjectId } from '../utils/validation';
-import { getUserNode, removeNode, provisionManagedVault } from '../services/nodeRegistry.service';
+import {
+  getUserNode,
+  removeNode,
+  provisionManagedVault,
+  type UserNodeRecord,
+} from '../services/nodeRegistry.service';
 import { enqueueNodeIngest } from '../queue/nodeIngest.queue';
-import UserNode, { type IUserNode } from '../models/UserNode';
+import UserNode from '../models/UserNode';
 
 const router = Router();
 
@@ -80,8 +85,8 @@ const nodeIngestNotifyLimiter = rateLimit({
   keyGenerator: (req: Request): string => `nodes:ingest:ip:${hashedIpKey(req)}`,
 });
 
-/** Public projection of a node row (drops Mongo internals). */
-function serializeNode(node: IUserNode): Record<string, unknown> {
+/** Public projection of a node row. */
+function serializeNode(node: UserNodeRecord): Record<string, unknown> {
   return {
     nodeDid: node.nodeDid,
     endpoint: node.endpoint,

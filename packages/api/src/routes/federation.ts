@@ -1,11 +1,13 @@
 import { Router, type Response } from 'express';
+import { and, eq } from 'drizzle-orm';
 import { serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { validate } from '../middleware/validate';
 import { ForbiddenError, NotFoundError, ConflictError } from '../utils/error';
 import { logger } from '../utils/logger';
-import Application from '../models/Application';
-import User from '../models/User';
+import { getDb } from '../config/postgres';
+import { applications } from '../db/schema/applications';
+import { users } from '../db/schema/users';
 import userCache from '../utils/userCache';
 import credentialDomainCache from '../utils/credentialDomainCache';
 import {
@@ -45,20 +47,32 @@ const REQUIRED_SCOPE = 'federation:write';
  * FAIL CLOSED: a missing app, non-active status, or unparseable redirectUris all
  * resolve to an empty list. On a DB error we throw — the cache's loader wrapper
  * logs and treats the throw as an empty allow-list (deny), never a default.
+ *
+ * The status filter is a WHERE clause rather than a post-read comparison, so the
+ * non-active case and the missing case reach the same `!app` branch and cannot
+ * drift apart. There is no id-shape precheck: `appId` arrives from the verified
+ * service token, `applications.id` is a `text` column, and an id that names no
+ * application matches no row — which is the deny this function already returns.
  */
 async function loadAllowedDomains(appId: string): Promise<string[]> {
-  const app = await Application.findById(appId).select('redirectUris status').lean();
-  if (!app || app.status !== 'active') {
+  const [app] = await getDb()
+    .select({ redirectUris: applications.redirectUris })
+    .from(applications)
+    .where(and(eq(applications.id, appId), eq(applications.status, 'active')))
+    .limit(1);
+  if (!app) {
     return [];
   }
 
   const hosts = new Set<string>();
-  for (const uri of app.redirectUris ?? []) {
-    if (typeof uri !== 'string' || uri.length === 0) continue;
+  for (const uri of app.redirectUris) {
     try {
       hosts.add(new URL(uri).hostname.toLowerCase());
     } catch {
-      // Skip malformed redirectUris — they contribute no authorisation.
+      // A malformed redirect URI contributes no authorisation. `NOT NULL` on a
+      // `text[]` constrains the array, not its elements, so a NULL element is
+      // representable — `new URL(null)` throws here too and is denied the same
+      // way, which is why the parse is the only filter.
     }
   }
   return Array.from(hosts);
@@ -84,6 +98,27 @@ function assertFederationScope(req: ServiceAuthRequest): void {
   if (!scopes.includes(REQUIRED_SCOPE)) {
     throw new ForbiddenError(`Missing required scope: ${REQUIRED_SCOPE}`);
   }
+}
+
+/** The two account columns every guard on this bridge decides on. */
+type BridgeUser = Pick<typeof users.$inferSelect, 'type' | 'accountStatus'>;
+
+/**
+ * Load the `type` / `accountStatus` an anti-impersonation guard needs, or null
+ * when no such account exists.
+ *
+ * Two named columns, not `select()`: `users` carries protected columns
+ * (`db/schema/protectedColumns.ts` — the raw phone number, the
+ * contact-discovery hashes, the refresh token) which a whole-row read would
+ * hand to a route that has no use for any of them.
+ */
+async function loadBridgeUser(userId: string): Promise<BridgeUser | null> {
+  const [user] = await getDb()
+    .select({ type: users.type, accountStatus: users.accountStatus })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return user ?? null;
 }
 
 /**
@@ -204,8 +239,8 @@ router.post(
     const { followerUserId, targetUserId, action } = req.body as FederationFollowBody;
 
     const [follower, target] = await Promise.all([
-      User.findById(followerUserId).select('type accountStatus').lean(),
-      User.findById(targetUserId).select('type accountStatus').lean(),
+      loadBridgeUser(followerUserId),
+      loadBridgeUser(targetUserId),
     ]);
 
     if (!follower) {
@@ -269,7 +304,7 @@ router.post(
 
     const { oxyUserId } = req.body as FederationActorGoneBody;
 
-    const user = await User.findById(oxyUserId).select('type accountStatus').lean();
+    const user = await loadBridgeUser(oxyUserId);
     if (!user) {
       throw new NotFoundError('user not found');
     }
@@ -282,13 +317,13 @@ router.post(
     // Idempotent: an already-archived actor is a no-op 200.
     const alreadyArchived = user.accountStatus === 'archived';
     if (!alreadyArchived) {
-      // Whitelist the single field; the `type:'federated'` filter re-asserts the
-      // guard atomically so a concurrent type change can never let the write
+      // Whitelist the single field; the `type = 'federated'` predicate re-asserts
+      // the guard atomically so a concurrent type change can never let the write
       // touch a non-federated account.
-      await User.updateOne(
-        { _id: oxyUserId, type: 'federated' },
-        { $set: { accountStatus: 'archived' } },
-      );
+      await getDb()
+        .update(users)
+        .set({ accountStatus: 'archived' })
+        .where(and(eq(users.id, oxyUserId), eq(users.type, 'federated')));
       userCache.invalidate(oxyUserId);
       logger.info('federation/actor-gone: archived dead federated actor', {
         oxyUserId,
@@ -317,7 +352,7 @@ router.post(
  * ANTI-FOOTGUN: only a `type:'federated'` user may be deleted here. The route
  * loads the user and rejects a non-federated target with 409 BEFORE any
  * destructive write; `userService.deleteFederatedActor` additionally re-asserts
- * `type:'federated'` on the terminal `User.deleteOne` filter, so a real
+ * `type = 'federated'` in the terminal `delete from users` predicate, so a real
  * account can never be hard-deleted through this bridge even under a race.
  *
  * Idempotent: an already-deleted (or never-known) id is a 200 no-op with
@@ -333,7 +368,7 @@ router.post(
 
     const { oxyUserId } = req.body as FederationActorDeleteBody;
 
-    const user = await User.findById(oxyUserId).select('type').lean();
+    const user = await loadBridgeUser(oxyUserId);
     // Idempotent: an unknown (or already-deleted) actor is a 200 no-op so a
     // retried delete converges instead of erroring.
     if (!user) {
