@@ -58,6 +58,7 @@ import User from '../src/models/User';
 import { cleanDisplayName } from '../src/utils/displayNameSanitize';
 import { logger } from '../src/utils/logger';
 import userCache from '../src/utils/userCache';
+import { closeRedis } from '../src/config/redis';
 
 dotenv.config();
 
@@ -252,6 +253,13 @@ async function main(): Promise<void> {
   } finally {
     await mongoose.connection.close();
     logger.info('MongoDB connection closed');
+    // `userCache.invalidate()` lazily opens the shared Redis client, whose live
+    // socket is a ref'd handle — without this the task sits RUNNING forever
+    // after the work is done, burning Fargate time and looking like a hung
+    // migration. Runs after the flush above, so no write is truncated, and is a
+    // no-op when REDIS_URL is unset.
+    await closeRedis();
+    logger.info('Redis client closed');
   }
 }
 

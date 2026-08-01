@@ -54,6 +54,7 @@ import {
   inferTransactionCategory,
 } from '../utils/reputationMigrationMapping.js';
 import { getDbName } from '../config/db.js';
+import { closeRedis } from '../config/redis.js';
 import { logger } from '../utils/logger.js';
 
 dotenv.config();
@@ -254,6 +255,11 @@ async function main(): Promise<void> {
   } finally {
     await mongoose.connection.close();
     logger.info('MongoDB connection closed');
+    // reputation.service reaches the shared Redis client, whose live socket is
+    // a ref'd handle that would keep this one-shot task RUNNING forever after
+    // the work is done. No-op when REDIS_URL is unset.
+    await closeRedis();
+    logger.info('Redis client closed');
   }
 }
 
