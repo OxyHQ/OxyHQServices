@@ -1,0 +1,339 @@
+/**
+ * One-shot MongoDB → PostgreSQL backfill.
+ *
+ * Runs as an ECS Fargate task inside the VPC, because production Mongo and RDS
+ * are both unreachable from a laptop:
+ *
+ * ```bash
+ * aws --profile oxy --region us-west-2 ecs run-task \
+ *   --cluster oxy-cluster --task-definition oxy-pg-migrate --launch-type FARGATE \
+ *   --network-configuration 'awsvpcConfiguration={subnets=[…],securityGroups=[…],assignPublicIp=ENABLED}' \
+ *   --overrides '{"containerOverrides":[{"name":"oxy-api","command":[
+ *      "bun","run","packages/api/scripts/backfill-mongo-to-postgres.ts","--audit-only"]}]}'
+ * ```
+ *
+ * It lives in `packages/api/scripts/` and not `/tmp` for a concrete reason: the
+ * image installs with bun's ISOLATED linker, so a package resolves at
+ * `/app/node_modules/.bun/<pkg>@<ver>+<hash>/node_modules/<pkg>` and a script
+ * outside a package's own resolution graph cannot `require` anything. The
+ * Dockerfile copies `packages/api/scripts` and `packages/api/src`, so this file
+ * and everything it imports are present and resolvable.
+ *
+ * ## The phases, and why they are separable
+ *
+ * | flag | phases |
+ * |---|---|
+ * | `--audit-only` | discover + audit. Touches nothing. Run this FIRST. |
+ * | (default) | discover + audit + copy |
+ * | `--verify` | …and verify afterwards |
+ * | `--verify-only` | verify an already-copied database |
+ *
+ * `--audit-only` exists because the audits are the phase whose OUTPUT is a
+ * decision: an enum value the CHECK refuses, or two names that collide
+ * case-insensitively, has to be resolved by a human before a copy is worth
+ * starting. Discovering that partway through 296,924 documents is the outcome
+ * this separation prevents.
+ *
+ * ## Safety
+ *
+ * - MongoDB access is read-only by construction (`mongoSource.ts` hands out a
+ *   Proxy that throws on anything but a read).
+ * - Every insert is `ON CONFLICT DO NOTHING`, so re-running is always safe.
+ * - `--state-file` makes a re-run resume instead of re-scanning. Losing the
+ *   file costs time, never integrity.
+ */
+
+import { readFile, writeFile } from 'node:fs/promises';
+import { connectPostgres, closePostgres } from '../src/config/postgres';
+import {
+  COLLECTION_PLANS,
+  NOT_MIGRATED,
+  knownCollections,
+  tablesWithoutAPlan,
+} from '../src/db/backfill/collectionMap';
+import { connectMongoSource, redactUri, type Checkpoint } from '../src/db/backfill/mongoSource';
+import {
+  AuditBlockedError,
+  DEFAULT_BATCH_SIZE,
+  discover,
+  emptyState,
+  runAudits,
+  runBackfill,
+  UnknownCollectionError,
+  type BackfillState,
+} from '../src/db/backfill/runner';
+import { verifyBackfill, VacuousVerificationError, VerificationError } from '../src/db/backfill/verify';
+
+interface Options {
+  readonly auditOnly: boolean;
+  readonly verify: boolean;
+  readonly verifyOnly: boolean;
+  readonly restart: boolean;
+  readonly batchSize: number;
+  readonly stateFile: string | null;
+  readonly only: readonly string[] | undefined;
+  readonly sampleSize: number;
+}
+
+function parseOptions(argv: readonly string[]): Options {
+  const flag = (name: string): boolean => argv.includes(`--${name}`);
+  const value = (name: string): string | undefined => {
+    const prefix = `--${name}=`;
+    const found = argv.find((arg) => arg.startsWith(prefix));
+    return found?.slice(prefix.length);
+  };
+  const numeric = (name: string, fallback: number): number => {
+    const raw = value(name);
+    if (raw === undefined) return fallback;
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error(`--${name} must be a positive integer, got ${JSON.stringify(raw)}`);
+    }
+    return parsed;
+  };
+  const only = value('only');
+  return {
+    auditOnly: flag('audit-only'),
+    verify: flag('verify'),
+    verifyOnly: flag('verify-only'),
+    restart: flag('restart'),
+    batchSize: numeric('batch-size', DEFAULT_BATCH_SIZE),
+    stateFile: value('state-file') ?? null,
+    only: only === undefined ? undefined : only.split(',').map((entry) => entry.trim()),
+    sampleSize: numeric('sample-size', 25),
+  };
+}
+
+function say(message: string): void {
+  process.stdout.write(`${message}\n`);
+}
+
+function heading(title: string): void {
+  say(`\n${'='.repeat(72)}\n${title}\n${'='.repeat(72)}`);
+}
+
+async function loadState(path: string | null, restart: boolean): Promise<BackfillState> {
+  if (path === null || restart) return emptyState();
+  try {
+    const raw = await readFile(path, 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) {
+      throw new Error('state file does not contain an object');
+    }
+    const record = parsed as Partial<BackfillState>;
+    return {
+      checkpoints: record.checkpoints ?? {},
+      completed: record.completed ?? [],
+    };
+  } catch (error) {
+    // A MISSING state file is the normal first run and must not be an error; a
+    // CORRUPT one must be, because silently starting from zero would turn a
+    // resumed run into a full rescan nobody asked for and hide the corruption.
+    if (isNotFound(error)) {
+      say(`No state file at ${path} — starting from the beginning.`);
+      return emptyState();
+    }
+    throw new Error(
+      `Could not read the state file at ${path}: ${describeError(error)}. ` +
+        'Delete it to start over, or pass --restart.'
+    );
+  }
+}
+
+function isNotFound(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  );
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function main(): Promise<number> {
+  const options = parseOptions(process.argv.slice(2));
+
+  const mongoUri = process.env.MONGODB_URI;
+  if (!mongoUri) throw new Error('MONGODB_URI is not set — it names the SOURCE database');
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is not set — it names the TARGET database');
+  }
+
+  say(`Source (MongoDB): ${redactUri(mongoUri)}`);
+  say(`Target (Postgres): ${redactUri(process.env.DATABASE_URL)}`);
+  say(`Batch size: ${options.batchSize}`);
+
+  const orphanTables = tablesWithoutAPlan();
+  if (orphanTables.length > 0) {
+    throw new Error(
+      `${orphanTables.length} table(s) are declared in the schema but no plan ` +
+        `feeds them: ${orphanTables.join(', ')}. Every table must have a source ` +
+        'or be a deliberate post-cutover-only table — and there is currently no ' +
+        'member of that second class, so this is a gap.'
+    );
+  }
+  say(
+    `Map: ${COLLECTION_PLANS.length} collection(s) migrated, ` +
+      `${NOT_MIGRATED.length} excluded, ${knownCollections().length} known in total.`
+  );
+
+  const db = await connectPostgres();
+  const source = await connectMongoSource(mongoUri);
+  let exitCode = 0;
+
+  try {
+    if (options.verifyOnly) {
+      return await runVerification(db, source, options);
+    }
+
+    // ---- discover ---------------------------------------------------------
+    heading('DISCOVERY');
+    const discovery = await discover(source);
+    for (const entry of discovery.migrated) {
+      say(`  migrate  ${entry.plan.collection.padEnd(32)} ${entry.documents} document(s)`);
+    }
+    for (const entry of discovery.excluded) {
+      say(`  EXCLUDE  ${entry.collection.padEnd(32)} ${entry.documents} document(s)`);
+      say(`           reason: ${entry.reason}`);
+    }
+    if (discovery.absent.length > 0) {
+      say(`\n  Mapped but absent from this database (nothing to do): ${discovery.absent.join(', ')}`);
+    }
+    if (discovery.unknown.length > 0) {
+      throw new UnknownCollectionError(discovery.unknown);
+    }
+
+    // ---- audit ------------------------------------------------------------
+    heading('AUDIT');
+    const { findings, fileOwnerCensus } = await runAudits(source, discovery);
+    if (Object.keys(fileOwnerCensus).length > 0) {
+      say('  files.ownerUserId system-owner census:');
+      for (const [sentinel, count] of Object.entries(fileOwnerCensus).sort()) {
+        say(`    ${sentinel.padEnd(32)} ${count} file(s)`);
+      }
+    }
+    if (findings.length === 0) {
+      say('  No findings. Every value the schema constrains is one the schema accepts.');
+    }
+    for (const finding of findings) {
+      say(`  [${finding.kind}] ${finding.detail}`);
+      say(`      ${finding.documents} document(s); e.g. ${finding.sampleIds.join(', ') || '(none)'}`);
+    }
+
+    if (options.auditOnly) {
+      heading(findings.length === 0 ? 'AUDIT CLEAN' : 'AUDIT FOUND BLOCKING ROWS');
+      return findings.length === 0 ? 0 : 1;
+    }
+
+    // ---- copy -------------------------------------------------------------
+    heading('COPY');
+    const state = await loadState(options.stateFile, options.restart);
+    const summary = await runBackfill(
+      {
+        db,
+        source,
+        batchSize: options.batchSize,
+        onProgress: (message) => say(`  ${message}`),
+        onCheckpoint: async (collection, checkpoint) => {
+          if (options.stateFile === null) return;
+          await persistCheckpoint(options.stateFile, state, collection, checkpoint);
+        },
+      },
+      state,
+      options.only
+    );
+
+    heading('COPY RESULT');
+    let totalRows = 0;
+    for (const copy of summary.copies) {
+      say(`  ${copy.collection}: ${copy.documentsRead} document(s) read`);
+      for (const [table, rows] of Object.entries(copy.rowsByTable)) {
+        say(`      → ${table.padEnd(40)} ${rows} row(s)`);
+        totalRows += rows;
+      }
+      if (copy.selfReferencesFilled > 0) {
+        say(`      → self-references filled: ${copy.selfReferencesFilled}`);
+      }
+    }
+    say(`\n  ${totalRows} row(s) written across ${summary.copies.length} collection(s).`);
+
+    if (options.verify) exitCode = await runVerification(db, source, options);
+  } catch (error) {
+    if (error instanceof UnknownCollectionError || error instanceof AuditBlockedError) {
+      heading('REFUSED');
+      say(error.message);
+      return 1;
+    }
+    throw error;
+  } finally {
+    await source.close();
+    await closePostgres();
+  }
+
+  return exitCode;
+}
+
+async function runVerification(
+  db: Awaited<ReturnType<typeof connectPostgres>>,
+  source: Awaited<ReturnType<typeof connectMongoSource>>,
+  options: Options
+): Promise<number> {
+  heading('VERIFY');
+  const live = new Set(await source.listCollections());
+  const plans = COLLECTION_PLANS.filter(
+    (plan) =>
+      live.has(plan.collection) &&
+      (options.only === undefined || options.only.includes(plan.collection))
+  );
+  try {
+    const report = await verifyBackfill(db, source, plans, {
+      sampleSize: options.sampleSize,
+      batchSize: options.batchSize,
+    });
+    say(
+      `  PASS — ${report.checkedCollections} collection(s), ${report.checkedTables} table(s), ` +
+        `${report.comparedDocuments} sampled document(s), ${report.comparedFields} field comparison(s).`
+    );
+    return 0;
+  } catch (error) {
+    if (error instanceof VerificationError || error instanceof VacuousVerificationError) {
+      heading('VERIFICATION FAILED');
+      say(error.message);
+      return 1;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Write the checkpoint for one collection.
+ *
+ * Mutates the in-memory state and rewrites the whole file. The file is small
+ * (one entry per collection) and rewriting it whole means a crash mid-write
+ * cannot produce a half-updated entry — the previous file is either fully
+ * replaced or not at all, and an unreadable file is a loud failure on the next
+ * run rather than a silently wrong resume position.
+ */
+async function persistCheckpoint(
+  path: string,
+  state: BackfillState,
+  collection: string,
+  checkpoint: Checkpoint
+): Promise<void> {
+  const checkpoints = { ...state.checkpoints, [collection]: checkpoint };
+  Object.assign(state, { checkpoints });
+  await writeFile(path, `${JSON.stringify({ ...state, checkpoints }, null, 2)}\n`, 'utf8');
+}
+
+main()
+  .then((code) => {
+    process.exitCode = code;
+  })
+  .catch((error: unknown) => {
+    process.stderr.write(`\nBackfill FAILED: ${describeError(error)}\n`);
+    if (error instanceof Error && error.stack) process.stderr.write(`${error.stack}\n`);
+    process.exitCode = 1;
+  });
