@@ -238,6 +238,54 @@ describe('displayNameSanitize', () => {
     });
   });
 
+  // `卐` U+5350 and `卍` U+534D are CJK Unified Ideographs (GC=Lo, scx=Han), so
+  // the script allowlist admits them exactly like any real Han letter and no
+  // script- or category-level rule could drop them without also rejecting every
+  // Chinese, Japanese and Korean name. They are subtracted from the allowlist by
+  // an explicit code-point denylist in @oxyhq/core, which this module inherits
+  // through DISPLAY_NAME_DISALLOWED_SOURCE — there is no separate pattern here,
+  // which is why the strip path and the core reject gate cannot drift.
+  describe('cleanDisplayName — symbol-letter denylist', () => {
+    // The glyphs below are visually confusable with each other and with ordinary
+    // ideographs, so pin them to their code points before relying on them.
+    it('the fixtures below really are U+5350 and U+534D', () => {
+      expect('卐'.codePointAt(0)).toBe(0x5350);
+      expect('卍'.codePointAt(0)).toBe(0x534d);
+    });
+
+    it.each([
+      ['卐', '', 'U+5350 alone'],
+      ['卍', '', 'U+534D alone'],
+      ['卐 Glowniggers 卐', 'Glowniggers', 'the production display name, decoration stripped'],
+      ['卐卍', '', 'both, adjacent'],
+      ['山田卍太郎', '山田 太郎', 'embedded mid-name → replaced with a space'],
+      ['Ada 卍 Lovelace', 'Ada Lovelace', 'stripped and surrounding whitespace collapsed'],
+    ])('cleans %p → %p (%s)', (input, expected) => {
+      expect(cleanDisplayName(input)).toBe(expected);
+    });
+
+    it.each([
+      ['山田太郎', 'Han (Japanese)'],
+      ['김철수', 'Hangul (Korean)'],
+      ['王小明', 'Han (Chinese)'],
+      // The four immediate neighbours of the denied pair: the subtraction must
+      // punch out exactly two code points, not a range around them.
+      ['卌', 'U+534C, immediately below U+534D'],
+      ['华', 'U+534E, immediately above U+534D (as in 中华)'],
+      ['协', 'U+534F, immediately below U+5350'],
+      ['卑', 'U+5351, immediately above U+5350'],
+    ])('leaves %p untouched (%s)', (input) => {
+      expect(cleanDisplayName(input)).toBe(input);
+    });
+
+    it('rejects the denied code points at the write gate too', () => {
+      expect(isValidDisplayName('卐')).toBe(false);
+      expect(isValidDisplayName('卍')).toBe(false);
+      // Same policy source, so the gate and the strip path agree by construction.
+      expect(isValidDisplayName('山田太郎')).toBe(true);
+    });
+  });
+
   describe('cleanDisplayName — XSS safety', () => {
     it.each([
       '<script>alert(1)</script>',

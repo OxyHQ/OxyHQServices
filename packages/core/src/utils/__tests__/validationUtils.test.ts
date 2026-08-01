@@ -23,8 +23,13 @@ import {
 } from '../validationUtils';
 // Imported from the generated module rather than re-exported through
 // `validationUtils`: the broad letters class is an internal operand of the
-// orphaned-mark lookbehind, not part of the policy's public surface.
-import { DISPLAY_NAME_LETTERS_RANGES } from '../displayNamePolicyRanges.generated';
+// orphaned-mark lookbehind, and the denylist is a generation-time operand
+// already subtracted from the allowlist — neither is part of the policy's
+// public runtime surface.
+import {
+  DISPLAY_NAME_DENIED_SYMBOL_LETTERS_RANGES,
+  DISPLAY_NAME_LETTERS_RANGES,
+} from '../displayNamePolicyRanges.generated';
 
 describe('Validation Utils', () => {
   describe('isRequiredString', () => {
@@ -364,6 +369,96 @@ describe('Validation Utils', () => {
       ['বাংলা', 'Bengali'],
     ])('still accepts %p (%s)', (name) => {
       expect(isValidDisplayName(name)).toBe(true);
+    });
+  });
+
+  // A character policy classifies FORM, never MEANING. `卐` U+5350 and `卍`
+  // U+534D are CJK Unified Ideographs (GC=Lo, scx=Han) — to Unicode they are the
+  // same kind of thing as `山` in `山田太郎`, so no script- or category-level rule
+  // can reject them without also rejecting every real Chinese, Japanese and
+  // Korean name. They are therefore subtracted from the allowlist by an explicit
+  // code-point denylist at generation time. This block is the regression guard,
+  // and asserts the division of labour: the denylist covers ONLY what the
+  // intersection cannot.
+  describe('display-name denylist — letters that function as symbols', () => {
+    // The glyphs below are visually confusable with each other and with ordinary
+    // ideographs, so pin them to their code points before relying on them.
+    it('the fixtures below really are U+5350 and U+534D', () => {
+      expect('卐'.codePointAt(0)).toBe(0x5350);
+      expect('卍'.codePointAt(0)).toBe(0x534d);
+    });
+
+    it.each([
+      ['卐', 'U+5350 right-facing swastika (GC=Lo, scx=Han)'],
+      ['卍', 'U+534D left-facing swastika (GC=Lo, scx=Han)'],
+      ['卐 Glowniggers 卐', 'the production display name that motivated the denylist'],
+      ['卍 卐', 'both, alone'],
+      ['山田卍太郎', 'embedded mid-name, between real Han letters'],
+    ])('rejects %p (%s)', (name) => {
+      expect(isValidDisplayName(name)).toBe(false);
+    });
+
+    // The whole point of a per-code-point denylist instead of a script rule.
+    it.each([
+      ['山田太郎', 'Han (Japanese)'],
+      ['김철수', 'Hangul (Korean)'],
+      ['王小明', 'Han (Chinese)'],
+      ['田中\u{20000}', 'Han incl. astral CJK Extension B'],
+      // The four immediate neighbours of the denied pair: the subtraction must
+      // punch out exactly two code points, not a range around them.
+      ['卌', 'U+534C, immediately below U+534D'],
+      ['华', 'U+534E, immediately above U+534D (as in 中华)'],
+      ['协', 'U+534F, immediately below U+5350'],
+      ['卑', 'U+5351, immediately above U+5350'],
+    ])('still accepts %p (%s)', (name) => {
+      expect(isValidDisplayName(name)).toBe(true);
+    });
+
+    // Enumerate what is ACTUALLY denied from the generated class rather than
+    // trusting the literals above, so a future entry that is added to the list
+    // but not enforced by the emitted allowlist fails here.
+    const denied = new RegExp(`[${DISPLAY_NAME_DENIED_SYMBOL_LETTERS_RANGES}]`, 'u');
+    const deniedCodePoints: number[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue; // lone surrogates
+      if (denied.test(String.fromCodePoint(cp))) deniedCodePoints.push(cp);
+    }
+
+    it('denies exactly the two swastika ideographs', () => {
+      expect(deniedCodePoints).toEqual([0x534d, 0x5350]);
+    });
+
+    it('rejects every code point on the denylist', () => {
+      const accepted = deniedCodePoints.filter((cp) =>
+        isValidDisplayName(String.fromCodePoint(cp))
+      );
+      expect(
+        accepted.map((cp) => `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`)
+      ).toEqual([]);
+      // Vacuity floor: an empty denylist would satisfy the assertion above while
+      // enforcing nothing.
+      expect(deniedCodePoints.length).toBeGreaterThanOrEqual(2);
+    });
+
+    // Hermes safety for the new class (see the property-escape block above).
+    it('the denylist ranges contain NO Unicode property escape', () => {
+      expect(/\\[pP]\{/.test(DISPLAY_NAME_DENIED_SYMBOL_LETTERS_RANGES)).toBe(false);
+      expect(() => new RegExp(`[${DISPLAY_NAME_DENIED_SYMBOL_LETTERS_RANGES}]`, 'u')).not.toThrow();
+    });
+
+    // Division of labour: the Tibetan svasti signs look like the entries above
+    // but are GC=So, so the `scripts ∩ General_Category L` intersection already
+    // excludes them. They are rejected — and deliberately NOT on the denylist,
+    // where they would be dead weight that reads as load-bearing. The generator
+    // fails the build if such a redundant entry is added.
+    it.each([
+      ['࿕', 'U+0FD5 RIGHT-FACING SVASTI SIGN'],
+      ['࿖', 'U+0FD6 LEFT-FACING SVASTI SIGN'],
+      ['࿗', 'U+0FD7 RIGHT-FACING SVASTI SIGN WITH DOTS'],
+      ['࿘', 'U+0FD8 LEFT-FACING SVASTI SIGN WITH DOTS'],
+    ])('rejects %p (%s) via the intersection, not the denylist', (ch) => {
+      expect(isValidDisplayName(ch)).toBe(false);
+      expect(denied.test(ch)).toBe(false);
     });
   });
 

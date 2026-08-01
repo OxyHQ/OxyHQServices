@@ -31,7 +31,8 @@
  * REGENERATE with:
  *   cd packages/core && bun run generate:display-name-policy
  * (or `node scripts/generateDisplayNamePolicyRanges.mjs`)
- * Only re-run when the allowlisted script set or the regexpu-core version bumps.
+ * Only re-run when the allowlisted script set, the code-point denylist
+ * ({@link SYMBOL_LETTER_DENYLIST}), or the regexpu-core version changes.
  */
 
 import { writeFileSync } from 'node:fs';
@@ -107,14 +108,83 @@ const SPACE_SEPARATORS = '\\p{Zs}';
  */
 const LETTERS = '\\p{L}';
 
+/**
+ * Code points that Unicode classifies as LETTERS of an allowlisted script, but
+ * that function as standalone hate SYMBOLS in real use. They are subtracted from
+ * the allowlist after the {@link LETTERS} intersection.
+ *
+ * WHY A DENYLIST IS NEEDED AT ALL
+ * -------------------------------
+ * Every other lever in this policy is a CLASS of characters — a script, a
+ * General_Category. Those levers cannot reach these code points, because a
+ * character policy classifies FORM, never MEANING: to Unicode, `卐` U+5350 is
+ * General_Category Lo with Script_Extensions Han, i.e. byte-for-byte the same
+ * kind of thing as `山` in `山田太郎`. No script-level or category-level rule can
+ * separate them. The only rules that would exclude these two would also exclude
+ * Han itself — rejecting every real Chinese, Japanese and Korean name — so the
+ * exclusion has to be enumerated per code point. That is the entire reason this
+ * list exists, and the reason it must stay SHORT: each entry is a hand-made
+ * judgement that a specific character is not a name character, and nothing about
+ * it generalizes.
+ *
+ * WHAT DOES NOT BELONG HERE
+ * -------------------------
+ * Anything an existing lever already rejects. The Tibetan svasti signs U+0FD5–
+ * U+0FD8 are the instructive case: they LOOK like the entries below, but they
+ * are General_Category So (symbols), so the `scripts ∩ General_Category L`
+ * intersection already excludes them and adding them here would be dead weight
+ * that reads as load-bearing. The generator ENFORCES this: it fails if any entry
+ * below is already excluded by the intersection (see the assertions after
+ * transpilation), so a redundant entry cannot be added silently.
+ *
+ * REMAINING LIMIT — this closes exactly one of the two gaps a character policy
+ * has. A slur spelled in ordinary allowlisted letters (`Glowniggers`) is
+ * composed entirely of characters every real name needs, so NO character-level
+ * rule — allowlist, intersection, or denylist — can reject it. That requires a
+ * word-level moderation layer, which is deliberately NOT attempted here.
+ *
+ * Entries are emitted sorted by code point, so authoring order here cannot
+ * change the generated file.
+ */
+const SYMBOL_LETTER_DENYLIST = [
+  {
+    codePoint: 0x5350,
+    char: '卐',
+    name: 'CJK UNIFIED IDEOGRAPH-5350',
+    why:
+      'Right-facing swastika. General_Category Lo, Script_Extensions Han, so it ' +
+      'is admitted by the Han allowlist exactly like any ordinary ideograph. ' +
+      'Observed in production as decoration flanking a racial slur.',
+  },
+  {
+    codePoint: 0x534d,
+    char: '卍',
+    name: 'CJK UNIFIED IDEOGRAPH-534D',
+    why:
+      'Left-facing swastika, the mirrored counterpart of U+5350 and the same ' +
+      'category/script situation. Denied together with it so the pair cannot be ' +
+      'trivially substituted for one another.',
+  },
+];
+
+/**
+ * The denylist as a character-class body of explicit `\u{…}` code-point escapes
+ * (never property escapes), sorted ascending so the emitted output is
+ * independent of the authoring order above.
+ */
+const SYMBOL_LETTER_DENYLIST_BODY = [...SYMBOL_LETTER_DENYLIST]
+  .sort((a, b) => a.codePoint - b.codePoint)
+  .map(({ codePoint }) => `\\u{${codePoint.toString(16).toUpperCase()}}`)
+  .join('');
+
 /* ------------------------------------------------------------------ *
  * Transpile with regexpu-core (property escapes only; keep `u`).     *
  * ------------------------------------------------------------------ */
 
 /**
  * `unicodeSetsFlag: 'transform'` lowers `v`-mode set operations (used for the
- * `&&` intersection) back to a plain `u`-mode class. It is inert for the
- * `u`-mode calls, so one options object serves both.
+ * `&&` intersection and the `--` difference) back to a plain `u`-mode class. It
+ * is inert for the `u`-mode calls, so one options object serves both.
  */
 const REGEXPU_OPTS = {
   unicodePropertyEscapes: 'transform',
@@ -128,21 +198,36 @@ const REGEXPU_OPTS = {
  * `\x…`/`\u…`/`\u{…}` escapes and range hyphens — zero property escapes — and is
  * interpolated straight into the larger classes in `validationUtils.ts`.
  *
- * With `intersectWith`, the body is emitted as the `v`-mode intersection
- * `[[body]&&[intersectWith]]` instead. `v` is used ONLY as the authoring
- * notation for the set algebra: regexpu lowers it to the same single `u`-mode
- * class of explicit ranges, so nothing `v`-specific reaches the shipped regex
- * (Hermes never sees a `v` flag, and neither does V8). The result is asserted
- * below to compile both as a positive class and — the shape
+ * With `intersectWith` and/or `subtract`, the body is emitted as the `v`-mode
+ * set expression `[[[body]&&[intersectWith]]--[subtract]]` instead. `v` is used
+ * ONLY as the authoring notation for the set algebra: regexpu lowers it to the
+ * same single `u`-mode class of explicit ranges, so nothing `v`-specific reaches
+ * the shipped regex (Hermes never sees a `v` flag, and neither does V8). The
+ * result is asserted below to compile both as a positive class and — the shape
  * `DISPLAY_NAME_DISALLOWED_SOURCE` actually uses — as a NEGATED one.
  *
+ * Applying the difference HERE, at generation time, rather than as a second
+ * runtime probe, is what makes the denylist unforgeable downstream: the denied
+ * code points are absent from the one emitted allowlist, so every consumer of
+ * the policy — the core reject gate AND the `@oxyhq/api` strip path, which both
+ * build from `DISPLAY_NAME_DISALLOWED_SOURCE` — enforces it without knowing it
+ * exists. There is no second pattern for a caller to forget.
+ *
  * @param {string} body character-class body containing property escapes
- * @param {string} [intersectWith] class body to intersect `body` with
+ * @param {{ intersectWith?: string, subtract?: string }} [operands] set-algebra operands
  * @returns {string}
  */
-function transpileClassBody(body, intersectWith) {
-  const pattern = intersectWith ? `[[${body}]&&[${intersectWith}]]` : `[${body}]`;
-  const out = rewritePattern(pattern, intersectWith ? 'v' : 'u', REGEXPU_OPTS);
+function transpileClassBody(body, operands = {}) {
+  const { intersectWith, subtract } = operands;
+  let pattern = `[${body}]`;
+  if (intersectWith) {
+    pattern = `[${pattern}&&[${intersectWith}]]`;
+  }
+  if (subtract) {
+    pattern = `[${pattern}--[${subtract}]]`;
+  }
+  const useSets = Boolean(intersectWith || subtract);
+  const out = rewritePattern(pattern, useSets ? 'v' : 'u', REGEXPU_OPTS);
   if (!out.startsWith('[') || !out.endsWith(']')) {
     throw new Error(
       `regexpu-core did not return a single class for [${body.slice(0, 24)}…]: ${out.slice(0, 48)}`
@@ -159,10 +244,22 @@ function transpileClassBody(body, intersectWith) {
   return inner;
 }
 
-const allowedScripts = transpileClassBody(SCRIPT_EXTENSIONS_ALLOWLIST, LETTERS);
+const allowedScripts = transpileClassBody(SCRIPT_EXTENSIONS_ALLOWLIST, {
+  intersectWith: LETTERS,
+  subtract: SYMBOL_LETTER_DENYLIST_BODY,
+});
 const combiningMarks = transpileClassBody(COMBINING_MARKS);
 const spaceSeparators = transpileClassBody(SPACE_SEPARATORS);
 const letters = transpileClassBody(LETTERS);
+const deniedSymbolLetters = transpileClassBody(SYMBOL_LETTER_DENYLIST_BODY);
+
+/**
+ * The allowlist WITHOUT the denylist subtracted. Never emitted — it exists only
+ * so the assertions below can prove each denylist entry is load-bearing.
+ */
+const allowedScriptsBeforeDenylist = transpileClassBody(SCRIPT_EXTENSIONS_ALLOWLIST, {
+  intersectWith: LETTERS,
+});
 
 /*
  * The whole point of the intersection: every code point the allowlist admits
@@ -187,6 +284,37 @@ for (let cp = 0; cp <= 0x10ffff; cp++) {
 }
 if (allowedCount < 100_000) {
   throw new Error(`allowlist collapsed to ${allowedCount} code points — expected >100k`);
+}
+
+/*
+ * Denylist assertions. Two directions, because each catches a different mistake:
+ *
+ *   1. Every denied code point must be GONE from the emitted allowlist — the
+ *      subtraction actually happened.
+ *   2. Every denied code point must have been PRESENT before the subtraction —
+ *      the entry is load-bearing. This is what keeps the list honest: a
+ *      character an existing lever already rejects (the Tibetan svasti signs
+ *      U+0FD5–U+0FD8, General_Category So, already dropped by the
+ *      `scripts ∩ General_Category L` intersection) fails here instead of
+ *      silently joining a list that readers will assume is all load-bearing.
+ */
+const beforeDenylistProbe = new RegExp(`[${allowedScriptsBeforeDenylist}]`, 'u');
+const deniedProbe = new RegExp(`[${deniedSymbolLetters}]`, 'u');
+for (const { codePoint, char, name } of SYMBOL_LETTER_DENYLIST) {
+  const label = `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')} ${char} (${name})`;
+  const ch = String.fromCodePoint(codePoint);
+  if (allowedProbe.test(ch)) {
+    throw new Error(`denylist entry ${label} is still admitted by the emitted allowlist`);
+  }
+  if (!beforeDenylistProbe.test(ch)) {
+    throw new Error(
+      `denylist entry ${label} is redundant: the scripts ∩ General_Category L ` +
+        'intersection already excludes it, so denying it adds nothing. Remove it.'
+    );
+  }
+  if (!deniedProbe.test(ch)) {
+    throw new Error(`denylist entry ${label} is missing from the emitted denylist class`);
+  }
 }
 
 /**
@@ -220,11 +348,20 @@ const header = `/**
  * Classes captured (regexpu-core, u-mode):
  *   - DISPLAY_NAME_ALLOWED_SCRIPTS_RANGES: the 30-script Script_Extensions
  *     allowlist (scx=Latin, scx=Greek, … scx=Han) INTERSECTED with
- *     General_Category L. The intersection is load-bearing: \`scx=X\` also
- *     carries script X's digits, punctuation and symbols, so without it the
- *     class admitted 1831 non-letter code points — script digits, 1082 symbols,
- *     and 9 invisible format/control characters including the U+061C bidi
- *     control. The generator fails if any non-letter survives.
+ *     General_Category L, MINUS an explicit code-point denylist. The
+ *     intersection is load-bearing: \`scx=X\` also carries script X's digits,
+ *     punctuation and symbols, so without it the class admitted 1831 non-letter
+ *     code points — script digits, 1082 symbols, and 9 invisible format/control
+ *     characters including the U+061C bidi control. The generator fails if any
+ *     non-letter survives. The denylist covers the opposite case: code points
+ *     that ARE letters of an allowlisted script yet function as hate symbols
+ *     (${SYMBOL_LETTER_DENYLIST.map((e) => e.char).join(' ')}) — no script-level or category-level rule can exclude
+ *     them without also rejecting every real Chinese, Japanese and Korean name.
+ *   - DISPLAY_NAME_DENIED_SYMBOL_LETTERS_RANGES: that denylist on its own. NOT
+ *     used to build any runtime regex — the code points are already subtracted
+ *     from the allowlist above, so the policy enforces them with no extra probe.
+ *     It is emitted so tests can enumerate what is denied and assert each entry
+ *     is actually rejected.
  *   - DISPLAY_NAME_COMBINING_MARKS_RANGES: General_Category M (combining marks).
  *   - DISPLAY_NAME_SPACE_SEPARATORS_RANGES: General_Category Zs (space
  *     separators).
@@ -247,6 +384,9 @@ export const DISPLAY_NAME_SPACE_SEPARATORS_RANGES =
 
 export const DISPLAY_NAME_LETTERS_RANGES =
   ${toStringLiteral(letters)};
+
+export const DISPLAY_NAME_DENIED_SYMBOL_LETTERS_RANGES =
+  ${toStringLiteral(deniedSymbolLetters)};
 `;
 
 // Defensive: the whole point is a property-escape-free output.
@@ -261,4 +401,9 @@ console.log(
   `  allowed scripts: ${allowedScripts.length} chars / ${allowedCount} code points ` +
     `(all letters), marks: ${combiningMarks.length}, ` +
     `spaces: ${spaceSeparators.length}, letters: ${letters.length} (regexpu-core)`
+);
+console.log(
+  `  denied symbol letters: ${SYMBOL_LETTER_DENYLIST.map(
+    ({ codePoint, char }) => `U+${codePoint.toString(16).toUpperCase()} ${char}`
+  ).join(', ')}`
 );

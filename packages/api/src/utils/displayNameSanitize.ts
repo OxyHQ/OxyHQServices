@@ -21,11 +21,21 @@
  * (`।`, `،`) and invisible controls (U+061C ARABIC LETTER MARK, U+180E) are
  * stripped just like their ASCII counterparts.
  *
- * KNOWN LIMIT: a character policy cannot see words. A code point that is
- * formally a letter but reads as a symbol (`卐` U+5350, `卍` U+534D — both CJK
- * Unified Ideographs) survives, as does any slur spelled in ordinary letters.
- * Those need a code-point denylist and a word-level moderation layer
- * respectively, NOT a change to the script allowlist.
+ * A code point that is formally a letter but reads as a hate symbol (`卐`
+ * U+5350, `卍` U+534D — both CJK Unified Ideographs, General_Category Lo,
+ * Script_Extensions Han) is stripped like any other disallowed character. That
+ * is NOT a rule of its own here: those code points are subtracted from the
+ * allowlist at generation time in `@oxyhq/core`, so they are simply absent from
+ * `DISPLAY_NAME_DISALLOWED_SOURCE`'s allowed set and this module removes them
+ * without knowing they exist — which is exactly why the strip path and the core
+ * reject gate cannot drift on them. A character policy cannot see MEANING, and
+ * no script- or category-level rule could have excluded these two without also
+ * rejecting every real Chinese, Japanese and Korean name.
+ *
+ * KNOWN LIMIT: a character policy still cannot see WORDS. A slur spelled in
+ * ordinary allowlisted letters survives, because it is built from the same
+ * characters every real name needs. That needs a word-level moderation layer,
+ * NOT a change to the script allowlist or the denylist.
  *
  * The character policy is NOT re-derived here: the allowlist and its patterns
  * are the ONE source of truth in `@oxyhq/core` `validationUtils.ts`

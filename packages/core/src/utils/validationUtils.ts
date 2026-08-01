@@ -93,16 +93,28 @@ export function isValidPassword(password: string): boolean {
  * name needs are added back explicitly. Limited-use / excluded / historic
  * scripts (Batak, Runic, Deseret, Adlam, …) are simply absent.
  *
- * KNOWN LIMIT — this is a CHARACTER policy, and a character policy cannot see
- * words or meaning. Two classes of abuse pass it by construction: (a) a code
- * point that is formally a letter but reads as a symbol, e.g. `卐` U+5350 and
- * `卍` U+534D, which are CJK Unified Ideographs (General_Category Lo,
- * Script_Extensions Han) and therefore indistinguishable here from any other Han
- * letter; and (b) slurs and abusive phrasing spelled in ordinary allowlisted
- * letters. Neither is addressable by widening or narrowing the character class —
- * (a) needs an explicit code-point denylist and (b) a word-level moderation
- * layer. Do not attempt to fix either by editing the script allowlist: dropping
- * Han would reject every real Chinese, Japanese and Korean name.
+ * CODE-POINT DENYLIST — a character policy classifies FORM, never MEANING, so a
+ * code point can be a perfectly ordinary letter to Unicode and a hate symbol to
+ * a reader. `卐` U+5350 and `卍` U+534D are the case in point: both are CJK
+ * Unified Ideographs (General_Category Lo, Script_Extensions Han), i.e. the same
+ * kind of thing as `山` in `山田太郎`, so NO script-level or category-level rule
+ * can separate them — every rule that would exclude these two also excludes Han
+ * itself, rejecting every real Chinese, Japanese and Korean name. They are
+ * therefore enumerated and SUBTRACTED from the allowlist at generation time (see
+ * `SYMBOL_LETTER_DENYLIST` in `scripts/generateDisplayNamePolicyRanges.mjs`).
+ * Because the subtraction happens inside the one emitted allowlist, every
+ * consumer enforces it with no extra probe and none can forget it; the generator
+ * additionally REFUSES an entry that an existing lever already excludes (e.g.
+ * the Tibetan svasti signs U+0FD5–U+0FD8, General_Category So, already dropped
+ * by the intersection above), so the list cannot silently accumulate dead
+ * weight.
+ *
+ * REMAINING LIMIT — that closes the "letter that reads as a symbol" gap, not the
+ * other one: slurs and abusive phrasing spelled in ordinary allowlisted letters
+ * pass by construction, because they are built from exactly the characters every
+ * real name needs. No character-level rule — allowlist, intersection, or
+ * denylist — can reject them; that needs a word-level moderation layer, which is
+ * deliberately not attempted here.
  *
  * HERMES / RANGES: the class bodies below are built from explicit Unicode
  * code-point RANGES ({@link DISPLAY_NAME_ALLOWED_SCRIPTS_RANGES} et al. from
@@ -125,9 +137,11 @@ export function isValidPassword(password: string): boolean {
 
 /**
  * The curated allowlist of Unicode scripts permitted in a display name, as a
- * character-class body of explicit code-point ranges (the union of the 30
- * allowlisted Script_Extensions INTERSECTED with General_Category L, so letters
- * only — 120825 code points). Interpolated into the negated class below.
+ * character-class body of explicit code-point ranges: the union of the 30
+ * allowlisted Script_Extensions, INTERSECTED with General_Category L (so letters
+ * only), MINUS the symbol-letter denylist — 120823 code points. Interpolated
+ * into the negated class below, which is why both the reject gate here and the
+ * `@oxyhq/api` strip path inherit the denylist without a second pattern.
  */
 export const DISPLAY_NAME_ALLOWED_SCRIPTS = DISPLAY_NAME_ALLOWED_SCRIPTS_RANGES;
 
