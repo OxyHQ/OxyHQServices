@@ -31,6 +31,7 @@ export const VERSIONS = {
 
   // --- Oxy SDK UI optional peers (toast / haptics / avatar crop / QR sign-in) ---
   expoHaptics: '~57.0.0',
+  expoImagePicker: '~57.0.4',
   expoImageManipulator: '~57.0.0',
   reactNativeQrcodeSvg: '^6.3.15',
   sonner: '^2.0.7', // web toast (Bloom toast.web)
@@ -42,6 +43,7 @@ export const VERSIONS = {
   reactNative: '0.86.0',
   reactNativeWeb: '~0.21.0',
   reactTypes: '^19.2.17', // @types/react
+  reactDomTypes: '^19.2.3', // @types/react-dom
 
   // --- Native modules (Expo SDK 57 aligned) ---
   asyncStorage: '2.2.0', // @react-native-async-storage/async-storage
