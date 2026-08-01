@@ -1716,6 +1716,111 @@ export function orphanFixtures(): FixtureSet {
   };
 }
 
+/**
+ * Documents whose dangling foreign key a DOCUMENTED RULE answers — the
+ * production shape of all 503 orphaned rows, in miniature.
+ *
+ * Distinct from {@link orphanFixtures}, which holds the two relations nothing
+ * answers and therefore still block. This set must COPY SUCCESSFULLY: the point
+ * is to read back what the rules actually wrote.
+ *
+ * Every orphan sits beside a CONTROL of the same shape whose parent is live, and
+ * the controls are what the mutation test breaks:
+ *
+ * | document | relation | ON DELETE | rule |
+ * |---|---|---|---|
+ * | {@link RESOLVED_ORPHAN_BUNDLE} | `bundles.user_id` | NOT NULL, cascade | drop the row |
+ * | {@link RESOLVED_ORPHAN_FOLLOW} | `user_follows.follower_id` | NOT NULL, cascade | drop the row |
+ * | {@link RESOLVED_ORPHAN_NOTIFICATION} | `notifications.actor_id` | NOT NULL, cascade | drop the row |
+ * | {@link RESOLVED_ORPHAN_DEVICE_SESSION} | `device_sessions.active_account_id` | NULLABLE, set null | write NULL, KEEP the row |
+ * | …its first `accounts` entry | `device_session_accounts.account_id` | NOT NULL, cascade | drop the row |
+ *
+ * The last two are one document on purpose: it is the case the decision itself
+ * turns on. The account ENTRY for the absent parent goes and the DEVICE survives
+ * holding no active account — while its second entry, whose account is live, is
+ * untouched.
+ */
+export function orphanResolutionFixtures(): FixtureSet {
+  const fixtures = cleanFixtures();
+  return {
+    ...fixtures,
+    bundles: [
+      ...(fixtures.bundles ?? []),
+      {
+        _id: oid(RESOLVED_ORPHAN_BUNDLE),
+        userId: oid(DELETED_USER),
+        name: 'Orphaned',
+        icon: 'folder-outline',
+        color: '#5F6368',
+        matchLabels: [],
+        enabled: true,
+        collapsed: true,
+        order: 1,
+        createdAt: T0,
+        updatedAt: T0,
+      },
+    ],
+    follows: [
+      ...(fixtures.follows ?? []),
+      {
+        _id: oid(RESOLVED_ORPHAN_FOLLOW),
+        followerUserId: oid(DELETED_USER),
+        followedId: oid(USER_B),
+        followType: 'user',
+        createdAt: T0,
+        updatedAt: T0,
+      },
+    ],
+    notifications: [
+      ...(fixtures.notifications ?? []),
+      {
+        _id: oid(RESOLVED_ORPHAN_NOTIFICATION),
+        recipientId: oid(USER_A),
+        actorId: oid(DELETED_USER),
+        type: 'follow',
+        entityId: oid(DELETED_USER),
+        entityType: 'profile',
+        read: false,
+        createdAt: T0,
+        updatedAt: T0,
+      },
+    ],
+    devicesessions: [
+      ...(fixtures.devicesessions ?? []),
+      {
+        _id: oid(RESOLVED_ORPHAN_DEVICE_SESSION),
+        deviceId: 'dev-orphan',
+        accounts: [
+          // Dropped: the account is gone, so the entry addresses nothing.
+          { accountId: oid(DELETED_USER), sessionId: 'sess-gone', authuser: 0, addedAt: T0 },
+          // KEPT — the control that proves the drop is per ENTRY, not per
+          // device. A rule widened to the document would take this with it.
+          { accountId: oid(USER_B), sessionId: 'sess-live', authuser: 1, addedAt: T1 },
+        ],
+        activeAccountId: oid(DELETED_USER),
+        secretHash: 'b2'.repeat(32),
+        revision: 1,
+        createdAt: T0,
+        updatedAt: T1,
+      },
+    ],
+  };
+}
+
+/** A bundle whose owner is gone. DROPPED — NOT NULL, ON DELETE CASCADE. */
+export const RESOLVED_ORPHAN_BUNDLE = '68ae000000000000000000a1';
+/** A follow whose FOLLOWER is gone. DROPPED, and its followed account is live. */
+export const RESOLVED_ORPHAN_FOLLOW = '68ae000000000000000000a2';
+/** A notification whose ACTOR is gone. DROPPED, and its recipient is live. */
+export const RESOLVED_ORPHAN_NOTIFICATION = '68ae000000000000000000a3';
+/**
+ * A device session whose active account is gone.
+ *
+ * KEPT with `active_account_id` NULL, while the `accounts` entry naming that
+ * same absent account is dropped and the entry beside it survives.
+ */
+export const RESOLVED_ORPHAN_DEVICE_SESSION = '68ae000000000000000000a4';
+
 /** A bundle whose `userId` names an account the source no longer holds. */
 export const ORPHAN_BUNDLE = '68ad000000000000000000b1';
 /** A reminder pointing at a message that is gone. NULLABLE, ON DELETE SET NULL. */

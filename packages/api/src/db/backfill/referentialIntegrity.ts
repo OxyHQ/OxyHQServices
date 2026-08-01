@@ -109,16 +109,30 @@
  * the lost rows — `plan.ts` states that invariant directly, and it is the one
  * finding class no resolution rule may ever answer.
  *
- * ## Every finding BLOCKS, including a nullable one
+ * ## Every finding BLOCKS unless the offending rows provably never arrive
  *
  * A NULLABLE foreign key does not mean a dangling value is allowed: `NULL` is
  * accepted, a value naming no row is `23503` exactly as on a NOT NULL column. So
  * both block, and the difference is what the report RECOMMENDS — see
  * {@link OrphanResolvability}. Deciding that a nullable orphan becomes NULL is a
- * decision about production data; it is surfaced, never applied. No resolution
- * rule answers a referential finding today, which is why none is attached:
- * encoding one means declaring a {@link ResolutionRule} and attaching it, the
- * same shape `UniquenessAudit.resolvedBy` has, and that is the operator's call.
+ * decision about production data, and it is surfaced rather than invented here.
+ *
+ * Ten relations DO carry such a decision now — `resolutions.ts`
+ * {@link ORPHAN_RESOLUTIONS} — and the way one clears a finding is deliberately
+ * narrow. The audit does not take the rule's word for anything:
+ *
+ * - References are read off the row the transform BUILT, so a rule that removes
+ *   a row does not make its orphan disappear from this report. Every offending
+ *   value, count and id is still printed.
+ * - A finding is answered only when EVERY offending row is one that provably
+ *   never reaches Postgres — dropped, or with the offending column nulled —
+ *   and only when the origin is `absent-in-source`. A `dropped-by-the-copy` or
+ *   `undetermined` orphan can never be answered, because a rule written against
+ *   migration data loss would bury it.
+ * - The rule's own tally is compared against the traversal's. A rule that acted
+ *   on rows this pass found no orphan for is an OVERREACH — it fired on a row
+ *   whose parent exists — and that is its own blocking finding, unanswerable by
+ *   anything.
  */
 
 import { is } from 'drizzle-orm';
@@ -128,7 +142,15 @@ import type { AuditFinding } from './audit';
 import { streamCollection, type MongoSource } from './mongoSource';
 import { planLevels } from './order';
 import { planTables, tableName, type CollectionPlan } from './plan';
-import type { ResolutionContext } from './resolutions';
+import {
+  ORPHAN_RESOLUTIONS,
+  transformDocument,
+  type AppliedOrphanResolution,
+  type OrphanRelation,
+  type ResolutionContext,
+  type ResolutionRule,
+  type ResolvedRow,
+} from './resolutions';
 import { describeId, type MongoDocument } from './values';
 
 /**
@@ -282,6 +304,18 @@ export interface PlanEmission {
   readonly primaryRowsEmitted: number;
   /** Of those, how many carried the source document's own `_id` as that key. */
   readonly primaryRowsKeyedByOwnId: number;
+  /**
+   * Rows a DOCUMENTED RULE removed — {@link ORPHAN_RESOLUTIONS} `drop-row`.
+   *
+   * Counted apart from `primaryRowsEmitted` so a deliberate, reported removal
+   * is not indistinguishable from the transform silently losing a document.
+   * {@link droppedDocuments} subtracts it, and the only thing that increments it
+   * is a row a rule removed — which the same loop reports by id into the
+   * resolution log. Those two are one step apart rather than one statement, so
+   * `__tests__/orphanResolutions.test.ts` mutation-tests the pairing directly:
+   * make the drop silent and the id report goes red while the count stays.
+   */
+  readonly primaryRowsDroppedByRule: number;
 }
 
 /**
@@ -299,14 +333,32 @@ export function singlePrimaryKeyProperty(table: PgTable): string | null {
   return composite.length === 1 ? (composite[0] ?? null) : null;
 }
 
-/** A plan that emitted fewer primary rows than it read documents. */
+/**
+ * A plan that emitted fewer primary rows than it read documents, EXCLUDING the
+ * rows a documented rule removed on purpose.
+ *
+ * Only the unexplained shortfall is data loss. A rule-removed row is reported by
+ * id under its own rule and is subtracted here rather than being reported twice
+ * under two different names — but nothing else is subtracted, so the
+ * `dropped-document` finding still fires for every row that went missing without
+ * anyone deciding it should.
+ */
 export function droppedDocuments(emission: PlanEmission): number {
-  return Math.max(0, emission.documentsRead - emission.primaryRowsEmitted);
+  return Math.max(
+    0,
+    emission.documentsRead - emission.primaryRowsEmitted - emission.primaryRowsDroppedByRule
+  );
 }
 
 /**
  * True when this plan's primary `id` column provably equals the set of source
  * `_id`s — every document produced exactly one row, keyed by its own `_id`.
+ *
+ * Deliberately STRICT about rule-removed rows, unlike {@link droppedDocuments}:
+ * a table a rule dropped rows from holds a SUBSET of the source ids, so "this
+ * value is not in the table" no longer proves "no source document has this
+ * `_id`". Every verdict about a relation pointing at such a table degrades to
+ * `undetermined` — fail-closed, and the honest answer.
  */
 export function emissionIsFaithful(emission: PlanEmission): boolean {
   return (
@@ -321,6 +373,8 @@ export interface OrphanValue {
   readonly value: string;
   /** Referencing rows, in full. */
   readonly documents: number;
+  /** Of those, how many a documented rule keeps out of Postgres. */
+  readonly mootDocuments: number;
   /** Source `_id`s, capped at {@link MAX_REPORTED_ORPHAN_DOCUMENT_IDS}. */
   readonly documentIds: readonly string[];
 }
@@ -332,6 +386,15 @@ export interface RelationOrphans {
   readonly collection: string;
   /** Referencing rows that name no row, in full. */
   readonly documents: number;
+  /**
+   * Of those, how many never reach Postgres because a documented rule removed
+   * the row or nulled the offending column.
+   *
+   * A row that is not written cannot violate a constraint, so this is the
+   * number that decides whether the finding still blocks — never the rule's
+   * say-so. It is measured on the emitted rows, not read off the rule.
+   */
+  readonly mootDocuments: number;
   /** Distinct missing values, in full. */
   readonly distinctValues: number;
   /** Missing values, capped at {@link MAX_REPORTED_ORPHAN_VALUES}. */
@@ -342,12 +405,47 @@ export interface RelationOrphans {
   /** How that verdict was reached, in the operator's words. */
   readonly originReason: string;
   /**
+   * The documented rule that answers this finding, when one provably does.
+   *
+   * Set only when the origin is `absent-in-source` AND every offending row is
+   * moot AND one rule accounts for all of them. Anything else leaves it unset
+   * and the finding blocks.
+   */
+  readonly resolvedBy?: ResolutionRule;
+  /**
    * True when NO plan in this run feeds the referenced table, so it will hold no
    * rows at all — every reference to it is an orphan for that reason alone.
    * Usually means the feeding collection is absent from the source, which
    * `Discovery.absent` reports separately.
    */
   readonly targetUnfed: boolean;
+}
+
+/**
+ * What a documented rule's row-dropping could take WITH it.
+ *
+ * A dropped row is a parent as well as a child: nothing stops another table
+ * referencing it. Reporting that here — rather than discovering it as a second
+ * `23503` three hours into the copy — is the point. Computed from the SAME
+ * derived foreign-key graph the rest of this file uses, so a schema that grows a
+ * reference to one of these tables is covered without anyone remembering.
+ */
+export interface DropCascade {
+  readonly rule: ResolutionRule;
+  /** The table the rule removes rows from. */
+  readonly table: string;
+  /** How many rows it removed in this pass. */
+  readonly rowsDropped: number;
+  /** Constraints pointing AT that table — the ones a drop could orphan. */
+  readonly inboundConstraints: readonly string[];
+  /**
+   * Rows that ARE orphaned by these drops, per constraint.
+   *
+   * Empty means the drops orphan nothing, measured rather than assumed: the
+   * dropped ids were compared against the orphan values this pass found on
+   * every inbound constraint.
+   */
+  readonly orphanedByDrop: readonly { readonly constraint: string; readonly documents: number }[];
 }
 
 /** What the referential audit inspected, whether or not it found anything. */
@@ -365,6 +463,14 @@ export interface ReferentialIntegrityReport {
   readonly skippedReason: string | null;
   readonly findings: readonly AuditFinding[];
   readonly orphans: readonly RelationOrphans[];
+  /**
+   * What each row-dropping rule removed, and what that could orphan.
+   *
+   * One entry per `drop-row` rule that fired, whether or not anything references
+   * the table — "nothing points at `notifications`, so dropping one orphans
+   * nothing" is an answer an operator needs, not an absence.
+   */
+  readonly dropCascades: readonly DropCascade[];
   /**
    * Referencing ROWS per origin — the split that decides where the fix belongs.
    *
@@ -415,6 +521,7 @@ export function referentialIntegrityNotRun(reason: string): ReferentialIntegrity
     skippedReason: reason,
     findings: [],
     orphans: [],
+    dropCascades: [],
     orphanRowsByOrigin: { 'absent-in-source': 0, 'dropped-by-the-copy': 0, undetermined: 0 },
     emissions: [],
     relationsInspected: 0,
@@ -560,6 +667,107 @@ export function orphanResolvability(relation: Relation): OrphanResolvability {
 }
 
 // ---------------------------------------------------------------------------
+// the documented rules, checked against the schema they claim to follow
+// ---------------------------------------------------------------------------
+
+/**
+ * The single-column foreign key on one column, derived from the schema.
+ *
+ * Throws rather than returning null for a column that carries none: an orphan
+ * rule declared on a column with no foreign key would answer a finding that
+ * cannot exist, which is a rule nobody can ever check.
+ */
+export function relationForColumn(table: PgTable, property: string): Relation {
+  const matches: Relation[] = [];
+  for (const foreignKey of getTableConfig(table).foreignKeys) {
+    const relation = describeRelation(table, foreignKey.onDelete, foreignKey.reference());
+    if (relation.columns.length !== 1) continue;
+    if (relation.columns[0]?.property === property) matches.push(relation);
+  }
+  const relation = matches[0];
+  if (relation === undefined || matches.length > 1) {
+    throw new Error(
+      `${tableName(table)}.${property} carries ${matches.length} single-column ` +
+        'foreign key(s), and a documented orphan resolution needs exactly one to ' +
+        'answer. A rule on a column the schema does not constrain would answer a ' +
+        'finding that cannot occur.'
+    );
+  }
+  return relation;
+}
+
+/** Raised when a documented rule disagrees with the constraint it answers. */
+export class OrphanResolutionMismatchError extends Error {
+  constructor(readonly relation: OrphanRelation, reason: string) {
+    super(
+      `The documented resolution \`${relation.rule.id}\` does not match the ` +
+        `schema it answers: ${reason}. Its decision is written FROM the ` +
+        "constraint's own ON DELETE, so a constraint that no longer says that " +
+        'makes the decision unjustified — re-decide it rather than letting the ' +
+        'rule keep firing under a premise that changed.'
+    );
+    this.name = 'OrphanResolutionMismatchError';
+  }
+}
+
+/**
+ * Check every documented orphan rule against the constraint it answers.
+ *
+ * The decisions in `resolutions.ts` rest on exactly two schema facts — "NOT NULL
+ * with ON DELETE CASCADE" for a drop, "nullable with ON DELETE SET NULL" for a
+ * null — and this is the only place either is asserted. Nothing restates them,
+ * so a schema change that invalidates a decision fails here instead of quietly
+ * leaving a rule that deletes rows for a reason that stopped being true.
+ *
+ * Run at the START of every pass rather than on first use: a rule that fires on
+ * no rows in this data is exactly the one nobody would notice had gone wrong.
+ */
+export function assertOrphanResolutionsMatchSchema(): void {
+  for (const entry of ORPHAN_RESOLUTIONS) {
+    const relation = relationForColumn(entry.table, entry.property);
+    if (relation.targetTableName !== tableName(entry.targetTable)) {
+      throw new OrphanResolutionMismatchError(
+        entry,
+        `it declares the parent table ${tableName(entry.targetTable)} but the ` +
+          `constraint references ${relation.targetTableName}`
+      );
+    }
+    if (entry.action === 'drop-row') {
+      if (relation.nullable) {
+        throw new OrphanResolutionMismatchError(
+          entry,
+          `${relation.constraint} is NULLABLE, so NULL is available and dropping ` +
+            'the row is no longer the only answer'
+        );
+      }
+      if (relation.onDelete !== 'cascade') {
+        throw new OrphanResolutionMismatchError(
+          entry,
+          `${relation.constraint} declares ON DELETE ${relation.onDelete}, not ` +
+            'cascade, so "the schema already says this row goes with its parent" ' +
+            'is no longer true'
+        );
+      }
+      continue;
+    }
+    if (!relation.nullable) {
+      throw new OrphanResolutionMismatchError(
+        entry,
+        `${relation.constraint} is NOT NULL, so the rule would write a value the ` +
+          'column refuses'
+      );
+    }
+    if (relation.onDelete !== 'set null') {
+      throw new OrphanResolutionMismatchError(
+        entry,
+        `${relation.constraint} declares ON DELETE ${relation.onDelete}, not set ` +
+          'null, so writing NULL invents a policy the schema does not declare'
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // the pass
 // ---------------------------------------------------------------------------
 
@@ -598,6 +806,10 @@ interface PendingReference {
   readonly target: TargetSet;
   readonly value: string;
   documents: number;
+  /** Of those, the rows a documented rule keeps out of Postgres. */
+  mootDocuments: number;
+  /** The rules that made them moot. One member means one rule answers them all. */
+  readonly mootRules: Map<string, ResolutionRule>;
   readonly documentIds: string[];
 }
 
@@ -606,8 +818,34 @@ interface OrphanAccumulator {
   readonly relation: Relation;
   readonly collection: string;
   documents: number;
+  mootDocuments: number;
+  readonly mootRules: Map<string, ResolutionRule>;
   distinctValues: number;
+  /**
+   * EVERY missing value with its row count, uncapped.
+   *
+   * The capped {@link OrphanValue} list is for the report; this is what the
+   * rule's own tally is checked against and what the cascade check intersects
+   * dropped ids with, and both of those have to be exact rather than a sample.
+   */
+  readonly documentsByValue: Map<string, number>;
   readonly values: OrphanValue[];
+}
+
+/**
+ * What one documented rule actually did, measured on the emitted rows.
+ *
+ * Kept per RELATION rather than per rule so it can be compared against that
+ * relation's orphans one-to-one. The comparison is the guard: a rule that acted
+ * on rows the traversal found no orphan for fired on a row whose parent exists.
+ */
+interface AppliedTally {
+  readonly relation: OrphanRelation;
+  rows: number;
+  readonly values: Set<string>;
+  /** Primary-key values of the rows it removed, for the cascade check. */
+  readonly droppedIds: Set<string>;
+  readonly documentIds: string[];
 }
 
 /**
@@ -629,6 +867,11 @@ export async function auditReferentialIntegrity(
   resolutions: ResolutionContext,
   options: { readonly batchSize?: number } = {}
 ): Promise<ReferentialIntegrityReport> {
+  // Before anything is read: the documented rules are checked against the
+  // constraints they claim to answer. A rule whose premise the schema no longer
+  // supports must never get as far as acting on a row.
+  assertOrphanResolutionsMatchSchema();
+
   const batchSize = options.batchSize ?? 1000;
   const collectionPlans = plans.map((entry) => entry.plan);
   const relations = referentialRelations(collectionPlans);
@@ -640,6 +883,7 @@ export async function auditReferentialIntegrity(
 
   const { targetSetsByTable, checkedByTable } = indexRelations(relations);
   const orphans = new Map<string, OrphanAccumulator>();
+  const applied = new Map<OrphanRelation, AppliedTally>();
   const counters: PassCounters = {
     collections: 0,
     documents: 0,
@@ -662,6 +906,7 @@ export async function auditReferentialIntegrity(
         documentsRead: 0,
         primaryRowsEmitted: 0,
         primaryRowsKeyedByOwnId: 0,
+        primaryRowsDroppedByRule: 0,
       };
 
       for await (const documents of streamCollection(source, plan.collection, batchSize)) {
@@ -672,6 +917,7 @@ export async function auditReferentialIntegrity(
             targetSetsByTable,
             checkedByTable,
             pending,
+            applied,
             counters,
             emission,
           });
@@ -685,6 +931,7 @@ export async function auditReferentialIntegrity(
         documentsRead: emission.documentsRead,
         primaryRowsEmitted: emission.primaryRowsEmitted,
         primaryRowsKeyedByOwnId: emission.primaryRowsKeyedByOwnId,
+        primaryRowsDroppedByRule: emission.primaryRowsDroppedByRule,
       });
 
       // Re-checked only now: a reference INTO this plan's own tables — a child
@@ -712,16 +959,19 @@ export async function auditReferentialIntegrity(
         emissions.get(entry.relation.targetTableName),
         fedTables.has(entry.relation.targetTableName)
       );
+      const resolvedBy = resolvingRule(entry, origin.origin);
       return {
         relation: entry.relation,
         collection: entry.collection,
         documents: entry.documents,
+        mootDocuments: entry.mootDocuments,
         distinctValues: entry.distinctValues,
         values: entry.values,
         resolvability: orphanResolvability(entry.relation),
         origin: origin.origin,
         originReason: origin.reason,
         targetUnfed: !fedTables.has(entry.relation.targetTableName),
+        ...(resolvedBy === undefined ? {} : { resolvedBy }),
       };
     });
 
@@ -736,14 +986,18 @@ export async function auditReferentialIntegrity(
     a.collection < b.collection ? -1 : a.collection > b.collection ? 1 : 0
   );
 
+  const dropCascades = describeDropCascades(applied, relations, orphans);
+
   const report: ReferentialIntegrityReport = {
     ran: true,
     skippedReason: null,
     findings: [
       ...orderedEmissions.filter((entry) => droppedDocuments(entry) > 0).map(describeDropFinding),
+      ...describeOverreach(applied, orphans),
       ...finished.map(describeFinding),
     ],
     orphans: finished,
+    dropCascades,
     orphanRowsByOrigin,
     emissions: orderedEmissions,
     relationsInspected: relations.length,
@@ -777,6 +1031,7 @@ interface EmissionTally {
   documentsRead: number;
   primaryRowsEmitted: number;
   primaryRowsKeyedByOwnId: number;
+  primaryRowsDroppedByRule: number;
 }
 
 /** Everything one document's inspection reads and writes. */
@@ -784,6 +1039,7 @@ interface PassState {
   readonly targetSetsByTable: ReadonlyMap<string, readonly TargetSet[]>;
   readonly checkedByTable: ReadonlyMap<string, readonly CheckedRelation[]>;
   readonly pending: Map<string, PendingReference>;
+  readonly applied: Map<OrphanRelation, AppliedTally>;
   readonly counters: PassCounters;
   readonly emission: EmissionTally;
 }
@@ -841,42 +1097,139 @@ function inspectDocument(
   state: PassState
 ): void {
   const documentId = describeId(doc) ?? '(document has no _id)';
-  plan.transform(
-    doc,
-    (table, row) => {
-      state.counters.rows += 1;
-      const name = tableName(table);
+  transformDocument(plan, doc, resolutions, (emitted) => {
+    state.counters.rows += 1;
+    const name = tableName(emitted.table);
+    const key = state.emission.primaryKeyProperty;
 
-      // The invariant `plan.ts` states: one document, one row in the PRIMARY
-      // table, keyed by that document's own `_id`. Counted rather than assumed,
-      // because it is what makes an `absent-in-source` verdict provable.
-      if (name === state.emission.primaryTable) {
+    // The invariant `plan.ts` states: one document, one row in the PRIMARY
+    // table, keyed by that document's own `_id`. Counted rather than assumed,
+    // because it is what makes an `absent-in-source` verdict provable. A row a
+    // documented rule REMOVED is counted apart — see `PlanEmission`.
+    if (name === state.emission.primaryTable) {
+      if (emitted.written === null) {
+        state.emission.primaryRowsDroppedByRule += 1;
+      } else {
         state.emission.primaryRowsEmitted += 1;
-        const key = state.emission.primaryKeyProperty;
-        if (key !== null && row[key] === documentId) {
+        if (key !== null && emitted.written[key] === documentId) {
           state.emission.primaryRowsKeyedByOwnId += 1;
         }
       }
+    }
 
+    // What the rules DID, tallied per relation on the emitted rows — the
+    // measurement `resolvingRule` and `describeOverreach` compare against the
+    // orphans this same pass finds, so the rule never gets to be its own judge.
+    for (const application of emitted.applied) {
+      recordApplication(state.applied, application, documentId, keyOf(emitted.source, application));
+    }
+
+    // Target sets take only rows that will EXIST. A row a rule removes cannot
+    // satisfy anything that references it, and treating it as a live parent
+    // would hide exactly the cascade `DropCascade` exists to report.
+    if (emitted.written !== null) {
       for (const target of state.targetSetsByTable.get(name) ?? []) {
-        const value = compositeKey(target.properties, row);
+        const value = compositeKey(target.properties, emitted.written);
         if (value !== null) target.values.add(value);
       }
+    }
 
-      for (const checked of state.checkedByTable.get(name) ?? []) {
-        const value = compositeKey(checked.properties, row);
-        // A NULL in ANY component satisfies the constraint unconditionally
-        // (Postgres MATCH SIMPLE), and an absent key means the column takes its
-        // default, which for every nullable foreign key here is NULL.
-        if (value === null) continue;
-        state.counters.references += 1;
-        state.counters.exercised.add(checked.relation.constraint);
-        if (checked.target.values.has(value)) continue;
-        park(state.pending, checked, plan.collection, value, documentId);
-      }
-    },
-    resolutions
+    // References are read off the row the TRANSFORM BUILT, never off the
+    // resolved one: a rule that made its own finding disappear would be a
+    // silenced check. Whether the reference actually reaches Postgres is
+    // recorded beside it (`moot`) and is what decides blocking.
+    for (const checked of state.checkedByTable.get(name) ?? []) {
+      const value = compositeKey(checked.properties, emitted.source);
+      // A NULL in ANY component satisfies the constraint unconditionally
+      // (Postgres MATCH SIMPLE), and an absent key means the column takes its
+      // default, which for every nullable foreign key here is NULL.
+      if (value === null) continue;
+      state.counters.references += 1;
+      state.counters.exercised.add(checked.relation.constraint);
+      if (checked.target.values.has(value)) continue;
+      park(state.pending, checked, plan.collection, value, documentId, mootnessOf(emitted, checked));
+    }
+  });
+}
+
+/**
+ * Does this reference survive into the row Postgres receives?
+ *
+ * `null` when it does — an ordinary orphan that will be attempted and refused,
+ * and one that still BLOCKS. Otherwise the rule responsible, which is what an
+ * operator reads to find out why the row is not there.
+ *
+ * There are exactly two ways to be moot, and they are decided on the COLUMN
+ * rather than on the value. Two columns of one row can hold the SAME missing
+ * parent — `device_sessions.active_account_id` and `background_secret_account_id`
+ * are the live example — and only one of them has a rule. Matching on the value
+ * would mark the other one answered as well, which is a real orphan quietly
+ * cleared.
+ */
+function mootnessOf(emitted: ResolvedRow, checked: CheckedRelation): ResolutionRule | null {
+  if (emitted.applied.length === 0) return null;
+
+  // Attribution, in both branches: the rule DECLARED on this relation when it
+  // fired, so a finding is answered by the rule written for it wherever one
+  // exists.
+  const declared = emitted.applied.find((application) =>
+    checked.properties.includes(application.relation.property)
   );
+
+  if (emitted.written === null) {
+    // The row does not exist, so NO reference it carried can be violated —
+    // including a relation nobody wrote a rule for. Attributed to the declared
+    // rule if there is one, else deterministically to the rule that removed the
+    // row, so a re-run reports the same one.
+    if (declared !== undefined) return declared.relation.rule;
+    const [first] = [...emitted.applied].sort((a, b) =>
+      a.relation.rule.id < b.relation.rule.id ? -1 : a.relation.rule.id > b.relation.rule.id ? 1 : 0
+    );
+    return first?.relation.rule ?? null;
+  }
+
+  // The row survives, so a reference is moot only if the RESOLVED row no longer
+  // carries it — read off the two rows rather than inferred from the rule.
+  const written = emitted.written;
+  const removed = checked.properties.some(
+    (property) => written[property] !== emitted.source[property]
+  );
+  if (!removed) return null;
+  return declared?.relation.rule ?? null;
+}
+
+/** The primary-key value of a row, for the cascade check. `null` when it has none. */
+function keyOf(row: Record<string, unknown>, application: AppliedOrphanResolution): string | null {
+  const key = singlePrimaryKeyProperty(application.relation.table);
+  if (key === null) return null;
+  const value = row[key];
+  return typeof value === 'string' ? value : null;
+}
+
+/** Fold one rule application into its relation's tally. */
+function recordApplication(
+  applied: Map<OrphanRelation, AppliedTally>,
+  application: AppliedOrphanResolution,
+  documentId: string,
+  rowId: string | null
+): void {
+  let tally = applied.get(application.relation);
+  if (tally === undefined) {
+    tally = {
+      relation: application.relation,
+      rows: 0,
+      values: new Set<string>(),
+      droppedIds: new Set<string>(),
+      documentIds: [],
+    };
+    applied.set(application.relation, tally);
+  }
+  tally.rows += 1;
+  tally.values.add(application.value);
+  if (application.relation.action === 'drop-row' && rowId !== null) tally.droppedIds.add(rowId);
+  if (tally.documentIds.length < MAX_REPORTED_ORPHAN_DOCUMENT_IDS) {
+    tally.documentIds.push(documentId);
+  }
 }
 
 /**
@@ -921,7 +1274,8 @@ function park(
   checked: CheckedRelation,
   collection: string,
   value: string,
-  documentId: string
+  documentId: string,
+  moot: ResolutionRule | null
 ): void {
   const key = `${checked.relation.constraint}${KEY_SEPARATOR}${value}`;
   const existing = pending.get(key);
@@ -932,11 +1286,17 @@ function park(
       target: checked.target,
       value,
       documents: 1,
+      mootDocuments: moot === null ? 0 : 1,
+      mootRules: moot === null ? new Map() : new Map([[moot.id, moot]]),
       documentIds: [documentId],
     });
     return;
   }
   existing.documents += 1;
+  if (moot !== null) {
+    existing.mootDocuments += 1;
+    existing.mootRules.set(moot.id, moot);
+  }
   if (existing.documentIds.length < MAX_REPORTED_ORPHAN_DOCUMENT_IDS) {
     existing.documentIds.push(documentId);
   }
@@ -953,20 +1313,60 @@ function recordOrphan(
       relation: entry.relation,
       collection: entry.collection,
       documents: 0,
+      mootDocuments: 0,
+      mootRules: new Map(),
       distinctValues: 0,
+      documentsByValue: new Map(),
       values: [],
     };
     orphans.set(entry.relation.constraint, accumulator);
   }
   accumulator.documents += entry.documents;
+  accumulator.mootDocuments += entry.mootDocuments;
+  for (const [ruleId, rule] of entry.mootRules) accumulator.mootRules.set(ruleId, rule);
   accumulator.distinctValues += 1;
+  accumulator.documentsByValue.set(
+    entry.value,
+    (accumulator.documentsByValue.get(entry.value) ?? 0) + entry.documents
+  );
   if (accumulator.values.length < MAX_REPORTED_ORPHAN_VALUES) {
     accumulator.values.push({
       value: entry.value,
       documents: entry.documents,
+      mootDocuments: entry.mootDocuments,
       documentIds: entry.documentIds,
     });
   }
+}
+
+/**
+ * The rule that ANSWERS this relation's orphans, or `undefined`.
+ *
+ * Three conditions, and all three are measurements rather than declarations:
+ *
+ * 1. The origin is `absent-in-source`. A `dropped-by-the-copy` or
+ *    `undetermined` orphan can never be answered — a rule written against
+ *    migration data loss would bury it, which is the one thing this audit
+ *    exists to prevent.
+ * 2. EVERY offending row is moot: the row is not written, or the offending
+ *    value is not on the row that is. A single row that still reaches Postgres
+ *    carries a `23503` with it, so a partial answer is no answer.
+ * 3. Exactly ONE rule accounts for them, so the report can name it. Several is
+ *    fail-closed rather than picking one to print.
+ *
+ * The fourth condition — that the rule acted on exactly these rows and NO
+ * others — cannot be seen from one relation, because a rule firing on a row
+ * whose parent EXISTS leaves no orphan here to notice.
+ * {@link describeOverreach} checks that direction against the rule's own tally.
+ */
+function resolvingRule(
+  entry: OrphanAccumulator,
+  origin: OrphanOrigin
+): ResolutionRule | undefined {
+  if (origin !== 'absent-in-source') return undefined;
+  if (entry.documents === 0 || entry.mootDocuments !== entry.documents) return undefined;
+  if (entry.mootRules.size !== 1) return undefined;
+  return [...entry.mootRules.values()][0];
 }
 
 /** The value a row carries for an ordered set of columns, or null when any is absent. */
@@ -1014,6 +1414,23 @@ function classifyOrigin(
         'audit has nothing to compare against and cannot say whether the parent ' +
         'is absent from MongoDB or simply not being migrated. Check whether the ' +
         'feeding collection is missing from the source.',
+    };
+  }
+
+  // A rule that REMOVED rows from this table leaves its ids a strict subset of
+  // the source ids, so a value missing from it no longer proves the document is
+  // missing from Mongo. Checked before the drop test below because the two have
+  // opposite meanings and only this one is deliberate.
+  if (emission.primaryRowsDroppedByRule > 0) {
+    return {
+      origin: 'undetermined',
+      reason:
+        `A documented rule removed ${emission.primaryRowsDroppedByRule} row(s) ` +
+        `from ${emission.table}, so its ids are a SUBSET of the ` +
+        `\`${emission.collection}\` document ids and a value missing from it may ` +
+        'be a row the rule dropped rather than a document MongoDB never held. ' +
+        'The removed rows are reported by id under their own rule; which of the ' +
+        'two this is has to be read there.',
     };
   }
 
@@ -1100,6 +1517,102 @@ function describeDropFinding(emission: PlanEmission): AuditFinding {
   };
 }
 
+/**
+ * A documented rule that acted on rows this pass found NO orphan for.
+ *
+ * The guard against a widened predicate. A rule is supposed to fire only on a
+ * reference whose parent the source does not hold, and this pass builds the set
+ * of such references independently — from the rows the transforms emit, not
+ * from the pre-pass the rule consults. When the rule acted on more rows than
+ * that set contains, or on a value that is not in it, it fired on a row whose
+ * parent EXISTS: it is deleting or altering live data.
+ *
+ * That is a finding no rule may ever answer, for the same reason
+ * `dropped-document` is: a rule clearing it would be the migration agreeing with
+ * itself.
+ */
+function describeOverreach(
+  applied: ReadonlyMap<OrphanRelation, AppliedTally>,
+  orphansByConstraint: ReadonlyMap<string, OrphanAccumulator>
+): AuditFinding[] {
+  const findings: AuditFinding[] = [];
+
+  for (const tally of applied.values()) {
+    const relation = relationForColumn(tally.relation.table, tally.relation.property);
+    const orphans = orphansByConstraint.get(relation.constraint);
+    const orphanRows = orphans?.documents ?? 0;
+    const unexplained = [...tally.values].filter(
+      (value) => !(orphans?.documentsByValue.has(value) ?? false)
+    );
+    if (tally.rows <= orphanRows && unexplained.length === 0) continue;
+
+    findings.push({
+      collection: tally.relation.collection,
+      kind: 'resolution-overreach',
+      detail:
+        `\`${tally.relation.rule.id}\` acted on ${tally.rows} row(s) of ` +
+        `${relation.constraint}, but this pass found only ${orphanRows} row(s) ` +
+        'whose parent is actually missing' +
+        (unexplained.length === 0
+          ? ''
+          : ` — and ${unexplained.length} of the values it acted on name a ` +
+            `${relation.targetTableName} row the migration DOES produce, e.g. ` +
+            `${unexplained.slice(0, SAMPLE_LIMIT).map((value) => JSON.stringify(value)).join(', ')}`) +
+        '. The rule fired on a row whose parent EXISTS, which means it is ' +
+        'removing or altering live production data. Its predicate is wrong, or ' +
+        'the parent set it reads is. No resolution rule may answer this: the ' +
+        'copy is refused until the two agree.',
+      documents: tally.rows,
+      sampleIds: tally.documentIds.slice(0, SAMPLE_LIMIT),
+    });
+  }
+
+  return findings.sort((a, b) => (a.detail < b.detail ? -1 : a.detail > b.detail ? 1 : 0));
+}
+
+/**
+ * What each row-dropping rule removed, and what its removals could orphan.
+ *
+ * "Dropping a `bundles` row orphans nothing" is a claim about the FK graph, so
+ * it is answered from the graph this file already derives rather than from
+ * memory — and the rows are then checked against the orphans this same pass
+ * found, so a drop that DOES orphan something is named here instead of arriving
+ * as a second `23503` at copy time.
+ */
+function describeDropCascades(
+  applied: ReadonlyMap<OrphanRelation, AppliedTally>,
+  relations: readonly Relation[],
+  orphansByConstraint: ReadonlyMap<string, OrphanAccumulator>
+): DropCascade[] {
+  const cascades: DropCascade[] = [];
+
+  for (const tally of applied.values()) {
+    if (tally.relation.action !== 'drop-row') continue;
+    const inbound = relations.filter(
+      (relation) => relation.targetTableName === tally.relation.tableName
+    );
+    const orphanedByDrop: { constraint: string; documents: number }[] = [];
+    for (const relation of inbound) {
+      const orphans = orphansByConstraint.get(relation.constraint);
+      if (orphans === undefined) continue;
+      let documents = 0;
+      for (const [value, rows] of orphans.documentsByValue) {
+        if (tally.droppedIds.has(value)) documents += rows;
+      }
+      if (documents > 0) orphanedByDrop.push({ constraint: relation.constraint, documents });
+    }
+    cascades.push({
+      rule: tally.relation.rule,
+      table: tally.relation.tableName,
+      rowsDropped: tally.rows,
+      inboundConstraints: inbound.map((relation) => relation.constraint),
+      orphanedByDrop,
+    });
+  }
+
+  return cascades.sort((a, b) => (a.rule.id < b.rule.id ? -1 : a.rule.id > b.rule.id ? 1 : 0));
+}
+
 /** The relation as an operator reads it: `bundles.user_id -> users.id`. */
 export function describeRelationColumns(relation: Relation): string {
   const from = relation.columns.map((column) => column.sqlName).join(', ');
@@ -1167,7 +1680,11 @@ function describeFinding(orphans: RelationOrphans): AuditFinding {
     collection: orphans.collection,
     kind: 'referential-integrity',
     detail:
-      `${describeRelationColumns(relation)} (${relation.constraint}, ON DELETE ` +
+      // Nullability rides in the header rather than only in the recommendation
+      // below: it is the fact that decides what answers are even available, and
+      // an ANSWERED finding prints no recommendation.
+      `${describeRelationColumns(relation)} (${relation.constraint}, ` +
+      `${relation.nullable ? 'NULLABLE' : 'NOT NULL'}, ON DELETE ` +
       `${relation.onDelete}): ${orphans.documents} row(s) built from ` +
       `${orphans.collection} name a ${relation.targetTableName} row the migration ` +
       `does not produce, across ${orphans.distinctValues} distinct value(s) — ` +
@@ -1181,11 +1698,31 @@ function describeFinding(orphans: RelationOrphans): AuditFinding {
       // decides whether "what to do about it" is even the right question: a
       // parent the MIGRATION lost is fixed in the transform, never here.
       `ORIGIN ${orphans.origin}: ${orphans.originReason} ` +
-      (orphans.origin === 'absent-in-source'
-        ? recommendation(orphans)
-        : 'No resolution rule may be written for this until the origin is ' +
-          'settled — one written against migration data loss would hide it.'),
+      // The recommendation is for a decision nobody has made yet. Printing
+      // "write down what happens to these rows as a documented rule" under a
+      // finding a documented rule already answers would read as advice to do
+      // something that is done.
+      (orphans.resolvedBy !== undefined
+        ? `DECIDED: \`${orphans.resolvedBy.id}\` answers this — its decision, and ` +
+          'every row it acts on, are reported with the rule rather than repeated here.'
+        : orphans.origin === 'absent-in-source'
+          ? recommendation(orphans)
+          : 'No resolution rule may be written for this until the origin is ' +
+            'settled — one written against migration data loss would hide it.') +
+      // What the rules actually DID to these rows, measured on the emitted rows
+      // rather than taken from the rule. A partial answer is printed as one: it
+      // is exactly the shape that would otherwise look resolved and then fail.
+      (orphans.mootDocuments === 0
+        ? ''
+        : ` ${orphans.mootDocuments} of the ${orphans.documents} row(s) never ` +
+          'reach Postgres — a documented rule removes the row or nulls the ' +
+          'column' +
+          (orphans.mootDocuments === orphans.documents
+            ? '.'
+            : `, and the remaining ${orphans.documents - orphans.mootDocuments} ` +
+              'WOULD still be attempted, so this finding still BLOCKS.')),
     documents: orphans.documents,
     sampleIds: orphans.values.flatMap((value) => value.documentIds).slice(0, SAMPLE_LIMIT),
+    ...(orphans.resolvedBy === undefined ? {} : { resolvedBy: orphans.resolvedBy }),
   };
 }

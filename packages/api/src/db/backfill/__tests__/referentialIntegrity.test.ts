@@ -286,6 +286,8 @@ describe('the relations are DERIVED, and they are the database\'s own', () => {
 describe('a dangling foreign key is found, named, and refuses the copy', () => {
   let mongo: MongoTestDatabase;
   let blocked: AuditBlockedError;
+  /** EVERY finding, including the ones a documented rule answers. */
+  let reported: readonly AuditFinding[];
 
   beforeAll(async () => {
     await truncateAll();
@@ -299,18 +301,30 @@ describe('a dangling foreign key is found, named, and refuses the copy', () => {
     if (!(caught instanceof AuditBlockedError)) {
       throw new Error(
         `Expected the run to be REFUSED by the audit; got ${String(caught)}. ` +
-          'Three documents in this fixture set name a parent that does not exist.'
+          'Two documents in this fixture set name a parent that does not exist ' +
+          'and NO documented rule answers either relation.'
       );
     }
     blocked = caught;
+
+    // `AuditBlockedError` carries only what BLOCKS, and one of this set's three
+    // orphans is now answered by a documented rule. The full list is re-derived
+    // here so the answered one can still be asserted on — a resolution must not
+    // make a finding disappear.
+    const resolutions = await resolutionsFor(mongo);
+    const discovery = await discover(mongo.source);
+    reported = (await runAudits(mongo.source, discovery, resolutions)).findings;
   });
 
   afterAll(async () => {
     await mongo.drop();
   });
 
-  it('BLOCKS on a NOT NULL orphan — the exact production failure', () => {
-    const finding = blocked.findings.find(
+  it('reports the NOT NULL orphan in full — the exact production failure', () => {
+    // This is the relation the first production run died on, and it is the one
+    // `drop-orphaned-bundles-user-id` now answers. Answered is not silenced:
+    // the finding is still computed, still counted and still names the row.
+    const finding = reported.find(
       (candidate) =>
         candidate.kind === 'referential-integrity' &&
         candidate.detail.includes('bundles_user_id_users_id_fk')
@@ -329,7 +343,16 @@ describe('a dangling foreign key is found, named, and refuses the copy', () => {
     // NOT NULL, so there is no value that satisfies the constraint — and the
     // report has to say so rather than imply NULL is available.
     expect(finding?.detail).toContain('NOT NULL');
-    expect(finding?.detail).toContain('no override flag');
+
+    // …and it no longer BLOCKS, because the row provably never arrives. The
+    // rule is named, so the decision can be read from the report.
+    expect(finding?.resolvedBy?.id).toBe('drop-orphaned-bundles-user-id');
+    expect(auditWouldBlockCopy(finding as AuditFinding)).toBe(false);
+    expect(
+      blocked.findings.some((candidate) =>
+        candidate.detail.includes('bundles_user_id_users_id_fk')
+      )
+    ).toBe(false);
   });
 
   it('reports a NULLABLE `ON DELETE SET NULL` orphan as the schema\'s own answer', () => {
@@ -370,14 +393,16 @@ describe('a dangling foreign key is found, named, and refuses the copy', () => {
   });
 
   it('stays SILENT on the healthy relations — the control', () => {
-    const referential = blocked.findings.filter(
-      (finding) => finding.kind === 'referential-integrity'
-    );
-    // EXACTLY three. The fixture set is the clean one plus three dangling
-    // documents, so a fourth finding means the audit reported a reference that
-    // resolves — the failure mode that would block a migration over healthy data
-    // and get this gate switched off by whoever hit it next.
+    const referential = reported.filter((finding) => finding.kind === 'referential-integrity');
+    // EXACTLY three REPORTED. The fixture set is the clean one plus three
+    // dangling documents, so a fourth finding means the audit reported a
+    // reference that resolves — the failure mode that would block a migration
+    // over healthy data and get this gate switched off by whoever hit it next.
     expect(referential).toHaveLength(3);
+    // …and exactly two of them BLOCK: the third is the one a documented rule
+    // answers. Asserting both numbers is what keeps "answered" from drifting
+    // into "no longer looked for".
+    expect(referential.filter(auditWouldBlockCopy)).toHaveLength(2);
 
     // `labels.user_id -> users.id` is the same relation SHAPE as the broken
     // `bundles.user_id` one, on the same target table, and it is fine.
@@ -398,9 +423,7 @@ describe('a dangling foreign key is found, named, and refuses the copy', () => {
     // fixture pair that happened to sort the other way round.
     expect(FORWARD_CHILD_TOPIC < FORWARD_PARENT_TOPIC).toBe(true);
 
-    const referential = blocked.findings.filter(
-      (finding) => finding.kind === 'referential-integrity'
-    );
+    const referential = reported.filter((finding) => finding.kind === 'referential-integrity');
     const details = referential.map((finding) => finding.detail).join('\n');
     expect(details).not.toContain('topics_parent_topic_id_topics_id_fk');
     // `users.parent_account_id` is the same class — SUB names ORG, both `users`
@@ -451,9 +474,20 @@ describe('a dangling foreign key is found, named, and refuses the copy', () => {
     expect(bundles?.resolvability).toBe('not-null');
     expect(bundles?.originReason).toContain('MongoDB does not hold the parent');
     expect(bundles?.distinctValues).toBe(1);
+    // `mootDocuments` is the measured half of the answer: the row is reported
+    // in full AND the report says it never reaches Postgres, which is why the
+    // finding stops blocking. Both numbers, so "answered" cannot come to mean
+    // "no longer counted".
     expect(bundles?.values).toEqual([
-      { value: DELETED_USER, documents: 1, documentIds: [ORPHAN_BUNDLE] },
+      { value: DELETED_USER, documents: 1, mootDocuments: 1, documentIds: [ORPHAN_BUNDLE] },
     ]);
+    expect(bundles?.mootDocuments).toBe(1);
+    expect(bundles?.resolvedBy?.id).toBe('drop-orphaned-bundles-user-id');
+
+    // The other two are NOT answered — no rule is declared on either relation —
+    // so they still block. Asserted beside the answered one so the difference
+    // is visible in one place.
+    expect(report.orphans.filter((entry) => entry.resolvedBy === undefined)).toHaveLength(2);
 
     const pushTokens = report.orphans.find((entry) => entry.collection === 'pushtokens');
     expect(pushTokens?.resolvability).toBe('nullable-other-action');

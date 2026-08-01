@@ -49,6 +49,7 @@ import {
   createResolutionContext,
   planResolutions,
   ResolutionLog,
+  transformDocument,
   type ResolutionContext,
 } from './resolutions';
 import type { MongoDocument } from './values';
@@ -146,14 +147,15 @@ export async function expectedRowCounts(
 
   const cursor = source.collection(plan.collection).find({}, { batchSize });
   for await (const doc of cursor) {
-    plan.transform(
-      doc as MongoDocument,
-      (table) => {
-        const name = tableName(table);
-        expected[name] = (expected[name] ?? 0) + 1;
-      },
-      resolutions
-    );
+    transformDocument(plan, doc as MongoDocument, resolutions, (emitted) => {
+      // A row a documented rule removes is not expected in Postgres, and this
+      // check would otherwise read its absence as the copy losing it. The
+      // removal is reported by id under its own rule, and the referential audit
+      // refused the run unless it was provably answerable.
+      if (emitted.written === null) return;
+      const name = tableName(emitted.table);
+      expected[name] = (expected[name] ?? 0) + 1;
+    });
   }
   return expected;
 }
@@ -263,15 +265,12 @@ export async function verifyCollection(
     const documents = await sampleDocuments(source, plan.collection, options.sampleSize);
     const expectedRows = new Map<string, Record<string, unknown>>();
     for (const doc of documents) {
-      plan.transform(
-        doc,
-        (table, row) => {
-          if (tableName(table) !== tableName(plan.table)) return;
-          const rowId = row.id;
-          if (typeof rowId === 'string') expectedRows.set(rowId, row);
-        },
-        options.resolutions
-      );
+      transformDocument(plan, doc, options.resolutions, (emitted) => {
+        if (tableName(emitted.table) !== tableName(plan.table)) return;
+        if (emitted.written === null) return;
+        const rowId = emitted.written.id;
+        if (typeof rowId === 'string') expectedRows.set(rowId, emitted.written);
+      });
     }
 
     if (expectedRows.size > 0) {

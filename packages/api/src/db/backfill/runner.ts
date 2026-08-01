@@ -64,6 +64,7 @@ import {
   createResolutionContext,
   planResolutions,
   ResolutionLog,
+  transformDocument,
   type ResolutionContext,
   type ResolutionPlan,
   type ResolutionSummary,
@@ -371,24 +372,24 @@ export async function copyCollection(
     }
 
     for (const doc of documents) {
-      plan.transform(
-        doc,
-        (table, row) => {
-          const name = tableName(table);
-          const bucket = collected.get(name);
-          if (!bucket) {
-            throw new Error(
-              `Plan for ${plan.collection} emitted a row for ${name}, which it does ` +
-                'not declare in `table`/`childTables`. Declare it: the verifier uses ' +
-                'that declaration to tell "empty because nothing fed it" from ' +
-                '"empty because the copy produced nothing".'
-            );
-          }
-          const deferred = deferredByTable.get(name);
-          bucket.rows.push(deferred ? withoutDeferred(row, deferred) : row);
-        },
-        resolutions
-      );
+      transformDocument(plan, doc, resolutions, (emitted) => {
+        const name = tableName(emitted.table);
+        const bucket = collected.get(name);
+        if (!bucket) {
+          throw new Error(
+            `Plan for ${plan.collection} emitted a row for ${name}, which it does ` +
+              'not declare in `table`/`childTables`. Declare it: the verifier uses ' +
+              'that declaration to tell "empty because nothing fed it" from ' +
+              '"empty because the copy produced nothing".'
+          );
+        }
+        // `written` is null for a row a documented rule removes — the audit has
+        // already reported it by id under that rule, and the audit is what let
+        // this run start at all.
+        if (emitted.written === null) return;
+        const deferred = deferredByTable.get(name);
+        bucket.rows.push(deferred ? withoutDeferred(emitted.written, deferred) : emitted.written);
+      });
     }
     documentsRead += documents.length;
 
@@ -466,12 +467,14 @@ async function fillSelfReferences(
     const updates: Array<{ table: PgTable; id: string; values: Record<string, unknown> }> = [];
 
     for (const doc of documents) {
-      plan.transform(
-        doc,
-        (table, row) => {
+      transformDocument(plan, doc, resolutions, (emitted) => {
+        const table = emitted.table;
         const name = tableName(table);
         const deferred = deferredByTable.get(name);
         if (!deferred) return;
+        // A row the copy never inserted has nothing to fill in.
+        const row = emitted.written;
+        if (row === null) return;
         const values: Record<string, unknown> = {};
         for (const column of deferred) {
           const value = row[column];
@@ -511,9 +514,7 @@ async function fillSelfReferences(
         }
         const resolved = tableByName.get(name);
         if (resolved) updates.push({ table: resolved, id: rowId, values });
-        },
-        resolutions
-      );
+      });
     }
 
     if (updates.length === 0) continue;

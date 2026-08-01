@@ -57,19 +57,25 @@ import { allowedValues } from './plan';
 import type { MongoSource } from './mongoSource';
 import type { ResolutionContext, ResolutionRule } from './resolutions';
 
-/** One thing the schema would refuse. */
+/** One thing the schema would refuse — or one thing wrong with a rule. */
 export interface AuditFinding {
   readonly collection: string;
   /**
    * `enum` | `uniqueness` | `file-system-owner` | `referential-integrity` |
-   * `dropped-document`.
+   * `dropped-document` | `resolution-overreach`.
+   *
+   * The last two are not about the DATA. They say a transform is losing
+   * documents, or that a documented rule acted on a row it was not written for
+   * — and neither may ever be answered by a rule, for the same reason: the
+   * migration would be agreeing with itself.
    */
   readonly kind:
     | 'enum'
     | 'uniqueness'
     | 'file-system-owner'
     | 'referential-integrity'
-    | 'dropped-document';
+    | 'dropped-document'
+    | 'resolution-overreach';
   /** Human-readable, and specific enough to act on without opening the code. */
   readonly detail: string;
   /** Documents affected, where the audit can count them. */
@@ -79,10 +85,13 @@ export interface AuditFinding {
   /**
    * The documented rule that already answers this finding, when one does.
    *
-   * Set only from a rule the PLAN declared on the audit that produced the
-   * finding — and, for a uniqueness collision, only when the rule actually acts
-   * on all but one of the colliding rows. A finding carrying one is reported
-   * and does not block; see {@link auditWouldBlockCopy}.
+   * Never something a caller supplies. It is set from a rule the PLAN declared
+   * on the audit that produced the finding — and only when that rule verifiably
+   * covers this particular finding: for a uniqueness collision, when it acts on
+   * all but one of the colliding rows; for a referential orphan, when every
+   * offending row provably never reaches Postgres and the rule's own tally
+   * matches what the traversal measured. A finding carrying one is reported in
+   * full and does not block; see {@link auditWouldBlockCopy}.
    */
   readonly resolvedBy?: ResolutionRule;
 }
@@ -379,9 +388,13 @@ export function auditWouldBlockCopy(finding: AuditFinding): boolean {
     finding.kind === 'referential-integrity' ||
     // A transform that emitted fewer rows than it read documents is losing
     // data, and it blocks even with no foreign key pointing at the lost rows.
-    // This is the ONE finding class a resolution rule must never answer: the
-    // bug is in the transform, and `resolvedBy` clearing it would be the
-    // migration silently agreeing to lose documents.
-    finding.kind === 'dropped-document'
+    // This is one of the two finding classes a resolution rule must never
+    // answer: the bug is in the transform, and `resolvedBy` clearing it would
+    // be the migration silently agreeing to lose documents.
+    finding.kind === 'dropped-document' ||
+    // The other one, and the mirror image: a documented rule that acted on a
+    // row whose parent EXISTS is removing or altering live data. Nothing may
+    // clear it — least of all another rule.
+    finding.kind === 'resolution-overreach'
   );
 }

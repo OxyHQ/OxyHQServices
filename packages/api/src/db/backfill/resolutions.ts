@@ -26,7 +26,7 @@
  *    makes a revisited decision cheap — drop the Postgres database, change the
  *    rule, run again.
  *
- * ## The two rules
+ * ## The rules
  *
  * ### `drop-unrenderable-message-card`
  *
@@ -61,13 +61,76 @@
  * The cost is nil: `selectValidators` has no minimum-pool guard and the
  * eligible pool never clears QUORUM, so these juries could only ever expire
  * anyway. {@link DEMOTED_VALIDATION_REQUEST_STATUS} is exactly that outcome.
+ *
+ * ### The ten orphaned-reference rules — {@link ORPHAN_RESOLUTIONS}
+ *
+ * Production holds 503 rows across ten relations whose parent account MongoDB
+ * does not hold. `referentialIntegrity.ts` measured all 503 as
+ * `absent-in-source` — pre-existing dangling debt Mongo never checked, with
+ * NOTHING lost by the copy — so what is on the table is what happens to the
+ * REFERENCING row, and the schema's own `ON DELETE` is what answers it:
+ *
+ * - **Nine NOT NULL / `ON DELETE CASCADE` relations: DROP the referencing row.**
+ *   A cascade is the schema's written answer to losing the parent, and these are
+ *   precisely the rows a cascade would have removed had Mongo enforced one. NULL
+ *   is not available on a NOT NULL column, so the only alternative is inventing
+ *   a placeholder parent — fabricating an account.
+ * - **`device_sessions.active_account_id`: write NULL and KEEP the row.** The
+ *   column is nullable and declares `ON DELETE SET NULL`, so NULL is literally
+ *   where the declared policy puts a row whose parent is gone. Dropping the
+ *   device session instead would sign a user out of a live device to fix a dead
+ *   pointer. Its sibling `device_session_accounts` rows for those same parents
+ *   ARE dropped by the rule above: the account entry goes, the device survives
+ *   holding no active account.
+ *
+ * Four properties keep these honest, and each is checked rather than asserted in
+ * prose:
+ *
+ * 1. **The predicate is narrow by construction.** A rule fires on ONE declared
+ *    `(table, column)` and only when that column holds a value the parent
+ *    collection does not, read from {@link ResolutionPlan.orphanParents}. Any
+ *    other row is emitted byte-for-byte unchanged.
+ * 2. **The schema is the premise, and it is verified.** The decision above rests
+ *    on "NOT NULL + cascade" and "nullable + set null"; nothing here restates
+ *    those — `assertOrphanResolutionsMatchSchema` derives each relation from the
+ *    drizzle metadata and REFUSES a rule whose declared action disagrees with
+ *    the constraint it answers.
+ * 3. **The audit still finds the orphans, and only stops blocking when the rows
+ *    provably do not reach Postgres.** References are checked on the row the
+ *    transform BUILT, so every one of the 503 is still reported by value, count
+ *    and id; the finding is answered because the row is removed or the column
+ *    nulled, and because the rule's own tally MATCHES the traversal's. A rule
+ *    that acted on more rows than the traversal found orphaned blocks as an
+ *    overreach — that is the guard against a widened predicate quietly deleting
+ *    live data.
+ * 4. **An empty parent set makes every rule INERT.** "The pre-pass read nothing"
+ *    and "the parent collection is genuinely empty" are indistinguishable, and
+ *    one of them would drop every row of nine tables. So the rules stand down
+ *    and the orphans block instead.
+ *
+ * `dropped-document` — a transform emitting fewer rows than it read — remains
+ * unanswerable by any of this. A row a rule removes is counted SEPARATELY
+ * ({@link ResolvedRow.written} being `null` is what the audit tallies), so an
+ * unexplained shortfall still blocks exactly as before; only the rows a rule
+ * removed and named are subtracted.
  */
 
+import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
+import { sqlColumnName } from '../casing';
+import { appUserSignals } from '../schema/appUserSignals';
+import { bundles } from '../schema/bundles';
+import { deviceSessionAccounts } from '../schema/deviceSessionAccounts';
+import { deviceSessions } from '../schema/deviceSessions';
 import { messages } from '../schema/messages';
+import { notifications } from '../schema/notifications';
+import { restrictions } from '../schema/restrictions';
+import { securityActivities } from '../schema/securityActivities';
+import { userFollows } from '../schema/userFollows';
+import { users } from '../schema/users';
 import { OPEN_VALIDATION_REQUEST_STATUSES, VALIDATION_REQUEST_STATUSES } from '../schema/validationRequests';
 import type { MongoSource } from './mongoSource';
-import { allowedValues } from './plan';
-import { date, isObjectId, type MongoDocument } from './values';
+import { allowedValues, tableName, type CollectionPlan } from './plan';
+import { date, describeId, id, isObjectId, type MongoDocument } from './values';
 
 /**
  * The live collection name of the validator-jury requests.
@@ -144,6 +207,180 @@ export const DEMOTE_DUPLICATE_OPEN_VALIDATION_REQUESTS: ResolutionRule = {
     'expire. Every demoted request is reported by id, next to the survivor.',
 };
 
+// ---------------------------------------------------------------------------
+// the orphaned-reference rules
+// ---------------------------------------------------------------------------
+
+/**
+ * What the migration does with a row whose parent the SOURCE never held.
+ *
+ * The two answers the schema itself offers, and nothing else: no placeholder
+ * parent is ever fabricated, and no row is silently altered in any other way.
+ */
+export type OrphanAction =
+  /** The row is not written at all — what `ON DELETE CASCADE` declares. */
+  | 'drop-row'
+  /** The column is written NULL and the row is kept — what `ON DELETE SET NULL` declares. */
+  | 'write-null';
+
+/**
+ * One foreign key whose orphans a documented rule answers.
+ *
+ * Declared as `(table, column)` and NOTHING else about the constraint: the
+ * constraint name, the nullability and the `ON DELETE` are all derived from the
+ * drizzle metadata by `referentialIntegrity.ts`, which then REFUSES a rule whose
+ * {@link action} disagrees with what the schema declares. Restating them here
+ * would be a second source of truth for the very facts the decision rests on.
+ */
+export interface OrphanRelation {
+  readonly rule: ResolutionRule;
+  readonly action: OrphanAction;
+  /** The LIVE collection whose documents produce the referencing rows. */
+  readonly collection: string;
+  /** The referencing table. */
+  readonly table: PgTable;
+  /** Its SQL name, so an emitted row can be matched without re-deriving it. */
+  readonly tableName: string;
+  /** The referencing column. */
+  readonly column: PgColumn;
+  /** The drizzle PROPERTY that column occupies in an emitted row. */
+  readonly property: string;
+  /** Its SQL name, for the report — what a `23503` and `psql` both spell. */
+  readonly columnName: string;
+  /** The table the reference must find a row in. */
+  readonly targetTable: PgTable;
+  /**
+   * The collection whose documents become that table's rows.
+   *
+   * The rule's parent set is read from it before the copy starts. Declared
+   * rather than looked up so this module never imports the collection map —
+   * `plans/` imports this file, so the reverse edge would be a cycle. The
+   * agreement is checked instead: `__tests__/orphanResolutions.test.ts` asserts
+   * this collection's plan writes {@link targetTable}.
+   */
+  readonly parentCollection: string;
+}
+
+/** The collection every one of these relations resolves its parent in. */
+const USERS_COLLECTION = 'users';
+
+/**
+ * Declare one orphan resolution, composing its rule from the relation.
+ *
+ * The id and the prose are DERIVED from the table and column so ten rules
+ * cannot drift into ten slightly different statements of one decision — the
+ * decision genuinely is the same for all nine drops, and only the relation
+ * differs.
+ */
+function orphanResolution(
+  action: OrphanAction,
+  collection: string,
+  table: PgTable,
+  column: PgColumn,
+  targetTable: PgTable,
+  parentCollection: string
+): OrphanRelation {
+  const from = tableName(table);
+  const columnName = sqlColumnName(column);
+  const to = tableName(targetTable);
+  const reference = `${from}.${columnName}`;
+  const prefix = action === 'drop-row' ? 'drop' : 'null';
+
+  return {
+    rule: {
+      id: `${prefix}-orphaned-${from}-${columnName}`.replace(/_/g, '-'),
+      collection,
+      finding:
+        `${reference} names a \`${to}\` row the source does not hold. MongoDB ` +
+        'enforced no foreign key, so the reference was already dangling there; ' +
+        'Postgres answers 23503. The audit measured it as `absent-in-source` — ' +
+        'nothing was lost by the copy.',
+      decision:
+        action === 'drop-row'
+          ? `DROP the referencing row. ${reference} is NOT NULL and cascades ` +
+            `from \`${to}\`, so the schema itself says this row goes when its ` +
+            'parent does — these are exactly the rows a cascade would already ' +
+            'have removed. NULL is not available on a NOT NULL column, and the ' +
+            'only other option is inventing a placeholder parent, which would ' +
+            'fabricate an account. Every dropped row is reported by id, and the ' +
+            'rest of the document does not travel in any other form.'
+          : `Write NULL and KEEP the row. ${reference} is NULLABLE and declares ` +
+            `ON DELETE SET NULL against \`${to}\`, so NULL is literally where ` +
+            'the declared policy puts a row whose parent is gone. Dropping the ' +
+            'row instead would sign a user out of a live device to fix a dead ' +
+            'pointer. Every other column is written verbatim, and every nulled ' +
+            'row is reported by id.',
+    },
+    action,
+    collection,
+    table,
+    tableName: from,
+    column,
+    // `column.name` on a drizzle column is the TypeScript PROPERTY name — the
+    // key an emitted row uses. `sqlColumnName` is the other half. Confusing the
+    // two is the trap `db/casing.ts` exists to close.
+    property: column.name,
+    columnName,
+    targetTable,
+    parentCollection,
+  };
+}
+
+/**
+ * Every relation whose orphans are ANSWERED, and how.
+ *
+ * Exactly the ten the production audit reported, each measured
+ * `absent-in-source`. A relation absent from this list still BLOCKS — including
+ * `files.owner_user_id`, which is deliberately left blocking because nulling it
+ * invents a policy the schema does not declare (it is NULLABLE but CASCADE) and
+ * dropping it would destroy the record of real S3 bytes.
+ */
+export const ORPHAN_RESOLUTIONS: readonly OrphanRelation[] = [
+  // The collection names are the LIVE ones, which Mongoose derived by
+  // pluralising a model name rather than declaring (`restricteds`,
+  // `securityactivities`, `appusersignals`) — never a guess from the table name,
+  // and `__tests__/orphanResolutions.test.ts` checks each against the plan that
+  // writes the table.
+  drop('appusersignals', appUserSignals, appUserSignals.userId),
+  drop('bundles', bundles, bundles.userId),
+  // Fed by `devicesessions`: the account set is a subdocument ARRAY on the
+  // device-session document, so dropping one of these rows removes an account
+  // entry, never the device.
+  drop('devicesessions', deviceSessionAccounts, deviceSessionAccounts.accountId),
+  drop('notifications', notifications, notifications.actorId),
+  drop('notifications', notifications, notifications.recipientId),
+  drop('restricteds', restrictions, restrictions.restrictedId),
+  drop('securityactivities', securityActivities, securityActivities.userId),
+  drop('follows', userFollows, userFollows.followedId),
+  drop('follows', userFollows, userFollows.followerId),
+  // The ONE row-preserving answer, and the only relation here whose schema lets
+  // NULL stand for a lost parent.
+  orphanResolution(
+    'write-null',
+    'devicesessions',
+    deviceSessions,
+    deviceSessions.activeAccountId,
+    users,
+    USERS_COLLECTION
+  ),
+];
+
+/** One NOT NULL / `ON DELETE CASCADE` relation into `users`. */
+function drop(collection: string, table: PgTable, column: PgColumn): OrphanRelation {
+  return orphanResolution('drop-row', collection, table, column, users, USERS_COLLECTION);
+}
+
+/** The declared resolutions for one table, by its SQL name. */
+const ORPHAN_RESOLUTIONS_BY_TABLE: ReadonlyMap<string, readonly OrphanRelation[]> = (() => {
+  const index = new Map<string, OrphanRelation[]>();
+  for (const relation of ORPHAN_RESOLUTIONS) {
+    const existing = index.get(relation.tableName);
+    if (existing) existing.push(relation);
+    else index.set(relation.tableName, [relation]);
+  }
+  return index;
+})();
+
 /**
  * Every documented resolution.
  *
@@ -154,6 +391,7 @@ export const DEMOTE_DUPLICATE_OPEN_VALIDATION_REQUESTS: ResolutionRule = {
 const RESOLUTION_RULES: readonly ResolutionRule[] = [
   DROP_UNRENDERABLE_MESSAGE_CARD,
   DEMOTE_DUPLICATE_OPEN_VALIDATION_REQUESTS,
+  ...ORPHAN_RESOLUTIONS.map((relation) => relation.rule),
 ];
 
 // ---------------------------------------------------------------------------
@@ -165,6 +403,17 @@ export interface ResolutionRecord {
   readonly rule: ResolutionRule;
   /** The source `_id`, so the operator can look the row up in Mongo. */
   readonly documentId: string;
+  /**
+   * WHICH part of the document, when one document can be acted on more than
+   * once by the same rule.
+   *
+   * The two original rules act on a document as a whole, so they leave it
+   * unset. An orphan rule acts on a ROW, and one document can produce several
+   * — a `devicesessions` document holds an ARRAY of accounts, so two of its
+   * entries naming two absent parents are two separate acts. Without this they
+   * would collapse into one record and the report would name one of them.
+   */
+  readonly within?: string;
   /** What changed about this document, specifically. */
   readonly detail: string;
 }
@@ -190,7 +439,7 @@ export class ResolutionLog {
   private readonly records = new Map<string, ResolutionRecord>();
 
   record(entry: ResolutionRecord): void {
-    this.records.set(`${entry.rule.id}\u0000${entry.documentId}`, entry);
+    this.records.set(`${entry.rule.id}\u0000${entry.documentId}\u0000${entry.within ?? ''}`, entry);
   }
 
   /**
@@ -245,14 +494,28 @@ export interface DuplicateOpenValidationRequestGroup {
  * Whole-collection state the rules need, computed from the source before the
  * copy starts.
  *
- * Only the duplicate-request rule needs one: "which of these is the most
- * recent" is a question about a GROUP, and a per-document transform cannot see
- * a group. The card rule is a per-document predicate and needs nothing.
+ * Two of the rules need one, for the same reason: the question is about a SET
+ * the document is not a member of. "Which of these is the most recent" is a
+ * question about a GROUP, and "does this account still exist" is a question
+ * about the whole `users` collection — neither is answerable from the document
+ * in hand. The card rule is a per-document predicate and needs nothing.
  */
 export interface ResolutionPlan {
   readonly duplicateOpenValidationRequests: readonly DuplicateOpenValidationRequestGroup[];
   /** Every id that loses the most-recent-wins tie-break, across all groups. */
   readonly demotedValidationRequestIds: ReadonlySet<string>;
+  /**
+   * Every `_id` each parent collection of {@link ORPHAN_RESOLUTIONS} holds.
+   *
+   * Keyed by the LIVE collection name. A collection that is absent from the
+   * source, or that holds nothing, is absent from this map — which makes its
+   * rules INERT rather than making every reference to it an orphan. That
+   * direction is deliberate: "the pre-pass read nothing" and "the collection is
+   * empty" are indistinguishable here, and one of them would drop every row of
+   * nine tables. Standing down leaves the orphans blocking, which is the answer
+   * a human has to give anyway.
+   */
+  readonly orphanParents: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /**
@@ -291,12 +554,14 @@ export const OPEN_AFTER_COPY_MATCH: Readonly<Record<string, unknown>> = Object.f
 });
 
 /**
- * Read the source and decide which duplicate open requests are demoted.
+ * Read the source and decide which duplicate open requests are demoted, and
+ * which accounts still exist.
  *
- * `aggregate` only — the source handle refuses anything that is not a read
+ * Reads only — the source handle refuses anything that is not one
  * ({@link MongoSource}), so this cannot touch the rollback source it reads.
  */
 export async function planResolutions(source: MongoSource): Promise<ResolutionPlan> {
+  const orphanParents = await readOrphanParents(source);
   const groups = await source
     .collection(VALIDATION_REQUESTS_COLLECTION)
     .aggregate([
@@ -346,7 +611,41 @@ export async function planResolutions(source: MongoSource): Promise<ResolutionPl
     });
   }
 
-  return { duplicateOpenValidationRequests: resolved, demotedValidationRequestIds };
+  return { duplicateOpenValidationRequests: resolved, demotedValidationRequestIds, orphanParents };
+}
+
+/**
+ * Every `_id` the parent collections hold, for the orphan rules' predicate.
+ *
+ * Projected to `_id` alone: `users` carries 81 emitted columns and this needs
+ * one of them, so the read is served by the `_id` index rather than by fetching
+ * the documents. The id is coerced through {@link id}, the SAME helper the
+ * transforms use to build a reference — a set built with a different coercion
+ * would answer "absent" for a parent that is present in another spelling, and
+ * that direction deletes live rows.
+ *
+ * A collection missing from the source is SKIPPED rather than recorded empty,
+ * and a collection that turns out to hold nothing is dropped from the map for
+ * the same reason — see {@link ResolutionPlan.orphanParents}.
+ */
+async function readOrphanParents(
+  source: MongoSource
+): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
+  const parents = new Map<string, ReadonlySet<string>>();
+  const live = new Set(await source.listCollections());
+
+  for (const collection of new Set(ORPHAN_RESOLUTIONS.map((entry) => entry.parentCollection))) {
+    if (!live.has(collection)) continue;
+    const ids = new Set<string>();
+    const cursor = source.collection(collection).find({}, { projection: { _id: 1 } });
+    for await (const doc of cursor) {
+      const value = id(doc as MongoDocument, '_id');
+      if (value !== null) ids.add(value);
+    }
+    if (ids.size > 0) parents.set(collection, ids);
+  }
+
+  return parents;
 }
 
 /** One `$push`ed group member, with the instant that orders it. */
@@ -412,6 +711,14 @@ export interface ResolutionContext {
    * collision the rule was not written for matters.
    */
   readonly resolvesUniquenessGroup: (rule: ResolutionRule, ids: readonly string[]) => boolean;
+  /**
+   * Every `_id` each parent collection holds — {@link ResolutionPlan.orphanParents}.
+   *
+   * Read by {@link transformDocument}, never by a transform: the orphan rules
+   * are applied to the ROW a transform emits rather than inside it, so no plan
+   * has to remember to ask.
+   */
+  readonly orphanParents: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /** Bind a plan and a log into the context a transform is called with. */
@@ -421,6 +728,7 @@ export function createResolutionContext(
 ): ResolutionContext {
   return {
     demotedValidationRequestIds: plan.demotedValidationRequestIds,
+    orphanParents: plan.orphanParents,
     record: (entry) => {
       log.record(entry);
     },
@@ -431,6 +739,138 @@ export function createResolutionContext(
       return demoted.length === ids.length - 1;
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// running a transform under the rules
+// ---------------------------------------------------------------------------
+
+/** One documented rule that fired on one emitted row. */
+export interface AppliedOrphanResolution {
+  readonly relation: OrphanRelation;
+  /** The value the row carried — absent from the parent set, which is why it fired. */
+  readonly value: string;
+}
+
+/**
+ * One row a document produced, with what the documented rules did to it.
+ *
+ * `source` and `written` are BOTH carried, and the split is the whole point:
+ *
+ * - The **audit** checks references on `source`, so every orphan is still found,
+ *   counted and named even when a rule removes the row that carried it. A rule
+ *   that made the finding disappear would be a silenced check, which
+ *   `resolutions.ts` exists not to be.
+ * - Everything that WRITES uses `written`, and cannot write a dropped row by
+ *   accident: `written` is `null` for one, so a consumer has to handle the null
+ *   before it has a row at all.
+ */
+export interface ResolvedRow {
+  readonly table: PgTable;
+  /** The row the transform built. Never written; it is the report's evidence. */
+  readonly source: Record<string, unknown>;
+  /** The row to WRITE, or `null` when a rule drops it entirely. */
+  readonly written: Record<string, unknown> | null;
+  /** Every rule that acted on it. Empty for the overwhelming majority of rows. */
+  readonly applied: readonly AppliedOrphanResolution[];
+}
+
+/**
+ * Run a plan's transform and apply the documented ROW-level resolutions to
+ * everything it emits.
+ *
+ * Every caller of `plan.transform` goes through this — the copy, the verifier's
+ * two passes and the referential audit — which is what makes the decisions the
+ * same in all of them by construction rather than by four call sites
+ * remembering. It is also why the orphan rules are NOT written inside the
+ * transforms: a transform describes the MAPPING, one document to its rows, and
+ * a rule that erases a row is not part of that description. (The card and
+ * duplicate-request rules are inside their transforms because they are
+ * per-document VALUE decisions that need the document, which this wrapper does
+ * not have a general way to reach.)
+ */
+export function transformDocument(
+  plan: CollectionPlan,
+  doc: MongoDocument,
+  resolutions: ResolutionContext,
+  emit: (row: ResolvedRow) => void
+): void {
+  const documentId = describeId(doc) ?? UNIDENTIFIED_DOCUMENT;
+  plan.transform(
+    doc,
+    (table, row) => {
+      emit(resolveOrphanedReferences(table, row, documentId, resolutions));
+    },
+    resolutions
+  );
+}
+
+/** What a record names when the document carries no `_id` to name it by. */
+const UNIDENTIFIED_DOCUMENT = '(document has no _id)';
+
+/**
+ * Apply every declared orphan resolution to one emitted row.
+ *
+ * NARROW BY CONSTRUCTION, and the narrowness is worth spelling out because a
+ * widened predicate here DELETES PRODUCTION ROWS:
+ *
+ * - Only a table named in {@link ORPHAN_RESOLUTIONS} is considered at all; every
+ *   other row returns with `written === source` and nothing recorded.
+ * - Only the ONE declared column of each entry is read.
+ * - A NULL, absent or non-string value is left alone — under MATCH SIMPLE a NULL
+ *   component satisfies the constraint unconditionally, so there is no orphan to
+ *   answer.
+ * - The value must be ABSENT from the parent set. A value the parent collection
+ *   holds is not touched, which is the property the control rows in
+ *   `__tests__/orphanResolutions.test.ts` assert and the mutation test breaks.
+ * - An unknown or empty parent set stands the rule down entirely.
+ */
+function resolveOrphanedReferences(
+  table: PgTable,
+  row: Record<string, unknown>,
+  documentId: string,
+  resolutions: ResolutionContext
+): ResolvedRow {
+  const declared = ORPHAN_RESOLUTIONS_BY_TABLE.get(tableName(table));
+  if (declared === undefined) return { table, source: row, written: row, applied: [] };
+
+  const applied: AppliedOrphanResolution[] = [];
+  let dropped = false;
+  let written = row;
+
+  for (const relation of declared) {
+    const parents = resolutions.orphanParents.get(relation.parentCollection);
+    if (parents === undefined || parents.size === 0) continue;
+    const value = row[relation.property];
+    if (typeof value !== 'string' || value.length === 0) continue;
+    if (parents.has(value)) continue;
+
+    applied.push({ relation, value });
+    if (relation.action === 'drop-row') dropped = true;
+    else written = { ...written, [relation.property]: null };
+
+    resolutions.record({
+      rule: relation.rule,
+      documentId,
+      // One document can produce several rows for the same relation — a
+      // `devicesessions` document holds an array of accounts — so the record is
+      // keyed by the offending value too rather than collapsing them.
+      within: value,
+      detail:
+        `${relation.tableName}.${relation.columnName} is ${JSON.stringify(value)}, ` +
+        `which no \`${relation.parentCollection}\` document holds. ` +
+        (relation.action === 'drop-row'
+          ? 'The ROW is dropped and nothing else about it is written; the ' +
+            'column is NOT NULL with ON DELETE CASCADE, so no value satisfies ' +
+            'the constraint and the cascade is the schema\'s own answer.'
+          : 'The COLUMN is written NULL and the row is KEPT; the column is ' +
+            'nullable with ON DELETE SET NULL, which is exactly where that ' +
+            'policy puts a row whose parent is gone. Every other column is ' +
+            'written verbatim.'),
+    });
+  }
+
+  return { table, source: row, written: dropped ? null : written, applied };
 }
 
 // ---------------------------------------------------------------------------

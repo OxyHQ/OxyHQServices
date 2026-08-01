@@ -231,7 +231,13 @@ async function main(): Promise<number> {
     // answers has to be reported as answered rather than as blocking — and the
     // `--audit-only` report must show the same decisions the copy would apply.
     const resolutionPlan = await planResolutions(source);
-    const resolutions = createResolutionContext(resolutionPlan, new ResolutionLog());
+    // The log is held rather than discarded: the audit phase RUNS the plans'
+    // transforms, so by the end of it every rule has already acted on exactly
+    // the rows it will act on during the copy. `--audit-only` prints that,
+    // which is how an operator sees the specific list before anything is
+    // written rather than after.
+    const auditResolutionLog = new ResolutionLog();
+    const resolutions = createResolutionContext(resolutionPlan, auditResolutionLog);
 
     heading('AUDIT');
     const { findings, fileOwnerCensus, referentialIntegrity } = await runAudits(
@@ -263,6 +269,13 @@ async function main(): Promise<number> {
     reportResolutionPlan(resolutionPlan);
 
     if (options.auditOnly) {
+      // What the rules WOULD do, by id — measured, because the audit already
+      // ran every transform under exactly these decisions.
+      reportResolutionsApplied(
+        auditResolutionLog.summary(),
+        referentialIntegrity,
+        'RESOLUTIONS THE COPY WOULD APPLY'
+      );
       heading(blocking.length === 0 ? 'AUDIT CLEAN' : 'AUDIT FOUND BLOCKING ROWS');
       return blocking.length === 0 ? 0 : 1;
     }
@@ -299,7 +312,11 @@ async function main(): Promise<number> {
     }
     say(`\n  ${totalRows} row(s) written across ${summary.copies.length} collection(s).`);
 
-    reportResolutionsApplied(summary.resolutions);
+    reportResolutionsApplied(
+      summary.resolutions,
+      summary.referentialIntegrity,
+      'RESOLUTIONS APPLIED'
+    );
 
     if (options.verify) exitCode = await runVerification(db, source, options);
   } catch (error) {
@@ -372,7 +389,10 @@ function reportReferentialIntegrity(report: ReferentialIntegrityReport): void {
   );
 
   // Transform fidelity FIRST: it is the evidence behind every origin verdict
-  // below, and a deficit here is a worse problem than any orphan.
+  // below, and a deficit here is a worse problem than any orphan. The two
+  // reasons a plan emits fewer rows than it read are printed APART, because
+  // they are opposite events: one is a decision with the ids to check it
+  // against, the other is silent data loss.
   const lossy = report.emissions.filter((entry) => entry.documentsRead !== entry.primaryRowsEmitted);
   say(
     `  Transform fidelity: ${report.emissions.length - lossy.length} of ` +
@@ -380,11 +400,24 @@ function reportReferentialIntegrity(report: ReferentialIntegrityReport): void {
       'document read.'
   );
   for (const entry of lossy) {
-    say(
-      `    DROPPED  ${entry.collection}: read ${entry.documentsRead}, emitted ` +
-        `${entry.primaryRowsEmitted} into ${entry.table} — ` +
-        `${entry.documentsRead - entry.primaryRowsEmitted} document(s) LOST by the copy.`
-    );
+    const unexplained =
+      entry.documentsRead - entry.primaryRowsEmitted - entry.primaryRowsDroppedByRule;
+    if (entry.primaryRowsDroppedByRule > 0) {
+      say(
+        `    by RULE  ${entry.collection}: read ${entry.documentsRead}, emitted ` +
+          `${entry.primaryRowsEmitted} into ${entry.table} — ` +
+          `${entry.primaryRowsDroppedByRule} row(s) removed by a documented ` +
+          'resolution, each reported by id below.'
+      );
+    }
+    if (unexplained > 0) {
+      say(
+        `    DROPPED  ${entry.collection}: read ${entry.documentsRead}, emitted ` +
+          `${entry.primaryRowsEmitted} into ${entry.table} — ` +
+          `${unexplained} document(s) LOST by the copy, with nothing accounting ` +
+          'for them.'
+      );
+    }
   }
 
   if (report.orphans.length === 0) {
@@ -416,6 +449,17 @@ function reportReferentialIntegrity(report: ReferentialIntegrityReport): void {
         `resolvability: ${orphans.resolvability}`
     );
     say(`      ${orphans.originReason}`);
+    if (orphans.resolvedBy !== undefined) {
+      say(
+        `      RESOLVED by \`${orphans.resolvedBy.id}\` — all ${orphans.documents} ` +
+          'row(s) provably never reach Postgres, so this does not block.'
+      );
+    } else if (orphans.mootDocuments > 0) {
+      say(
+        `      ${orphans.mootDocuments} of ${orphans.documents} row(s) are removed ` +
+          'by a documented rule; the rest would still be attempted, so this BLOCKS.'
+      );
+    }
     for (const value of orphans.values) {
       const ids = value.documentIds.join(', ');
       const elided =
@@ -449,9 +493,26 @@ function reportResolutionPlan(plan: ResolutionPlan): void {
   }
 }
 
-/** What the resolutions actually did, per rule, with every id. */
-function reportResolutionsApplied(summaries: readonly ResolutionSummary[]): void {
-  heading('RESOLUTIONS APPLIED');
+/**
+ * What the resolutions actually did, per rule, with every id.
+ *
+ * A rule that DROPS rows also prints what those drops could take with them —
+ * a dropped row is a parent as well as a child, and "nothing references
+ * `notifications`" is an answer the operator needs stated rather than assumed.
+ * It comes from the same derived foreign-key graph the audit uses, so a schema
+ * that grows a reference to one of these tables is covered without anyone
+ * remembering to look.
+ */
+function reportResolutionsApplied(
+  summaries: readonly ResolutionSummary[],
+  referential: ReferentialIntegrityReport,
+  title: string
+): void {
+  heading(title);
+  const cascadesByRule = new Map(
+    referential.dropCascades.map((cascade) => [cascade.rule.id, cascade])
+  );
+
   for (const summary of summaries) {
     say(`  ${summary.rule.id} — ${summary.documents} document(s) changed`);
     if (summary.documents === 0) {
@@ -462,6 +523,31 @@ function reportResolutionsApplied(summaries: readonly ResolutionSummary[]): void
     // the decision landed exactly where the audit said it would.
     for (const record of summary.records) {
       say(`      ${record.documentId}: ${record.detail}`);
+    }
+
+    const cascade = cascadesByRule.get(summary.rule.id);
+    if (cascade === undefined) continue;
+    if (cascade.inboundConstraints.length === 0) {
+      say(
+        `      CASCADE: nothing in the schema references ${cascade.table}, so ` +
+          `dropping ${cascade.rowsDropped} row(s) from it can orphan nothing.`
+      );
+      continue;
+    }
+    say(
+      `      CASCADE: ${cascade.inboundConstraints.length} constraint(s) reference ` +
+        `${cascade.table} — ${cascade.inboundConstraints.join(', ')}.`
+    );
+    if (cascade.orphanedByDrop.length === 0) {
+      say('      No row referencing a dropped one was found, so these drops orphan nothing.');
+      continue;
+    }
+    for (const orphaned of cascade.orphanedByDrop) {
+      say(
+        `      ${orphaned.documents} row(s) reference a DROPPED row through ` +
+          `${orphaned.constraint} — they are reported as orphans above and BLOCK. ` +
+          'Answer them before this rule can be applied.'
+      );
     }
   }
 }
