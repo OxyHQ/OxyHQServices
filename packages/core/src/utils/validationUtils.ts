@@ -71,13 +71,32 @@ export function isValidPassword(password: string): boolean {
  *
  * The allowlist is expressed with Unicode Script_Extensions (scx=…) so a letter
  * shared by several scripts (e.g. a Han ideograph used in both Chinese and
- * Japanese) still matches. It is the set of scripts Unicode UTS #39 marks
+ * Japanese) still matches, INTERSECTED with General_Category L so only the
+ * scripts' LETTERS are admitted. That intersection is load-bearing, not a
+ * refinement: `scx=X` also carries script X's own digits, punctuation and
+ * symbols, so the un-intersected allowlist admitted 1831 non-letter code points
+ * — script digits (`٠١٢`, `०१२`), 1082 symbols (`֍ ۞ ৳`), 180 punctuation marks
+ * (`։ ، ؛ ।`), and 9 INVISIBLE format/control characters, among them U+061C
+ * ARABIC LETTER MARK (a bidi control that can visually reorder a name) and
+ * U+180E MONGOLIAN VOWEL SEPARATOR. Without it the rejections listed above held
+ * for ASCII input only. It is the set of scripts Unicode UTS #39 marks
  * "Recommended" for general interchange / identifiers, plus Cherokee and
  * Mongolian (both in real modern name use). "Common" script is deliberately
  * EXCLUDED — that is where ASCII digits and general punctuation live, and this
  * policy excludes those; the space separators, combining marks, and apostrophe a
  * name needs are added back explicitly. Limited-use / excluded / historic
  * scripts (Batak, Runic, Deseret, Adlam, …) are simply absent.
+ *
+ * KNOWN LIMIT — this is a CHARACTER policy, and a character policy cannot see
+ * words or meaning. Two classes of abuse pass it by construction: (a) a code
+ * point that is formally a letter but reads as a symbol, e.g. `卐` U+5350 and
+ * `卍` U+534D, which are CJK Unified Ideographs (General_Category Lo,
+ * Script_Extensions Han) and therefore indistinguishable here from any other Han
+ * letter; and (b) slurs and abusive phrasing spelled in ordinary allowlisted
+ * letters. Neither is addressable by widening or narrowing the character class —
+ * (a) needs an explicit code-point denylist and (b) a word-level moderation
+ * layer. Do not attempt to fix either by editing the script allowlist: dropping
+ * Han would reject every real Chinese, Japanese and Korean name.
  *
  * HERMES / RANGES: the class bodies below are built from explicit Unicode
  * code-point RANGES ({@link DISPLAY_NAME_ALLOWED_SCRIPTS_RANGES} et al. from
@@ -100,9 +119,9 @@ export function isValidPassword(password: string): boolean {
 
 /**
  * The curated allowlist of Unicode scripts permitted in a display name, as a
- * character-class body of explicit code-point ranges (the compressed union of
- * the 30 allowlisted Script_Extensions, generated on V8). Interpolated into the
- * negated class below.
+ * character-class body of explicit code-point ranges (the union of the 30
+ * allowlisted Script_Extensions INTERSECTED with General_Category L, so letters
+ * only — 120825 code points). Interpolated into the negated class below.
  */
 export const DISPLAY_NAME_ALLOWED_SCRIPTS = DISPLAY_NAME_ALLOWED_SCRIPTS_RANGES;
 

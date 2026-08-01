@@ -21,6 +21,10 @@ import {
   sanitizeHTML,
   validateAndSanitizeUserInput
 } from '../validationUtils';
+// Imported from the generated module rather than re-exported through
+// `validationUtils`: the broad letters class is an internal operand of the
+// orphaned-mark lookbehind, not part of the policy's public surface.
+import { DISPLAY_NAME_LETTERS_RANGES } from '../displayNamePolicyRanges.generated';
 
 describe('Validation Utils', () => {
   describe('isRequiredString', () => {
@@ -296,6 +300,70 @@ describe('Validation Utils', () => {
       expect(orphaned.test('༘')).toBe(true); // bare mark at string start
       // A decomposed accent recomposes under NFC and rides its base letter.
       expect(orphaned.test('é'.normalize('NFC'))).toBe(false);
+    });
+  });
+
+  // A Unicode script is not only its letters: `scx=X` also carries script X's
+  // own digits, punctuation and symbols. The allowlist is therefore generated as
+  // `scripts ∩ General_Category L`. Before that intersection existed the class
+  // admitted 1831 non-letter code points, so the documented policy ("digits,
+  // hyphens, dots, symbols are removed") held for ASCII input only — a federated
+  // actor could keep Arabic-Indic digits, a Bengali currency sign, or the U+061C
+  // bidi control in their display name. This block is the regression guard.
+  describe('display-name allowlist admits ONLY letters', () => {
+    const allowed = new RegExp(`[${DISPLAY_NAME_ALLOWED_SCRIPTS}]`, 'u');
+    // Built from the same generated ranges the policy ships, so this assertion
+    // stays property-escape-free and cannot drift from the runtime regex.
+    const letter = new RegExp(`[${DISPLAY_NAME_LETTERS_RANGES}]`, 'u');
+
+    // Scanning the FULL code-point space, not a sample: one leaked invisible
+    // control is a spoofing vector, and a sample cannot prove its absence.
+    const leaks: number[] = [];
+    let admitted = 0;
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue; // lone surrogates
+      const ch = String.fromCodePoint(cp);
+      if (!allowed.test(ch)) continue;
+      admitted++;
+      if (!letter.test(ch)) leaks.push(cp);
+    }
+
+    it('admits no non-letter code point anywhere in Unicode', () => {
+      const named = leaks
+        .slice(0, 16)
+        .map((cp) => `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`);
+      expect({ count: leaks.length, sample: named }).toEqual({ count: 0, sample: [] });
+    });
+
+    // Vacuity floor: an allowlist that collapsed to (near) nothing would satisfy
+    // the assertion above while silently rejecting every real name.
+    it('still admits the expected bulk of letters', () => {
+      expect(admitted).toBeGreaterThan(100_000);
+    });
+
+    it.each([
+      ['٥', 'Arabic-Indic digit (scx=Arabic, GC=Nd)'],
+      ['०', 'Devanagari digit (scx=Devanagari, GC=Nd)'],
+      ['۞', 'Arabic ornament (scx=Arabic, GC=So)'],
+      ['৳', 'Bengali rupee sign (scx=Bengali, GC=Sc)'],
+      ['।', 'Devanagari danda (scx=Devanagari, GC=Po)'],
+      ['،', 'Arabic comma (scx=Arabic, GC=Po)'],
+      ['؜', 'ARABIC LETTER MARK - invisible bidi control (scx=Arabic, GC=Cf)'],
+      ['᠎', 'MONGOLIAN VOWEL SEPARATOR - invisible (scx=Mongolian, GC=Cf)'],
+    ])('rejects %p, a non-letter from an allowlisted script (%s)', (ch) => {
+      expect(isValidDisplayName(ch)).toBe(false);
+    });
+
+    // The intersection narrows the allowlist, so every previously-accepted real
+    // name must still pass — these are the ones whose scripts own the code
+    // points removed above.
+    it.each([
+      ['مُحَمَد', 'Arabic letters + harakat survive'],
+      ['नमस्ते', 'Devanagari'],
+      ['ᠰᠣᠩᠭᠣᠯ', 'Mongolian'],
+      ['বাংলা', 'Bengali'],
+    ])('still accepts %p (%s)', (name) => {
+      expect(isValidDisplayName(name)).toBe(true);
     });
   });
 

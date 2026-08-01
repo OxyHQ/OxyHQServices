@@ -64,6 +64,19 @@ const OUT_PATH = join(
  * explicitly (see below). Limited-use / excluded / historic scripts (Batak,
  * Runic, Deseret, Adlam, …) are simply absent. Ordered by rough script family
  * for readability; order has no semantic effect.
+ *
+ * A script is NOT only its letters: `scx=X` also carries that script's own
+ * digits, punctuation and symbols. This allowlist is therefore INTERSECTED with
+ * General_Category L before emission ({@link LETTERS}) — see
+ * {@link transpileClassBody}. Without that intersection the emitted class
+ * admitted 1831 non-letter code points that the policy claims to reject: 559
+ * script-specific digits (`٠١٢`, `०१२`, `০১২`), 1082 symbols (`֍ ۞ ৳ ㍿ 〷`),
+ * 180 punctuation marks (`։ ־ ، ؛ ؟ । ॥ ๏`) and — the dangerous ones — 9
+ * invisible format/control characters, including U+061C ARABIC LETTER MARK (a
+ * bidi control usable to visually reorder a name) and U+180E MONGOLIAN VOWEL
+ * SEPARATOR. Excluding non-letters here is what makes the documented policy
+ * ("digits, hyphens, dots, symbols are removed") true for NON-ASCII input too,
+ * not just ASCII.
  */
 const SCRIPT_EXTENSIONS_ALLOWLIST =
   '\\p{scx=Latin}\\p{scx=Greek}\\p{scx=Cyrillic}\\p{scx=Armenian}' +
@@ -86,9 +99,11 @@ const COMBINING_MARKS = '\\p{M}';
 const SPACE_SEPARATORS = '\\p{Zs}';
 
 /**
- * Letters of ANY script (General_Category L). Used ONLY in the orphaned-mark
- * lookbehind — intentionally broad so a combining mark riding on an allowlisted
- * base letter is preserved.
+ * Letters of ANY script (General_Category L). Used for TWO purposes: as the
+ * intersection operand that reduces {@link SCRIPT_EXTENSIONS_ALLOWLIST} to just
+ * its letters, and — emitted on its own — in the orphaned-mark lookbehind, where
+ * it is intentionally broad so a combining mark riding on an allowlisted base
+ * letter is preserved.
  */
 const LETTERS = '\\p{L}';
 
@@ -96,7 +111,15 @@ const LETTERS = '\\p{L}';
  * Transpile with regexpu-core (property escapes only; keep `u`).     *
  * ------------------------------------------------------------------ */
 
-const REGEXPU_OPTS = { unicodePropertyEscapes: 'transform' };
+/**
+ * `unicodeSetsFlag: 'transform'` lowers `v`-mode set operations (used for the
+ * `&&` intersection) back to a plain `u`-mode class. It is inert for the
+ * `u`-mode calls, so one options object serves both.
+ */
+const REGEXPU_OPTS = {
+  unicodePropertyEscapes: 'transform',
+  unicodeSetsFlag: 'transform',
+};
 
 /**
  * Transpile a character-class BODY of property escapes into an equivalent body
@@ -105,11 +128,21 @@ const REGEXPU_OPTS = { unicodePropertyEscapes: 'transform' };
  * `\x…`/`\u…`/`\u{…}` escapes and range hyphens — zero property escapes — and is
  * interpolated straight into the larger classes in `validationUtils.ts`.
  *
+ * With `intersectWith`, the body is emitted as the `v`-mode intersection
+ * `[[body]&&[intersectWith]]` instead. `v` is used ONLY as the authoring
+ * notation for the set algebra: regexpu lowers it to the same single `u`-mode
+ * class of explicit ranges, so nothing `v`-specific reaches the shipped regex
+ * (Hermes never sees a `v` flag, and neither does V8). The result is asserted
+ * below to compile both as a positive class and — the shape
+ * `DISPLAY_NAME_DISALLOWED_SOURCE` actually uses — as a NEGATED one.
+ *
  * @param {string} body character-class body containing property escapes
+ * @param {string} [intersectWith] class body to intersect `body` with
  * @returns {string}
  */
-function transpileClassBody(body) {
-  const out = rewritePattern(`[${body}]`, 'u', REGEXPU_OPTS);
+function transpileClassBody(body, intersectWith) {
+  const pattern = intersectWith ? `[[${body}]&&[${intersectWith}]]` : `[${body}]`;
+  const out = rewritePattern(pattern, intersectWith ? 'v' : 'u', REGEXPU_OPTS);
   if (!out.startsWith('[') || !out.endsWith(']')) {
     throw new Error(
       `regexpu-core did not return a single class for [${body.slice(0, 24)}…]: ${out.slice(0, 48)}`
@@ -119,15 +152,42 @@ function transpileClassBody(body) {
   if (/\\[pP]\{/.test(inner)) {
     throw new Error('transpiled class body still contains a Unicode property escape');
   }
-  // Must recompile as a `u`-mode class (the shape production uses).
+  // Must recompile in BOTH shapes the policy builds: a positive `u`-mode class,
+  // and the negated class `DISPLAY_NAME_DISALLOWED_SOURCE` interpolates it into.
   new RegExp(`[${inner}]`, 'u');
+  new RegExp(`[^${inner}]`, 'u');
   return inner;
 }
 
-const allowedScripts = transpileClassBody(SCRIPT_EXTENSIONS_ALLOWLIST);
+const allowedScripts = transpileClassBody(SCRIPT_EXTENSIONS_ALLOWLIST, LETTERS);
 const combiningMarks = transpileClassBody(COMBINING_MARKS);
 const spaceSeparators = transpileClassBody(SPACE_SEPARATORS);
 const letters = transpileClassBody(LETTERS);
+
+/*
+ * The whole point of the intersection: every code point the allowlist admits
+ * must be a letter. Verified across the FULL code-point space rather than on a
+ * sample, because a single leaked bidi control (U+061C) is a spoofing vector.
+ * The floor guards against the opposite failure — an intersection that silently
+ * produced an empty or near-empty set would otherwise "pass" this check.
+ */
+const allowedProbe = new RegExp(`[${allowedScripts}]`, 'u');
+const letterProbe = new RegExp(`[${letters}]`, 'u');
+let allowedCount = 0;
+for (let cp = 0; cp <= 0x10ffff; cp++) {
+  if (cp >= 0xd800 && cp <= 0xdfff) continue;
+  const ch = String.fromCodePoint(cp);
+  if (!allowedProbe.test(ch)) continue;
+  allowedCount++;
+  if (!letterProbe.test(ch)) {
+    throw new Error(
+      `allowlist admits non-letter U+${cp.toString(16).toUpperCase().padStart(4, '0')}`
+    );
+  }
+}
+if (allowedCount < 100_000) {
+  throw new Error(`allowlist collapsed to ${allowedCount} code points — expected >100k`);
+}
 
 /**
  * Emit a class-body string as a single-quoted TS string literal, escaping
@@ -159,7 +219,12 @@ const header = `/**
  *
  * Classes captured (regexpu-core, u-mode):
  *   - DISPLAY_NAME_ALLOWED_SCRIPTS_RANGES: the 30-script Script_Extensions
- *     allowlist (scx=Latin, scx=Greek, … scx=Han).
+ *     allowlist (scx=Latin, scx=Greek, … scx=Han) INTERSECTED with
+ *     General_Category L. The intersection is load-bearing: \`scx=X\` also
+ *     carries script X's digits, punctuation and symbols, so without it the
+ *     class admitted 1831 non-letter code points — script digits, 1082 symbols,
+ *     and 9 invisible format/control characters including the U+061C bidi
+ *     control. The generator fails if any non-letter survives.
  *   - DISPLAY_NAME_COMBINING_MARKS_RANGES: General_Category M (combining marks).
  *   - DISPLAY_NAME_SPACE_SEPARATORS_RANGES: General_Category Zs (space
  *     separators).
@@ -193,7 +258,7 @@ writeFileSync(OUT_PATH, contents);
 
 console.log(`Wrote ${OUT_PATH}`);
 console.log(
-  `  allowed scripts: ${allowedScripts.length} chars, ` +
-    `marks: ${combiningMarks.length}, spaces: ${spaceSeparators.length}, ` +
-    `letters: ${letters.length} (regexpu-core)`
+  `  allowed scripts: ${allowedScripts.length} chars / ${allowedCount} code points ` +
+    `(all letters), marks: ${combiningMarks.length}, ` +
+    `spaces: ${spaceSeparators.length}, letters: ${letters.length} (regexpu-core)`
 );

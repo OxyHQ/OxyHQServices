@@ -15,7 +15,17 @@
  *
  * Everything else is removed: emoji (🐧), symbols (⁂ ⏚), `:emoji:` shortcodes,
  * digits, hyphens, dots, control whitespace (tab/newline/CR), letters from
- * non-allowlisted scripts, and any other punctuation.
+ * non-allowlisted scripts, and any other punctuation. This holds for NON-ASCII
+ * input too — the allowlist is intersected with General_Category L, so an
+ * allowlisted script's own digits (`٥`, `०`), symbols (`۞`, `৳`), punctuation
+ * (`।`, `،`) and invisible controls (U+061C ARABIC LETTER MARK, U+180E) are
+ * stripped just like their ASCII counterparts.
+ *
+ * KNOWN LIMIT: a character policy cannot see words. A code point that is
+ * formally a letter but reads as a symbol (`卐` U+5350, `卍` U+534D — both CJK
+ * Unified Ideographs) survives, as does any slur spelled in ordinary letters.
+ * Those need a code-point denylist and a word-level moderation layer
+ * respectively, NOT a change to the script allowlist.
  *
  * The character policy is NOT re-derived here: the allowlist and its patterns
  * are the ONE source of truth in `@oxyhq/core` `validationUtils.ts`
