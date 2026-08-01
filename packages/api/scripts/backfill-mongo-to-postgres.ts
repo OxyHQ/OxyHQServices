@@ -552,9 +552,14 @@ function reportResolutionsApplied(
     }
     for (const orphaned of cascade.orphanedByDrop) {
       say(
-        `      ${orphaned.documents} row(s) reference a DROPPED row through ` +
-          `${orphaned.constraint} — they are reported as orphans above and BLOCK. ` +
-          'Answer them before this rule can be applied.'
+        orphaned.resolvedBy === undefined
+          ? `      ${orphaned.documents} row(s) reference a DROPPED row through ` +
+              `${orphaned.constraint} — nothing is declared about them, so they are ` +
+              'reported as orphans above and BLOCK. Decide before this rule can be ' +
+              'applied.'
+          : `      ${orphaned.documents} row(s) reference a DROPPED row through ` +
+              `${orphaned.constraint} and follow it, by \`${orphaned.resolvedBy.id}\` — ` +
+              'listed with that rule.'
       );
     }
   }

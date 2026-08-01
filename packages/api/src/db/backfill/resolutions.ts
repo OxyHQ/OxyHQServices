@@ -62,7 +62,7 @@
  * eligible pool never clears QUORUM, so these juries could only ever expire
  * anyway. {@link DEMOTED_VALIDATION_REQUEST_STATUS} is exactly that outcome.
  *
- * ### The eleven orphaned-reference rules — {@link ORPHAN_RESOLUTIONS}
+ * ### The twelve reference rules — {@link ORPHAN_RESOLUTIONS}
  *
  * Production holds 682 rows across eleven relations whose parent account
  * MongoDB does not hold. `referentialIntegrity.ts` measured every one of them as
@@ -86,6 +86,15 @@
  *   pointer. Its sibling `device_session_accounts` rows for those same parents
  *   ARE dropped by the rule above: the account entry goes, the device survives
  *   holding no active account.
+ *
+ * The twelfth is a different shape: **one CASCADE** —
+ * {@link DROP_CASCADED_FILE_VARIANT}, 934 `file_variants` rows. It answers no
+ * pre-existing debt at all; it answers the DECLARED CONSEQUENCE of the files
+ * rule above, because a rendition of a file that will not exist is exactly what
+ * `ON DELETE cascade` describes. Its trigger is a removal THIS RUN performed
+ * rather than an absence in Mongo, and it is declared for that ONE relation:
+ * `file_links` cascades in the schema too and still blocks, and
+ * `message_attachments` declares `no action` and must.
  *
  * Five properties keep these honest, and each is checked rather than asserted in
  * prose:
@@ -135,6 +144,7 @@ import { bundles } from '../schema/bundles';
 import { deviceSessionAccounts } from '../schema/deviceSessionAccounts';
 import { deviceSessions } from '../schema/deviceSessions';
 import { files } from '../schema/files';
+import { fileVariants } from '../schema/fileVariants';
 import { messages } from '../schema/messages';
 import { notifications } from '../schema/notifications';
 import { restrictions } from '../schema/restrictions';
@@ -143,7 +153,12 @@ import { userFollows } from '../schema/userFollows';
 import { users } from '../schema/users';
 import { OPEN_VALIDATION_REQUEST_STATUSES, VALIDATION_REQUEST_STATUSES } from '../schema/validationRequests';
 import type { MongoSource } from './mongoSource';
-import { allowedValues, tableName, type CollectionPlan } from './plan';
+import {
+  allowedValues,
+  singlePrimaryKeyProperty,
+  tableName,
+  type CollectionPlan,
+} from './plan';
 import { date, describeId, id, isObjectId, type MongoDocument } from './values';
 
 /**
@@ -246,9 +261,37 @@ export type OrphanAction =
  * {@link action} disagrees with what the schema declares. Restating them here
  * would be a second source of truth for the very facts the decision rests on.
  */
+/**
+ * WHAT makes a rule fire.
+ *
+ * The second is not a wider version of the first — it is a narrower one. An
+ * `absent-parent` rule reads a whole collection to decide; a `parent-dropped`
+ * rule fires only on a row emitted by the SAME DOCUMENT as a row another rule
+ * has already removed, which is a decision that cannot reach outside that
+ * document by construction.
+ */
+export type OrphanTrigger =
+  /** The column names a parent the SOURCE does not hold. */
+  | 'absent-parent'
+  /** The parent row this same document produced was removed by another rule. */
+  | 'parent-dropped';
+
 export interface OrphanRelation {
   readonly rule: ResolutionRule;
   readonly action: OrphanAction;
+  /** What makes it fire. Defaults to `absent-parent`. */
+  readonly trigger: OrphanTrigger;
+  /**
+   * For a `parent-dropped` cascade: the rule whose removal triggers this one.
+   *
+   * Naming the SPECIFIC rule, rather than "any dropped parent", is what keeps
+   * the cascade from generalising into "remove anything that references a
+   * removed row" — a generalisation that would silently take
+   * `message_attachments` with it, and that relation declares ON DELETE
+   * **no action** precisely because a stored message's attachment must never
+   * disappear quietly.
+   */
+  readonly cascadesFrom?: OrphanRelation;
   /**
    * Why NULL was NOT the answer — required for a `drop-row` on a NULLABLE
    * column, and refused on a NOT NULL one.
@@ -308,6 +351,10 @@ interface OrphanResolutionInput {
   readonly column: PgColumn;
   readonly targetTable: PgTable;
   readonly parentCollection: string;
+  /** Defaults to `absent-parent`. */
+  readonly trigger?: OrphanTrigger;
+  /** {@link OrphanRelation.cascadesFrom} — required for `parent-dropped`. */
+  readonly cascadesFrom?: OrphanRelation;
   /** {@link OrphanRelation.whyNotNull} — required for a nullable `drop-row`. */
   readonly whyNotNull?: string;
   /** What the drop DESTROYS beyond the row, when it destroys anything. */
@@ -326,41 +373,63 @@ interface OrphanResolutionInput {
  */
 function orphanResolution(input: OrphanResolutionInput): OrphanRelation {
   const { action, collection, table, column, targetTable, parentCollection } = input;
+  const trigger = input.trigger ?? 'absent-parent';
   const from = tableName(table);
   const columnName = sqlColumnName(column);
   const to = tableName(targetTable);
   const reference = `${from}.${columnName}`;
   const prefix = action === 'drop-row' ? 'drop' : 'null';
+  const cascadedFrom = input.cascadesFrom;
 
   return {
     rule: {
-      id: `${prefix}-orphaned-${from}-${columnName}`.replace(/_/g, '-'),
+      id:
+        trigger === 'parent-dropped'
+          ? `${prefix}-cascaded-${from}-${columnName}`.replace(/_/g, '-')
+          : `${prefix}-orphaned-${from}-${columnName}`.replace(/_/g, '-'),
       collection,
       finding:
-        `${reference} names a \`${to}\` row the source does not hold. MongoDB ` +
-        'enforced no foreign key, so the reference was already dangling there; ' +
-        'Postgres answers 23503. The audit measured it as `absent-in-source` — ' +
-        'nothing was lost by the copy.',
+        cascadedFrom === undefined
+          ? `${reference} names a \`${to}\` row the source does not hold. MongoDB ` +
+            'enforced no foreign key, so the reference was already dangling ' +
+            'there; Postgres answers 23503. The audit measured it as ' +
+            '`absent-in-source` — nothing was lost by the copy.'
+          : `${reference} names a \`${to}\` row that \`${cascadedFrom.rule.id}\` ` +
+            'removes. The parent is NOT absent from the source — this migration ' +
+            'is the thing removing it — so these rows dangle only as a ' +
+            'consequence of a decision already taken.',
       decision:
-        action === 'drop-row'
-          ? `DROP the referencing row. ${reference} cascades from \`${to}\`, so ` +
-            'the schema itself says this row goes when its parent does — these ' +
-            'are exactly the rows a cascade would already have removed. ' +
-            (input.whyNotNull ??
-              'NULL is not available on a NOT NULL column, and the only other ' +
-                'option is inventing a placeholder parent, which would fabricate ' +
-                'an account.') +
-            ' Every dropped row is reported by id, and the rest of the document ' +
-            'does not travel in any other form.' +
+        cascadedFrom !== undefined
+          ? `DROP the referencing row too. ${reference} declares ON DELETE ` +
+            `CASCADE against \`${to}\`, which is the schema's own word for what ` +
+            `happens to it when the parent goes — and \`${cascadedFrom.rule.id}\` ` +
+            'is exactly that going. This is not a second decision: it is the ' +
+            'declared consequence of the first. It is deliberately NOT a ' +
+            'general "remove anything that references a removed row" — it is ' +
+            'declared for this ONE relation, and fires only on a row emitted by ' +
+            'the SAME DOCUMENT as the parent it lost, so it cannot reach a ' +
+            'relation nobody decided about.' +
             (input.cost === undefined ? '' : ` ${input.cost}`)
-          : `Write NULL and KEEP the row. ${reference} is NULLABLE and declares ` +
-            `ON DELETE SET NULL against \`${to}\`, so NULL is literally where ` +
-            'the declared policy puts a row whose parent is gone. Dropping the ' +
-            'row instead would sign a user out of a live device to fix a dead ' +
-            'pointer. Every other column is written verbatim, and every nulled ' +
-            'row is reported by id.',
+          : action === 'drop-row'
+            ? `DROP the referencing row. ${reference} cascades from \`${to}\`, so ` +
+              'the schema itself says this row goes when its parent does — these ' +
+              'are exactly the rows a cascade would already have removed. ' +
+              (input.whyNotNull ??
+                'NULL is not available on a NOT NULL column, and the only other ' +
+                  'option is inventing a placeholder parent, which would fabricate ' +
+                  'an account.') +
+              ' Every dropped row is reported by id, and the rest of the document ' +
+              'does not travel in any other form.' +
+              (input.cost === undefined ? '' : ` ${input.cost}`)
+            : `Write NULL and KEEP the row. ${reference} is NULLABLE and declares ` +
+              `ON DELETE SET NULL against \`${to}\`, so NULL is literally where ` +
+              'the declared policy puts a row whose parent is gone. Dropping the ' +
+              'row instead would sign a user out of a live device to fix a dead ' +
+              'pointer. Every other column is written verbatim, and every nulled ' +
+              'row is reported by id.',
     },
     action,
+    trigger,
     collection,
     table,
     tableName: from,
@@ -374,6 +443,7 @@ function orphanResolution(input: OrphanResolutionInput): OrphanRelation {
     parentCollection,
     ...(input.whyNotNull === undefined ? {} : { whyNotNull: input.whyNotNull }),
     ...(input.carry === undefined ? {} : { carry: input.carry }),
+    ...(cascadedFrom === undefined ? {} : { cascadesFrom: cascadedFrom }),
   };
 }
 
@@ -451,10 +521,79 @@ export const DROP_ORPHANED_FILE: OrphanRelation = orphanResolution({
 });
 
 /**
+ * `file_variants.file_id` — the declared consequence of dropping a file.
+ *
+ * 934 rows in production, and the ONE cascade this migration takes. It is not a
+ * new decision: `fileVariants.ts:37` declares `onDelete: 'cascade'`, and a
+ * variant is a derived RENDITION — `thumbnail`, `webp`, `720p` — of a file that
+ * will not exist. Cascade is the schema's own word for what happens to it.
+ *
+ * ## Why this is narrow, and why it stays that way
+ *
+ * Three constraints reference `files`, and only this one is declared here:
+ *
+ * | constraint | ON DELETE | what happens |
+ * |---|---|---|
+ * | `file_variants_file_id_files_id_fk` | cascade | REMOVED with the parent |
+ * | `file_links_file_id_files_id_fk` | cascade | measured at ZERO, still blocks |
+ * | `message_attachments_file_id_files_id_fk` | **no action** | measured at ZERO, still blocks |
+ *
+ * The two zeros are measured, not assumed — the audit's cascade disclosure
+ * enumerated all three and counted them. `message_attachments` is the one that
+ * must never be generalised into: `no action` is the schema saying a stored
+ * message's attachment is never emptied silently, and if a future run makes
+ * either of those non-zero it must BLOCK again exactly as this did. So the
+ * cascade is declared per RELATION, and its {@link OrphanTrigger} restricts it
+ * to a row emitted by the SAME DOCUMENT as the parent it lost — which
+ * `message_attachments` (fed by `messages`) can never be.
+ *
+ * ## The worklist, and why the precondition is NOT simpler here
+ *
+ * A variant has its OWN S3 object, at its own key, distinct from the parent
+ * file's — so a cleanup that enumerated only the 179 originals would leave 934
+ * renditions behind as garbage nothing can find. This rule therefore carries
+ * `id`, `file_id`, `type` and `key` for every row it removes.
+ *
+ * The key is NOT derived from the parent file id. `generateVariantKey`
+ * (`services/variantService.ts:1237`) builds
+ * `variants/{year}/{month}/{sha[0:2]}/{sha256}/{type}.{format}` from the PARENT
+ * FILE'S `sha256` — content-addressed, exactly like `generateStorageKey`. So a
+ * variant object is NOT exclusively owned by one `files` row: another row
+ * sharing that `sha256` and visibility resolves to the same variant key. The
+ * per-CONTENT precondition therefore applies here too and is the SAME check as
+ * for the original — no `files` row of any status shares that `sha256` — which
+ * is why the parent's hash is in the report beside these rows, and why the key
+ * itself carries the hash it was built from.
+ */
+export const DROP_CASCADED_FILE_VARIANT: OrphanRelation = orphanResolution({
+  action: 'drop-row',
+  trigger: 'parent-dropped',
+  cascadesFrom: DROP_ORPHANED_FILE,
+  collection: 'files',
+  table: fileVariants,
+  column: fileVariants.fileId,
+  targetTable: files,
+  // Unused for a `parent-dropped` trigger — no parent SET is read, because the
+  // trigger is a removal this run performed rather than an absence in Mongo.
+  parentCollection: 'files',
+  cost:
+    'THE COST IS REAL: each removed variant is the last record of its OWN S3 ' +
+    'object, at a key that is NOT the parent file\'s. A cleanup that enumerated ' +
+    'only the originals would leave every rendition behind as garbage nothing ' +
+    'can find. So every removed variant is reported with its `file_id`, its ' +
+    '`type` and its `key` beside its id — the COMPLETE list, never a sample. ' +
+    'The key is content-addressed on the PARENT\'S sha256, so it is not ' +
+    'exclusively owned: the same per-CONTENT precondition that governs the ' +
+    'original governs this. This migration deletes no object.',
+  carry: [fileVariants.id, fileVariants.fileId, fileVariants.type, fileVariants.key],
+});
+
+/**
  * Every relation whose orphans are ANSWERED, and how.
  *
- * Exactly the eleven the production audit reported, each measured
- * `absent-in-source`. A relation absent from this list still BLOCKS.
+ * Eleven `absent-parent` rules — the ones the production audit reported, each
+ * measured `absent-in-source` — plus ONE `parent-dropped` cascade. A relation
+ * absent from this list still BLOCKS.
  */
 export const ORPHAN_RESOLUTIONS: readonly OrphanRelation[] = [
   // The collection names are the LIVE ones, which Mongoose derived by
@@ -475,6 +614,8 @@ export const ORPHAN_RESOLUTIONS: readonly OrphanRelation[] = [
   drop('follows', userFollows, userFollows.followedId),
   drop('follows', userFollows, userFollows.followerId),
   DROP_ORPHANED_FILE,
+  // The ONE cascade: the declared consequence of the rule above.
+  DROP_CASCADED_FILE_VARIANT,
   // The ONE row-preserving answer, and the only relation here whose schema lets
   // NULL stand for a lost parent.
   orphanResolution({
@@ -499,16 +640,30 @@ function drop(collection: string, table: PgTable, column: PgColumn): OrphanRelat
   });
 }
 
-/** The declared resolutions for one table, by its SQL name. */
+/**
+ * The `absent-parent` resolutions for one table, by its SQL name.
+ *
+ * The cascades are deliberately NOT in here: they answer a different question
+ * and are evaluated in a second pass, after the first has decided what it
+ * removes. Keeping the two indexes apart is what stops a cascade from being
+ * reached by the predicate that reads a parent SET — a set the cascade's own
+ * parent collection has no entry in, because it never reads one.
+ */
 const ORPHAN_RESOLUTIONS_BY_TABLE: ReadonlyMap<string, readonly OrphanRelation[]> = (() => {
   const index = new Map<string, OrphanRelation[]>();
   for (const relation of ORPHAN_RESOLUTIONS) {
+    if (relation.trigger !== 'absent-parent') continue;
     const existing = index.get(relation.tableName);
     if (existing) existing.push(relation);
     else index.set(relation.tableName, [relation]);
   }
   return index;
 })();
+
+/** The `parent-dropped` cascades, in declaration order. */
+const CASCADE_RESOLUTIONS: readonly OrphanRelation[] = ORPHAN_RESOLUTIONS.filter(
+  (relation) => relation.trigger === 'parent-dropped'
+);
 
 /**
  * Every documented resolution.
@@ -772,7 +927,16 @@ async function readOrphanParents(
   const parents = new Map<string, ReadonlySet<string>>();
   const live = new Set(await source.listCollections());
 
-  for (const collection of new Set(ORPHAN_RESOLUTIONS.map((entry) => entry.parentCollection))) {
+  // `absent-parent` only. A cascade reads no parent set at all — its trigger is
+  // a removal this run performed, not an absence in Mongo — so listing its
+  // nominal parent collection here would build a set nothing consults and
+  // suggest a predicate that does not exist.
+  const collections = new Set(
+    ORPHAN_RESOLUTIONS.filter((entry) => entry.trigger === 'absent-parent').map(
+      (entry) => entry.parentCollection
+    )
+  );
+  for (const collection of collections) {
     if (!live.has(collection)) continue;
     const ids = new Set<string>();
     const cursor = source.collection(collection).find({}, { projection: { _id: 1 } });
@@ -934,13 +1098,116 @@ export function transformDocument(
   emit: (row: ResolvedRow) => void
 ): void {
   const documentId = describeId(doc) ?? UNIDENTIFIED_DOCUMENT;
+
+  // The document's rows are COLLECTED before any of them is emitted, because a
+  // cascade is a question about a SIBLING row: "was the parent this row names
+  // removed?". Resolving as rows arrive would answer it from whatever had been
+  // seen so far, which makes the outcome depend on the order a transform
+  // happens to emit in — `files` emits its row before its variants today, and
+  // nothing says it must. Buffering is one document's worth of rows, which the
+  // transform has already built anyway.
+  const built: Array<{ table: PgTable; row: Record<string, unknown> }> = [];
   plan.transform(
     doc,
     (table, row) => {
-      emit(resolveOrphanedReferences(table, row, documentId, resolutions));
+      built.push({ table, row });
     },
     resolutions
   );
+
+  // Pass 1 — the rules that read the SOURCE: a value naming a parent MongoDB
+  // does not hold.
+  const resolved = built.map((entry) =>
+    resolveOrphanedReferences(entry.table, entry.row, documentId, resolutions)
+  );
+
+  // Pass 2 — the declared CONSEQUENCES of pass 1, and only within this document.
+  for (const row of cascadeWithinDocument(resolved, documentId, resolutions)) emit(row);
+}
+
+/**
+ * Apply the declared `parent-dropped` cascades to one document's rows.
+ *
+ * The narrowness is the whole design, so it is worth stating what this CANNOT
+ * do. It cannot reach a row from another document — `message_attachments` is
+ * built from `messages` and is therefore unreachable, which is exactly right
+ * because that relation declares ON DELETE `no action` and nobody has decided
+ * anything about it. It cannot fire on a relation nobody declared, even one
+ * pointing at the same table: `file_links` cascades in the schema and is
+ * deliberately absent here, so it still blocks. And it cannot chain: a row this
+ * removes is not itself a trigger, because triggers are matched against the
+ * keys pass 1 removed, not against everything gone by the end.
+ */
+function cascadeWithinDocument(
+  rows: readonly ResolvedRow[],
+  documentId: string,
+  resolutions: ResolutionContext
+): readonly ResolvedRow[] {
+  if (CASCADE_RESOLUTIONS.length === 0) return rows;
+
+  // What pass 1 removed, by table and primary key.
+  const removed = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (row.written !== null || row.applied.length === 0) continue;
+    const key = singlePrimaryKeyProperty(row.table);
+    if (key === null) continue;
+    const value = row.source[key];
+    if (typeof value !== 'string' || value.length === 0) continue;
+    const name = tableName(row.table);
+    const keys = removed.get(name);
+    if (keys) keys.add(value);
+    else removed.set(name, new Set([value]));
+  }
+  if (removed.size === 0) return rows;
+
+  return rows.map((row) => {
+    if (row.written === null) return row;
+    const name = tableName(row.table);
+    for (const relation of CASCADE_RESOLUTIONS) {
+      if (relation.tableName !== name) continue;
+      const value = row.source[relation.property];
+      if (typeof value !== 'string' || value.length === 0) continue;
+      if (!(removed.get(tableName(relation.targetTable))?.has(value) ?? false)) continue;
+      return cascadedRow(row, relation, value, documentId, resolutions);
+    }
+    return row;
+  });
+}
+
+/** The row a cascade removes, recorded and returned unwritten. */
+function cascadedRow(
+  row: ResolvedRow,
+  relation: OrphanRelation,
+  value: string,
+  documentId: string,
+  resolutions: ResolutionContext
+): ResolvedRow {
+  const key = singlePrimaryKeyProperty(relation.table);
+  const rowId = key === null ? null : row.source[key];
+  const evidence = carriedColumns(relation, row.source);
+
+  resolutions.record({
+    rule: relation.rule,
+    documentId,
+    // The ROW's own key, not the offending value: one document produces many
+    // variants of one file, so keying on the file id would collapse them into a
+    // single record and the report would name one of the objects it stranded.
+    within: typeof rowId === 'string' ? rowId : value,
+    detail:
+      `${relation.tableName}.${relation.columnName} is ${JSON.stringify(value)}, ` +
+      `a \`${tableName(relation.targetTable)}\` row that ` +
+      `\`${relation.cascadesFrom?.rule.id ?? '(unknown rule)'}\` removes. The ROW ` +
+      'is dropped with it: ON DELETE CASCADE is what the schema declares for ' +
+      'this relation, and the removal it names has already happened.',
+    ...(evidence === null ? {} : { evidence }),
+  });
+
+  return {
+    table: row.table,
+    source: row.source,
+    written: null,
+    applied: [...row.applied, { relation, value }],
+  };
 }
 
 /** What a record names when the document carries no `_id` to name it by. */

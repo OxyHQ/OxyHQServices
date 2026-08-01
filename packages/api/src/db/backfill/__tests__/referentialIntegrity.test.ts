@@ -466,6 +466,7 @@ describe('a dangling foreign key is found, named, and refuses the copy', () => {
     expect(report.orphanRowsByOrigin).toEqual({
       'absent-in-source': 3,
       'dropped-by-the-copy': 0,
+      'parent-removed-by-rule': 0,
       undetermined: 0,
     });
     expect(report.findings.filter((finding) => finding.kind === 'dropped-document')).toEqual([]);
@@ -586,6 +587,7 @@ describe('an orphan whose parent the MIGRATION lost is a different finding', () 
     expect(report.orphanRowsByOrigin).toEqual({
       'absent-in-source': 0,
       'dropped-by-the-copy': 0,
+      'parent-removed-by-rule': 0,
       undetermined: 0,
     });
   });

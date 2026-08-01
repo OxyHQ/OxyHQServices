@@ -1,12 +1,21 @@
 /**
- * The eleven orphaned-reference resolutions, against a REAL MongoDB and a REAL
- * Postgres.
+ * The eleven orphaned-reference resolutions and the ONE cascade, against a REAL
+ * MongoDB and a REAL Postgres.
  *
  * These rules DELETE PRODUCTION ROWS. That is what the decision is — ten of the
  * eleven relations cascade, so a row whose parent the source never held goes
  * with it — but it means the standard here is not "the rule works". It is that
  * the rule cannot fire on anything else, and that every row it does fire on is
  * named.
+ *
+ * The twelfth, `drop-cascaded-file-variants-file-id`, is the only rule that
+ * removes rows over a parent the SOURCE STILL HOLDS — this migration is what
+ * takes it away. Three protections keep it from becoming "remove anything that
+ * references a removed row", and they are independent: it is declared for ONE
+ * relation, it only sees rows built from the SAME DOCUMENT as the parent, and
+ * the overreach guard compares its tally against the traversal's. Removing any
+ * one still leaves `message_attachments` — ON DELETE **no action**, a stored
+ * message's attachment — standing; removing two does not.
  *
  * The `files` rule is the one to read twice. Its column is NULLABLE, so unlike
  * the nine `users` drops a widened predicate would NOT fail loudly on the way
@@ -48,6 +57,7 @@ import {
   bundles,
   deviceSessionAccounts,
   deviceSessions,
+  fileVariants,
   files,
   notifications,
   userFollows,
@@ -81,16 +91,24 @@ import { planTables, tableName, type CollectionPlan } from '../plan';
 import {
   assertOrphanResolutionsMatchSchema,
   auditReferentialIntegrity,
+  referentialRelations,
   relationForColumn,
 } from '../referentialIntegrity';
 import {
   createResolutionContext,
+  DROP_CASCADED_FILE_VARIANT,
   DROP_ORPHANED_FILE,
   ORPHAN_RESOLUTIONS,
   planResolutions,
   ResolutionLog,
 } from '../resolutions';
-import { AuditBlockedError, discover, runBackfill, type RunSummary } from '../runner';
+import {
+  AuditBlockedError,
+  discover,
+  runAudits,
+  runBackfill,
+  type RunSummary,
+} from '../runner';
 import { verifyBackfill } from '../verify';
 
 jest.setTimeout(300_000);
@@ -261,11 +279,11 @@ describe('every declared rule matches the constraint it answers', () => {
   it('covers exactly the eleven relations the production audit reported', () => {
     // The vacuity floor of this block: an empty declaration list would satisfy
     // every "for each" assertion below.
-    expect(ORPHAN_RESOLUTIONS).toHaveLength(11);
+    expect(ORPHAN_RESOLUTIONS).toHaveLength(12);
     expect(
-      ORPHAN_RESOLUTIONS.map((entry) =>
-        relationForColumn(entry.table, entry.property).constraint
-      ).sort()
+      ORPHAN_RESOLUTIONS.filter((entry) => entry.trigger === 'absent-parent')
+        .map((entry) => relationForColumn(entry.table, entry.property).constraint)
+        .sort()
     ).toEqual([
       'app_user_signals_user_id_users_id_fk',
       'bundles_user_id_users_id_fk',
@@ -279,6 +297,59 @@ describe('every declared rule matches the constraint it answers', () => {
       'user_follows_followed_id_users_id_fk',
       'user_follows_follower_id_users_id_fk',
     ]);
+  });
+
+  it('declares exactly ONE cascade, and only for the relation decided', () => {
+    // The list is the whole guard. Three constraints reference `files` and two
+    // of them — `file_links` (cascade) and `message_attachments` (**no
+    // action**) — are deliberately absent, so they still block. A cascade
+    // appearing here for either of those is a decision nobody made, and
+    // `message_attachments` is the one the schema argues hardest about.
+    const cascades = ORPHAN_RESOLUTIONS.filter((entry) => entry.trigger === 'parent-dropped');
+    expect(cascades.map((entry) => relationForColumn(entry.table, entry.property).constraint))
+      .toEqual(['file_variants_file_id_files_id_fk']);
+
+    const [cascade] = cascades;
+    if (cascade === undefined) throw new Error('unreachable');
+    // It cascades FROM the rule that removes the parent, named — not from "a
+    // drop" in general.
+    expect(cascade.cascadesFrom?.rule.id).toBe('drop-orphaned-files-owner-user-id');
+    expect(cascade.rule.id).toBe('drop-cascaded-file-variants-file-id');
+    // …and the schema agrees: the relation it answers really does cascade.
+    const relation = relationForColumn(cascade.table, cascade.property);
+    expect([relation.nullable, relation.onDelete]).toEqual([false, 'cascade']);
+
+    // The two it must NOT cover, asserted by the SHAPE of the graph rather than
+    // by naming them: every other constraint into `files` is unanswered.
+    const inbound = referentialRelations(COLLECTION_PLANS).filter(
+      (entry) => entry.targetTableName === 'files'
+    );
+    expect(inbound.map((entry) => entry.constraint).sort()).toEqual([
+      'file_links_file_id_files_id_fk',
+      'file_variants_file_id_files_id_fk',
+      'message_attachments_file_id_files_id_fk',
+    ]);
+    const answered = new Set(
+      ORPHAN_RESOLUTIONS.map((entry) => relationForColumn(entry.table, entry.property).constraint)
+    );
+    expect(inbound.filter((entry) => answered.has(entry.constraint))).toHaveLength(1);
+  });
+
+  it('carries the variant id, its file, its type and its OWN S3 key', () => {
+    // A variant's object is a DIFFERENT object from its parent file's, so a
+    // cleanup working only from the 179 originals would leave every rendition
+    // behind. The four columns are what makes the variant resolvable on its own.
+    expect(DROP_CASCADED_FILE_VARIANT.carry?.map((column) => sqlColumnName(column))).toEqual([
+      'id',
+      'file_id',
+      'type',
+      'key',
+    ]);
+    expect(DROP_CASCADED_FILE_VARIANT.rule.decision).toContain('NOT the parent file');
+    expect(DROP_CASCADED_FILE_VARIANT.rule.decision).toContain('COMPLETE list, never a sample');
+    // The key is content-addressed on the PARENT'S sha256, so it is not
+    // exclusively owned and the per-content precondition still applies.
+    expect(DROP_CASCADED_FILE_VARIANT.rule.decision).toContain('per-CONTENT precondition');
   });
 
   it('drops only where the schema cascades, and justifies NULL only where it exists', () => {
@@ -449,10 +520,11 @@ describe('a dangling reference the rules answer', () => {
     const referential = summary.findings.filter(
       (finding) => finding.kind === 'referential-integrity'
     );
-    // Six: five relations from five documents, plus the device session's
-    // account entry. A rule that suppressed its own finding would show up as a
-    // shorter list.
-    expect(referential).toHaveLength(6);
+    // Seven: five relations from five documents, the device session's account
+    // entry, and the dropped file's variants. A rule that suppressed its own
+    // finding would show up as a shorter list — the CASCADE included, which is
+    // the one whose orphans this migration creates rather than inherits.
+    expect(referential).toHaveLength(7);
     expect(referential.every((finding) => finding.resolvedBy !== undefined)).toBe(true);
     expect(referential.every((finding) => auditWouldBlockCopy(finding) === false)).toBe(true);
 
@@ -518,11 +590,11 @@ describe('a dangling reference the rules answer', () => {
     expect(deviceEmission?.primaryRowsEmitted).toBe(deviceEmission?.documentsRead);
   });
 
-  it('names what references a table it drops from, and finds nothing orphaned', () => {
-    // `files` is the one table these rules drop from that anything references,
-    // and the fixture's orphaned file deliberately carries no links or
-    // variants — so the cascade is REPORTED with its three inbound constraints
-    // and measured as orphaning nothing. A file WITH children is the next test.
+  it('names every constraint into a table it drops from, and what each one did', () => {
+    // `files` is the one table these rules drop from that anything references.
+    // The disclosure enumerates ALL THREE constraints and says what happened
+    // through each — which is what made the cascade decidable in the first
+    // place, and what must go on saying "0" for the two nobody decided.
     const cascades = summary.referentialIntegrity.dropCascades;
     const file = cascades.find((entry) => entry.rule.id === 'drop-orphaned-files-owner-user-id');
     expect(file?.rowsDropped).toBe(1);
@@ -531,7 +603,19 @@ describe('a dangling reference the rules answer', () => {
       'file_variants_file_id_files_id_fk',
       'message_attachments_file_id_files_id_fk',
     ]);
-    expect(file?.orphanedByDrop).toEqual([]);
+
+    // The variants DID follow, and the entry names the rule they followed —
+    // never a bare count, which would read the same as an unanswered orphan.
+    expect(file?.orphanedByDrop).toEqual([
+      {
+        constraint: 'file_variants_file_id_files_id_fk',
+        documents: 2,
+        resolvedBy: DROP_CASCADED_FILE_VARIANT.rule,
+      },
+    ]);
+    // …and the two nobody decided are absent because they are ZERO here, which
+    // is a measurement rather than an exemption: `orphanFileWithChildrenFixtures`
+    // makes `file_links` non-zero and the run is refused.
   });
 
   it('says what each drop could cascade to, from the derived FK graph', () => {
@@ -588,6 +672,42 @@ describe('a dangling reference the rules answer', () => {
     expect(byId.get(FILE_FEDERATION)?.ownerUserId).toBeNull();
     expect(byId.get(FILE_LINK_PREVIEW)?.systemOwner).toBe('__link_preview_cache__');
     expect(byId.get(FILE_LINK_PREVIEW)?.ownerUserId).toBeNull();
+  });
+
+  it('takes the file\'s VARIANTS with it, and leaves every other file\'s alone', async () => {
+    const rows = await db.select().from(fileVariants);
+
+    // The two renditions of the dropped file are gone: a variant of a file that
+    // will not exist is what `ON DELETE cascade` describes.
+    expect(rows.filter((row) => row.fileId === RESOLVED_ORPHAN_FILE)).toEqual([]);
+
+    // THE CONTROL — the clean set's own file keeps its variant. The cascade
+    // fires on a removed PARENT, never on "a file", so a widened trigger shows
+    // up here as an empty table.
+    expect(rows.map((row) => row.fileId)).toEqual([FILE_USER]);
+    expect(rows[0]?.type).toBe('thumbnail');
+    expect(rows[0]?.key).toBe('assets/a-thumb');
+  });
+
+  it('emits each removed variant with its file, its type and its OWN key', () => {
+    const cascaded = applied(summary, 'drop-cascaded-file-variants-file-id');
+    expect(cascaded.documents).toBe(2);
+    expect(cascaded.records).toHaveLength(2);
+
+    // A variant's object is NOT the parent's, so the id alone would strand it.
+    // Every row, with the four columns that resolve it — never a sample.
+    const carried = cascaded.records.map((record) => record.evidence);
+    expect(carried.map((entry) => entry?.type).sort()).toEqual(['thumbnail', 'webp']);
+    for (const entry of carried) {
+      expect(entry?.file_id).toBe(RESOLVED_ORPHAN_FILE);
+      expect(entry?.id).toBeDefined();
+      // The key is content-addressed on the PARENT'S sha256 — which is why the
+      // per-content precondition still applies and why the hash is legible in
+      // the key itself.
+      expect(entry?.key).toContain(RESOLVED_ORPHAN_FILE_SHA256);
+      expect(entry?.key).toMatch(/^variants\/\d{4}\/\d{2}\//);
+    }
+    expect(cascaded.records[0]?.detail).toContain('drop-orphaned-files-owner-user-id');
   });
 
   it('emits the sha256 and the storage key with every dropped file id', () => {
@@ -729,15 +849,14 @@ describe('the rules stand down rather than guess', () => {
     }
   });
 
-  it('BLOCKS when a dropped file still has children, rather than deciding for us', async () => {
-    // The cascade this migration deliberately does not answer. A dropped
-    // `files` row takes nothing with it here — its `links` and `variants` are
-    // still emitted and now name a row that will not exist — so the audit
-    // reports them as orphans and REFUSES the copy. That is the outcome the
-    // schema argues for: `message_attachments.file_id` is ON DELETE **no
-    // action**, the schema's way of saying a stored message's attachment must
-    // never be emptied silently, and nobody has decided what a dropped file's
-    // links become.
+  it('cascades to the ONE relation decided, and blocks on the ones not', async () => {
+    // The whole point of the cascade being declared per relation. A dropped
+    // file's VARIANTS follow it, because `file_variants.file_id` cascades and
+    // somebody decided that. Its LINK does not — `file_links.file_id` cascades
+    // too and nobody decided it — so the run is still REFUSED, before the copy.
+    // If this ever passes silently, the cascade has generalised into "remove
+    // anything that references a removed row", which would take
+    // `message_attachments` (ON DELETE **no action**) with it.
     await truncateAll();
     const mongo = await seed(orphanFileWithChildrenFixtures());
     try {
@@ -750,11 +869,36 @@ describe('the rules stand down rather than guess', () => {
       expect(caught).toBeInstanceOf(AuditBlockedError);
       if (!(caught instanceof AuditBlockedError)) throw new Error('unreachable');
 
-      const constraints = caught.findings.map((finding) => finding.detail).join('\n');
-      expect(constraints).toContain('file_links_file_id_files_id_fk');
-      expect(constraints).toContain('file_variants_file_id_files_id_fk');
-      // Unanswered, so it blocks — the file rule does not reach across to them.
-      expect(caught.findings.every((finding) => finding.resolvedBy === undefined)).toBe(true);
+      // BLOCKING: the link AND the message attachment, both unanswered.
+      const blocking = caught.findings.filter(
+        (finding) => finding.kind === 'referential-integrity'
+      );
+      const detail = blocking.map((finding) => finding.detail).join('\n');
+      expect(detail).toContain('file_links_file_id_files_id_fk');
+      // The one the schema argues hardest about: `no action` means a stored
+      // message's attachment is never emptied silently, and it comes from
+      // ANOTHER collection — which a cascade restricted to one document could
+      // not reach even if someone declared it.
+      expect(detail).toContain('message_attachments_file_id_files_id_fk');
+      expect(detail).toContain('ON DELETE no action');
+      expect(blocking.every((finding) => finding.resolvedBy === undefined)).toBe(true);
+      expect(blocking).toHaveLength(2);
+
+      // The origin is SETTLED — a rule removed the parent — so the report must
+      // not send the operator off to establish it.
+      expect(detail).toContain('ORIGIN parent-removed-by-rule');
+      expect(detail).toContain('what is missing is a decision');
+      expect(detail).not.toContain('until the origin is settled');
+
+      // ANSWERED: the variant, by the cascade, and named.
+      const audited = await runAudits(
+        mongo.source,
+        await discover(mongo.source),
+        createResolutionContext(await planResolutions(mongo.source), new ResolutionLog())
+      );
+      const variants = findingFor(audited.findings, 'file_variants_file_id_files_id_fk');
+      expect(variants.resolvedBy?.id).toBe('drop-cascaded-file-variants-file-id');
+      expect(auditWouldBlockCopy(variants)).toBe(false);
 
       // …and nothing was written: the refusal happens before the copy.
       const [row] = await db.execute<{ count: number }>(

@@ -213,6 +213,21 @@ export function tableName(table: PgTable): string {
   return getTableConfig(table).name;
 }
 
+/**
+ * The property name of a table's SINGLE-column primary key, or `null`.
+ *
+ * `null` for the seven tables keyed by a composite — six of them child tables
+ * whose key is `(parent, ordinal)` and which no foreign key references anyway.
+ */
+export function singlePrimaryKeyProperty(table: PgTable): string | null {
+  const config = getTableConfig(table);
+  const inline = config.columns.filter((column) => column.primary);
+  if (inline.length === 1) return inline[0]?.name ?? null;
+  if (inline.length > 1) return null;
+  const composite = config.primaryKeys.flatMap((key) => key.columns.map((column) => column.name));
+  return composite.length === 1 ? (composite[0] ?? null) : null;
+}
+
 /** The allowed values of an enum-backed column, from the column itself. */
 export function allowedValues(column: PgColumn): readonly string[] {
   const values = (column as unknown as { enumValues?: readonly string[] }).enumValues;

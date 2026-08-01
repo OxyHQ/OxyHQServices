@@ -1772,6 +1772,30 @@ export function orphanResolutionFixtures(): FixtureSet {
         // why it is CARRIED into the report rather than re-derived later.
         storageKey: `content/2026/03/ee/${'e'.repeat(64)}.png`,
         originalName: 'orphan.png',
+        // Two RENDITIONS, each its own S3 object at its own key. They are what
+        // `drop-cascaded-file-variants-file-id` removes with the parent, and
+        // what the worklist has to name — a cleanup working from the original
+        // alone would never find them. No `links`: that relation cascades in the
+        // schema too and nobody decided it, so a link here would BLOCK the copy
+        // (`orphanFileWithChildrenFixtures` is where that is exercised).
+        variants: [
+          {
+            type: 'thumbnail',
+            key: `variants/2026/03/ee/${'e'.repeat(64)}/thumbnail.webp`,
+            width: 32,
+            height: 32,
+            size: 128,
+            readyAt: T1,
+          },
+          {
+            type: 'webp',
+            key: `variants/2026/03/ee/${'e'.repeat(64)}/webp.webp`,
+            width: 800,
+            height: 600,
+            size: 2048,
+            readyAt: T1,
+          },
+        ],
         createdAt: T0,
         updatedAt: T0,
       },
@@ -1898,16 +1922,15 @@ export const RESOLVED_ORPHAN_FILE_SHA256 = 'e'.repeat(64);
 export const RESOLVED_ORPHAN_FILE_STORAGE_KEY = `content/2026/03/ee/${'e'.repeat(64)}.png`;
 
 /**
- * The same orphaned file, but WITH the children a real one may have.
+ * The same orphaned file, plus a LINK — the child nobody decided about.
  *
- * `files` is the first table a resolution drops from that anything else
- * references: `file_links.file_id` and `file_variants.file_id` cascade from it,
- * and `message_attachments.file_id` declares ON DELETE **no action** — the
- * schema's way of saying a stored message's attachment must never be silently
- * emptied. So this set pins what happens: the audit reports those rows as
- * orphans of the drop and BLOCKS, rather than letting a second `23503` arrive at
- * copy time. Nobody has decided what a dropped file's links and variants become,
- * and this migration does not decide it either.
+ * Three constraints reference `files`. `file_variants.file_id` is cascaded, by
+ * decision. `file_links.file_id` cascades in the schema too and is deliberately
+ * NOT declared, and `message_attachments.file_id` declares ON DELETE **no
+ * action** — the schema's way of saying a stored message's attachment is never
+ * emptied silently. So this set pins the line: the variants follow the file, the
+ * LINK does not, and the run is REFUSED before the copy rather than a second
+ * `23503` arriving during it.
  */
 export function orphanFileWithChildrenFixtures(): FixtureSet {
   const fixtures = orphanResolutionFixtures();
@@ -1926,11 +1949,30 @@ export function orphanFileWithChildrenFixtures(): FixtureSet {
                 createdAt: T0,
               },
             ],
-            variants: [
-              { type: 'thumbnail', key: 'assets/e-thumb', width: 32, height: 32, size: 128 },
-            ],
           }
         : file
+    ),
+    // A stored MESSAGE attaching the dropped file — the hard case, and the one
+    // the schema argues about loudest. It comes from a DIFFERENT collection, so
+    // a cascade restricted to one document cannot reach it however the rules
+    // are declared; and `message_attachments.file_id` is ON DELETE `no action`,
+    // so emptying it silently is the outcome that must never happen.
+    messages: (fixtures.messages ?? []).map((message, index) =>
+      index === 0
+        ? {
+            ...message,
+            attachments: [
+              {
+                fileId: RESOLVED_ORPHAN_FILE,
+                name: 'orphan.png',
+                contentType: 'image/png',
+                size: 4096,
+                contentId: null,
+                isInline: false,
+              },
+            ],
+          }
+        : message
     ),
   };
 }

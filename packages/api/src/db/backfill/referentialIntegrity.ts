@@ -141,7 +141,7 @@ import { sqlColumnName } from '../casing';
 import type { AuditFinding } from './audit';
 import { streamCollection, type MongoSource } from './mongoSource';
 import { planLevels } from './order';
-import { planTables, tableName, type CollectionPlan } from './plan';
+import { planTables, singlePrimaryKeyProperty, tableName, type CollectionPlan } from './plan';
 import {
   ORPHAN_RESOLUTIONS,
   transformDocument,
@@ -259,12 +259,24 @@ export type OrphanResolvability =
  *   The fix belongs in the TRANSFORM; a resolution rule that nulled or dropped
  *   the reference would bury exactly the failure this audit exists to catch, so
  *   one must never be written for this class.
- * - **`undetermined`** — the audit cannot tell the two apart for this relation,
+ * - **`parent-removed-by-rule`** — the source HOLDS the parent and a DOCUMENTED
+ *   RULE removed it. Neither pre-existing debt nor a bug: it is a decision
+ *   already taken and already reported by id under its own rule, and the only
+ *   question left is whether anything was declared about the rows left behind.
+ *   Distinguished from `undetermined` by MEASUREMENT — every missing value is
+ *   one a rule is on record as having dropped — because "a rule did this" and
+ *   "nobody knows" are opposite situations that a single `undetermined` verdict
+ *   would merge.
+ * - **`undetermined`** — the audit cannot tell them apart for this relation,
  *   and says so rather than guessing. Never treat it as the first kind.
  *
  * The verdict is measured, not assumed — see {@link PlanEmission}.
  */
-export type OrphanOrigin = 'absent-in-source' | 'dropped-by-the-copy' | 'undetermined';
+export type OrphanOrigin =
+  | 'absent-in-source'
+  | 'dropped-by-the-copy'
+  | 'parent-removed-by-rule'
+  | 'undetermined';
 
 /**
  * How faithfully one plan's transform reproduced its collection, MEASURED.
@@ -316,21 +328,6 @@ export interface PlanEmission {
    * make the drop silent and the id report goes red while the count stays.
    */
   readonly primaryRowsDroppedByRule: number;
-}
-
-/**
- * The property name of a table's SINGLE-column primary key, or `null`.
- *
- * `null` for the seven tables keyed by a composite — six of them child tables
- * whose key is `(parent, ordinal)` and which no foreign key references anyway.
- */
-export function singlePrimaryKeyProperty(table: PgTable): string | null {
-  const config = getTableConfig(table);
-  const inline = config.columns.filter((column) => column.primary);
-  if (inline.length === 1) return inline[0]?.name ?? null;
-  if (inline.length > 1) return null;
-  const composite = config.primaryKeys.flatMap((key) => key.columns.map((column) => column.name));
-  return composite.length === 1 ? (composite[0] ?? null) : null;
 }
 
 /**
@@ -443,9 +440,15 @@ export interface DropCascade {
    *
    * Empty means the drops orphan nothing, measured rather than assumed: the
    * dropped ids were compared against the orphan values this pass found on
-   * every inbound constraint.
+   * every inbound constraint. An entry carrying `resolvedBy` is one a declared
+   * cascade follows; an entry WITHOUT one blocks, and is the case this
+   * disclosure exists for.
    */
-  readonly orphanedByDrop: readonly { readonly constraint: string; readonly documents: number }[];
+  readonly orphanedByDrop: readonly {
+    readonly constraint: string;
+    readonly documents: number;
+    readonly resolvedBy?: ResolutionRule;
+  }[];
 }
 
 /** What the referential audit inspected, whether or not it found anything. */
@@ -522,7 +525,12 @@ export function referentialIntegrityNotRun(reason: string): ReferentialIntegrity
     findings: [],
     orphans: [],
     dropCascades: [],
-    orphanRowsByOrigin: { 'absent-in-source': 0, 'dropped-by-the-copy': 0, undetermined: 0 },
+    orphanRowsByOrigin: {
+      'absent-in-source': 0,
+      'dropped-by-the-copy': 0,
+      'parent-removed-by-rule': 0,
+      undetermined: 0,
+    },
     emissions: [],
     relationsInspected: 0,
     relationsExercised: 0,
@@ -731,6 +739,44 @@ export function assertOrphanResolutionsMatchSchema(): void {
         `it declares the parent table ${tableName(entry.targetTable)} but the ` +
           `constraint references ${relation.targetTableName}`
       );
+    }
+    // A cascade is the DECLARED CONSEQUENCE of another rule, so it has to name
+    // that rule, and the rule it names has to be the one that removes rows from
+    // the table this relation references. Without both, "cascade" would be a
+    // free-standing licence to delete rather than the second half of a decision
+    // someone made.
+    if (entry.trigger === 'parent-dropped') {
+      const trigger = entry.cascadesFrom;
+      if (trigger === undefined) {
+        throw new OrphanResolutionMismatchError(
+          entry,
+          'it cascades but names no rule to cascade FROM, so nothing ties it to ' +
+            'a decision anyone made'
+        );
+      }
+      if (tableName(trigger.table) !== relation.targetTableName) {
+        throw new OrphanResolutionMismatchError(
+          entry,
+          `it cascades from \`${trigger.rule.id}\`, which removes rows from ` +
+            `${tableName(trigger.table)} — but this relation references ` +
+            `${relation.targetTableName}, so the removal it names is not the one ` +
+            'that could orphan these rows'
+        );
+      }
+      if (trigger.action !== 'drop-row') {
+        throw new OrphanResolutionMismatchError(
+          entry,
+          `it cascades from \`${trigger.rule.id}\`, which does not REMOVE a row ` +
+            'at all — nothing is lost, so nothing follows'
+        );
+      }
+      if (entry.action !== 'drop-row') {
+        throw new OrphanResolutionMismatchError(
+          entry,
+          'a cascade may only DROP. Writing NULL for a parent this migration ' +
+            'itself removed would invent a state rather than follow one'
+        );
+      }
     }
     if (entry.action === 'drop-row') {
       // A drop on a NULLABLE column is a CHOICE between two available answers,
@@ -959,6 +1005,18 @@ export async function auditReferentialIntegrity(
     }
   }
 
+  // What the rules REMOVED, per table — the evidence that separates "a rule
+  // took this parent away" from "nobody knows where it went". Folded from the
+  // per-relation tallies so it is the rules' own record rather than a second
+  // count of the same thing.
+  const droppedIdsByTable = new Map<string, Set<string>>();
+  for (const tally of applied.values()) {
+    if (tally.relation.action !== 'drop-row') continue;
+    const existing = droppedIdsByTable.get(tally.relation.tableName);
+    if (existing) for (const id of tally.droppedIds) existing.add(id);
+    else droppedIdsByTable.set(tally.relation.tableName, new Set(tally.droppedIds));
+  }
+
   const finished: RelationOrphans[] = [...orphans.values()]
     .sort((a, b) =>
       a.relation.constraint < b.relation.constraint
@@ -971,7 +1029,9 @@ export async function auditReferentialIntegrity(
       const origin = classifyOrigin(
         entry.relation,
         emissions.get(entry.relation.targetTableName),
-        fedTables.has(entry.relation.targetTableName)
+        fedTables.has(entry.relation.targetTableName),
+        [...entry.documentsByValue.keys()],
+        droppedIdsByTable
       );
       const resolvedBy = resolvingRule(entry, origin.origin);
       return {
@@ -992,6 +1052,7 @@ export async function auditReferentialIntegrity(
   const orphanRowsByOrigin: Record<OrphanOrigin, number> = {
     'absent-in-source': 0,
     'dropped-by-the-copy': 0,
+    'parent-removed-by-rule': 0,
     undetermined: 0,
   };
   for (const entry of finished) orphanRowsByOrigin[entry.origin] += entry.documents;
@@ -1000,7 +1061,12 @@ export async function auditReferentialIntegrity(
     a.collection < b.collection ? -1 : a.collection > b.collection ? 1 : 0
   );
 
-  const dropCascades = describeDropCascades(applied, relations, orphans);
+  const dropCascades = describeDropCascades(
+    applied,
+    relations,
+    orphans,
+    new Map(finished.map((entry) => [entry.relation.constraint, entry.resolvedBy]))
+  );
 
   const report: ReferentialIntegrityReport = {
     ran: true,
@@ -1377,7 +1443,11 @@ function resolvingRule(
   entry: OrphanAccumulator,
   origin: OrphanOrigin
 ): ResolutionRule | undefined {
-  if (origin !== 'absent-in-source') return undefined;
+  // `parent-removed-by-rule` is answerable for the same reason
+  // `absent-in-source` is: both say the parent is provably not coming, and
+  // neither is data the MIGRATION lost by accident. `dropped-by-the-copy` and
+  // `undetermined` remain unanswerable.
+  if (origin !== 'absent-in-source' && origin !== 'parent-removed-by-rule') return undefined;
   if (entry.documents === 0 || entry.mootDocuments !== entry.documents) return undefined;
   if (entry.mootRules.size !== 1) return undefined;
   return [...entry.mootRules.values()][0];
@@ -1418,7 +1488,11 @@ function compositeKey(
 function classifyOrigin(
   relation: Relation,
   emission: PlanEmission | undefined,
-  targetFed: boolean
+  targetFed: boolean,
+  /** Every value this relation could not resolve, uncapped. */
+  missingValues: readonly string[],
+  /** Primary keys documented rules removed, per table. */
+  droppedIdsByTable: ReadonlyMap<string, ReadonlySet<string>>
 ): { origin: OrphanOrigin; reason: string } {
   if (!targetFed || emission === undefined) {
     return {
@@ -1436,15 +1510,32 @@ function classifyOrigin(
   // missing from Mongo. Checked before the drop test below because the two have
   // opposite meanings and only this one is deliberate.
   if (emission.primaryRowsDroppedByRule > 0) {
+    const removed = droppedIdsByTable.get(emission.table) ?? new Set<string>();
+    const accounted = missingValues.filter((value) => removed.has(value));
+    // ALL of them, or none of the certainty. A relation whose missing values are
+    // a MIX of rule-removed parents and something else cannot be answered by
+    // pointing at the rule, so it stays undetermined and blocks.
+    if (missingValues.length > 0 && accounted.length === missingValues.length) {
+      return {
+        origin: 'parent-removed-by-rule',
+        reason:
+          `Every one of the ${missingValues.length} missing ` +
+          `${emission.table} id(s) is a row a documented rule REMOVED in this ` +
+          'run — the source holds the parent; this migration is what takes it ' +
+          'away. That is a decision already made and already reported by id ' +
+          'under its own rule, not pre-existing debt and not data loss. What is ' +
+          'left to decide is only what happens to the rows pointing at it.',
+      };
+    }
     return {
       origin: 'undetermined',
       reason:
         `A documented rule removed ${emission.primaryRowsDroppedByRule} row(s) ` +
         `from ${emission.table}, so its ids are a SUBSET of the ` +
-        `\`${emission.collection}\` document ids and a value missing from it may ` +
-        'be a row the rule dropped rather than a document MongoDB never held. ' +
-        'The removed rows are reported by id under their own rule; which of the ' +
-        'two this is has to be read there.',
+        `\`${emission.collection}\` document ids — but only ${accounted.length} of ` +
+        `the ${missingValues.length} missing value(s) here are ids that rule is ` +
+        'on record as removing. The rest are missing for some other reason, so ' +
+        'this cannot be read as either pre-existing debt or a known removal.',
     };
   }
 
@@ -1596,7 +1687,9 @@ function describeOverreach(
 function describeDropCascades(
   applied: ReadonlyMap<OrphanRelation, AppliedTally>,
   relations: readonly Relation[],
-  orphansByConstraint: ReadonlyMap<string, OrphanAccumulator>
+  orphansByConstraint: ReadonlyMap<string, OrphanAccumulator>,
+  /** The rule answering each constraint, where one does. */
+  answeredBy: ReadonlyMap<string, ResolutionRule | undefined>
 ): DropCascade[] {
   const cascades: DropCascade[] = [];
 
@@ -1605,7 +1698,11 @@ function describeDropCascades(
     const inbound = relations.filter(
       (relation) => relation.targetTableName === tally.relation.tableName
     );
-    const orphanedByDrop: { constraint: string; documents: number }[] = [];
+    const orphanedByDrop: {
+      constraint: string;
+      documents: number;
+      resolvedBy?: ResolutionRule;
+    }[] = [];
     for (const relation of inbound) {
       const orphans = orphansByConstraint.get(relation.constraint);
       if (orphans === undefined) continue;
@@ -1613,7 +1710,13 @@ function describeDropCascades(
       for (const [value, rows] of orphans.documentsByValue) {
         if (tally.droppedIds.has(value)) documents += rows;
       }
-      if (documents > 0) orphanedByDrop.push({ constraint: relation.constraint, documents });
+      if (documents === 0) continue;
+      const resolvedBy = answeredBy.get(relation.constraint);
+      orphanedByDrop.push({
+        constraint: relation.constraint,
+        documents,
+        ...(resolvedBy === undefined ? {} : { resolvedBy }),
+      });
     }
     cascades.push({
       rule: tally.relation.rule,
@@ -1721,8 +1824,18 @@ function describeFinding(orphans: RelationOrphans): AuditFinding {
           'every row it acts on, are reported with the rule rather than repeated here.'
         : orphans.origin === 'absent-in-source'
           ? recommendation(orphans)
-          : 'No resolution rule may be written for this until the origin is ' +
-            'settled — one written against migration data loss would hide it.') +
+          : orphans.origin === 'parent-removed-by-rule'
+            ? // The origin is SETTLED here — what is missing is a decision. Saying
+              // "settle the origin first" would send the operator to look for
+              // something already known.
+              'The parent is removed by a documented rule, so the origin is not in ' +
+              'doubt: what is missing is a decision about THESE rows. The schema ' +
+              `declares ON DELETE ${orphans.relation.onDelete} for this relation, ` +
+              'which is what a cascade rule would follow — but a cascade is ' +
+              'declared per relation and deliberately never general, so one has to ' +
+              'be written for this one or the removal itself reconsidered.'
+            : 'No resolution rule may be written for this until the origin is ' +
+              'settled — one written against migration data loss would hide it.') +
       // What the rules actually DID to these rows, measured on the emitted rows
       // rather than taken from the rule. A partial answer is printed as one: it
       // is exactly the shape that would otherwise look resolved and then fail.
