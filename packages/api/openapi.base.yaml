@@ -141,6 +141,34 @@ components:
           type: object
           description: Additional error details (optional).
           additionalProperties: true
+    OAuthError:
+      type: object
+      description: >
+        RFC 6749 §5.2 / RFC 6750 §3 error document. The OAuth endpoints
+        (`/auth/oauth/token`, `/auth/oauth/userinfo`) use this instead of the
+        house `Error` envelope because standard OAuth clients branch on the
+        top-level `error` code — that requirement comes from the specification,
+        not from Oxy's conventions.
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: RFC error code.
+          enum:
+            - invalid_request
+            - invalid_client
+            - invalid_grant
+            - unauthorized_client
+            - unsupported_grant_type
+            - invalid_scope
+            - server_error
+            - invalid_token
+            - insufficient_scope
+          example: invalid_grant
+        error_description:
+          type: string
+          description: Human-readable detail. Never discloses which internal check failed.
     PaginatedResponse:
       type: object
       properties:

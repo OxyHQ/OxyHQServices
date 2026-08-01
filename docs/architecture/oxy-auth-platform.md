@@ -338,7 +338,7 @@ Modelo mental equivalente a **Google Sign-In / Sign in with Google**:
 | Google Cloud Console → OAuth client | **Oxy Console** → Application + Credential |
 | `client_id` | `oxy_dk_…` (`ApplicationCredential.publicKey`) |
 | Consent screen | `auth.oxy.so/authorize` + `OxyConsentScreen` |
-| OAuth 2.0 Authorization Code + PKCE | `POST /auth/oauth/authorize` + `POST /auth/oauth/token` |
+| OAuth 2.0 Authorization Code + PKCE | `POST /auth/oauth/authorize` + `POST /auth/oauth/token` (RFC 6749 §4.1.3) + `GET /auth/oauth/userinfo` |
 | "Sign in with Google" button | **`OxySignInButton`** o link branded a `auth.oxy.so` |
 | Connected apps en Google Account | **Accounts → Connected apps** (`GET /auth/grants`, revoke) |
 
