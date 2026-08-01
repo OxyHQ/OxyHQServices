@@ -10,6 +10,12 @@ import {
 } from './displayNamePolicyRanges.generated';
 
 /**
+ * Maximum stored length of a display name, in code units after cleaning.
+ * Shared by the API write path and client input surfaces.
+ */
+export const MAX_DISPLAY_NAME_LENGTH = 80;
+
+/**
  * Email validation regex
  */
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

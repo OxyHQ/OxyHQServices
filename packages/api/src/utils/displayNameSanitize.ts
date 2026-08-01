@@ -55,11 +55,12 @@
 import {
   DISPLAY_NAME_DISALLOWED_SOURCE,
   DISPLAY_NAME_ORPHANED_MARK_SOURCE,
+  MAX_DISPLAY_NAME_LENGTH,
   normalizeInlineText,
 } from '@oxyhq/core';
 
-/** Maximum stored length of a display name, in code units after cleaning. */
-export const MAX_DISPLAY_NAME_LENGTH = 80;
+/** Re-exported from `@oxyhq/core` — single source of truth for API + clients. */
+export { MAX_DISPLAY_NAME_LENGTH };
 
 /** Matches a `:shortcode:` emoji token (e.g. `:bongoCat:`, `:+1:`). */
 const SHORTCODE_PATTERN = /:[A-Za-z0-9_+-]+:/g;

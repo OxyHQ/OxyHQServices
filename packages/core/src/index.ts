@@ -479,6 +479,7 @@ export {
     EMAIL_REGEX,
     USERNAME_REGEX,
     PASSWORD_REGEX,
+    MAX_DISPLAY_NAME_LENGTH,
     isValidEmail,
     isValidUsername,
     isValidPassword,

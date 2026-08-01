@@ -57,15 +57,17 @@ import mongoose from 'mongoose';
 import User from '../src/models/User';
 import { cleanDisplayName } from '../src/utils/displayNameSanitize';
 import { logger } from '../src/utils/logger';
+import userCache from '../src/utils/userCache';
 
 dotenv.config();
 
 /**
- * The stored structured-name fields. All four are human-name text subject to the
- * same character policy; `username` is deliberately excluded (strict ASCII
- * charset, and an identity field this migration must never rewrite).
+ * The stored structured-name fields subject to the display-name character policy.
+ * `full` is a schema virtual and is never $set — only $unset when stale. `username`
+ * is deliberately excluded (strict ASCII charset, and an identity field this
+ * migration must never rewrite).
  */
-const NAME_FIELDS = ['first', 'last', 'full', 'displayName'] as const;
+const NAME_FIELDS = ['first', 'last', 'displayName'] as const;
 type NameField = (typeof NAME_FIELDS)[number];
 
 interface BackfillStats {
@@ -83,7 +85,7 @@ interface BackfillStats {
  */
 type SampleEntry = {
   userId: string;
-  field: NameField;
+  field: NameField | 'full';
   before: string;
   after: string;
 };
@@ -111,9 +113,12 @@ async function backfillDisplayNames(): Promise<{
 
   const cursor = User.find(
     {
-      $or: NAME_FIELDS.map((field) => ({
-        [`name.${field}`]: { $type: 'string', $ne: '' },
-      })),
+      $or: [
+        ...NAME_FIELDS.map((field) => ({
+          [`name.${field}`]: { $type: 'string', $ne: '' },
+        })),
+        { 'name.full': { $type: 'string', $ne: '' } },
+      ],
     },
     { _id: 1, name: 1 },
   )
@@ -126,15 +131,20 @@ async function backfillDisplayNames(): Promise<{
       update: { $set?: Record<string, string>; $unset?: Record<string, ''> };
     };
   }> = [];
+  const pendingUserIds: string[] = [];
 
   const flush = async (): Promise<void> => {
     if (pending.length === 0) return;
     if (dryRun) {
       pending.length = 0;
+      pendingUserIds.length = 0;
       return;
     }
     try {
       await User.bulkWrite(pending, { ordered: false });
+      for (const userId of pendingUserIds) {
+        userCache.invalidate(userId);
+      }
     } catch (error) {
       stats.errors += pending.length;
       logger.error(
@@ -144,6 +154,7 @@ async function backfillDisplayNames(): Promise<{
       );
     } finally {
       pending.length = 0;
+      pendingUserIds.length = 0;
     }
   };
 
@@ -184,11 +195,18 @@ async function backfillDisplayNames(): Promise<{
       }
     }
 
+    // `name.full` is a schema virtual — drop any persisted copy so the getter
+    // recomposes from first/last instead of serving a stale override.
+    if (typeof storedName.full === 'string' && storedName.full !== '') {
+      $unset['name.full'] = '';
+    }
+
     const hasSet = Object.keys($set).length > 0;
     const hasUnset = Object.keys($unset).length > 0;
     if (!hasSet && !hasUnset) continue;
 
     stats.documentsUpdated += 1;
+    pendingUserIds.push(String(doc._id));
     pending.push({
       updateOne: {
         filter: { _id: doc._id as mongoose.Types.ObjectId },

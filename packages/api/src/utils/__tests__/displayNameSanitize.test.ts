@@ -227,6 +227,17 @@ describe('displayNameSanitize', () => {
     });
   });
 
+  describe('cleanDisplayName — scripts ∩ L regression (non-ASCII policy leaks)', () => {
+    it.each([
+      ['Muhammad\u0665', 'Muhammad', 'Arabic-Indic digit stripped from Latin name'],
+      ['\u0928\u093E\u092E\u0966', '\u0928\u093E\u092E', 'Devanagari digit stripped'],
+      ['\u0645\u064F\u062D\u064E\u0645\u062F\u061C', '\u0645\u064F\u062D\u064E\u0645\u062F', 'U+061C ARABIC LETTER MARK stripped'],
+      ['\u09AC\u09BE\u0982\u09B2\u09BE\u09F3', '\u09AC\u09BE\u0982\u09B2\u09BE', 'Bengali rupee sign stripped'],
+    ])('cleans %p → %p (%s)', (input, expected) => {
+      expect(cleanDisplayName(input)).toBe(expected);
+    });
+  });
+
   describe('cleanDisplayName — XSS safety', () => {
     it.each([
       '<script>alert(1)</script>',

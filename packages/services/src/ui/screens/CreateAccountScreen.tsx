@@ -3,7 +3,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { AccountKind, CreateAccountInput, OrganizationCategory } from '@oxyhq/core';
-import { ORGANIZATION_CATEGORIES } from '@oxyhq/core';
+import { MAX_DISPLAY_NAME_LENGTH, ORGANIZATION_CATEGORIES } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
@@ -23,7 +23,7 @@ type CreatableAccountKind = Exclude<AccountKind, 'personal'>;
 const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,30}$/;
 const DEBOUNCE_MS = 400;
 const USERNAME_MAX = 30;
-const DISPLAY_NAME_MAX = 50;
+const DISPLAY_NAME_MAX = MAX_DISPLAY_NAME_LENGTH;
 const BIO_MAX = 160;
 
 interface KindOption {
