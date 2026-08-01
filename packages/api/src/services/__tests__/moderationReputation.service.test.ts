@@ -66,7 +66,7 @@ import type { ResolveBindingParams } from '../identityBinding.service';
  * resolution, it does not derive one.
  */
 type BindingStub =
-  | { ok: true; binding: { _id: string } }
+  | { ok: true; binding: { id: string } }
   | { ok: false; reason: ModerationEffectSkipReason };
 
 const mockResolveBindingProof = jest.fn(
@@ -211,7 +211,7 @@ async function makeWorld(options: { globalEffects?: boolean } = {}): Promise<Wor
   const policyVersion = await makePolicy();
   const emitterApplicationId = await makeApplication();
 
-  mockResolveBindingProof.mockResolvedValue({ ok: true, binding: { _id: bindingId } });
+  mockResolveBindingProof.mockResolvedValue({ ok: true, binding: { id: bindingId } });
 
   return {
     subjectId,
@@ -477,7 +477,7 @@ describe('DoD: a final global infraction creates exactly one transaction and one
     const first = makeEvent(world);
     await moderationReputationService.applyModerationDecision(first, world.context);
 
-    mockResolveBindingProof.mockResolvedValue({ ok: true, binding: { _id: sharerBinding } });
+    mockResolveBindingProof.mockResolvedValue({ ok: true, binding: { id: sharerBinding } });
     const second = await moderationReputationService.applyModerationDecision(
       makeEvent(world, {
         incidentId: first.incidentId,
@@ -931,7 +931,7 @@ describe('validation — the reported application must be permitted', () => {
       emitterApplicationId,
       context: { emitterApplicationId },
     };
-    mockResolveBindingProof.mockResolvedValue({ ok: true, binding: { _id: bindingId } });
+    mockResolveBindingProof.mockResolvedValue({ ok: true, binding: { id: bindingId } });
     const event = makeEvent(world);
 
     const result = await moderationReputationService.applyModerationDecision(

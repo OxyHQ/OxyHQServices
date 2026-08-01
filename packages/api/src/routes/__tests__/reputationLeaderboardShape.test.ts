@@ -17,9 +17,11 @@
  *
  * ## Isolation
  *
- * The leaderboard is global by construction. Rows are therefore located by user
- * id rather than by position, except in the one case that is ABOUT position,
- * which seeds the three highest totals in the database.
+ * The leaderboard is global by construction, and jest runs suites in parallel
+ * against ONE throwaway database, so no suite can own a position on it. Rows are
+ * therefore located by user id rather than by position — including in the one
+ * case that is ABOUT position, which locates its own rows first and then asserts
+ * their ORDER and their rank numbering RELATIVE to where they landed.
  */
 
 import express from 'express';
@@ -63,8 +65,12 @@ interface LeaderboardRow {
 }
 
 /**
- * Totals no other suite sharing this database produces, so a row seeded with one
- * is guaranteed to be on the first page.
+ * A band of totals no other suite sharing this database writes into, so this
+ * file's rows are contiguous on the board and land within the first page.
+ *
+ * It is deliberately NOT a claim to the TOP of the board — that belongs to
+ * `services/__tests__/reputation.leaderboard.test.ts`, whose fixtures sit in the
+ * 900-million range. See the ordering case below for what that cost.
  */
 const TOP_TOTAL = 9_000_003;
 
@@ -236,8 +242,24 @@ describe('GET /reputation/leaderboard — projection', () => {
 
 describe('GET /reputation/leaderboard — ordering and eligibility', () => {
   it('ranks by total descending, numbering from the page offset', async () => {
-    // The three highest totals in the database, so their positions are the top
-    // three regardless of what other suites have seeded.
+    // Three CONSECUTIVE totals no other suite writes between, so these rows are
+    // adjacent on the board wherever the board happens to start them.
+    //
+    // This case is the one thing in the file that is about POSITION, and it used
+    // to claim absolute positions 1-2-3 ("the three highest totals in the
+    // database"). That claim was not this suite's to make:
+    // `services/__tests__/reputation.leaderboard.test.ts` seeds its own fixtures
+    // in the 900-million range and asserts IT owns the head of the board, so
+    // whenever jest scheduled the two suites concurrently against the shared
+    // database this one failed — a latent order dependence that surfaced only as
+    // a scheduling accident. Raising this file's band instead would just move
+    // the failure to that file: both cannot be rank 1.
+    //
+    // Every property the case was written for survives, because none of them was
+    // ever about being FIRST: descending order among the three, `rank` numbering
+    // from the page offset, and `rank` continuing across a page boundary rather
+    // than restarting. They are asserted relative to where the rows actually
+    // land, which no concurrent writer can move.
     const first = await account({ username: `first${randomUUID().replace(/-/g, '').slice(0, 10)}` });
     const second = await account({ username: `second${randomUUID().replace(/-/g, '').slice(0, 10)}` });
     const third = await account({ username: `third${randomUUID().replace(/-/g, '').slice(0, 10)}` });
@@ -245,13 +267,25 @@ describe('GET /reputation/leaderboard — ordering and eligibility', () => {
     await balance(second, TOP_TOTAL - 1);
     await balance(third, TOP_TOTAL - 2);
 
-    const page = await leaderboard('?limit=3&offset=0');
-    const nextPage = await leaderboard('?limit=3&offset=3');
+    // 100 is `MAX_LEADERBOARD_LIMIT`; only the other leaderboard suite's dozen
+    // or so 900-million fixtures can outrank `TOP_TOTAL`, so the page contains
+    // these rows with room to spare.
+    const page = await leaderboard('?limit=100&offset=0');
+    const rows = page.body.data ?? [];
+    const start = rows.findIndex((row) => row.user.id === first);
+    // Fail naming the cause rather than as a confusing `undefined` comparison.
+    expect(start).toBeGreaterThanOrEqual(0);
 
-    expect(page.body.data?.map((row) => row.user.id)).toEqual([first, second, third]);
-    expect(page.body.data?.map((row) => row.rank)).toEqual([1, 2, 3]);
-    // Rank continues across the page boundary rather than restarting.
-    expect(nextPage.body.data?.[0]?.rank).toBe(4);
+    expect(rows.slice(start, start + 3).map((row) => row.user.id)).toEqual([first, second, third]);
+    expect(rows.slice(start, start + 3).map((row) => row.rank)).toEqual([
+      start + 1,
+      start + 2,
+      start + 3,
+    ]);
+
+    // Rank continues across the page boundary rather than restarting at 1.
+    const nextPage = await leaderboard(`?limit=3&offset=${start + 3}`);
+    expect(nextPage.body.data?.[0]?.rank).toBe(start + 4);
   });
 
   it('excludes archived accounts and restricted tiers from the public board', async () => {

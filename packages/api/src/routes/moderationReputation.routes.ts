@@ -58,7 +58,7 @@ import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { ForbiddenError, UnauthorizedError } from '../utils/error';
 import { resolveUserIdToObjectId } from '../utils/validation';
-import type { IIdentityBinding } from '../models/IdentityBinding';
+import type { IdentityBindingRecord } from '../services/identityBinding.service';
 import { asc, desc, eq } from 'drizzle-orm';
 import { getDb } from '../config/postgres';
 import { moderationEffects } from '../db/schema/moderationEffects';
@@ -177,11 +177,11 @@ function serializeEffect(effect: ModerationEffectRow): ModerationEffectDto {
  * Carries no proof material: the user's token was verified and discarded, never
  * stored, so there is nothing here for a compromised application to replay.
  */
-function serializeBinding(binding: IIdentityBinding): IdentityBindingDto {
+function serializeBinding(binding: IdentityBindingRecord): IdentityBindingDto {
   const dto: IdentityBindingDto = {
-    id: binding._id.toString(),
-    applicationId: binding.applicationId.toString(),
-    userId: binding.userId.toString(),
+    id: binding.id,
+    applicationId: binding.applicationId,
+    userId: binding.userId,
     localPrincipalId: binding.localPrincipalId,
     bindingType: binding.bindingType,
     status: binding.status,

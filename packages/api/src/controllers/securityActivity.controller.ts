@@ -105,16 +105,23 @@ export const getSecurityActivity = async (req: AuthRequest, res: Response): Prom
       eventType,
     });
 
-    // Transform activities for response
+    // Transform activities for response.
+    //
+    // `occurredAt` is emitted as `timestamp`: the table renames the Mongoose
+    // field (see `db/schema/securityActivities.ts` for why), and that rename
+    // must never reach a client — every Oxy app consuming `GET
+    // /security/activity` reads `timestamp`. The DTO is also a FIXED field set
+    // rather than a spread of the row, so nothing a writer smuggled into the
+    // open `metadata` column can surface as a new top-level field.
     const activities = result.activities.map((activity) => ({
-      id: activity._id.toString(),
-      userId: activity.userId.toString(),
+      id: activity.id,
+      userId: activity.userId,
       eventType: activity.eventType,
       eventDescription: activity.eventDescription,
-      metadata: activity.metadata || {},
+      metadata: activity.metadata,
       userAgent: activity.userAgent,
       deviceId: activity.deviceId,
-      timestamp: activity.timestamp,
+      timestamp: activity.occurredAt,
       severity: activity.severity,
       createdAt: activity.createdAt,
     }));

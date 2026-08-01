@@ -1,29 +1,28 @@
 /**
  * `/security/activity` — the controller's own contract.
  *
- * ## Why this suite mocks its data source, and what that costs
+ * ## Why this suite mocks its data source
  *
- * `services/securityActivityService.ts` is STILL on Mongoose at the time of
- * writing and is owned by nobody in the Drizzle split, so there is no Postgres
- * read path for this endpoint to exercise yet. Mocking it here is a stated
- * limitation, not a design: the guarantee "this endpoint never returns another
- * user's rows" is a property of a QUERY, and a mocked query cannot hold it.
- * That check belongs in a real-Postgres suite the moment the service is ported.
+ * The service is now on Drizzle, and its own real-Postgres suite
+ * (`services/__tests__/securityActivityService.test.ts`) holds the query
+ * properties — including the one this file cannot: "this endpoint never returns
+ * another user's rows" is a property of a QUERY, and a mocked query cannot hold
+ * it. It is asserted there against real rows, for real accounts.
  *
- * What IS held here is everything that lives in the controller, and every one
- * of these survives the service port unchanged:
+ * The service stays mocked HERE so the cases below isolate what lives in the
+ * controller:
  *
  *  - the pagination envelope, exactly (`sendPaginated`'s `{data, pagination}`),
  *  - the DTO field NAMES on the wire — in particular `timestamp`, which the
- *    Drizzle table renames to `occurred_at`; the rename must never reach a
- *    client,
+ *    table calls `occurred_at`; the rename must never reach a client, and the
+ *    controller is the single place that translation happens,
  *  - the closed event-type set, and that an unknown value is a 400,
  *  - that the account read is taken from the AUTHENTICATED caller and from
  *    nowhere else, so no request-supplied parameter can widen it.
  *
  * The last one is the controller's half of the isolation guarantee: it proves
- * the endpoint has no widening INPUT. It does not prove the query is scoped —
- * see above.
+ * the endpoint has no widening INPUT. The service suite proves the predicate
+ * itself is scoped.
  */
 
 import express from 'express';
@@ -56,17 +55,21 @@ import { errorHandler } from '../../middleware/errorHandler';
 
 const CALLER = '64b0000000000000000000aa';
 
-/** One stored row as the service hands it back today (Mongoose lean shape). */
+/**
+ * One stored row as the service hands it back — a `SecurityActivityRecord`, with
+ * `id`/`userId` as plain strings and the EVENT time as `occurredAt`. The DTO
+ * cases below are what pin that `occurredAt` reaches the wire as `timestamp`.
+ */
 function activityRow(overrides: Record<string, unknown> = {}) {
   return {
-    _id: { toString: () => 'act-1' },
-    userId: { toString: () => CALLER },
+    id: 'act-1',
+    userId: CALLER,
     eventType: 'sign_in',
     eventDescription: 'User signed in',
     metadata: { deviceName: 'Chrome on Linux' },
     userAgent: 'Mozilla/5.0',
     deviceId: 'dev-1',
-    timestamp: new Date('2026-07-07T00:00:00.000Z'),
+    occurredAt: new Date('2026-07-07T00:00:00.000Z'),
     severity: 'low',
     createdAt: new Date('2026-07-07T00:00:01.000Z'),
     ...overrides,
@@ -236,9 +239,15 @@ describe('GET /security/activity — the wire DTO', () => {
     expect(item).not.toHaveProperty('country');
   });
 
-  it('substitutes an empty object for absent metadata', async () => {
+  it('passes an event with no detail through as an empty object', async () => {
+    // The controller no longer coalesces: `SecurityActivityRecord.metadata` is a
+    // non-optional object, normalized once by the service at the single point a
+    // stored value is read (`toRecord`) — a scalar, an array or a `null` in the
+    // `jsonb` column all become `{}` there, which is asserted against real rows
+    // in `services/__tests__/securityActivityService.test.ts`. A `|| {}` here
+    // would be a second normalization defending against its own type.
     mockGetUserSecurityActivity.mockResolvedValueOnce({
-      activities: [activityRow({ metadata: undefined })],
+      activities: [activityRow({ metadata: {} })],
       total: 1,
       hasMore: false,
     });

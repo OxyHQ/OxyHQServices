@@ -512,7 +512,7 @@ class ModerationReputationService {
         idempotencyKey,
         principalObjectId,
         reportedApplicationId,
-        bindingId: String(binding.binding._id),
+        bindingId: binding.binding.id,
         riskExpiryDays: rule.riskExpiryDays,
       });
       return { applied: true, effect, idempotent: false };

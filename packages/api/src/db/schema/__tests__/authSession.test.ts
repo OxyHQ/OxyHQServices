@@ -32,6 +32,7 @@ import { PROTECTED_COLUMNS_BY_TABLE, publicColumns } from '../protectedColumns';
 import {
   SECURITY_ACTIVITY_RETENTION_SECONDS,
   SECURITY_EVENT_SEVERITIES,
+  SECURITY_EVENT_SEVERITY_MAP,
   SECURITY_EVENT_TYPES,
   securityActivities,
 } from '../securityActivities';
@@ -39,7 +40,7 @@ import { sessions } from '../sessions';
 import { users } from '../users';
 import { webauthnChallenges } from '../webauthnChallenges';
 import {
-  SECURITY_EVENT_SEVERITY_MAP,
+  SECURITY_EVENT_SEVERITY_MAP as MONGOOSE_SECURITY_EVENT_SEVERITY_MAP,
   SECURITY_EVENT_TYPES as MONGOOSE_SECURITY_EVENT_TYPES,
 } from '../../../models/SecurityActivity';
 
@@ -827,8 +828,13 @@ describe('security_activities', () => {
     // two copies drifting until the model is deleted.
     expect([...SECURITY_EVENT_TYPES].sort()).toEqual([...MONGOOSE_SECURITY_EVENT_TYPES].sort());
     expect([...SECURITY_EVENT_SEVERITIES].sort()).toEqual(
-      [...new Set(Object.values(SECURITY_EVENT_SEVERITY_MAP))].sort()
+      [...new Set(Object.values(MONGOOSE_SECURITY_EVENT_SEVERITY_MAP))].sort()
     );
+    // The DEFAULT-severity policy moved here too, so `securityActivityService`
+    // could stop importing the mongoose model. Both copies compared whole —
+    // comparing the schema map against the schema's own severity tuple would
+    // pass no matter how far the mapping drifted.
+    expect(SECURITY_EVENT_SEVERITY_MAP).toEqual(MONGOOSE_SECURITY_EVENT_SEVERITY_MAP);
   });
 
   it('rejects an unrecognised event type from a raw write', async () => {

@@ -376,9 +376,9 @@ describe('POST /reputation/moderation/bindings', () => {
   it('resolves applicationId from the credential and ignores any body value', async () => {
     withServiceScopes(['reputation:binding:register']);
     mockRegisterBinding.mockResolvedValue({
-      _id: { toString: () => 'bind1' },
-      applicationId: { toString: () => '64aaaaaaaaaaaaaaaaaaaaaa' },
-      userId: { toString: () => '64dddddddddddddddddddddd' },
+      id: 'bind1',
+      applicationId: '64aaaaaaaaaaaaaaaaaaaaaa',
+      userId: '64dddddddddddddddddddddd',
       localPrincipalId: 'local-1',
       bindingType: 'session_proof',
       status: 'active',
@@ -413,9 +413,9 @@ describe('POST /reputation/moderation/bindings', () => {
   it('never echoes the proof token back', async () => {
     withServiceScopes(['reputation:binding:register']);
     mockRegisterBinding.mockResolvedValue({
-      _id: { toString: () => 'bind1' },
-      applicationId: { toString: () => '64aaaaaaaaaaaaaaaaaaaaaa' },
-      userId: { toString: () => '64dddddddddddddddddddddd' },
+      id: 'bind1',
+      applicationId: '64aaaaaaaaaaaaaaaaaaaaaa',
+      userId: '64dddddddddddddddddddddd',
       localPrincipalId: 'local-1',
       bindingType: 'session_proof',
       status: 'active',

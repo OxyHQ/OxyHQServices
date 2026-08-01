@@ -72,6 +72,36 @@ export const SECURITY_EVENT_TYPES = [
 /** How loudly the surface should present the event. */
 export const SECURITY_EVENT_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
 
+export type SecurityEventType = (typeof SECURITY_EVENT_TYPES)[number];
+export type SecurityEventSeverity = (typeof SECURITY_EVENT_SEVERITIES)[number];
+
+/**
+ * The severity a writer records when it does not name one itself.
+ *
+ * It lives beside the vocabulary it is total over, for the same reason the
+ * vocabulary does: `services/securityActivityService.ts` is the only consumer
+ * and must not import mongoose to reach it. Declaring it
+ * `Record<SecurityEventType, SecurityEventSeverity>` is what makes it total —
+ * adding an event type above without a default fails `tsc` here rather than
+ * silently landing every one of that type at `'low'`.
+ *
+ * `__tests__/authSession.test.ts` holds it against the Mongoose model's copy
+ * until that model is deleted.
+ */
+export const SECURITY_EVENT_SEVERITY_MAP: Record<SecurityEventType, SecurityEventSeverity> = {
+  sign_in: 'low',
+  sign_out: 'low',
+  profile_updated: 'low',
+  email_changed: 'medium',
+  device_added: 'medium',
+  device_removed: 'medium',
+  security_settings_changed: 'medium',
+  account_recovery: 'high',
+  private_key_exported: 'high',
+  backup_created: 'high',
+  suspicious_activity: 'critical',
+};
+
 /** Two years, matching the Mongo TTL this table's expiry entry replaces. */
 export const SECURITY_ACTIVITY_RETENTION_SECONDS = 730 * 24 * 60 * 60;
 
