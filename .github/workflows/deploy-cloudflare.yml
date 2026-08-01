@@ -144,6 +144,14 @@ jobs:
       - run: bun x turbo run build --filter=accounts
         env:
           # Accounts' PRODUCTION Oxy client id. `packages/accounts/constants/oxy.ts`
+          # falls back to a committed id when unset, so nothing errors — the
+          # deployed bundle just authenticates against the wrong application.
+          # A repo VARIABLE, not a secret: the id ships inside the bundle and is
+          # public by construction. Named per APP because five apps here share
+          # two env-var names.
+          EXPO_PUBLIC_OXY_CLIENT_ID: ${{ vars.ACCOUNTS_OXY_CLIENT_ID }}
+        env:
+          # Accounts' PRODUCTION Oxy client id. `packages/accounts/constants/oxy.ts`
           # falls back to a committed id when this is unset. A repo VARIABLE rather
           # than a secret — the id ships inside the bundle. Named per APP because
           # accounts, commons, and inbox share `EXPO_PUBLIC_OXY_CLIENT_ID`.
