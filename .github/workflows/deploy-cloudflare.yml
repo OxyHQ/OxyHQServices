@@ -79,6 +79,12 @@ jobs:
       # via useSwitchableAccounts), so there is no `functions/` directory left
       # to compile or deploy.
       - run: bun x turbo run build --filter=auth
+        env:
+          # Auth IdP's OWN registered Oxy client id. `packages/auth/lib/oxy-client.ts`
+          # falls back to a committed id when this is unset. A repo VARIABLE rather
+          # than a secret — the id ships inside the bundle. Named per APP because
+          # auth and console share `VITE_OXY_CLIENT_ID`.
+          VITE_OXY_CLIENT_ID: ${{ vars.AUTH_OXY_CLIENT_ID }}
       # Deploy the static `dist`. Invoke `bunx wrangler` DIRECTLY rather than
       # cloudflare/wrangler-action: that action's `npx --no-install wrangler`
       # path runs npm's Arborist from packages/auth, which rejects the repo-root
@@ -136,6 +142,12 @@ jobs:
       # installs without the buggy frozen flag.
       - run: bun install
       - run: bun x turbo run build --filter=accounts
+        env:
+          # Accounts' PRODUCTION Oxy client id. `packages/accounts/constants/oxy.ts`
+          # falls back to a committed id when this is unset. A repo VARIABLE rather
+          # than a secret — the id ships inside the bundle. Named per APP because
+          # accounts, commons, and inbox share `EXPO_PUBLIC_OXY_CLIENT_ID`.
+          EXPO_PUBLIC_OXY_CLIENT_ID: ${{ vars.ACCOUNTS_OXY_CLIENT_ID }}
       - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -200,6 +212,12 @@ jobs:
       # installs without the buggy frozen flag.
       - run: bun install
       - run: bun x turbo run build --filter=oxy-console
+        env:
+          # Console's PRODUCTION Oxy client id. `packages/console/src/lib/config.ts`
+          # falls back to a committed id when this is unset. A repo VARIABLE rather
+          # than a secret — the id ships inside the bundle. Named per APP because
+          # auth and console share `VITE_OXY_CLIENT_ID`.
+          VITE_OXY_CLIENT_ID: ${{ vars.CONSOLE_OXY_CLIENT_ID }}
       - name: Resolve build output directory
         run: |
           if [ -d packages/console/dist ]; then

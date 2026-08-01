@@ -17,7 +17,7 @@ const AUTH_REDIRECT_URI = Linking.createURL('/');
 // default, overridable per environment via `EXPO_PUBLIC_OXY_CLIENT_ID`. This is
 // a playground, so it reuses the Console app's credential rather than owning one.
 const OXY_CLIENT_ID =
-  process.env.EXPO_PUBLIC_OXY_CLIENT_ID ??
+  process.env.EXPO_PUBLIC_OXY_CLIENT_ID ||
   'oxy_dk_2bdf04f596037ac720f94a54df405b974f240e5392a2e668';
 
 export const unstable_settings = {
