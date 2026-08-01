@@ -3,7 +3,7 @@ import { APPLICATION_SCOPES } from '../utils/applicationScopes';
 import {
   APPLICATION_CREDENTIAL_TYPES,
   APPLICATION_CREDENTIAL_ENVIRONMENTS,
-} from '../models/ApplicationCredential';
+} from '../db/schema/applicationCredentials';
 
 /** Route params with :appId. */
 export const appIdRouteParams = z.object({

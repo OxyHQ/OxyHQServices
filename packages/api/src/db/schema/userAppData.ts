@@ -45,15 +45,30 @@ import { users } from './users';
 
 /**
  * Allowed characters for `namespace` and `key`: lowercase letters, digits, `-`,
- * `_`. Mirrors `APP_DATA_IDENTIFIER_PATTERN` in `models/UserAppData.ts`, which
- * stays authoritative for the route-level validation until that model is
- * deleted; `__tests__/socialGraph.test.ts` holds the two in agreement.
+ * `_`. This is the ONE literal — the table's CHECK constraints and the
+ * route-level validation both come from it.
  *
  * Written for Postgres's POSIX regex, which has no `/u` flag and no anchoring
  * shorthand — `^`/`$` are explicit and `~` is the case-SENSITIVE operator, which
  * is what makes the lowercase requirement real.
+ *
+ * `models/UserAppData.ts` still declares its own copy for the Mongoose `match:`
+ * validator the one-shot scripts run against; `__tests__/socialGraph.test.ts`
+ * holds that copy and this one in agreement, behaviourally, over a corpus that
+ * straddles the boundary.
  */
 export const APP_DATA_IDENTIFIER_SQL_PATTERN = '^[a-z0-9_-]{1,64}$';
+
+/**
+ * The same rule as a JavaScript regex, for request validation
+ * (`schemas/userData.schemas.ts`).
+ *
+ * DERIVED from the SQL pattern rather than written a second time: the CHECK and
+ * the 400 must accept exactly the same identifiers, and two hand-written
+ * spellings of one character class is precisely how a value that Postgres
+ * rejects starts getting past validation as a 500.
+ */
+export const APP_DATA_IDENTIFIER_PATTERN = new RegExp(APP_DATA_IDENTIFIER_SQL_PATTERN, 'u');
 
 export const userAppData = pgTable(
   'user_app_data',

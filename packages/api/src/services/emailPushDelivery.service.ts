@@ -5,10 +5,27 @@
  * email delivery must target only the Inbox app's registrations — never every
  * push token the identity owns (which would leak mail alerts to Commons and any
  * other Oxy app on the same account).
+ *
+ * ## What the Postgres port changes
+ *
+ * `PushToken.find({ userId, applicationId })` CAST both values: the Mongoose
+ * schema declares each as a `Schema.Types.ObjectId`, so a value that is not
+ * 24-char hex raised a `CastError` rather than matching no rows. Both ids are
+ * now **uuid v7** for anything minted after the cutover (`db/schema/columns.ts`
+ * `generatedId()`), and `resolveApplicationIdFromClientId` hands this function
+ * exactly such an id. The throw landed in `sendInboxEmailPush`'s own catch, so
+ * the whole inbox push for that identity disappeared into a `logger.warn` with
+ * no failed request and no bounced mail — a silent, permanent loss of new-mail
+ * notifications for every post-cutover account.
+ *
+ * Here both are `text` comparisons: an id that names no row selects no row, in
+ * either id shape.
  */
 
 import { INBOX_EMAIL_PUSH_CHANNEL, INBOX_EMAIL_PUSH_TYPE } from '@oxyhq/contracts';
-import { PushToken } from '../models/PushToken';
+import { and, eq } from 'drizzle-orm';
+import { getDb } from '../config/postgres';
+import { pushTokens } from '../db/schema/pushTokens';
 import { pushService } from './push.service';
 import { resolveApplicationIdFromClientId } from '../utils/resolveApplicationFromClientId';
 import { logger } from '../utils/logger';
@@ -23,15 +40,24 @@ export type InboxEmailPushPayload = {
   mailboxId: string;
 };
 
+/**
+ * The user's Inbox installs, and nothing else.
+ *
+ * The `application_id` equality IS the scoping rule, and it is why an UNSCOPED
+ * install (`application_id` NULL, a registration that named no `clientId`) is
+ * never a target: SQL equality against a value is never true for NULL, so those
+ * rows are excluded by construction rather than by a second predicate.
+ */
 async function resolveInboxPushTokens(userId: string): Promise<string[]> {
   const applicationId = await resolveApplicationIdFromClientId(INBOX_CLIENT_ID);
   if (!applicationId) {
     return [];
   }
 
-  const installs = await PushToken.find({ userId, applicationId })
-    .select('token')
-    .lean<{ token: string }[]>();
+  const installs = await getDb()
+    .select({ token: pushTokens.token })
+    .from(pushTokens)
+    .where(and(eq(pushTokens.userId, userId), eq(pushTokens.applicationId, applicationId)));
 
   return installs.map((install) => install.token);
 }

@@ -4,7 +4,7 @@ import {
   organizationCategorySchema,
 } from '@oxyhq/contracts';
 import { ACCOUNT_ROLES } from '../utils/accountRoles';
-import { ACCOUNT_CREDENTIAL_ENVIRONMENTS } from '../models/AccountCredential';
+import { ACCOUNT_CREDENTIAL_ENVIRONMENTS } from '../db/schema/accountCredentials';
 import { APPLICATION_SCOPES } from '../utils/applicationScopes';
 
 /** Route params with :id (the account id). */
