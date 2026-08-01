@@ -52,6 +52,38 @@ export const DEVICE_SESSION = '68a10000000000000000010d';
 export const SESSION = '68a10000000000000000010e';
 export const EMAIL_FILTER = '68a10000000000000000010f';
 
+// ---- ids for the documented-resolution fixtures ---------------------------
+//
+// Separate from the clean ids so a failure says which class of document it was
+// about, and separate from the `68ab…` dirty ids because these documents are
+// NOT refused — they are copied, with a recorded change.
+
+/** A message whose `card.type` holds card METADATA, the production shape. */
+export const MESSAGE_CORRUPT_CARD = '68ac000000000000000000a1';
+/** A message with a perfectly good card. The control: it must survive intact. */
+export const MESSAGE_VALID_CARD = '68ac000000000000000000a2';
+
+/** The `sourceActionId` 13 production requests hold open. Three here. */
+export const DUPLICATE_ACTION_KEY = 'personhood_audit:69b2d3df5d12f58c9800d651';
+/** The second production group. Two here, and neither carries a `createdAt`. */
+export const DUPLICATE_ACTION_KEY_UNTIMED = 'personhood_audit:6981c9178fcdefaf81988ffb';
+
+/** `DUPLICATE_ACTION_KEY`, oldest `createdAt` — demoted. */
+export const DUP_REQUEST_OLDEST = '68ac000000000000000000b1';
+/** `DUPLICATE_ACTION_KEY`, middle `createdAt`, `quorum_met` — demoted. */
+export const DUP_REQUEST_MIDDLE = '68ac000000000000000000b2';
+/** `DUPLICATE_ACTION_KEY`, newest `createdAt` — SURVIVES. */
+export const DUP_REQUEST_NEWEST = '68ac000000000000000000b3';
+
+// No `createdAt` on either of these two, so the ONLY thing that can order them
+// is the instant their own ObjectId carries in its first four bytes. The hex is
+// chosen so `…c2` is unambiguously the newer of the pair (0x68ac0200 >
+// 0x68ac0100) — a fallback that ordered them the other way would keep `…c1`.
+/** `DUPLICATE_ACTION_KEY_UNTIMED`, older ObjectId timestamp — demoted. */
+export const DUP_UNTIMED_OLDER = '68ac010000000000000000c1';
+/** `DUPLICATE_ACTION_KEY_UNTIMED`, newer ObjectId timestamp — SURVIVES. */
+export const DUP_UNTIMED_NEWER = '68ac020000000000000000c2';
+
 /** The content address `signed_records.record_id` and its five referrers share. */
 export const RECORD_ID = 'bafyrecord0000000000000000000001';
 /** The SHA-256 an `update_assets` row is keyed by. */
@@ -870,6 +902,15 @@ export function cleanFixtures(): FixtureSet {
         applicationId: oid(APPLICATION),
         deviceId: 'dev-1',
         status: 'pending',
+        // An EXPLICIT null, not an absent field, and the distinction is the
+        // whole point: `distinct('deniedReason')` returns `[]` when no document
+        // carries the field at all, so only an explicit null puts a `null` in
+        // front of the enum audit. `auth_sessions_denied_reason_check` ACCEPTS
+        // it (`null in (…)` is NULL, and a CHECK is satisfied by anything that
+        // is not FALSE) and the column's own doc comment says an ordinary
+        // cancel is "'declined' or ABSENT" — so a run over these fixtures must
+        // stay clean. It did not before the audit's null handling was fixed.
+        deniedReason: null,
         purpose: 'oauth_authorization',
         oauth: {
           redirectUri: 'https://commons.oxy.so/cb',
@@ -1397,12 +1438,34 @@ export function cleanFixtures(): FixtureSet {
  * - `files.ownerUserId: '__something_else__'` — a fourth system-owner sentinel
  *   the schema does not declare.
  * - `follows.followType: 'hashtag'` — an edge `user_follows` cannot represent.
+ * - `authsessions.deniedReason: 'bogus'` — a value OUTSIDE
+ *   `COMMONS_DENY_REASONS`, which the CHECK genuinely refuses. It sits next to
+ *   the explicit `deniedReason: null` in {@link cleanFixtures} on purpose: the
+ *   pair is what pins the difference between a NULL (accepted — a CHECK is
+ *   satisfied by anything that is not FALSE) and an out-of-set value
+ *   (rejected). An audit that cannot tell those apart is the false positive
+ *   that blocked this migration.
  *
  * They are returned separately because a single fixture set holding both would
  * make "the clean run succeeded" untestable.
  */
 export function dirtyFixtures(): FixtureSet {
   return {
+    authsessions: [
+      {
+        _id: oid('68ab000000000000000000a6'),
+        sessionToken: 'st-bogus',
+        deviceId: 'dev-bogus',
+        status: 'cancelled',
+        purpose: 'device_sign_in',
+        // NOT in COMMONS_DENY_REASONS. `null in (…)` is NULL and passes; THIS
+        // evaluates to FALSE and the CHECK refuses the row.
+        deniedReason: 'bogus',
+        expiresAt: FUTURE,
+        createdAt: T0,
+        updatedAt: T0,
+      },
+    ],
     applications: [
       {
         _id: oid('68ab000000000000000000a1'),
@@ -1446,5 +1509,110 @@ export function dirtyFixtures(): FixtureSet {
         updatedAt: T0,
       },
     ],
+  };
+}
+
+/**
+ * Documents the schema would refuse but the migration has a DECIDED answer for.
+ *
+ * A third class, distinct from both sets above, and the distinction is the
+ * point:
+ *
+ * - {@link cleanFixtures} — the schema accepts them as they are.
+ * - {@link dirtyFixtures} — the schema refuses them and the copy is REFUSED,
+ *   loudly, because nobody has decided what should happen.
+ * - these — the schema would refuse them, and `db/backfill/resolutions.ts`
+ *   says exactly what the migration does instead. They are COPIED, with a
+ *   recorded, reported change.
+ *
+ * Built on top of the clean set rather than standing alone, so every foreign
+ * key resolves and the copy exercises the real path — and so each resolvable
+ * document sits beside a healthy CONTROL of the same shape (a good card, a
+ * request holding its own `sourceActionId`). Without the control, a rule
+ * widened to fire on everything would look identical to a correct one.
+ */
+export function resolvableFixtures(): FixtureSet {
+  const fixtures = cleanFixtures();
+  const messages = fixtures.messages ?? [];
+  const template = messages[0] ?? {};
+
+  return {
+    ...fixtures,
+    messages: [
+      ...messages,
+      {
+        // FINDING 1, the production shape: something assigned card METADATA to
+        // the type field. `card.type` is an OBJECT where the column is `text`
+        // constrained to five values, so no client can render this card — but
+        // the message body beside it is perfectly intact.
+        ...template,
+        _id: oid(MESSAGE_CORRUPT_CARD),
+        messageId: '<corrupt-card@example.com>',
+        subject: 'Your trip is confirmed',
+        text: 'The body of this message is intact and must survive.',
+        card: {
+          type: { confidence: 0, extractedAt: '2026-03-07T09:12:44.000Z' },
+          data: { total: 42 },
+          confidence: 0,
+          extractedAt: T1,
+        },
+      },
+      {
+        // The CONTROL. A card whose type IS one of the five: every one of its
+        // four columns must arrive intact. This is what makes the rule's
+        // narrowness testable — widen the predicate and this row goes red.
+        ...template,
+        _id: oid(MESSAGE_VALID_CARD),
+        messageId: '<valid-card@example.com>',
+        subject: 'Your receipt',
+        card: { type: 'bill', data: { total: 7 }, confidence: 0.75, extractedAt: T1 },
+      },
+    ],
+    validationrequests: [
+      ...(fixtures.validationrequests ?? []),
+      // FINDING 2, group one: three requests holding ONE `sourceActionId` open.
+      // `createdAt` orders them, and the newest survives.
+      duplicateRequest(DUP_REQUEST_OLDEST, DUPLICATE_ACTION_KEY, 'pending', T0),
+      // `quorum_met` is open too — the partial index covers BOTH open statuses,
+      // so a rule that only looked at `pending` would leave a collision behind.
+      duplicateRequest(DUP_REQUEST_MIDDLE, DUPLICATE_ACTION_KEY, 'quorum_met', T1),
+      duplicateRequest(DUP_REQUEST_NEWEST, DUPLICATE_ACTION_KEY, 'pending', FUTURE),
+      // Group two: NO `createdAt` at all, so the only thing that can order them
+      // is the ObjectId's own embedded timestamp.
+      duplicateRequest(DUP_UNTIMED_OLDER, DUPLICATE_ACTION_KEY_UNTIMED, 'pending', null),
+      duplicateRequest(DUP_UNTIMED_NEWER, DUPLICATE_ACTION_KEY_UNTIMED, 'pending', null),
+    ],
+  };
+}
+
+/**
+ * One member of a duplicate-open group.
+ *
+ * `createdAt: null` means the field is ABSENT from the document, not null —
+ * which is what forces the ObjectId-timestamp fallback. Mongoose would normally
+ * write a timestamp, so this is the shape of a document that predates it.
+ */
+function duplicateRequest(
+  documentId: string,
+  sourceActionId: string,
+  status: string,
+  createdAt: Date | null
+): FixtureDocument {
+  return {
+    _id: oid(documentId),
+    subjectUserId: oid(USER_A),
+    actionType: 'personhood_audit',
+    sourceActionId,
+    payload: { subject: USER_A },
+    payloadHash: 'd'.repeat(64),
+    status,
+    quorum: 3,
+    threshold: 3,
+    highValue: false,
+    rngSeed: `seed-${documentId}`,
+    candidateSnapshot: [{ userId: USER_B, weight: 1 }],
+    selectedValidatorIds: [oid(USER_B)],
+    expiresAt: FUTURE,
+    ...(createdAt === null ? {} : { createdAt, updatedAt: createdAt }),
   };
 }

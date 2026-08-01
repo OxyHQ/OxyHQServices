@@ -45,6 +45,12 @@ import type { PgTable } from 'drizzle-orm/pg-core';
 import type { Database } from '../../config/postgres';
 import type { MongoSource } from './mongoSource';
 import { planTables, tableName, type CollectionPlan } from './plan';
+import {
+  createResolutionContext,
+  planResolutions,
+  ResolutionLog,
+  type ResolutionContext,
+} from './resolutions';
 import type { MongoDocument } from './values';
 
 /**
@@ -132,17 +138,22 @@ async function tableRowCount(db: Database, table: PgTable): Promise<number> {
 export async function expectedRowCounts(
   source: MongoSource,
   plan: CollectionPlan,
-  batchSize: number
+  batchSize: number,
+  resolutions: ResolutionContext
 ): Promise<Record<string, number>> {
   const expected: Record<string, number> = {};
   for (const table of planTables(plan)) expected[tableName(table)] = 0;
 
   const cursor = source.collection(plan.collection).find({}, { batchSize });
   for await (const doc of cursor) {
-    plan.transform(doc as MongoDocument, (table) => {
-      const name = tableName(table);
-      expected[name] = (expected[name] ?? 0) + 1;
-    });
+    plan.transform(
+      doc as MongoDocument,
+      (table) => {
+        const name = tableName(table);
+        expected[name] = (expected[name] ?? 0) + 1;
+      },
+      resolutions
+    );
   }
   return expected;
 }
@@ -215,10 +226,10 @@ export async function verifyCollection(
   db: Database,
   source: MongoSource,
   plan: CollectionPlan,
-  options: { sampleSize: number; batchSize: number }
+  options: { sampleSize: number; batchSize: number; resolutions: ResolutionContext }
 ): Promise<{ failures: VerificationFailure[]; comparedDocuments: number; comparedFields: number }> {
   const failures: VerificationFailure[] = [];
-  const expected = await expectedRowCounts(source, plan, options.batchSize);
+  const expected = await expectedRowCounts(source, plan, options.batchSize, options.resolutions);
 
   for (const table of planTables(plan)) {
     const name = tableName(table);
@@ -252,11 +263,15 @@ export async function verifyCollection(
     const documents = await sampleDocuments(source, plan.collection, options.sampleSize);
     const expectedRows = new Map<string, Record<string, unknown>>();
     for (const doc of documents) {
-      plan.transform(doc, (table, row) => {
-        if (tableName(table) !== tableName(plan.table)) return;
-        const rowId = row.id;
-        if (typeof rowId === 'string') expectedRows.set(rowId, row);
-      });
+      plan.transform(
+        doc,
+        (table, row) => {
+          if (tableName(table) !== tableName(plan.table)) return;
+          const rowId = row.id;
+          if (typeof rowId === 'string') expectedRows.set(rowId, row);
+        },
+        options.resolutions
+      );
     }
 
     if (expectedRows.size > 0) {
@@ -317,13 +332,28 @@ export async function verifyBackfill(
   const sampleSize = options.sampleSize ?? DEFAULT_SAMPLE_SIZE;
   const batchSize = options.batchSize ?? 500;
 
+  // The expectation is the transform's own output, so the verifier has to run
+  // it under the SAME documented resolutions the copy did — otherwise every
+  // demoted validation request reads as a `field-fidelity` failure on `status`.
+  //
+  // Recomputed here rather than passed in, and that is sound precisely because
+  // nothing ever writes to MongoDB: the pre-pass is a pure function of source
+  // documents that cannot have moved, so it cannot disagree with the copy's.
+  // Making it an option would create a way to verify against decisions the
+  // copy never made.
+  const resolutions = createResolutionContext(await planResolutions(source), new ResolutionLog());
+
   const failures: VerificationFailure[] = [];
   let checkedTables = 0;
   let comparedDocuments = 0;
   let comparedFields = 0;
 
   for (const plan of plans) {
-    const result = await verifyCollection(db, source, plan, { sampleSize, batchSize });
+    const result = await verifyCollection(db, source, plan, {
+      sampleSize,
+      batchSize,
+      resolutions,
+    });
     failures.push(...result.failures);
     checkedTables += planTables(plan).length;
     comparedDocuments += result.comparedDocuments;

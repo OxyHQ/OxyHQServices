@@ -36,6 +36,10 @@
 
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { getTableConfig } from 'drizzle-orm/pg-core';
+// TYPE-ONLY, and it has to stay that way: `resolutions.ts` imports
+// `allowedValues` from this file at runtime, so a value import here would close
+// the cycle. `import type` is erased entirely, so there is none.
+import type { ResolutionContext, ResolutionRule } from './resolutions';
 import type { MongoDocument } from './values';
 
 /** Collect a row for a table. Called once per row a document produces. */
@@ -60,6 +64,16 @@ export interface EnumAudit {
    * on every document written before the field existed.
    */
   readonly absentAs?: string;
+  /**
+   * The documented rule that says what the migration DOES with a value this
+   * audit would otherwise block on.
+   *
+   * Declared here, against ONE path and ONE column, so a rule can never cover
+   * a finding nobody attached it to. The audit still reports every offending
+   * value with its count and ids — see `resolutions.ts` for why that is a
+   * third way forward and not an override flag.
+   */
+  readonly resolvedBy?: ResolutionRule;
 }
 
 /**
@@ -109,6 +123,15 @@ export interface UniquenessAudit {
   readonly index: string;
   /** The columns forming the key, each with its own normalization. */
   readonly key: readonly UniquenessKeyPart[];
+  /**
+   * The documented rule that decides which of the colliding rows survives.
+   *
+   * Declaring it is not enough: the audit asks the resolution whether the rule
+   * actually acts on all but ONE of a given group's rows, so a group the rule
+   * does not cover still blocks. Fail-closed, because a collision nobody wrote
+   * a rule for is exactly the case a human has to look at.
+   */
+  readonly resolvedBy?: ResolutionRule;
 }
 
 /** One Mongo collection and everything the backfill needs to move it. */
@@ -137,8 +160,15 @@ export interface CollectionPlan {
    * names the collection and the `_id`, and aborts. There is deliberately no
    * "skip this document" return value — a silently dropped document is the
    * failure this whole migration exists to avoid.
+   *
+   * `resolutions` carries the documented decisions (`resolutions.ts`) plus the
+   * channel a transform REPORTS a degraded document through. It is declared on
+   * the type even though most transforms ignore it, so every CALLER is forced
+   * to supply one: the verifier computes its expectation by re-running this
+   * transform, and a verifier running it with different resolutions than the
+   * copy did would report every resolved row as a field-fidelity failure.
    */
-  readonly transform: (doc: MongoDocument, emit: Emit) => void;
+  readonly transform: (doc: MongoDocument, emit: Emit, resolutions: ResolutionContext) => void;
 }
 
 /** A collection that is deliberately NOT migrated, and why. */

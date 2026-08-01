@@ -56,6 +56,7 @@ import {
   topics,
 } from '../../schema';
 import type { CollectionPlan, Emit } from '../plan';
+import { DROP_UNRENDERABLE_MESSAGE_CARD, resolveMessageCard } from '../resolutions';
 import { buildRow } from '../rowBuilder';
 import {
   BackfillValueError,
@@ -240,15 +241,29 @@ export const EMAIL_FILES_PLANS: readonly CollectionPlan[] = [
     collection: 'messages',
     table: messages,
     childTables: [messageRecipients, messageAttachments],
-    enumAudits: [{ path: 'card.type', column: messages.cardType }],
-    transform(doc, emit) {
+    enumAudits: [
+      {
+        path: 'card.type',
+        column: messages.cardType,
+        // ~13 production documents hold a card METADATA OBJECT here. The card
+        // is dropped and the message kept — see the rule for why that costs
+        // nothing, and `resolveMessageCard` for how narrow it is.
+        resolvedBy: DROP_UNRENDERABLE_MESSAGE_CARD,
+      },
+    ],
+    transform(doc, emit, resolutions) {
       const documentId = ownId(doc);
 
       // `card` is all-or-nothing: `messages_card_complete_check` asserts the
       // four columns are either all set or all null, because a card with a type
       // and no data is not a card. Mongo could represent the half state; the
       // transform reads the presence of the embedded object, not of one field.
-      const card = jsonObject(doc, 'card');
+      //
+      // `resolveMessageCard` then applies the ONE documented degradation: a
+      // card whose `type` is not one of the five the column declares is
+      // dropped (and reported by id), because no client can render it and
+      // refusing the row would lose a real message.
+      const card = resolveMessageCard(documentId, jsonObject(doc, 'card'), resolutions);
       const cardColumns =
         card === null
           ? { cardType: null, cardData: null, cardConfidence: null, cardExtractedAt: null }

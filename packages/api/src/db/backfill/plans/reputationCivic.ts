@@ -80,6 +80,11 @@ import {
   verifiableCredentials,
 } from '../../schema';
 import type { CollectionPlan } from '../plan';
+import {
+  DEMOTE_DUPLICATE_OPEN_VALIDATION_REQUESTS,
+  resolveValidationRequestState,
+  VALIDATION_REQUESTS_COLLECTION,
+} from '../resolutions';
 import { buildRow } from '../rowBuilder';
 import {
   bool,
@@ -857,7 +862,7 @@ export const REPUTATION_CIVIC_PLANS: readonly CollectionPlan[] = [
   // the validator jury
   // -------------------------------------------------------------------------
   {
-    collection: 'validationrequests',
+    collection: VALIDATION_REQUESTS_COLLECTION,
     table: validationRequests,
     childTables: [validationRequestValidators],
     enumAudits: [
@@ -878,10 +883,26 @@ export const REPUTATION_CIVIC_PLANS: readonly CollectionPlan[] = [
         key: [
           { path: 'sourceActionId', normalize: 'exact' },
         ],
+        // Production holds two such groups (13 and 10 documents). They are the
+        // check-then-act race in `openValidationRequest` recorded, not dirty
+        // data — so the most recent survives and the rest are written
+        // terminal. Because the audit over-approximates, this only clears a
+        // group the rule verifiably demotes all-but-one of.
+        resolvedBy: DEMOTE_DUPLICATE_OPEN_VALIDATION_REQUESTS,
       },
     ],
-    transform(doc, emit) {
+    transform(doc, emit, resolutions) {
       const documentId = ownId(doc);
+      // The ONE documented change: a request that lost the most-recent-wins
+      // tie-break within its `sourceActionId` group is written `expired` with
+      // a null outcome, so it stops occupying the partial unique index. Every
+      // other field travels verbatim, and nothing is deleted.
+      const state = resolveValidationRequestState(
+        documentId,
+        str(doc, 'status') ?? 'pending',
+        str(doc, 'outcome'),
+        resolutions
+      );
       emit(
         validationRequests,
         buildRow(
@@ -897,7 +918,7 @@ export const REPUTATION_CIVIC_PLANS: readonly CollectionPlan[] = [
             // `payload_hash` is what the signed verdict binds to.
             payload: reqJsonObject(doc, 'payload'),
             payloadHash: reqStr(doc, 'payloadHash'),
-            status: str(doc, 'status') ?? 'pending',
+            status: state.status,
             quorum: reqInt(doc, 'quorum'),
             threshold: reqInt(doc, 'threshold'),
             highValue: bool(doc, 'highValue') ?? false,
@@ -907,7 +928,7 @@ export const REPUTATION_CIVIC_PLANS: readonly CollectionPlan[] = [
             // the pool, so foreign keys would let a later deletion rewrite it.
             candidateSnapshot: jsonArray(doc, 'candidateSnapshot') ?? [],
             expiresAt: reqDate(doc, 'expiresAt'),
-            outcome: str(doc, 'outcome'),
+            outcome: state.outcome,
             resolvedTxnId: id(doc, 'resolvedTxnId'),
             createdAt: date(doc, 'createdAt') ?? new Date(0),
             updatedAt: date(doc, 'updatedAt') ?? new Date(0),

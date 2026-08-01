@@ -55,6 +55,14 @@ import {
 } from './mongoSource';
 import { planLevels, selfReferencingColumns } from './order';
 import { planTables, tableName, type CollectionPlan } from './plan';
+import {
+  createResolutionContext,
+  planResolutions,
+  ResolutionLog,
+  type ResolutionContext,
+  type ResolutionPlan,
+  type ResolutionSummary,
+} from './resolutions';
 import type { MongoDocument } from './values';
 
 /** How many documents to transform and load per COPY batch. */
@@ -171,10 +179,19 @@ export async function discover(source: MongoSource): Promise<Discovery> {
   return { migrated, excluded, unknown, absent };
 }
 
-/** Run every audit for every mapped, non-empty collection. */
+/**
+ * Run every audit for every mapped, non-empty collection.
+ *
+ * `resolutions` is what lets a finding report as ANSWERED rather than blocking.
+ * It is a required parameter rather than something this function computes, so
+ * the audit phase and the copy phase provably share ONE set of decisions — the
+ * `--audit-only` report would otherwise be able to disagree with what the copy
+ * then does.
+ */
 export async function runAudits(
   source: MongoSource,
-  discovery: Discovery
+  discovery: Discovery,
+  resolutions: ResolutionContext
 ): Promise<{ findings: AuditFinding[]; fileOwnerCensus: Record<string, number> }> {
   const findings: AuditFinding[] = [];
   let fileOwnerCensus: Record<string, number> = {};
@@ -184,7 +201,7 @@ export async function runAudits(
     // `[]`, so skipping is not a shortcut that could hide anything.
     if (documents === 0) continue;
     findings.push(...(await auditEnums(source, plan)));
-    findings.push(...(await auditUniqueness(source, plan)));
+    findings.push(...(await auditUniqueness(source, plan, resolutions)));
     if (plan.collection === 'files') {
       const owners = await auditFileSystemOwners(source, plan.collection, FILE_SYSTEM_OWNERS);
       findings.push(...owners.findings);
@@ -222,6 +239,15 @@ export interface RunnerOptions {
    * collection also holds a Mongo cursor.
    */
   readonly concurrency?: number;
+  /**
+   * The documented decisions, and the log they report through.
+   *
+   * `runBackfill` builds ONE for the whole run so the report counts each
+   * degraded document once. A caller reaching `copyCollection` directly may
+   * omit it; the pre-pass is then run for that collection and its records go
+   * to a throwaway log, which is correct but reports nothing.
+   */
+  readonly resolutions?: ResolutionContext;
   /** Called after each committed batch, so a caller can persist the checkpoint. */
   readonly onCheckpoint?: (collection: string, checkpoint: Checkpoint) => Promise<void> | void;
   /** Progress reporting. Never the place for data — see `logger` usage in the CLI. */
@@ -283,6 +309,9 @@ export async function copyCollection(
   const { db, source } = options;
   const client = getPostgresClient();
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
+  const resolutions =
+    options.resolutions ??
+    createResolutionContext(await planResolutions(source), new ResolutionLog());
   const tables = orderPlanTables(plan);
   const deferredByTable = new Map<string, readonly string[]>();
   for (const table of tables) {
@@ -301,20 +330,24 @@ export async function copyCollection(
     }
 
     for (const doc of documents) {
-      plan.transform(doc, (table, row) => {
-        const name = tableName(table);
-        const bucket = collected.get(name);
-        if (!bucket) {
-          throw new Error(
-            `Plan for ${plan.collection} emitted a row for ${name}, which it does ` +
-              'not declare in `table`/`childTables`. Declare it: the verifier uses ' +
-              'that declaration to tell "empty because nothing fed it" from ' +
-              '"empty because the copy produced nothing".'
-          );
-        }
-        const deferred = deferredByTable.get(name);
-        bucket.rows.push(deferred ? withoutDeferred(row, deferred) : row);
-      });
+      plan.transform(
+        doc,
+        (table, row) => {
+          const name = tableName(table);
+          const bucket = collected.get(name);
+          if (!bucket) {
+            throw new Error(
+              `Plan for ${plan.collection} emitted a row for ${name}, which it does ` +
+                'not declare in `table`/`childTables`. Declare it: the verifier uses ' +
+                'that declaration to tell "empty because nothing fed it" from ' +
+                '"empty because the copy produced nothing".'
+            );
+          }
+          const deferred = deferredByTable.get(name);
+          bucket.rows.push(deferred ? withoutDeferred(row, deferred) : row);
+        },
+        resolutions
+      );
     }
     documentsRead += documents.length;
 
@@ -339,7 +372,7 @@ export async function copyCollection(
   const selfReferencesFilled =
     deferredByTable.size === 0
       ? 0
-      : await fillSelfReferences(plan, options, tables, deferredByTable);
+      : await fillSelfReferences(plan, options, tables, deferredByTable, resolutions);
 
   return {
     collection: plan.collection,
@@ -370,12 +403,18 @@ function withoutDeferred(
  * volume is the number of sub-accounts, chained records and rotated
  * credentials — not the row count. A row whose every deferred column is null
  * needs no statement at all, which is why this is affordable as a second pass.
+ *
+ * It re-runs the transform, so it takes the SAME resolutions pass A used —
+ * both because a re-decided resolution could write a different value here, and
+ * because {@link ResolutionLog} keys on `(rule, document)` so this second run
+ * over the same documents cannot double-count what the report says was changed.
  */
 async function fillSelfReferences(
   plan: CollectionPlan,
   options: RunnerOptions,
   tables: readonly PgTable[],
-  deferredByTable: ReadonlyMap<string, readonly string[]>
+  deferredByTable: ReadonlyMap<string, readonly string[]>,
+  resolutions: ResolutionContext
 ): Promise<number> {
   const { db, source } = options;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
@@ -386,7 +425,9 @@ async function fillSelfReferences(
     const updates: Array<{ table: PgTable; id: string; values: Record<string, unknown> }> = [];
 
     for (const doc of documents) {
-      plan.transform(doc, (table, row) => {
+      plan.transform(
+        doc,
+        (table, row) => {
         const name = tableName(table);
         const deferred = deferredByTable.get(name);
         if (!deferred) return;
@@ -429,7 +470,9 @@ async function fillSelfReferences(
         }
         const resolved = tableByName.get(name);
         if (resolved) updates.push({ table: resolved, id: rowId, values });
-      });
+        },
+        resolutions
+      );
     }
 
     if (updates.length === 0) continue;
@@ -474,6 +517,21 @@ export interface RunSummary {
   readonly findings: readonly AuditFinding[];
   readonly fileOwnerCensus: Record<string, number>;
   readonly copies: readonly CopyResult[];
+  /**
+   * What the documented resolutions were GOING to do, decided before the copy.
+   *
+   * Reported alongside `resolutions` so an operator can compare intent against
+   * effect: a planned demotion that never appears in the applied summary means
+   * that collection was not copied in this run.
+   */
+  readonly resolutionPlan: ResolutionPlan;
+  /**
+   * What the documented resolutions ACTUALLY did, per rule, with the ids.
+   *
+   * Always present for every declared rule — a rule reporting zero documents
+   * says the rule is live and this data did not need it.
+   */
+  readonly resolutions: readonly ResolutionSummary[];
 }
 
 /**
@@ -496,7 +554,14 @@ export async function runBackfill(
 
   if (discovery.unknown.length > 0) throw new UnknownCollectionError(discovery.unknown);
 
-  const { findings, fileOwnerCensus } = await runAudits(options.source, discovery);
+  // ONE pre-pass and ONE log for the whole run: the audit phase and the copy
+  // phase then share the same decisions by construction, and each degraded
+  // document is counted once no matter how many times its transform re-runs.
+  const resolutionLog = new ResolutionLog();
+  const resolutionPlan = await planResolutions(options.source);
+  const resolutions = createResolutionContext(resolutionPlan, resolutionLog);
+
+  const { findings, fileOwnerCensus } = await runAudits(options.source, discovery, resolutions);
   const blocking = findings.filter(auditWouldBlockCopy);
   if (blocking.length > 0) throw new AuditBlockedError(blocking);
 
@@ -533,7 +598,11 @@ export async function runBackfill(
       for (let plan = queue.shift(); plan !== undefined; plan = queue.shift()) {
         const startedAt = Date.now();
         report(`${plan.collection}: copying`);
-        const result = await copyCollection(plan, options, state.checkpoints[plan.collection]);
+        const result = await copyCollection(
+          plan,
+          { ...options, resolutions },
+          state.checkpoints[plan.collection]
+        );
         copies.push({ ...result, elapsedMs: Date.now() - startedAt });
       }
     });
@@ -546,5 +615,12 @@ export async function runBackfill(
   for (const plan of selected) for (const table of planTables(plan)) touched.add(tableName(table));
   await analyzeTables(getPostgresClient(), [...touched]);
 
-  return { discovery, findings, fileOwnerCensus, copies };
+  return {
+    discovery,
+    findings,
+    fileOwnerCensus,
+    copies,
+    resolutionPlan,
+    resolutions: resolutionLog.summary(),
+  };
 }

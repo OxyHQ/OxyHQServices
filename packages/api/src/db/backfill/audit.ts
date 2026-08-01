@@ -33,16 +33,19 @@
  *
  * ## Findings are not warnings
  *
- * `auditWouldBlockCopy` is true for every finding here. The runner refuses to
- * copy a collection with a blocking finding. There is deliberately no override
- * flag: the two ways forward are to fix the data or to widen the schema, and
- * both are decisions, not switches.
+ * A finding blocks the copy unless a DOCUMENTED RESOLUTION RULE answers it. The
+ * runner refuses to copy a collection with a blocking finding, and there is
+ * still no override flag: the three ways forward are to fix the data, to widen
+ * the schema, or to teach the migration what to do — all decisions, none a
+ * switch. The third is `db/backfill/resolutions.ts`, and taking it does not
+ * silence anything: the finding is still computed, still counted and still
+ * printed, now carrying the rule that answers it.
  */
 
-import type { PgColumn } from 'drizzle-orm/pg-core';
 import type { CollectionPlan, EnumAudit, UniquenessNormalization } from './plan';
 import { allowedValues } from './plan';
 import type { MongoSource } from './mongoSource';
+import type { ResolutionContext, ResolutionRule } from './resolutions';
 
 /** One thing the schema would refuse. */
 export interface AuditFinding {
@@ -55,6 +58,15 @@ export interface AuditFinding {
   readonly documents: number;
   /** A few offending `_id`s, so the operator can look at real rows. */
   readonly sampleIds: readonly string[];
+  /**
+   * The documented rule that already answers this finding, when one does.
+   *
+   * Set only from a rule the PLAN declared on the audit that produced the
+   * finding — and, for a uniqueness collision, only when the rule actually acts
+   * on all but one of the colliding rows. A finding carrying one is reported
+   * and does not block; see {@link auditWouldBlockCopy}.
+   */
+  readonly resolvedBy?: ResolutionRule;
 }
 
 /** How many colliding/offending ids to quote per finding. */
@@ -79,13 +91,36 @@ export async function auditEnums(
     const observed = await collection.distinct(audit.path, {});
 
     for (const value of observed) {
-      // Absent is not a violation when the transform substitutes a default —
-      // that is what `absentAs` declares. Reporting it would be a false
-      // positive on every document written before the field existed.
       if (value === null || value === undefined) {
+        // A NULL in a NULLABLE column is not a finding at all, and reporting it
+        // was a FALSE POSITIVE that blocked the migration on
+        // `authsessions.deniedReason` — whose own doc comment says an ordinary
+        // cancel is "'declined' OR ABSENT".
+        //
+        // `NULL in ('declined','not_me')` evaluates to NULL, and a CHECK is
+        // satisfied by anything that is not FALSE, so Postgres ACCEPTS the row.
+        // Measured against a real server rather than reasoned about:
+        //
+        //     create table _chk (r text, constraint c check (r in ('declined','not_me')));
+        //     insert into _chk values (null);    -- INSERT 0 1   (accepted)
+        //     insert into _chk values ('bogus'); -- ERROR: violates check constraint
+        //
+        // An audit that cries wolf gets disabled by whoever hits it next, and
+        // this one is the gate on a production data migration.
+        if (!audit.column.notNull) continue;
+        // A NOT NULL column is a different question: nothing about a CHECK is
+        // involved, `23502` is, and `absentAs` is the plan declaring that the
+        // transform substitutes a default before the value ever gets there.
         if (audit.absentAs !== undefined) continue;
         findings.push(
-          await describeEnumFinding(source, plan, audit, null, 'is absent/null and no default is declared')
+          await describeEnumFinding(
+            source,
+            plan,
+            audit,
+            null,
+            'is absent/null and no default is declared',
+            `${audit.column.name} is NOT NULL, so Postgres`
+          )
         );
         continue;
       }
@@ -96,7 +131,8 @@ export async function auditEnums(
             plan,
             audit,
             value,
-            `is ${typeof value}, but the column is text`
+            `is ${typeof value}, but the column is text`,
+            `The CHECK on ${audit.column.name}`
           )
         );
         continue;
@@ -108,7 +144,8 @@ export async function auditEnums(
           plan,
           audit,
           value,
-          `is not one of ${[...allowed].join(' | ')}`
+          `is not one of ${[...allowed].join(' | ')}`,
+          `The CHECK on ${audit.column.name}`
         )
       );
     }
@@ -121,7 +158,8 @@ async function describeEnumFinding(
   plan: CollectionPlan,
   audit: EnumAudit,
   value: unknown,
-  why: string
+  why: string,
+  refusedBy: string
 ): Promise<AuditFinding> {
   const collection = source.collection(plan.collection);
   const filter = { [audit.path]: value } as Record<string, unknown>;
@@ -134,14 +172,11 @@ async function describeEnumFinding(
     kind: 'enum',
     detail:
       `${plan.collection}.${audit.path} = ${JSON.stringify(value)} ${why}. ` +
-      `${columnLabel(audit.column)} would reject these rows.`,
+      `${refusedBy} would reject these rows.`,
     documents,
     sampleIds: samples.map((doc) => String(doc._id)),
+    ...(audit.resolvedBy === undefined ? {} : { resolvedBy: audit.resolvedBy }),
   };
-}
-
-function columnLabel(column: PgColumn): string {
-  return `The CHECK on ${column.name}`;
 }
 
 /**
@@ -157,7 +192,8 @@ function columnLabel(column: PgColumn): string {
  */
 export async function auditUniqueness(
   source: MongoSource,
-  plan: CollectionPlan
+  plan: CollectionPlan,
+  resolutions: ResolutionContext
 ): Promise<AuditFinding[]> {
   const findings: AuditFinding[] = [];
   for (const audit of plan.uniquenessAudits ?? []) {
@@ -188,7 +224,17 @@ export async function auditUniqueness(
       .toArray();
 
     for (const group of groups) {
-      const ids = Array.isArray(group.ids) ? group.ids : [];
+      const ids = (Array.isArray(group.ids) ? group.ids : []).map((value: unknown) =>
+        String(value)
+      );
+      // A rule declared on this audit only COVERS the group when it actually
+      // acts on all but one of its rows. Asked of the resolution, so this file
+      // needs no knowledge of any particular rule — and it fails closed, so a
+      // collision the rule was not written for still blocks.
+      const resolvedBy =
+        audit.resolvedBy !== undefined && resolutions.resolvesUniquenessGroup(audit.resolvedBy, ids)
+          ? audit.resolvedBy
+          : undefined;
       findings.push({
         collection: plan.collection,
         kind: 'uniqueness',
@@ -197,9 +243,12 @@ export async function auditUniqueness(
           `${JSON.stringify(group._id)} (normalized as ` +
           `${audit.key.map((part) => `${part.path}:${part.normalize}`).join(', ')}). ` +
           'Mongo allowed them to coexist; Postgres will not. ' +
-          'Decide which row survives — the migration must not choose.',
+          (resolvedBy === undefined
+            ? 'Decide which row survives — the migration must not choose.'
+            : 'Which row survives is DECIDED, not guessed — see the resolution rule.'),
         documents: typeof group.count === 'number' ? group.count : ids.length,
-        sampleIds: ids.slice(0, SAMPLE_LIMIT).map((value: unknown) => String(value)),
+        sampleIds: ids.slice(0, SAMPLE_LIMIT),
+        ...(resolvedBy === undefined ? {} : { resolvedBy }),
       });
     }
   }
@@ -281,13 +330,21 @@ export async function auditFileSystemOwners(
 }
 
 /**
- * Every finding blocks the copy.
+ * Every finding blocks the copy — unless a documented rule already answers it.
  *
  * Written as a function rather than assumed, so a future finding class that is
  * genuinely advisory has one place to say so — and so the runner's refusal
  * reads as a decision rather than an accident.
+ *
+ * `resolvedBy` is NOT an override flag and cannot be used as one. Nothing a
+ * caller passes reaches it: it is set only when the PLAN declares a rule on the
+ * very audit that produced the finding, and — for a uniqueness collision — only
+ * when the rule verifiably acts on all but one of the colliding rows. The
+ * finding is still computed, still counted, and still printed. Silencing a
+ * check remains impossible; teaching the migration what to do is the move.
  */
 export function auditWouldBlockCopy(finding: AuditFinding): boolean {
+  if (finding.resolvedBy !== undefined) return false;
   return (
     finding.kind === 'enum' ||
     finding.kind === 'uniqueness' ||

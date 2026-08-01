@@ -52,6 +52,14 @@ import {
   tablesWithoutAPlan,
 } from '../src/db/backfill/collectionMap';
 import { connectMongoSource, redactUri, type Checkpoint } from '../src/db/backfill/mongoSource';
+import { auditWouldBlockCopy, type AuditFinding } from '../src/db/backfill/audit';
+import {
+  createResolutionContext,
+  planResolutions,
+  ResolutionLog,
+  type ResolutionPlan,
+  type ResolutionSummary,
+} from '../src/db/backfill/resolutions';
 import {
   AuditBlockedError,
   DEFAULT_BATCH_SIZE,
@@ -207,8 +215,15 @@ async function main(): Promise<number> {
     }
 
     // ---- audit ------------------------------------------------------------
+    //
+    // The resolution pre-pass runs FIRST, because a finding a documented rule
+    // answers has to be reported as answered rather than as blocking — and the
+    // `--audit-only` report must show the same decisions the copy would apply.
+    const resolutionPlan = await planResolutions(source);
+    const resolutions = createResolutionContext(resolutionPlan, new ResolutionLog());
+
     heading('AUDIT');
-    const { findings, fileOwnerCensus } = await runAudits(source, discovery);
+    const { findings, fileOwnerCensus } = await runAudits(source, discovery, resolutions);
     if (Object.keys(fileOwnerCensus).length > 0) {
       say('  files.ownerUserId system-owner census:');
       for (const [sentinel, count] of Object.entries(fileOwnerCensus).sort()) {
@@ -218,14 +233,21 @@ async function main(): Promise<number> {
     if (findings.length === 0) {
       say('  No findings. Every value the schema constrains is one the schema accepts.');
     }
-    for (const finding of findings) {
-      say(`  [${finding.kind}] ${finding.detail}`);
-      say(`      ${finding.documents} document(s); e.g. ${finding.sampleIds.join(', ') || '(none)'}`);
+    for (const finding of findings) reportFinding(finding);
+
+    const blocking = findings.filter(auditWouldBlockCopy);
+    const answered = findings.length - blocking.length;
+    if (findings.length > 0) {
+      say(
+        `\n  ${blocking.length} finding(s) BLOCK the copy; ` +
+          `${answered} answered by a documented resolution rule.`
+      );
     }
+    reportResolutionPlan(resolutionPlan);
 
     if (options.auditOnly) {
-      heading(findings.length === 0 ? 'AUDIT CLEAN' : 'AUDIT FOUND BLOCKING ROWS');
-      return findings.length === 0 ? 0 : 1;
+      heading(blocking.length === 0 ? 'AUDIT CLEAN' : 'AUDIT FOUND BLOCKING ROWS');
+      return blocking.length === 0 ? 0 : 1;
     }
 
     // ---- copy -------------------------------------------------------------
@@ -260,6 +282,8 @@ async function main(): Promise<number> {
     }
     say(`\n  ${totalRows} row(s) written across ${summary.copies.length} collection(s).`);
 
+    reportResolutionsApplied(summary.resolutions);
+
     if (options.verify) exitCode = await runVerification(db, source, options);
   } catch (error) {
     if (error instanceof UnknownCollectionError || error instanceof AuditBlockedError) {
@@ -274,6 +298,61 @@ async function main(): Promise<number> {
   }
 
   return exitCode;
+}
+
+/**
+ * One audit finding, saying plainly whether it blocks.
+ *
+ * A finding a rule answers is printed in FULL — same value, same count, same
+ * ids — with the rule and its decision underneath. The point of a resolution is
+ * that the operator can see the decision was applied as stated; a finding that
+ * quietly stopped being printed would defeat exactly that.
+ */
+function reportFinding(finding: AuditFinding): void {
+  say(`  [${finding.kind}] ${finding.detail}`);
+  say(`      ${finding.documents} document(s); e.g. ${finding.sampleIds.join(', ') || '(none)'}`);
+  if (finding.resolvedBy === undefined) {
+    say('      BLOCKS the copy — fix the data, widen the schema, or write a rule.');
+    return;
+  }
+  say(`      RESOLVED by \`${finding.resolvedBy.id}\` — does not block.`);
+  say(`      decision: ${finding.resolvedBy.decision}`);
+}
+
+/** What the resolutions are going to do, decided before anything is written. */
+function reportResolutionPlan(plan: ResolutionPlan): void {
+  const groups = plan.duplicateOpenValidationRequests;
+  if (groups.length === 0) return;
+
+  heading('RESOLUTION PLAN');
+  say(
+    `  ${groups.length} sourceActionId(s) are held open by more than one ` +
+      `validation request; ${plan.demotedValidationRequestIds.size} request(s) ` +
+      'will be written terminal so exactly one stays open per key.'
+  );
+  for (const group of groups) {
+    const orderedBy = [...new Set(group.members.map((member) => member.orderedBy))].join(', ');
+    say(`    ${group.sourceActionId} — ${group.members.length} open request(s), ordered by ${orderedBy}`);
+    say(`      keep    ${group.survivorId} (most recent)`);
+    say(`      demote  ${group.demotedIds.join(', ')}`);
+  }
+}
+
+/** What the resolutions actually did, per rule, with every id. */
+function reportResolutionsApplied(summaries: readonly ResolutionSummary[]): void {
+  heading('RESOLUTIONS APPLIED');
+  for (const summary of summaries) {
+    say(`  ${summary.rule.id} — ${summary.documents} document(s) changed`);
+    if (summary.documents === 0) {
+      say('      nothing in this data needed it.');
+      continue;
+    }
+    // Every id, not a sample: the whole point is that the operator can check
+    // the decision landed exactly where the audit said it would.
+    for (const record of summary.records) {
+      say(`      ${record.documentId}: ${record.detail}`);
+    }
+  }
 }
 
 async function runVerification(
