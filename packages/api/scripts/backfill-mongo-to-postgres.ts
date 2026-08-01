@@ -371,10 +371,37 @@ function reportReferentialIntegrity(report: ReferentialIntegrityReport): void {
       `built, ${report.referencesChecked} non-NULL reference(s) resolved.`
   );
 
+  // Transform fidelity FIRST: it is the evidence behind every origin verdict
+  // below, and a deficit here is a worse problem than any orphan.
+  const lossy = report.emissions.filter((entry) => entry.documentsRead !== entry.primaryRowsEmitted);
+  say(
+    `  Transform fidelity: ${report.emissions.length - lossy.length} of ` +
+      `${report.emissions.length} plan(s) emitted exactly one primary row per ` +
+      'document read.'
+  );
+  for (const entry of lossy) {
+    say(
+      `    DROPPED  ${entry.collection}: read ${entry.documentsRead}, emitted ` +
+        `${entry.primaryRowsEmitted} into ${entry.table} — ` +
+        `${entry.documentsRead - entry.primaryRowsEmitted} document(s) LOST by the copy.`
+    );
+  }
+
   if (report.orphans.length === 0) {
     say('  Every reference names a row the migration produces.');
     return;
   }
+
+  // The split that decides where the fix belongs. Printed before the detail so
+  // an operator sees immediately whether they are looking at pre-existing Mongo
+  // debt or at data this migration lost.
+  const byOrigin = report.orphanRowsByOrigin;
+  say(
+    `\n  Orphaned rows by ORIGIN — ${byOrigin['absent-in-source']} absent in the ` +
+      `source (pre-existing debt, decide about the referencing row), ` +
+      `${byOrigin['dropped-by-the-copy']} dropped by the copy (DATA LOSS, fix the ` +
+      `transform), ${byOrigin.undetermined} undetermined (check by hand).`
+  );
 
   say(`\n  ${report.orphans.length} relation(s) hold orphans:`);
   for (const orphans of report.orphans) {
@@ -385,8 +412,10 @@ function reportReferentialIntegrity(report: ReferentialIntegrityReport): void {
     );
     say(
       `      ${orphans.documents} row(s) from ${orphans.collection} across ` +
-        `${orphans.distinctValues} missing value(s) — resolvability: ${orphans.resolvability}`
+        `${orphans.distinctValues} missing value(s) — origin: ${orphans.origin}, ` +
+        `resolvability: ${orphans.resolvability}`
     );
+    say(`      ${orphans.originReason}`);
     for (const value of orphans.values) {
       const ids = value.documentIds.join(', ');
       const elided =

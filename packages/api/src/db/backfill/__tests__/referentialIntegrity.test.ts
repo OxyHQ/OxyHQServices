@@ -35,6 +35,7 @@ import { createTestDatabase, dropTestDatabase } from '../../testDatabase';
 import {
   cleanFixtures,
   dirtyFixtures,
+  USER_A,
   DELETED_APPLICATION,
   DELETED_MESSAGE,
   DELETED_USER,
@@ -48,6 +49,7 @@ import {
   SUB,
   type FixtureSet,
 } from '../backfillFixtures';
+import { auditWouldBlockCopy, type AuditFinding } from '../audit';
 import { COLLECTION_PLANS } from '../collectionMap';
 import { createMongoTestDatabase, type MongoTestDatabase } from '../mongoTestSource';
 import { planTables, tableName, type CollectionPlan } from '../plan';
@@ -429,8 +431,25 @@ describe('a dangling foreign key is found, named, and refuses the copy', () => {
     // Every orphan, by value, with the referencing document ids under it — the
     // structure the CLI prints and the reason a relation with one deleted
     // account behind 44 rows reads as one line rather than 44.
+    // Every one of the three is PRE-EXISTING MongoDB debt, not data this
+    // migration lost — and the audit proves it rather than assuming it: the
+    // `users`/`messages`/`applications` transforms each emitted one row per
+    // document keyed by its own `_id`, so those tables' ids ARE the source ids.
+    expect(report.orphans.map((entry) => entry.origin)).toEqual([
+      'absent-in-source',
+      'absent-in-source',
+      'absent-in-source',
+    ]);
+    expect(report.orphanRowsByOrigin).toEqual({
+      'absent-in-source': 3,
+      'dropped-by-the-copy': 0,
+      undetermined: 0,
+    });
+    expect(report.findings.filter((finding) => finding.kind === 'dropped-document')).toEqual([]);
+
     const bundles = report.orphans.find((entry) => entry.collection === 'bundles');
     expect(bundles?.resolvability).toBe('not-null');
+    expect(bundles?.originReason).toContain('MongoDB does not hold the parent');
     expect(bundles?.distinctValues).toBe(1);
     expect(bundles?.values).toEqual([
       { value: DELETED_USER, documents: 1, documentIds: [ORPHAN_BUNDLE] },
@@ -440,6 +459,190 @@ describe('a dangling foreign key is found, named, and refuses the copy', () => {
     expect(pushTokens?.resolvability).toBe('nullable-other-action');
     const reminders = report.orphans.find((entry) => entry.collection === 'reminders');
     expect(reminders?.resolvability).toBe('nullable-set-null');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2b. WHERE the missing parent went — the distinction with opposite fixes
+// ---------------------------------------------------------------------------
+
+/**
+ * A `users` plan that silently drops one document — the second kind of orphan.
+ *
+ * Injected by WRAPPING the real plan rather than by editing it, so the mutation
+ * is disarmed by construction when the test ends and the transform under test
+ * is otherwise the real one. This is the shape of a transform bug: the copy
+ * itself loses the parent, and the reference is then dangling because of the
+ * MIGRATION rather than because MongoDB was already short.
+ */
+function usersPlanThatDrops(documentId: string): CollectionPlan {
+  const real = planFor('users');
+  return {
+    ...real,
+    transform(doc, emit, resolutions) {
+      if (String(doc._id) === documentId) return;
+      real.transform(doc, emit, resolutions);
+    },
+  };
+}
+
+describe('an orphan whose parent the MIGRATION lost is a different finding', () => {
+  let mongo: MongoTestDatabase;
+
+  beforeAll(async () => {
+    await truncateAll();
+    // The clean set: every reference in it resolves, so the ONLY thing that can
+    // make one dangle here is the dropped document injected below.
+    mongo = await seed(cleanFixtures());
+  });
+
+  afterAll(async () => {
+    await mongo.drop();
+  });
+
+  it('measures one primary row per document, keyed by `_id`, for EVERY plan', async () => {
+    // The claim the origin verdict rests on, verified per plan rather than
+    // generalised from `users` — and MEASURED, because a static reading of the
+    // transforms answers a narrower question (an early `return` is greppable,
+    // an `emit` that ends up inside a branch is not).
+    const resolutions = await resolutionsFor(mongo);
+    const discovery = await discover(mongo.source);
+    const report = await auditReferentialIntegrity(mongo.source, discovery.migrated, resolutions);
+
+    expect(report.emissions.length).toBe(discovery.migrated.length);
+    expect(report.emissions.length).toBeGreaterThanOrEqual(40);
+
+    const unfaithful = report.emissions.filter(
+      (entry) =>
+        entry.primaryRowsEmitted !== entry.documentsRead ||
+        entry.primaryRowsKeyedByOwnId !== entry.documentsRead
+    );
+    // Named, not counted: a failure has to say WHICH transform broke it.
+    expect(unfaithful.map((entry) => entry.collection)).toEqual([]);
+  });
+
+  it('reads each table\'s OWN primary key, not a hardcoded `id`', async () => {
+    // `user_credits` has no `id` column at all: `UserCredits._id` is the user id
+    // verbatim and the table is a 1:1 extension of `users` keyed by `user_id`.
+    // Assuming `id` reported that plan as unfaithful — it emits one row per
+    // document and always did — and would have downgraded every verdict about
+    // it to `undetermined` for a reason that was never true. This is the
+    // assertion that keeps the generalisation.
+    const resolutions = await resolutionsFor(mongo);
+    const discovery = await discover(mongo.source);
+    const report = await auditReferentialIntegrity(mongo.source, discovery.migrated, resolutions);
+
+    const credits = report.emissions.find((entry) => entry.collection === 'usercredits');
+    expect(credits?.primaryKeyProperty).toBe('userId');
+    expect(credits?.primaryRowsKeyedByOwnId).toBe(credits?.documentsRead);
+    expect(credits?.documentsRead).toBeGreaterThan(0);
+
+    // …and the ordinary case still resolves to `id`.
+    const users = report.emissions.find((entry) => entry.collection === 'users');
+    expect(users?.primaryKeyProperty).toBe('id');
+  });
+
+  it('classifies a genuinely absent parent as pre-existing MongoDB debt', async () => {
+    const resolutions = await resolutionsFor(mongo);
+    const discovery = await discover(mongo.source);
+    const report = await auditReferentialIntegrity(mongo.source, discovery.migrated, resolutions);
+    // Precondition: the clean set really is clean, so the block below is
+    // measuring the injected drop and nothing else.
+    expect(report.orphans).toEqual([]);
+    expect(report.orphanRowsByOrigin).toEqual({
+      'absent-in-source': 0,
+      'dropped-by-the-copy': 0,
+      undetermined: 0,
+    });
+  });
+
+  it('reports a DROPPED document as data loss, separately, and blocks on it', async () => {
+    const resolutions = await resolutionsFor(mongo);
+    const discovery = await discover(mongo.source);
+    const plans = discovery.migrated.map((entry) =>
+      entry.plan.collection === 'users'
+        ? { plan: usersPlanThatDrops(USER_A), documents: entry.documents }
+        : entry
+    );
+
+    const report = await auditReferentialIntegrity(mongo.source, plans, resolutions);
+
+    // 1. The drop is its own finding, independent of any foreign key. A
+    //    transform losing documents is a bug even where nothing references them.
+    const drop = report.findings.find((finding) => finding.kind === 'dropped-document');
+    expect(drop).toBeDefined();
+    expect(drop?.collection).toBe('users');
+    expect(drop?.documents).toBe(1);
+    expect(drop?.detail).toContain('SILENTLY LOST');
+    expect(drop?.detail).toContain('bug in the');
+    expect(auditWouldBlockCopy(drop as AuditFinding)).toBe(true);
+
+    // 2. The measurement behind it, so the verdict is checkable.
+    const users = report.emissions.find((entry) => entry.collection === 'users');
+    expect(users?.primaryRowsEmitted).toBe((users?.documentsRead ?? 0) - 1);
+
+    // 3. And every orphan against `users` is the SECOND kind — the source holds
+    //    the parent, the migration lost it. Reporting these as absent-in-source
+    //    would invite a resolution rule that buries real data loss.
+    const bundles = report.orphans.find((entry) => entry.collection === 'bundles');
+    expect(bundles?.origin).toBe('dropped-by-the-copy');
+    expect(bundles?.originReason).toContain('DROPPED by the migration itself');
+    expect(bundles?.originReason).toContain('fix the');
+    expect(report.orphanRowsByOrigin['absent-in-source']).toBe(0);
+    expect(report.orphanRowsByOrigin['dropped-by-the-copy']).toBeGreaterThan(0);
+
+    // 4. The recommendation about NULL is WITHHELD for this class — offering it
+    //    would be telling the operator to paper over the loss.
+    const finding = report.findings.find(
+      (candidate) =>
+        candidate.kind === 'referential-integrity' && candidate.collection === 'bundles'
+    );
+    expect(finding?.detail).toContain('ORIGIN dropped-by-the-copy');
+    expect(finding?.detail).toContain('No resolution rule may be written');
+    expect(finding?.detail).not.toContain('no override flag');
+  });
+});
+
+describe('an orphan the audit CANNOT classify says so', () => {
+  it('refuses to call a non-primary-key target absent, and explains why', async () => {
+    await truncateAll();
+    // `personhood_vouches.record_id` references `signed_records.record_id` — a
+    // CONTENT ADDRESS, not the row's primary key. "No row carries this value"
+    // therefore does not reduce to "no source document has this `_id`": a parent
+    // the transform derived a different value for is indistinguishable from an
+    // absent one. Guessing `absent-in-source` here is exactly the error that
+    // would let a resolution rule bury a mapping bug.
+    const fixtures = cleanFixtures();
+    const mongo = await seed({
+      ...fixtures,
+      personhoodvouches: (fixtures.personhoodvouches ?? []).map((vouch) => ({
+        ...vouch,
+        recordId: 'bafyrecord000000000000000000ffff',
+      })),
+    });
+    try {
+      const resolutions = await resolutionsFor(mongo);
+      const discovery = await discover(mongo.source);
+      const report = await auditReferentialIntegrity(mongo.source, discovery.migrated, resolutions);
+
+      const vouches = report.orphans.find((entry) => entry.collection === 'personhoodvouches');
+      expect(vouches).toBeDefined();
+      expect(vouches?.relation.constraint).toBe(
+        'personhood_vouches_record_id_signed_records_record_id_fk'
+      );
+      expect(vouches?.origin).toBe('undetermined');
+      expect(vouches?.originReason).toContain('not the row');
+      expect(vouches?.originReason).toContain('DERIVED a different value');
+
+      // Nothing was dropped — the signedrecords transform is faithful — so the
+      // undetermined verdict is about the COLUMN, not about a lossy transform.
+      const records = report.emissions.find((entry) => entry.collection === 'signedrecords');
+      expect(records?.primaryRowsEmitted).toBe(records?.documentsRead);
+      expect(report.orphanRowsByOrigin.undetermined).toBeGreaterThan(0);
+      expect(report.orphanRowsByOrigin['absent-in-source']).toBe(0);
+    } finally {
+      await mongo.drop();
+    }
   });
 });
 

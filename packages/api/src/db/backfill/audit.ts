@@ -60,8 +60,16 @@ import type { ResolutionContext, ResolutionRule } from './resolutions';
 /** One thing the schema would refuse. */
 export interface AuditFinding {
   readonly collection: string;
-  /** `enum` | `uniqueness` | `file-system-owner` | `referential-integrity`. */
-  readonly kind: 'enum' | 'uniqueness' | 'file-system-owner' | 'referential-integrity';
+  /**
+   * `enum` | `uniqueness` | `file-system-owner` | `referential-integrity` |
+   * `dropped-document`.
+   */
+  readonly kind:
+    | 'enum'
+    | 'uniqueness'
+    | 'file-system-owner'
+    | 'referential-integrity'
+    | 'dropped-document';
   /** Human-readable, and specific enough to act on without opening the code. */
   readonly detail: string;
   /** Documents affected, where the audit can count them. */
@@ -368,6 +376,12 @@ export function auditWouldBlockCopy(finding: AuditFinding): boolean {
     // Nullable means SQL NULL is accepted, not that a value naming no row is:
     // both are `23503`. The nullability changes what the report RECOMMENDS —
     // see `OrphanResolvability` — never whether the copy may start.
-    finding.kind === 'referential-integrity'
+    finding.kind === 'referential-integrity' ||
+    // A transform that emitted fewer rows than it read documents is losing
+    // data, and it blocks even with no foreign key pointing at the lost rows.
+    // This is the ONE finding class a resolution rule must never answer: the
+    // bug is in the transform, and `resolvedBy` clearing it would be the
+    // migration silently agreeing to lose documents.
+    finding.kind === 'dropped-document'
   );
 }

@@ -81,6 +81,34 @@
  * cost is one extra cycle in that case, and the report says NOT RUN rather than
  * printing a clean answer — see {@link referentialIntegrityNotRun}.
  *
+ * ## An orphan is NOT one thing — and the two kinds have opposite fixes
+ *
+ * "The parent row does not exist" has two causes that look identical in the
+ * `23503` and must never be reported as one:
+ *
+ * - **The source never held it.** The reference was already dangling in
+ *   MongoDB, which simply never checked. Postgres is surfacing pre-existing
+ *   debt, and the decision is what happens to the REFERENCING row — a
+ *   documented resolution rule is a legitimate answer.
+ * - **The COPY lost it.** The source holds the parent and the migration failed
+ *   to produce its row. That is silent data loss inside the migration; the fix
+ *   is in the TRANSFORM, and a resolution rule here would bury exactly the
+ *   failure this audit exists to catch.
+ *
+ * The verdict is MEASURED, not assumed and not read off the transforms. While
+ * streaming, each plan's emission fidelity is tallied ({@link PlanEmission}):
+ * documents read, rows emitted into the primary table, and how many of those
+ * carried the document's own `_id` as that table's primary key. When all three
+ * agree, the primary key column IS the set of source `_id`s — so a value absent
+ * from it is a document absent from the source, proven with no second query.
+ * Anything short of that is {@link OrphanOrigin} `undetermined`, never
+ * `absent-in-source`.
+ *
+ * A plan that emitted fewer primary rows than it read documents is its own
+ * blocking finding (`dropped-document`) whether or not any foreign key points at
+ * the lost rows — `plan.ts` states that invariant directly, and it is the one
+ * finding class no resolution rule may ever answer.
+ *
  * ## Every finding BLOCKS, including a nullable one
  *
  * A NULLABLE foreign key does not mean a dangling value is allowed: `NULL` is
@@ -193,6 +221,100 @@ export type OrphanResolvability =
   /** Nullable, but `ON DELETE` says something other than NULL. */
   | 'nullable-other-action';
 
+/**
+ * WHERE the missing parent went — and the two answers have opposite fixes.
+ *
+ * This distinction is the difference between surfacing pre-existing debt and
+ * hiding a bug in the migration itself, so the audit must never report an orphan
+ * without it:
+ *
+ * - **`absent-in-source`** — MongoDB never held the parent. The reference was
+ *   already dangling there and Mongo simply never checked; Postgres is
+ *   surfacing debt that predates this work. The decision is what happens to the
+ *   REFERENCING row, and a documented resolution rule is a legitimate answer.
+ * - **`dropped-by-the-copy`** — the source HOLDS the parent and the migration
+ *   failed to produce its row. That is silent DATA LOSS inside the migration.
+ *   The fix belongs in the TRANSFORM; a resolution rule that nulled or dropped
+ *   the reference would bury exactly the failure this audit exists to catch, so
+ *   one must never be written for this class.
+ * - **`undetermined`** — the audit cannot tell the two apart for this relation,
+ *   and says so rather than guessing. Never treat it as the first kind.
+ *
+ * The verdict is measured, not assumed — see {@link PlanEmission}.
+ */
+export type OrphanOrigin = 'absent-in-source' | 'dropped-by-the-copy' | 'undetermined';
+
+/**
+ * How faithfully one plan's transform reproduced its collection, MEASURED.
+ *
+ * `plan.ts` states the invariant this checks: "There is deliberately no 'skip
+ * this document' return value — a silently dropped document is the failure this
+ * whole migration exists to avoid." One source document must produce exactly one
+ * row in the plan's PRIMARY table, keyed by that document's own `_id`.
+ *
+ * Measured rather than read off the transforms, because a static reading answers
+ * a narrower question: an early `return` is greppable, an `emit` that ends up
+ * inside a branch is not, and neither tells you what THIS data did.
+ *
+ * It is also what makes {@link OrphanOrigin} decidable without a second query.
+ * When `primaryRowsKeyedByOwnId === documentsRead === primaryRowsEmitted`, the
+ * primary table's KEY column is a faithful image of the source `_id`s — so a
+ * value absent from it is a document absent from the SOURCE, proven rather than
+ * assumed.
+ *
+ * The key is the table's own primary key, read from the schema, NOT hardcoded as
+ * `id`: `user_credits` is keyed by `user_id`, because `UserCredits._id` is the
+ * user id verbatim and the table is a 1:1 extension of `users` with no separate
+ * id column. Assuming `id` reported that plan as unfaithful and would have
+ * downgraded every verdict about it to `undetermined`.
+ */
+export interface PlanEmission {
+  readonly collection: string;
+  /** The plan's primary table — the one that owes one row per document. */
+  readonly table: string;
+  /**
+   * The property holding that table's single-column primary key, or `null` when
+   * it has a composite one (no single value to compare a document `_id` to).
+   */
+  readonly primaryKeyProperty: string | null;
+  readonly documentsRead: number;
+  /** Rows emitted into the primary table. */
+  readonly primaryRowsEmitted: number;
+  /** Of those, how many carried the source document's own `_id` as that key. */
+  readonly primaryRowsKeyedByOwnId: number;
+}
+
+/**
+ * The property name of a table's SINGLE-column primary key, or `null`.
+ *
+ * `null` for the seven tables keyed by a composite — six of them child tables
+ * whose key is `(parent, ordinal)` and which no foreign key references anyway.
+ */
+export function singlePrimaryKeyProperty(table: PgTable): string | null {
+  const config = getTableConfig(table);
+  const inline = config.columns.filter((column) => column.primary);
+  if (inline.length === 1) return inline[0]?.name ?? null;
+  if (inline.length > 1) return null;
+  const composite = config.primaryKeys.flatMap((key) => key.columns.map((column) => column.name));
+  return composite.length === 1 ? (composite[0] ?? null) : null;
+}
+
+/** A plan that emitted fewer primary rows than it read documents. */
+export function droppedDocuments(emission: PlanEmission): number {
+  return Math.max(0, emission.documentsRead - emission.primaryRowsEmitted);
+}
+
+/**
+ * True when this plan's primary `id` column provably equals the set of source
+ * `_id`s — every document produced exactly one row, keyed by its own `_id`.
+ */
+export function emissionIsFaithful(emission: PlanEmission): boolean {
+  return (
+    emission.primaryRowsEmitted === emission.documentsRead &&
+    emission.primaryRowsKeyedByOwnId === emission.documentsRead
+  );
+}
+
 /** One value that names no row, and the documents that reference it. */
 export interface OrphanValue {
   /** The referencing value, as the row carries it. Composite keys are joined. */
@@ -215,6 +337,10 @@ export interface RelationOrphans {
   /** Missing values, capped at {@link MAX_REPORTED_ORPHAN_VALUES}. */
   readonly values: readonly OrphanValue[];
   readonly resolvability: OrphanResolvability;
+  /** Where the missing parent went. Two of the three answers have opposite fixes. */
+  readonly origin: OrphanOrigin;
+  /** How that verdict was reached, in the operator's words. */
+  readonly originReason: string;
   /**
    * True when NO plan in this run feeds the referenced table, so it will hold no
    * rows at all — every reference to it is an orphan for that reason alone.
@@ -239,6 +365,21 @@ export interface ReferentialIntegrityReport {
   readonly skippedReason: string | null;
   readonly findings: readonly AuditFinding[];
   readonly orphans: readonly RelationOrphans[];
+  /**
+   * Referencing ROWS per origin — the split that decides where the fix belongs.
+   *
+   * Reported as counts beside the orphans so an operator can see at a glance
+   * whether they are looking at pre-existing Mongo debt or at data the
+   * migration itself lost.
+   */
+  readonly orphanRowsByOrigin: Readonly<Record<OrphanOrigin, number>>;
+  /**
+   * Every plan's measured emission fidelity, in collection order.
+   *
+   * Present whether or not anything is wrong: it is the evidence behind every
+   * `absent-in-source` verdict, and a reader must be able to check it.
+   */
+  readonly emissions: readonly PlanEmission[];
   /** Foreign keys derived from the schema for the tables these plans write. */
   readonly relationsInspected: number;
   /**
@@ -274,6 +415,8 @@ export function referentialIntegrityNotRun(reason: string): ReferentialIntegrity
     skippedReason: reason,
     findings: [],
     orphans: [],
+    orphanRowsByOrigin: { 'absent-in-source': 0, 'dropped-by-the-copy': 0, undetermined: 0 },
+    emissions: [],
     relationsInspected: 0,
     relationsExercised: 0,
     collectionsInspected: 0,
@@ -505,24 +648,44 @@ export async function auditReferentialIntegrity(
     exercised: new Set<string>(),
   };
 
+  const emissions = new Map<string, PlanEmission>();
+
   for (const level of planLevels(collectionPlans)) {
     for (const plan of level) {
       // Deduplicated on `(constraint, value)` while the collection streams, so a
       // self-reference across 296,924 rows costs one entry per DISTINCT
       // unresolved value rather than one per row.
       const pending = new Map<string, PendingReference>();
+      const emission: EmissionTally = {
+        primaryTable: tableName(plan.table),
+        primaryKeyProperty: singlePrimaryKeyProperty(plan.table),
+        documentsRead: 0,
+        primaryRowsEmitted: 0,
+        primaryRowsKeyedByOwnId: 0,
+      };
 
       for await (const documents of streamCollection(source, plan.collection, batchSize)) {
         counters.documents += documents.length;
+        emission.documentsRead += documents.length;
         for (const doc of documents) {
           inspectDocument(plan, doc, resolutions, {
             targetSetsByTable,
             checkedByTable,
             pending,
             counters,
+            emission,
           });
         }
       }
+
+      emissions.set(emission.primaryTable, {
+        collection: plan.collection,
+        table: emission.primaryTable,
+        primaryKeyProperty: emission.primaryKeyProperty,
+        documentsRead: emission.documentsRead,
+        primaryRowsEmitted: emission.primaryRowsEmitted,
+        primaryRowsKeyedByOwnId: emission.primaryRowsKeyedByOwnId,
+      });
 
       // Re-checked only now: a reference INTO this plan's own tables — a child
       // row naming its parent, or a self-reference like `users.parent_account_id`
@@ -543,21 +706,46 @@ export async function auditReferentialIntegrity(
           ? 1
           : 0
     )
-    .map((entry) => ({
-      relation: entry.relation,
-      collection: entry.collection,
-      documents: entry.documents,
-      distinctValues: entry.distinctValues,
-      values: entry.values,
-      resolvability: orphanResolvability(entry.relation),
-      targetUnfed: !fedTables.has(entry.relation.targetTableName),
-    }));
+    .map((entry) => {
+      const origin = classifyOrigin(
+        entry.relation,
+        emissions.get(entry.relation.targetTableName),
+        fedTables.has(entry.relation.targetTableName)
+      );
+      return {
+        relation: entry.relation,
+        collection: entry.collection,
+        documents: entry.documents,
+        distinctValues: entry.distinctValues,
+        values: entry.values,
+        resolvability: orphanResolvability(entry.relation),
+        origin: origin.origin,
+        originReason: origin.reason,
+        targetUnfed: !fedTables.has(entry.relation.targetTableName),
+      };
+    });
+
+  const orphanRowsByOrigin: Record<OrphanOrigin, number> = {
+    'absent-in-source': 0,
+    'dropped-by-the-copy': 0,
+    undetermined: 0,
+  };
+  for (const entry of finished) orphanRowsByOrigin[entry.origin] += entry.documents;
+
+  const orderedEmissions = [...emissions.values()].sort((a, b) =>
+    a.collection < b.collection ? -1 : a.collection > b.collection ? 1 : 0
+  );
 
   const report: ReferentialIntegrityReport = {
     ran: true,
     skippedReason: null,
-    findings: finished.map(describeFinding),
+    findings: [
+      ...orderedEmissions.filter((entry) => droppedDocuments(entry) > 0).map(describeDropFinding),
+      ...finished.map(describeFinding),
+    ],
     orphans: finished,
+    orphanRowsByOrigin,
+    emissions: orderedEmissions,
     relationsInspected: relations.length,
     relationsExercised: counters.exercised.size,
     collectionsInspected: counters.collections,
@@ -580,12 +768,24 @@ interface PassCounters {
   readonly exercised: Set<string>;
 }
 
+/** The running emission tally for the plan currently being streamed. */
+interface EmissionTally {
+  /** SQL name of the plan's primary table. */
+  readonly primaryTable: string;
+  /** Property of that table's single-column primary key, or `null`. */
+  readonly primaryKeyProperty: string | null;
+  documentsRead: number;
+  primaryRowsEmitted: number;
+  primaryRowsKeyedByOwnId: number;
+}
+
 /** Everything one document's inspection reads and writes. */
 interface PassState {
   readonly targetSetsByTable: ReadonlyMap<string, readonly TargetSet[]>;
   readonly checkedByTable: ReadonlyMap<string, readonly CheckedRelation[]>;
   readonly pending: Map<string, PendingReference>;
   readonly counters: PassCounters;
+  readonly emission: EmissionTally;
 }
 
 /**
@@ -646,6 +846,17 @@ function inspectDocument(
     (table, row) => {
       state.counters.rows += 1;
       const name = tableName(table);
+
+      // The invariant `plan.ts` states: one document, one row in the PRIMARY
+      // table, keyed by that document's own `_id`. Counted rather than assumed,
+      // because it is what makes an `absent-in-source` verdict provable.
+      if (name === state.emission.primaryTable) {
+        state.emission.primaryRowsEmitted += 1;
+        const key = state.emission.primaryKeyProperty;
+        if (key !== null && row[key] === documentId) {
+          state.emission.primaryRowsKeyedByOwnId += 1;
+        }
+      }
 
       for (const target of state.targetSetsByTable.get(name) ?? []) {
         const value = compositeKey(target.properties, row);
@@ -776,6 +987,119 @@ function compositeKey(
 // the report
 // ---------------------------------------------------------------------------
 
+/**
+ * Decide WHERE the missing parent went, from what the pass measured.
+ *
+ * The whole verdict rests on one measured property of the plan that feeds the
+ * referenced table: did every source document produce exactly one primary row,
+ * keyed by its own `_id`? When it did, that table's `id` column IS the set of
+ * source `_id`s, so a value missing from it is a document missing from the
+ * SOURCE — proven, not assumed, and with no second query.
+ *
+ * Everything that does not clear that bar is `undetermined`, never
+ * `absent-in-source`. Reporting pre-existing debt where the migration actually
+ * lost data is the one error that must not happen here: it invites a resolution
+ * rule to bury the loss.
+ */
+function classifyOrigin(
+  relation: Relation,
+  emission: PlanEmission | undefined,
+  targetFed: boolean
+): { origin: OrphanOrigin; reason: string } {
+  if (!targetFed || emission === undefined) {
+    return {
+      origin: 'undetermined',
+      reason:
+        `No collection in this run feeds ${relation.targetTableName}, so the ` +
+        'audit has nothing to compare against and cannot say whether the parent ' +
+        'is absent from MongoDB or simply not being migrated. Check whether the ' +
+        'feeding collection is missing from the source.',
+    };
+  }
+
+  const dropped = droppedDocuments(emission);
+  if (dropped > 0) {
+    return {
+      origin: 'dropped-by-the-copy',
+      reason:
+        `The \`${emission.collection}\` transform read ${emission.documentsRead} ` +
+        `document(s) and emitted only ${emission.primaryRowsEmitted} row(s) into ` +
+        `${emission.table}, so ${dropped} document(s) were DROPPED by the ` +
+        'migration itself. That is data loss, not pre-existing debt: fix the ' +
+        'TRANSFORM. A resolution rule here would bury the loss.',
+    };
+  }
+
+  // The referenced column has to BE the target table's primary key for the
+  // source-`_id` argument to hold at all — that is the column the emission
+  // measurement proved carries the document `_id`. Eleven relations in this
+  // schema reference a non-key column (`signed_records.record_id`,
+  // `update_assets.sha256`, `app_updates.update_id`,
+  // `moderation_policies.policy_version`).
+  const targetsPrimaryKey =
+    emission.primaryKeyProperty !== null &&
+    relation.targetColumns.length === 1 &&
+    relation.targetColumns[0]?.property === emission.primaryKeyProperty;
+  if (!targetsPrimaryKey) {
+    const column = relation.targetColumns.map((entry) => entry.sqlName).join(', ');
+    return {
+      origin: 'undetermined',
+      reason:
+        `This relation references ${relation.targetTableName}.${column}, which is ` +
+        'not the row\'s primary key, so "no row carries this value" does not ' +
+        'reduce to "no source document has this `_id`". Every ' +
+        `${emission.collection} document did produce its row, so nothing was ` +
+        'dropped — but a parent the transform DERIVED a different value for ' +
+        'would look identical to an absent one. Check by hand which it is.',
+    };
+  }
+
+  if (!emissionIsFaithful(emission)) {
+    return {
+      origin: 'undetermined',
+      reason:
+        `The \`${emission.collection}\` transform emitted one row per document ` +
+        `(${emission.primaryRowsEmitted} of ${emission.documentsRead}) but only ` +
+        `${emission.primaryRowsKeyedByOwnId} of them carried the document's own ` +
+        '`_id` as `id`, so the primary key column is not a faithful image of the ' +
+        'source ids and a missing value cannot be read as a missing document.',
+    };
+  }
+
+  return {
+    origin: 'absent-in-source',
+    reason:
+      `Every one of the ${emission.documentsRead} \`${emission.collection}\` ` +
+      `document(s) produced exactly one ${emission.table} row keyed by its own ` +
+      '`_id`, so that table\'s ids ARE the source ids — and this value is not ' +
+      'among them. MongoDB does not hold the parent and never checked; the ' +
+      'reference was already dangling there. Nothing was lost by the migration: ' +
+      'the decision is what happens to the REFERENCING row.',
+  };
+}
+
+/** A plan that silently dropped documents. Its own finding, because it is its own bug. */
+function describeDropFinding(emission: PlanEmission): AuditFinding {
+  const dropped = droppedDocuments(emission);
+  return {
+    collection: emission.collection,
+    kind: 'dropped-document',
+    detail:
+      `The ${emission.collection} transform read ${emission.documentsRead} ` +
+      `document(s) and emitted only ${emission.primaryRowsEmitted} row(s) into ` +
+      `${emission.table}: ${dropped} document(s) would be SILENTLY LOST by the ` +
+      'copy. `plan.ts` states the invariant this breaks — "there is deliberately ' +
+      'no skip-this-document return value; a silently dropped document is the ' +
+      'failure this whole migration exists to avoid". This is a bug in the ' +
+      'TRANSFORM, not in the data, and no resolution rule may answer it.',
+    documents: dropped,
+    // Which documents were skipped is not knowable from a count, and inventing
+    // a sample would be worse than an honest none — the transform is where to
+    // look, and the transform is named above.
+    sampleIds: [],
+  };
+}
+
 /** The relation as an operator reads it: `bundles.user_id -> users.id`. */
 export function describeRelationColumns(relation: Relation): string {
   const from = relation.columns.map((column) => column.sqlName).join(', ');
@@ -853,7 +1177,14 @@ function describeFinding(orphans: RelationOrphans): AuditFinding {
           'hold no rows at all and EVERY reference to it dangles. '
         : '') +
       `Postgres would reject these rows with a 23503 naming ${relation.constraint}. ` +
-      recommendation(orphans),
+      // WHERE the parent went comes before what to do about it, because it
+      // decides whether "what to do about it" is even the right question: a
+      // parent the MIGRATION lost is fixed in the transform, never here.
+      `ORIGIN ${orphans.origin}: ${orphans.originReason} ` +
+      (orphans.origin === 'absent-in-source'
+        ? recommendation(orphans)
+        : 'No resolution rule may be written for this until the origin is ' +
+          'settled — one written against migration data loss would hide it.'),
     documents: orphans.documents,
     sampleIds: orphans.values.flatMap((value) => value.documentIds).slice(0, SAMPLE_LIMIT),
   };
