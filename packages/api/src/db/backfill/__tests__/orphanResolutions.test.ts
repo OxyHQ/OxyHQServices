@@ -1,25 +1,33 @@
 /**
- * The ten orphaned-reference resolutions, against a REAL MongoDB and a REAL
+ * The eleven orphaned-reference resolutions, against a REAL MongoDB and a REAL
  * Postgres.
  *
- * These rules DELETE PRODUCTION ROWS. That is what the decision is — nine
- * relations are NOT NULL with `ON DELETE CASCADE`, so a row whose parent the
- * source never held has no other answer — but it means the standard here is not
- * "the rule works". It is that the rule cannot fire on anything else, and that
- * every row it does fire on is named.
+ * These rules DELETE PRODUCTION ROWS. That is what the decision is — ten of the
+ * eleven relations cascade, so a row whose parent the source never held goes
+ * with it — but it means the standard here is not "the rule works". It is that
+ * the rule cannot fire on anything else, and that every row it does fire on is
+ * named.
+ *
+ * The `files` rule is the one to read twice. Its column is NULLABLE, so unlike
+ * the nine `users` drops a widened predicate would NOT fail loudly on the way
+ * in — it would quietly destroy files that have a live owner — and each row it
+ * removes is the last record of an object still sitting in S3. Its controls are
+ * therefore load-bearing in a way the others' are not: a live-owner file, and
+ * the SENTINEL-owned files whose `__namespace__` owner is not an account at all.
  *
  * ## What each block establishes, and the mutation that proves it can fail
  *
- * 1. **The declarations ARE the schema.** Every one of the ten resolves to a
- *    real constraint whose nullability and `ON DELETE` match the action, and to
- *    a parent collection whose plan writes the referenced table. Derived from
- *    drizzle and from `COLLECTION_PLANS`, so a schema change that invalidates a
- *    decision fails here rather than letting the rule keep firing under a
- *    premise that stopped being true.
+ * 1. **The declarations ARE the schema.** Every one of the eleven resolves to a
+ *    real constraint whose `ON DELETE` matches the action, justifies NULL
+ *    exactly where NULL was available, and names a parent collection whose plan
+ *    writes the referenced table. Derived from drizzle and from
+ *    `COLLECTION_PLANS`, so a schema change that invalidates a decision fails
+ *    here rather than letting the rule keep firing under a premise that stopped
+ *    being true.
  * 2. **A dropped row is DROPPED, a nulled column is NULLED, and the controls are
  *    untouched.** Mutation: widen the predicate so it fires on a row whose
  *    parent is live, and the control assertions go red naming the rows that
- *    should have survived.
+ *    should have survived — including the file whose owner exists.
  * 3. **Nothing is silent.** The audit still reports every orphan by value and
  *    id, marked resolved; the run summary carries every acted-on row by id; and
  *    the `dropped-document` finding does not fire for a removal the rules
@@ -40,17 +48,27 @@ import {
   bundles,
   deviceSessionAccounts,
   deviceSessions,
+  files,
   notifications,
   userFollows,
 } from '../../schema';
+import { sqlColumnName } from '../../casing';
 import { auditWouldBlockCopy, type AuditFinding } from '../audit';
 import {
   cleanFixtures,
   DELETED_USER,
   DEVICE_SESSION,
+  FILE_FEDERATION,
+  FILE_LINK_PREVIEW,
+  FILE_USER,
+  LIVE_OWNER_FILE,
+  orphanFileWithChildrenFixtures,
   orphanResolutionFixtures,
   RESOLVED_ORPHAN_BUNDLE,
   RESOLVED_ORPHAN_DEVICE_SESSION,
+  RESOLVED_ORPHAN_FILE,
+  RESOLVED_ORPHAN_FILE_SHA256,
+  RESOLVED_ORPHAN_FILE_STORAGE_KEY,
   RESOLVED_ORPHAN_FOLLOW,
   RESOLVED_ORPHAN_NOTIFICATION,
   USER_A,
@@ -67,11 +85,12 @@ import {
 } from '../referentialIntegrity';
 import {
   createResolutionContext,
+  DROP_ORPHANED_FILE,
   ORPHAN_RESOLUTIONS,
   planResolutions,
   ResolutionLog,
 } from '../resolutions';
-import { discover, runBackfill, type RunSummary } from '../runner';
+import { AuditBlockedError, discover, runBackfill, type RunSummary } from '../runner';
 import { verifyBackfill } from '../verify';
 
 jest.setTimeout(300_000);
@@ -183,7 +202,7 @@ describe('every consumer runs a transform through `transformDocument`', () => {
   /** Production modules of the backfill — tests and fixtures excluded. */
   function backfillSources(): { path: string; source: string }[] {
     const root = join(__dirname, '..');
-    const files: { path: string; source: string }[] = [];
+    const modules: { path: string; source: string }[] = [];
     const walk = (directory: string): void => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
         const path = join(directory, entry.name);
@@ -194,11 +213,11 @@ describe('every consumer runs a transform through `transformDocument`', () => {
         }
         if (!entry.name.endsWith('.ts')) continue;
         if (entry.name === 'backfillFixtures.ts' || entry.name === 'mongoTestSource.ts') continue;
-        files.push({ path, source: readFileSync(path, 'utf8') });
+        modules.push({ path, source: readFileSync(path, 'utf8') });
       }
     };
     walk(root);
-    return files;
+    return modules;
   }
 
   it('calls `plan.transform` from exactly one module — the wrapper itself', () => {
@@ -239,10 +258,10 @@ describe('every consumer runs a transform through `transformDocument`', () => {
 // ---------------------------------------------------------------------------
 
 describe('every declared rule matches the constraint it answers', () => {
-  it('covers exactly the ten relations the production audit reported', () => {
+  it('covers exactly the eleven relations the production audit reported', () => {
     // The vacuity floor of this block: an empty declaration list would satisfy
     // every "for each" assertion below.
-    expect(ORPHAN_RESOLUTIONS).toHaveLength(10);
+    expect(ORPHAN_RESOLUTIONS).toHaveLength(11);
     expect(
       ORPHAN_RESOLUTIONS.map((entry) =>
         relationForColumn(entry.table, entry.property).constraint
@@ -252,6 +271,7 @@ describe('every declared rule matches the constraint it answers', () => {
       'bundles_user_id_users_id_fk',
       'device_session_accounts_account_id_users_id_fk',
       'device_sessions_active_account_id_users_id_fk',
+      'files_owner_user_id_users_id_fk',
       'notifications_actor_id_users_id_fk',
       'notifications_recipient_id_users_id_fk',
       'restrictions_restricted_id_users_id_fk',
@@ -261,18 +281,51 @@ describe('every declared rule matches the constraint it answers', () => {
     ]);
   });
 
-  it('drops only where NULL is unavailable and the schema already cascades', () => {
-    // The premise the decision rests on, asserted per relation rather than
+  it('drops only where the schema cascades, and justifies NULL only where it exists', () => {
+    // The premise each decision rests on, asserted per relation rather than
     // taken from the table in `resolutions.ts` — a schema edit invalidates the
     // decision, and this is where that has to surface.
+    //
+    // The two shapes are checked together on purpose: `whyNotNull` present on a
+    // NOT NULL column, or absent on a NULLABLE one, are both declarations that
+    // have drifted from the column they name.
     for (const entry of ORPHAN_RESOLUTIONS.filter((rule) => rule.action === 'drop-row')) {
       const relation = relationForColumn(entry.table, entry.property);
-      expect([relation.constraint, relation.nullable, relation.onDelete]).toEqual([
+      expect([relation.constraint, relation.onDelete]).toEqual([relation.constraint, 'cascade']);
+      expect([relation.constraint, relation.nullable, entry.whyNotNull !== undefined]).toEqual([
         relation.constraint,
-        false,
-        'cascade',
+        relation.nullable,
+        relation.nullable,
       ]);
     }
+
+    // Exactly ONE drop is on a nullable column, and it is the files one — so
+    // the branch above is exercised in both directions rather than vacuously.
+    const nullableDrops = ORPHAN_RESOLUTIONS.filter(
+      (rule) => rule.action === 'drop-row' && relationForColumn(rule.table, rule.property).nullable
+    );
+    expect(nullableDrops.map((rule) => rule.rule.id)).toEqual([
+      'drop-orphaned-files-owner-user-id',
+    ]);
+  });
+
+  it('states the S3 cost in the decision the run report prints', () => {
+    // The cost is the reason this decision is not a formality, and the report
+    // is the only place an operator meets it. Asserting the words keeps it from
+    // being softened into a summary later.
+    const decision = DROP_ORPHANED_FILE.rule.decision;
+    expect(decision).toContain('STILL IN S3');
+    expect(decision).toContain('COMPLETE list, never a sample');
+    expect(decision).toContain('sha256');
+    expect(decision).toContain('storage_key');
+    // …and that MongoDB keeps the rows, which is what makes it reversible.
+    expect(decision).toContain('MongoDB keeps every one of these rows');
+    // The carried columns are declared as real columns, so a rename breaks the
+    // build rather than emptying the worklist.
+    expect(DROP_ORPHANED_FILE.carry?.map((column) => sqlColumnName(column))).toEqual([
+      'sha256',
+      'storage_key',
+    ]);
   });
 
   it('writes NULL only where the schema itself declares SET NULL', () => {
@@ -396,10 +449,10 @@ describe('a dangling reference the rules answer', () => {
     const referential = summary.findings.filter(
       (finding) => finding.kind === 'referential-integrity'
     );
-    // Five: four relations from four documents, plus the device session's
+    // Six: five relations from five documents, plus the device session's
     // account entry. A rule that suppressed its own finding would show up as a
     // shorter list.
-    expect(referential).toHaveLength(5);
+    expect(referential).toHaveLength(6);
     expect(referential.every((finding) => finding.resolvedBy !== undefined)).toBe(true);
     expect(referential.every((finding) => auditWouldBlockCopy(finding) === false)).toBe(true);
 
@@ -465,6 +518,22 @@ describe('a dangling reference the rules answer', () => {
     expect(deviceEmission?.primaryRowsEmitted).toBe(deviceEmission?.documentsRead);
   });
 
+  it('names what references a table it drops from, and finds nothing orphaned', () => {
+    // `files` is the one table these rules drop from that anything references,
+    // and the fixture's orphaned file deliberately carries no links or
+    // variants — so the cascade is REPORTED with its three inbound constraints
+    // and measured as orphaning nothing. A file WITH children is the next test.
+    const cascades = summary.referentialIntegrity.dropCascades;
+    const file = cascades.find((entry) => entry.rule.id === 'drop-orphaned-files-owner-user-id');
+    expect(file?.rowsDropped).toBe(1);
+    expect([...(file?.inboundConstraints ?? [])].sort()).toEqual([
+      'file_links_file_id_files_id_fk',
+      'file_variants_file_id_files_id_fk',
+      'message_attachments_file_id_files_id_fk',
+    ]);
+    expect(file?.orphanedByDrop).toEqual([]);
+  });
+
   it('says what each drop could cascade to, from the derived FK graph', () => {
     const cascades = summary.referentialIntegrity.dropCascades;
     const bundle = cascades.find((entry) => entry.rule.id === 'drop-orphaned-bundles-user-id');
@@ -484,6 +553,68 @@ describe('a dangling reference the rules answer', () => {
     expect(
       cascades.some((candidate) => candidate.rule.id.startsWith('null-orphaned-'))
     ).toBe(false);
+  });
+
+  // -- the eleventh rule: the one that strands real bytes ---------------------
+
+  it('DROPS the file whose owner is gone — and NULL was available', async () => {
+    const rows = await db.select().from(files);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    // The orphan is gone, and gone WHOLE — not kept with a NULL owner, which
+    // is the answer the column would have accepted and this decision refused.
+    expect(byId.has(RESOLVED_ORPHAN_FILE)).toBe(false);
+    expect(rows.filter((row) => row.ownerUserId === null && row.systemOwner === null)).toEqual([]);
+
+    // CONTROL 1 — a file owned by a LIVE account, with NOTHING referencing it.
+    // This is the assertion the "point the rule at a live owner" mutation
+    // breaks, and it matters more here than anywhere else in this file: the
+    // column is NULLABLE, so a widened predicate would not fail loudly on the
+    // way in. It is childless on purpose — `FILE_USER` below has links,
+    // variants and an attachment, so dropping THAT one is caught by the cascade
+    // before any assertion runs, which would leave the predicate's narrowness
+    // untested.
+    expect(byId.get(LIVE_OWNER_FILE)?.ownerUserId).toBe(USER_B);
+    expect(byId.get(LIVE_OWNER_FILE)?.storageKey).toContain('ffffff');
+    expect(byId.get(FILE_USER)?.ownerUserId).toBe(USER_A);
+    expect(byId.get(FILE_USER)?.storageKey).toBe('assets/a');
+
+    // CONTROL 2 — the SENTINEL-owned files. `__federation__` and
+    // `__link_preview_cache__` are not accounts at all, and the transform sends
+    // them to `system_owner` leaving `owner_user_id` NULL, so the rule cannot
+    // see them. Production holds 192 + 29,432 + 48,616 of these; a predicate
+    // that read a sentinel as an absent account would destroy every one.
+    expect(byId.get(FILE_FEDERATION)?.systemOwner).toBe('__federation__');
+    expect(byId.get(FILE_FEDERATION)?.ownerUserId).toBeNull();
+    expect(byId.get(FILE_LINK_PREVIEW)?.systemOwner).toBe('__link_preview_cache__');
+    expect(byId.get(FILE_LINK_PREVIEW)?.ownerUserId).toBeNull();
+  });
+
+  it('emits the sha256 and the storage key with every dropped file id', () => {
+    const dropped = applied(summary, 'drop-orphaned-files-owner-user-id');
+
+    // Every id, and for each one the two columns that identify the S3 object
+    // the row was the last record of. A count without them would be a list of
+    // ids to something nobody can find afterwards.
+    expect(dropped.documentIds).toEqual([RESOLVED_ORPHAN_FILE]);
+    expect(dropped.records).toHaveLength(1);
+    expect(dropped.records[0]?.evidence).toEqual({
+      sha256: RESOLVED_ORPHAN_FILE_SHA256,
+      storage_key: RESOLVED_ORPHAN_FILE_STORAGE_KEY,
+    });
+
+    // The KEY is carried rather than derived because it cannot be derived: it
+    // embeds the upload's year and month, which no later run can recover from
+    // the hash and the mime type.
+    expect(RESOLVED_ORPHAN_FILE_STORAGE_KEY).toContain(RESOLVED_ORPHAN_FILE_SHA256);
+    expect(RESOLVED_ORPHAN_FILE_STORAGE_KEY).toMatch(/^content\/\d{4}\/\d{2}\//);
+
+    // Records are complete for EVERY rule, never sampled — asserted across the
+    // whole summary so a cap introduced later fails here.
+    for (const entry of summary.resolutions) {
+      expect(entry.records).toHaveLength(entry.documents);
+      expect(entry.documentIds).toHaveLength(entry.documents);
+    }
   });
 
   it('verifies clean — the verifier expects what the rules wrote', async () => {
@@ -593,6 +724,43 @@ describe('the rules stand down rather than guess', () => {
             auditWouldBlockCopy(finding)
         )
       ).toHaveLength(1);
+    } finally {
+      await mongo.drop();
+    }
+  });
+
+  it('BLOCKS when a dropped file still has children, rather than deciding for us', async () => {
+    // The cascade this migration deliberately does not answer. A dropped
+    // `files` row takes nothing with it here — its `links` and `variants` are
+    // still emitted and now name a row that will not exist — so the audit
+    // reports them as orphans and REFUSES the copy. That is the outcome the
+    // schema argues for: `message_attachments.file_id` is ON DELETE **no
+    // action**, the schema's way of saying a stored message's attachment must
+    // never be emptied silently, and nobody has decided what a dropped file's
+    // links become.
+    await truncateAll();
+    const mongo = await seed(orphanFileWithChildrenFixtures());
+    try {
+      let caught: unknown;
+      try {
+        await runBackfill({ db, source: mongo.source, batchSize: 3 });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(AuditBlockedError);
+      if (!(caught instanceof AuditBlockedError)) throw new Error('unreachable');
+
+      const constraints = caught.findings.map((finding) => finding.detail).join('\n');
+      expect(constraints).toContain('file_links_file_id_files_id_fk');
+      expect(constraints).toContain('file_variants_file_id_files_id_fk');
+      // Unanswered, so it blocks — the file rule does not reach across to them.
+      expect(caught.findings.every((finding) => finding.resolvedBy === undefined)).toBe(true);
+
+      // …and nothing was written: the refusal happens before the copy.
+      const [row] = await db.execute<{ count: number }>(
+        sql`select count(*)::int as count from files`
+      );
+      expect(row?.count).toBe(0);
     } finally {
       await mongo.drop();
     }

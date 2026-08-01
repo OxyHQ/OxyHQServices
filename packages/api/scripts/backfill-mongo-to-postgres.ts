@@ -520,9 +520,17 @@ function reportResolutionsApplied(
       continue;
     }
     // Every id, not a sample: the whole point is that the operator can check
-    // the decision landed exactly where the audit said it would.
+    // the decision landed exactly where the audit said it would — and, where a
+    // rule DESTROYS a row, that the carried columns are the only remaining
+    // handle on whatever the row was describing. So they print on their own
+    // line per row rather than being folded into a count.
     for (const record of summary.records) {
       say(`      ${record.documentId}: ${record.detail}`);
+      if (record.evidence === undefined) continue;
+      const carried = Object.entries(record.evidence)
+        .map(([column, value]) => `${column}=${value}`)
+        .join('  ');
+      say(`          ${carried}`);
     }
 
     const cascade = cascadesByRule.get(summary.rule.id);

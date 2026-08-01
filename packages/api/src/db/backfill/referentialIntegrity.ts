@@ -733,11 +733,25 @@ export function assertOrphanResolutionsMatchSchema(): void {
       );
     }
     if (entry.action === 'drop-row') {
-      if (relation.nullable) {
+      // A drop on a NULLABLE column is a CHOICE between two available answers,
+      // where a drop on a NOT NULL column is the only one left. The declaration
+      // has to say which situation it is in, and say it correctly: a rule
+      // written by copying one of the nine onto a nullable column is refused
+      // here rather than quietly destroying rows NULL could have kept.
+      if (relation.nullable && entry.whyNotNull === undefined) {
         throw new OrphanResolutionMismatchError(
           entry,
           `${relation.constraint} is NULLABLE, so NULL is available and dropping ` +
-            'the row is no longer the only answer'
+            'the row is a choice rather than the only answer — the declaration ' +
+            'must say why NULL was not taken (`whyNotNull`)'
+        );
+      }
+      if (!relation.nullable && entry.whyNotNull !== undefined) {
+        throw new OrphanResolutionMismatchError(
+          entry,
+          `${relation.constraint} is NOT NULL, so NULL was never available and ` +
+            'there is nothing for `whyNotNull` to justify — its presence means ' +
+            'the declaration and the schema disagree about which column this is'
         );
       }
       if (relation.onDelete !== 'cascade') {

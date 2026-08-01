@@ -1734,16 +1734,69 @@ export function orphanFixtures(): FixtureSet {
  * | {@link RESOLVED_ORPHAN_NOTIFICATION} | `notifications.actor_id` | NOT NULL, cascade | drop the row |
  * | {@link RESOLVED_ORPHAN_DEVICE_SESSION} | `device_sessions.active_account_id` | NULLABLE, set null | write NULL, KEEP the row |
  * | …its first `accounts` entry | `device_session_accounts.account_id` | NOT NULL, cascade | drop the row |
+ * | {@link RESOLVED_ORPHAN_FILE} | `files.owner_user_id` | **NULLABLE**, cascade | drop the row |
  *
- * The last two are one document on purpose: it is the case the decision itself
- * turns on. The account ENTRY for the absent parent goes and the DEVICE survives
- * holding no active account — while its second entry, whose account is live, is
- * untouched.
+ * The device session and its entry are one document on purpose: it is the case
+ * the decision itself turns on. The account ENTRY for the absent parent goes and
+ * the DEVICE survives holding no active account — while its second entry, whose
+ * account is live, is untouched.
+ *
+ * The FILE is the one that can go wrong quietly. Its column is NULLABLE, so a
+ * widened predicate would not fail loudly the way it does on the nine NOT NULL
+ * relations — it would silently destroy a file that has a live owner. So it sits
+ * beside two controls the clean set already provides: {@link FILE_USER}, owned
+ * by a live account, and the two SENTINEL-owned files, whose `ownerUserId` is a
+ * `__namespace__` string that is not an account at all and must never be read as
+ * an absent one. It carries no `links` or `variants`, because a dropped file
+ * WITH children is a cascade this fixture set deliberately does not answer —
+ * `orphanFileWithChildrenFixtures` is where that is exercised.
  */
 export function orphanResolutionFixtures(): FixtureSet {
   const fixtures = cleanFixtures();
   return {
     ...fixtures,
+    files: [
+      ...(fixtures.files ?? []),
+      {
+        _id: oid(RESOLVED_ORPHAN_FILE),
+        sha256: 'e'.repeat(64),
+        size: 4096,
+        mime: 'image/png',
+        ext: 'png',
+        // A real account id, and the account is gone.
+        ownerUserId: DELETED_USER,
+        status: 'active',
+        visibility: 'private',
+        purpose: 'user',
+        // Content-addressed, and it embeds the upload's year/month — which is
+        // why it is CARRIED into the report rather than re-derived later.
+        storageKey: `content/2026/03/ee/${'e'.repeat(64)}.png`,
+        originalName: 'orphan.png',
+        createdAt: T0,
+        updatedAt: T0,
+      },
+      {
+        // THE CONTROL, and it is deliberately CHILDLESS. `FILE_USER` is also
+        // owned by a live account, but it has links, variants and a message
+        // attachment — so a rule that wrongly dropped it would be caught by the
+        // cascade before any assertion about it ran, and "the rule spared it"
+        // would never actually be tested. This one has nothing pointing at it,
+        // so the only thing that can keep it is the predicate being narrow.
+        _id: oid(LIVE_OWNER_FILE),
+        sha256: 'f'.repeat(64),
+        size: 1024,
+        mime: 'image/png',
+        ext: 'png',
+        ownerUserId: USER_B,
+        status: 'active',
+        visibility: 'private',
+        purpose: 'user',
+        storageKey: `content/2026/03/ff/${'f'.repeat(64)}.png`,
+        originalName: 'kept.png',
+        createdAt: T0,
+        updatedAt: T0,
+      },
+    ],
     bundles: [
       ...(fixtures.bundles ?? []),
       {
@@ -1820,6 +1873,67 @@ export const RESOLVED_ORPHAN_NOTIFICATION = '68ae000000000000000000a3';
  * same absent account is dropped and the entry beside it survives.
  */
 export const RESOLVED_ORPHAN_DEVICE_SESSION = '68ae000000000000000000a4';
+
+/**
+ * A file whose owning account is gone. DROPPED — NULLABLE, ON DELETE CASCADE.
+ *
+ * Its `sha256` and `storage_key` are what the run report must carry beside the
+ * id: they are the only remaining handle on the S3 object the dropped row was
+ * the last record of.
+ */
+export const RESOLVED_ORPHAN_FILE = '68ae000000000000000000a6';
+
+/**
+ * A file with a LIVE owner and nothing referencing it.
+ *
+ * The control that is not shadowed by anything else: no link, no variant, no
+ * attachment, so if the rule wrongly drops it the ONLY thing that notices is the
+ * assertion that it is still there.
+ */
+export const LIVE_OWNER_FILE = '68ae000000000000000000a7';
+
+/** That file's content hash — named once, so the report can be asserted on it. */
+export const RESOLVED_ORPHAN_FILE_SHA256 = 'e'.repeat(64);
+/** …and its content-addressed key, which no later run could re-derive. */
+export const RESOLVED_ORPHAN_FILE_STORAGE_KEY = `content/2026/03/ee/${'e'.repeat(64)}.png`;
+
+/**
+ * The same orphaned file, but WITH the children a real one may have.
+ *
+ * `files` is the first table a resolution drops from that anything else
+ * references: `file_links.file_id` and `file_variants.file_id` cascade from it,
+ * and `message_attachments.file_id` declares ON DELETE **no action** — the
+ * schema's way of saying a stored message's attachment must never be silently
+ * emptied. So this set pins what happens: the audit reports those rows as
+ * orphans of the drop and BLOCKS, rather than letting a second `23503` arrive at
+ * copy time. Nobody has decided what a dropped file's links and variants become,
+ * and this migration does not decide it either.
+ */
+export function orphanFileWithChildrenFixtures(): FixtureSet {
+  const fixtures = orphanResolutionFixtures();
+  return {
+    ...fixtures,
+    files: (fixtures.files ?? []).map((file) =>
+      String(file._id) === RESOLVED_ORPHAN_FILE
+        ? {
+            ...file,
+            links: [
+              {
+                app: 'mention',
+                entityType: 'post',
+                entityId: 'post-orphan',
+                createdBy: USER_A,
+                createdAt: T0,
+              },
+            ],
+            variants: [
+              { type: 'thumbnail', key: 'assets/e-thumb', width: 32, height: 32, size: 128 },
+            ],
+          }
+        : file
+    ),
+  };
+}
 
 /** A bundle whose `userId` names an account the source no longer holds. */
 export const ORPHAN_BUNDLE = '68ad000000000000000000b1';
