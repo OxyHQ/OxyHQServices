@@ -206,6 +206,11 @@ export async function auditUniqueness(
     for (const part of audit.key) {
       present[part.path] = { $nin: [null, undefined] };
     }
+    // A PARTIAL index constrains only the rows its predicate selects, so the
+    // audit has to ask the same narrower question — see `UniquenessAudit.where`.
+    // Spread LAST so a predicate on an indexed column wins over the presence
+    // filter above rather than being silently dropped by key collision.
+    const scope: Record<string, unknown> = { ...present, ...(audit.where ?? {}) };
 
     const groupKey: Record<string, unknown> = {};
     for (const part of audit.key) {
@@ -215,7 +220,7 @@ export async function auditUniqueness(
     const groups = await source
       .collection(plan.collection)
       .aggregate([
-        { $match: present },
+        { $match: scope },
         { $group: { _id: groupKey, count: { $sum: 1 }, ids: { $push: '$_id' } } },
         { $match: { count: { $gt: 1 } } },
         { $sort: { count: -1 } },

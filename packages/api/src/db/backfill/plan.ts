@@ -124,6 +124,24 @@ export interface UniquenessAudit {
   /** The columns forming the key, each with its own normalization. */
   readonly key: readonly UniquenessKeyPart[];
   /**
+   * A PARTIAL index's predicate, written as a Mongo `$match` fragment over the
+   * SOURCE documents — omit it for a total index.
+   *
+   * Without it the audit answers a WIDER question than the index asks: it groups
+   * every document sharing the key, including rows the partial predicate
+   * excludes, so a pair Postgres would happily accept is reported as a
+   * collision. That is not merely noisy. A `resolvedBy` rule clears a group only
+   * by acting on all but one of its rows, so the extra rows make a rule that
+   * correctly handles the real collision fail to cover the group — and the
+   * migration blocks on data that was never a problem. That is exactly what
+   * `validation_requests_open_source_action_key` did.
+   *
+   * It must describe the rows as they will be AFTER the transform, not as the
+   * source stores them, since that is what ends up in the index. Derive it from
+   * the same constant the schema's predicate uses so the two cannot drift.
+   */
+  readonly where?: Readonly<Record<string, unknown>>;
+  /**
    * The documented rule that decides which of the colliding rows survives.
    *
    * Declaring it is not enough: the audit asks the resolution whether the rule

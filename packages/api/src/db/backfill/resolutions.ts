@@ -270,16 +270,31 @@ export function objectIdTimestamp(id: string): Date | null {
 }
 
 /**
+ * The Mongo spelling of `validation_requests_open_source_action_key`'s partial
+ * predicate — the documents that will occupy that index ONCE COPIED.
+ *
+ * It is exported and shared rather than written twice because two readers need
+ * the identical set and they fail in opposite directions if they disagree: the
+ * pre-pass below decides which rows to demote, and the uniqueness AUDIT decides
+ * which rows can collide. A pre-pass narrower than the audit leaves a group the
+ * rule cannot cover, which blocks the migration over rows Postgres would have
+ * accepted; a pre-pass wider than the audit demotes a row nothing required.
+ *
+ * `{status: null}` is deliberate and is NOT the same as the SQL predicate's
+ * status list: in Mongo it matches an explicit null AND a missing field, which
+ * is exactly the set the transform writes as `pending` via
+ * `str(doc,'status') ?? 'pending'`. Those rows land OPEN, so they belong here
+ * even though `null` is not one of the SQL statuses.
+ */
+export const OPEN_AFTER_COPY_MATCH: Readonly<Record<string, unknown>> = Object.freeze({
+  $or: [{ status: { $in: [...OPEN_VALIDATION_REQUEST_STATUSES] } }, { status: null }],
+});
+
+/**
  * Read the source and decide which duplicate open requests are demoted.
  *
  * `aggregate` only — the source handle refuses anything that is not a read
  * ({@link MongoSource}), so this cannot touch the rollback source it reads.
- *
- * The `$match` mirrors the transform's own `str(doc,'status') ?? 'pending'`:
- * `{status: null}` in Mongo matches both an explicit null AND a missing field,
- * which is exactly the set of documents the copy writes as `pending`. If the
- * two disagreed, a row the pre-pass thought was closed would land open and
- * collide.
  */
 export async function planResolutions(source: MongoSource): Promise<ResolutionPlan> {
   const groups = await source
@@ -290,7 +305,7 @@ export async function planResolutions(source: MongoSource): Promise<ResolutionPl
           // A NULL `source_action_id` could not collide anyway — the column is
           // NOT NULL here, and a unique index is NULLS DISTINCT regardless.
           sourceActionId: { $ne: null },
-          $or: [{ status: { $in: [...OPEN_VALIDATION_REQUEST_STATUSES] } }, { status: null }],
+          ...OPEN_AFTER_COPY_MATCH,
         },
       },
       {

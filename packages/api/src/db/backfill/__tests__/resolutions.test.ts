@@ -36,6 +36,8 @@ import {
   DUP_REQUEST_MIDDLE,
   DUP_REQUEST_NEWEST,
   DUP_REQUEST_OLDEST,
+  DUP_CLOSED_EXPIRED,
+  DUP_CLOSED_RESOLVED,
   DUP_UNTIMED_NEWER,
   DUP_UNTIMED_OLDER,
   DUPLICATE_ACTION_KEY,
@@ -249,6 +251,41 @@ describe('documented resolutions are applied, and reported', () => {
 
     expect(byId.get(DUP_UNTIMED_NEWER)?.status).toBe('pending');
     expect(byId.get(DUP_UNTIMED_OLDER)?.status).toBe(DEMOTED_VALIDATION_REQUEST_STATUS);
+  });
+
+  /**
+   * A PARTIAL unique index constrains only the rows its predicate selects, and
+   * the audit has to ask that same narrower question.
+   *
+   * This is not hygiene. Production reported 13 and 10 documents on this index
+   * and BLOCKED the migration, because the audit grouped every request sharing a
+   * `sourceActionId` regardless of status: the rule correctly demotes all but
+   * one of the OPEN rows, but `resolvesUniquenessGroup` requires it to act on
+   * all but one of the GROUP, and a group padded with legal closed rows can
+   * never satisfy that. The migration was stopped by data Postgres would have
+   * accepted without complaint.
+   */
+  it('never reports or touches a CLOSED row sharing the key', async () => {
+    const rows = await db
+      .select()
+      .from(validationRequests)
+      .where(inArray(validationRequests.id, [DUP_CLOSED_EXPIRED, DUP_CLOSED_RESOLVED]));
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    // Untouched: the rule demotes open duplicates, and these were already closed
+    // on arrival. A demotion here would rewrite a recorded verdict.
+    expect(byId.get(DUP_CLOSED_EXPIRED)?.status).toBe('expired');
+    expect(byId.get(DUP_CLOSED_RESOLVED)?.status).toBe('validated');
+    expect(byId.get(DUP_CLOSED_RESOLVED)?.outcome).toBe('validated');
+
+    // And absent from the finding, which is what keeps the group coverable. The
+    // count is the open rows only — three, not the five that share the key.
+    const group = summary.findings.find(
+      (finding) => finding.kind === 'uniqueness' && finding.detail.includes(DUPLICATE_ACTION_KEY)
+    );
+    expect(group?.documents).toBe(3);
+    expect(group?.sampleIds ?? []).not.toContain(DUP_CLOSED_EXPIRED);
+    expect(group?.sampleIds ?? []).not.toContain(DUP_CLOSED_RESOLVED);
   });
 
   it('leaves exactly one row per key occupying the partial unique index', async () => {

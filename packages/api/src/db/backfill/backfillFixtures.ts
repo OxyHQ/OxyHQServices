@@ -84,6 +84,19 @@ export const DUP_UNTIMED_OLDER = '68ac010000000000000000c1';
 /** `DUPLICATE_ACTION_KEY_UNTIMED`, newer ObjectId timestamp — SURVIVES. */
 export const DUP_UNTIMED_NEWER = '68ac020000000000000000c2';
 
+// Two CLOSED requests sharing `DUPLICATE_ACTION_KEY` with the open group above.
+// They are legal in Postgres — the unique index is PARTIAL on the open statuses,
+// so a closed row cannot collide with anything — and they exist to pin that the
+// audit asks the index's question rather than a wider one. An audit that ignores
+// the partial predicate groups all five, and the rule (which correctly demotes
+// all but one of the three OPEN rows) then fails to cover the padded group and
+// blocks the copy over data that was never a problem. That is the exact shape
+// production hit: 13 and 10 documents reported where only a handful were open.
+/** `DUPLICATE_ACTION_KEY`, already `expired` — must NEVER be reported or touched. */
+export const DUP_CLOSED_EXPIRED = '68ac030000000000000000d1';
+/** `DUPLICATE_ACTION_KEY`, already `resolved` — must NEVER be reported or touched. */
+export const DUP_CLOSED_RESOLVED = '68ac040000000000000000d2';
+
 /** The content address `signed_records.record_id` and its five referrers share. */
 export const RECORD_ID = 'bafyrecord0000000000000000000001';
 /** The SHA-256 an `update_assets` row is keyed by. */
@@ -1581,6 +1594,12 @@ export function resolvableFixtures(): FixtureSet {
       // is the ObjectId's own embedded timestamp.
       duplicateRequest(DUP_UNTIMED_OLDER, DUPLICATE_ACTION_KEY_UNTIMED, 'pending', null),
       duplicateRequest(DUP_UNTIMED_NEWER, DUPLICATE_ACTION_KEY_UNTIMED, 'pending', null),
+      // Two CLOSED rows on group one's key. They share `DUPLICATE_ACTION_KEY`
+      // with the three open ones above and are nonetheless legal, because the
+      // unique index is partial on the open statuses. They must not be reported
+      // and must not be demoted — see their declarations.
+      duplicateRequest(DUP_CLOSED_EXPIRED, DUPLICATE_ACTION_KEY, 'expired', T0),
+      duplicateRequest(DUP_CLOSED_RESOLVED, DUPLICATE_ACTION_KEY, 'validated', T1, 'validated'),
     ],
   };
 }
@@ -1596,7 +1615,8 @@ function duplicateRequest(
   documentId: string,
   sourceActionId: string,
   status: string,
-  createdAt: Date | null
+  createdAt: Date | null,
+  outcome: string | null = null
 ): FixtureDocument {
   return {
     _id: oid(documentId),
@@ -1613,6 +1633,11 @@ function duplicateRequest(
     candidateSnapshot: [{ userId: USER_B, weight: 1 }],
     selectedValidatorIds: [oid(USER_B)],
     expiresAt: FUTURE,
+    // `validation_requests_terminal_check` ties the two together: a verdict
+    // status must carry the matching outcome, and every other status must carry
+    // none. Passing them separately would let a fixture state a row the schema
+    // refuses, which fails as a confusing INSERT error rather than as a test.
+    ...(outcome === null ? {} : { outcome }),
     ...(createdAt === null ? {} : { createdAt, updatedAt: createdAt }),
   };
 }

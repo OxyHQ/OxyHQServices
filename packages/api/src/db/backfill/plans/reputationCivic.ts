@@ -82,6 +82,7 @@ import {
 import type { CollectionPlan } from '../plan';
 import {
   DEMOTE_DUPLICATE_OPEN_VALIDATION_REQUESTS,
+  OPEN_AFTER_COPY_MATCH,
   resolveValidationRequestState,
   VALIDATION_REQUESTS_COLLECTION,
 } from '../resolutions';
@@ -874,20 +875,25 @@ export const REPUTATION_CIVIC_PLANS: readonly CollectionPlan[] = [
       {
         // Postgres now enforces what `ValidationRequest.ts` said was "enforced in
         // the service" because Mongo's `partialFilterExpression` cannot express
-        // `$in`. This audit OVER-approximates it: the real index is partial on
-        // `status in ('pending','quorum_met')` and the audit shape carries no
-        // predicate, so a reported pair must be checked against `status` before
-        // it counts — two CLOSED requests sharing a `sourceActionId` are legal
-        // and will still be reported here.
+        // `$in`. The index is PARTIAL, so the audit is scoped to the same rows
+        // by `where` — without it the audit grouped every request sharing a
+        // `sourceActionId` regardless of status, reported 13 and 10 documents
+        // where Postgres only constrains the open subset, and then blocked the
+        // migration because a rule that correctly demotes the open duplicates
+        // cannot act on all-but-one of a group padded with closed rows.
         index: 'validation_requests_open_source_action_key',
         key: [
           { path: 'sourceActionId', normalize: 'exact' },
         ],
-        // Production holds two such groups (13 and 10 documents). They are the
-        // check-then-act race in `openValidationRequest` recorded, not dirty
-        // data — so the most recent survives and the rest are written
-        // terminal. Because the audit over-approximates, this only clears a
-        // group the rule verifiably demotes all-but-one of.
+        // Shared with the pre-pass rather than rewritten here — the two must
+        // select the identical set, and it is "open AFTER the copy", which
+        // includes a missing/null status (written `pending`) that the SQL
+        // predicate's status list does not name.
+        where: OPEN_AFTER_COPY_MATCH,
+        // Production holds two such groups. They are the check-then-act race in
+        // `openValidationRequest` recorded, not dirty data — so the most recent
+        // survives and the rest are written terminal. The rule still only
+        // clears a group it verifiably demotes all-but-one of.
         resolvedBy: DEMOTE_DUPLICATE_OPEN_VALIDATION_REQUESTS,
       },
     ],
