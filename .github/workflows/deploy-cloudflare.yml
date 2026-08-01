@@ -162,6 +162,18 @@ jobs:
       # installs without the buggy frozen flag.
       - run: bun install
       - run: bun x turbo run build --filter=inbox
+        env:
+          # Inbox's PRODUCTION Oxy client id. `packages/inbox/constants/oxy.ts`
+          # falls back to a committed id when this is unset, so nothing errors —
+          # the deployed bundle just authenticates against the wrong Oxy
+          # application. A repo VARIABLE rather than a secret: the id travels
+          # inside the bundle, so it is public by construction, and a secret
+          # would only make it unreadable in the UI. The variable is named per
+          # APP because five apps in this monorepo share two env-var names —
+          # EXPO_PUBLIC_OXY_CLIENT_ID (accounts, commons, inbox) and
+          # VITE_OXY_CLIENT_ID (console, auth) — so one variable per var name
+          # could not serve them.
+          EXPO_PUBLIC_OXY_CLIENT_ID: ${{ vars.INBOX_OXY_CLIENT_ID }}
       - uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
