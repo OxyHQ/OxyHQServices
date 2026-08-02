@@ -6,7 +6,7 @@
  * pill, Create folder) are hidden until the user is authenticated.
  */
 
-import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
+import { useMemo, useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,6 @@ import {
   Platform,
 } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { useQueryClient } from '@tanstack/react-query';
 import { useOxy, OxySignInButton, openAccountDialog, ProfileButton } from '@oxyhq/services';
 import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import { Button } from '@oxyhq/bloom/button';
@@ -49,8 +48,6 @@ import { useColors } from '@/constants/theme';
 import { Divider } from '@oxyhq/bloom/divider';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
-import { emailKeys } from '@/hooks/queries/queryKeys';
-import { clearPersistedInboxCache } from '@/hooks/queries/queryClient';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { useCreateMailbox, useDeleteMailbox } from '@/hooks/mutations/useMailboxMutations';
@@ -175,23 +172,12 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const colors = useColors();
   const { user, isAuthenticated } = useOxy();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-
-  const resetInboxForAccountChange = useCallback(() => {
-    useEmailStore.getState().resetAccountScopedState();
-    queryClient.clear();
-    void clearPersistedInboxCache();
-    queryClient.removeQueries({ queryKey: emailKeys.mailboxes.root });
-    queryClient.removeQueries({ queryKey: emailKeys.labels });
-    queryClient.removeQueries({ queryKey: emailKeys.messages.root });
-    queryClient.removeQueries({ queryKey: emailKeys.message.root });
-  }, [queryClient]);
 
   const handleAddAccount = useCallback(() => {
     // Open the sign-in modal to authenticate a new account. Cache reset runs in
-    // the activeUserId effect below once a switch actually commits — not here,
-    // or canceling sign-in would wipe the current inbox.
+    // RootEffects (_layout.tsx) once a switch actually commits — not here, or
+    // canceling sign-in would wipe the current inbox.
     openAccountDialog('signin');
   }, []);
 
@@ -205,17 +191,6 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const toggleMore = useEmailStore((s) => s.toggleMore);
   const { data: mailboxes = [] } = useMailboxes();
   const { data: labels = [] } = useLabels();
-
-  const activeUserId = user?.id ?? null;
-  const previousUserIdRef = useRef<string | null>(activeUserId);
-
-  useEffect(() => {
-    if (previousUserIdRef.current === activeUserId) {
-      return;
-    }
-    previousUserIdRef.current = activeUserId;
-    resetInboxForAccountChange();
-  }, [activeUserId, resetInboxForAccountChange]);
 
   // Determine active state from URL pathname.
   // Path shapes we care about here:

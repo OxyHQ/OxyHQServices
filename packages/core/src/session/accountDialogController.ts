@@ -783,8 +783,8 @@ export class AccountDialogController {
    * subscription, which re-projects the active row. Concurrent switches are
    * ignored while one is in flight.
    */
-  async switchTo(accountId: string): Promise<void> {
-    if (this.switchingAccountId) return;
+  async switchTo(accountId: string): Promise<boolean> {
+    if (this.switchingAccountId) return false;
     this.switchingAccountId = accountId;
     this.error = null;
     this.emit();
@@ -815,8 +815,10 @@ export class AccountDialogController {
       }
       // Re-project + refetch immediately; the subscription also fires.
       await this.refresh();
+      return true;
     } catch (error) {
       this.error = errorMessage(error);
+      return false;
     } finally {
       this.switchingAccountId = null;
       this.emit();

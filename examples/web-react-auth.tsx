@@ -15,6 +15,7 @@
 import React from 'react';
 import { OxyProvider, OxySignInButton, useAuth } from '@oxyhq/services';
 import type { User } from '@oxyhq/core';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { BloomThemeProvider } from '@oxyhq/bloom/theme';
 
 // ==================== 1. Config ====================
@@ -88,7 +89,7 @@ function Dashboard({ user }: { user: User }) {
 
   // Render `name.displayName` when present; otherwise fall back to the handle.
   // Never recompose a name from first/last/full.
-  const displayName = user.name?.displayName?.trim() || user.username;
+  const displayName = user.name?.displayName?.trim() ?? getNormalizedUserHandle(user);
 
   return (
     <div className="dashboard">
@@ -97,7 +98,7 @@ function Dashboard({ user }: { user: User }) {
           <h2>{displayName}</h2>
           {user.email ? <p>{user.email}</p> : null}
         </div>
-        <button onClick={() => signOut()}>Sign out</button>
+        <button type="button" onClick={() => signOut()}>Sign out</button>
       </header>
 
       <main>

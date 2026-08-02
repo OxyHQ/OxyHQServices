@@ -472,7 +472,7 @@ describe('AccountDialogController — switchTo (uniform switch)', () => {
     sc.set(state([{ accountId: 'a1', sessionId: 's1' }], 'a1'));
     oxy.switchToAccount.mockRejectedValue(new Error('Cannot switch into a personal account'));
 
-    await expect(controller.switchTo('org1')).resolves.toBeUndefined();
+    await expect(controller.switchTo('org1')).resolves.toBe(false);
 
     const snap = controller.getSnapshot();
     expect(snap.error).toBe('Cannot switch into a personal account');
@@ -516,6 +516,18 @@ describe('AccountDialogController — switchTo (uniform switch)', () => {
 
     release();
     await first;
+  });
+
+  it('returns true when the switch succeeds even if the post-switch refresh fails', async () => {
+    const { controller, oxy, sc } = makeHarness();
+    sc.set(state([{ accountId: 'a1', sessionId: 's1' }, { accountId: 'a2', sessionId: 's2' }], 'a1'));
+    jest.spyOn(sc, 'switchAccount').mockResolvedValue(undefined);
+    oxy.listAccounts.mockRejectedValue(new Error('network down'));
+
+    await expect(controller.switchTo('a2')).resolves.toBe(true);
+
+    expect(controller.getSnapshot().error).toBe('network down');
+    expect(controller.getSnapshot().switchingAccountId).toBeNull();
   });
 });
 

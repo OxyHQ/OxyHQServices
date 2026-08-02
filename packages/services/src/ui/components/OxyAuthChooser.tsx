@@ -229,15 +229,11 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
         return;
       }
       try {
-        await controller.switchTo(accountId);
-        // `switchTo` never throws — it records a failure on the controller's
-        // snapshot. Read it back at the point the switch settles and surface it
-        // as a toast (event-driven, at the failure site — NOT an inline banner
-        // and NOT a snapshot-reaction). On success reload the app's account
-        // graph and drop cached account-scoped data so the new active identity
-        // re-fetches — the same side effects the context's own
-        // `switchToAccount` performs.
-        if (controller.getSnapshot().error) {
+        const switched = await controller.switchTo(accountId);
+        // `switchTo` returns false when the switch itself failed. A post-switch
+        // graph refresh error is recorded on the snapshot but must not be
+        // mistaken for a switch failure.
+        if (!switched) {
           toast.error(t('accountSwitcher.toasts.switchFailed'));
           return;
         }

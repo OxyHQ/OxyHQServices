@@ -207,12 +207,17 @@ function RootEffects() {
   const accountKey = activeSessionId ?? user?.id ?? null;
   const prevAccountKeyRef = useRef(accountKey);
   if (prevAccountKeyRef.current !== accountKey) {
+    const isInitialAttach = prevAccountKeyRef.current === null && accountKey !== null;
     prevAccountKeyRef.current = accountKey;
-    queryClient.clear();
-    // Drop the persisted blob too so the next cold start can't restore the
-    // previous account's mail after an account switch / sign-out.
-    void clearPersistedInboxCache();
-    useEmailStore.getState().resetAccountScopedState();
+    // Cold boot / first sign-in: null → session. Keep the persisted cache the
+    // restore gate just hydrated — clearing here would defeat offline-first.
+    if (!isInitialAttach) {
+      queryClient.clear();
+      // Drop the persisted blob too so the next cold start can't restore the
+      // previous account's mail after an account switch / sign-out.
+      void clearPersistedInboxCache();
+      useEmailStore.getState().resetAccountScopedState();
+    }
   }
 
   // Real-time inbox updates. The hook is a no-op until a user is signed in
