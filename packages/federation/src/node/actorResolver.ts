@@ -20,6 +20,11 @@
  */
 
 import { canonicalFederationHost, isSameFederationHost } from '../apUri';
+import type {
+  DeriveNetworkIdentity,
+  NetworkIdentity,
+  NetworkIdentityCandidate,
+} from '../bridgePolicy';
 import type { NormalizedExternalActor } from '../index';
 import type { SignedFetch } from './signedFetch';
 import type { ReportActorGoneOutcome } from './identityBridge';
@@ -87,6 +92,18 @@ export interface FederatedActorUpsert {
   featuredUrl?: string;
   featuredTagsUrl?: string;
   alsoKnownAs?: string[];
+  /**
+   * The `<handle>@<network-domain>` identity this actor was re-labelled onto, when
+   * it came from a bridge; absent for the ordinary actor whose identity is simply
+   * its acct.
+   *
+   * Persisted rather than re-derived on demand because it is the key two rows are
+   * the SAME PERSON on: the same X account mirrored by two different bridges
+   * produces two actor rows with different URIs and different accts, and this is
+   * the only field on which they match. An app that de-duplicates bridged
+   * identities queries it; one that does not can ignore it.
+   */
+  networkAcct?: string;
   remoteCreatedAt?: Date;
   followersCount: number;
   followingCount: number;
@@ -170,6 +187,11 @@ export interface ActorResolverConfig<TActor extends FederatedActorRecordBase> {
   domainFromAcct: (acct: string) => string | undefined;
   /** Recursively find the first absolute http(s) URL in a value (icon/image). */
   firstStringUrl: (value: unknown) => string | undefined;
+  /**
+   * Optional re-labelling of a bridged actor onto its real network. Absent means
+   * every actor keeps the identity of the host it was fetched from.
+   */
+  deriveNetworkIdentity?: DeriveNetworkIdentity;
   /** The app's actor cache store. */
   store: FederatedActorStore<TActor>;
   /** The actor↔Oxy-user identity bridge. */
@@ -438,13 +460,35 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
       const rawDisplayName = typeof actor.name === 'string' ? actor.name : '';
       const displayName = this.config.text.inlineDisplayName(rawDisplayName) || username;
 
+      const alsoKnownAs = Array.isArray(actor.alsoKnownAs)
+        ? actor.alsoKnownAs.filter((v): v is string => typeof v === 'string')
+        : undefined;
+
+      // The IDENTITY the actor is stored under in Oxy, which is not necessarily the
+      // host it was fetched from — see `DeriveNetworkIdentity`. Everything below
+      // that addresses the actor over the PROTOCOL (`acct`, `uri`, `domain`) is
+      // deliberately left alone.
+      const networkIdentity = this.resolveNetworkIdentity({
+        host: actorHost,
+        acct,
+        preferredUsername: username,
+        actorUri: actorId,
+        actorType: asString(actor.type) || 'Person',
+        alsoKnownAs: alsoKnownAs ?? [],
+        fields,
+        bio: summary,
+      });
+      const identityUsername = networkIdentity?.federatedUsername ?? acct;
+      const identityDomain = networkIdentity?.instanceDomain ?? domain;
+      const identityBio = networkIdentity?.bio ?? summary;
+
       const update: FederatedActorUpsert = {
         protocol: 'activitypub',
         uri: actorId,
         username,
         domain,
         acct,
-        summary,
+        summary: identityBio,
         avatarUrl,
         headerUrl,
         inboxUrl: actorInbox,
@@ -462,9 +506,8 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
         fields,
         featuredUrl: asString(actor.featured) || undefined,
         featuredTagsUrl: asString(actor.featuredTags) || undefined,
-        alsoKnownAs: Array.isArray(actor.alsoKnownAs)
-          ? actor.alsoKnownAs.filter((v): v is string => typeof v === 'string')
-          : undefined,
+        alsoKnownAs,
+        networkAcct: networkIdentity?.federatedUsername,
         remoteCreatedAt: typeof actor.published === 'string' ? new Date(actor.published) : undefined,
         followersCount,
         followingCount,
@@ -484,14 +527,16 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
             network: 'activitypub',
             externalId: actorId,
             handle: acct,
-            // For AP the acct IS the canonical `user@domain` Oxy username, and
-            // `domain` is its instance host — both already verified above.
-            federatedUsername: acct,
-            instanceDomain: domain,
+            // For an ordinary AP actor the acct IS the canonical `user@domain` Oxy
+            // username and `domain` is its instance host — both verified above. For
+            // a BRIDGED actor these two carry the re-labelled network identity
+            // instead, while `handle` above stays the protocol address.
+            federatedUsername: identityUsername,
+            instanceDomain: identityDomain,
             displayName,
             avatarUrl,
             bannerUrl: headerUrl,
-            bio: summary || undefined,
+            bio: identityBio || undefined,
             followersCount,
             followingCount,
             postsCount,
@@ -511,6 +556,48 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
       this.config.logger.warn(`Failed to fetch remote actor ${currentUri}:`, err);
       return null;
     }
+  }
+
+  /**
+   * Run the app's {@link DeriveNetworkIdentity} hook and REFUSE any result the
+   * identity bridge could not bind.
+   *
+   * oxy-api binds a federated username to its domain, so a `federatedUsername`
+   * that does not end with `@${instanceDomain}` would be rejected downstream — or
+   * worse, mint an identity under a domain it does not name. Validating here means
+   * no app can produce that shape, and a hook that gets it wrong degrades to the
+   * actor's real protocol acct (the pre-hook behaviour) instead of losing the
+   * actor. The refusal is logged: it is a bug in the app's rule, not a normal
+   * outcome, and it must not pass silently.
+   */
+  private resolveNetworkIdentity(
+    candidate: NetworkIdentityCandidate,
+  ): NetworkIdentity | undefined {
+    const derived = this.config.deriveNetworkIdentity?.(candidate);
+    if (!derived) return undefined;
+
+    const domain = derived.instanceDomain.trim().toLowerCase();
+    const federatedUsername = derived.federatedUsername.trim().toLowerCase();
+    // Everything before the FIRST `@` is the local part; the whole value must then
+    // be exactly `<local>@<domain>`. Stated as one equality rather than a list of
+    // separate shape checks, so a value that is malformed in a way nobody thought
+    // of — a second `@`, a missing one, a different separator — fails by default
+    // instead of needing its own clause.
+    const atIndex = federatedUsername.indexOf('@');
+    const localPart = atIndex > 0 ? federatedUsername.slice(0, atIndex) : '';
+    if (
+      domain.length === 0
+      || localPart.length === 0
+      || federatedUsername !== `${localPart}@${domain}`
+    ) {
+      this.config.logger.warn(
+        `[FedSync] refusing network identity for ${candidate.actorUri}: `
+        + `"${derived.federatedUsername}" is not bindable to domain "${derived.instanceDomain}"`,
+      );
+      return undefined;
+    }
+
+    return { federatedUsername, instanceDomain: domain, bio: derived.bio };
   }
 
   /**
