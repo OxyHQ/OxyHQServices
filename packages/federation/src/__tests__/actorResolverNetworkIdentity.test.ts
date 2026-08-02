@@ -10,7 +10,34 @@
  */
 
 import { createActorResolver, type ActorResolverConfig, type FederatedActorRecordBase } from '../node/actorResolver';
-import { deriveBridgedNetworkIdentity, type DeriveNetworkIdentity } from '../bridgePolicy';
+import {
+  FEDERATION_NETWORKS,
+  createBridgeRelabeller,
+  upstreamHandleFromProfileField,
+  type DeriveNetworkIdentity,
+} from '../networkIdentity';
+
+/**
+ * A stand-in registry. This package ships no entries, so the resolver test
+ * supplies one — which is the arrangement in production too, only there the
+ * entries are an app's reviewed policy.
+ */
+const relabeller = createBridgeRelabeller([{
+  host: 'bird.makeup',
+  network: FEDERATION_NETWORKS.x,
+  operator: 'test',
+  software: 'BirdsiteLive',
+  derive: upstreamHandleFromProfileField({ fieldName: 'Official', hosts: ['twitter.com', 'x.com'] }),
+  caseRule: 'lowercase',
+  relabel: 'enabled',
+  upstreamIdStability: 'recyclable',
+  boilerplate: [/\s*This account is a replica from Twitter\..*Patreon\.\s*$/s],
+  consent: 'unconsented',
+  evidence: 'test',
+  assumption: '',
+  since: '2026-08-02',
+}]);
+const deriveBridgedNetworkIdentity = relabeller.deriveNetworkIdentity;
 import type { NormalizedExternalActor } from '../index';
 
 interface TestActor extends FederatedActorRecordBase {

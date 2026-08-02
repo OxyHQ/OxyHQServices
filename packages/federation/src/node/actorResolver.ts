@@ -24,7 +24,7 @@ import type {
   DeriveNetworkIdentity,
   NetworkIdentity,
   NetworkIdentityCandidate,
-} from '../bridgePolicy';
+} from '../networkIdentity';
 import type { NormalizedExternalActor } from '../index';
 import type { SignedFetch } from './signedFetch';
 import type { ReportActorGoneOutcome } from './identityBridge';

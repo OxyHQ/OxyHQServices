@@ -64,6 +64,15 @@ export interface FederationNetwork {
   readonly name: string;
   /** The identity domain handles are rendered and stored under. */
   readonly domain: string;
+  /**
+   * Every host a profile URL for this network can be pasted from — the canonical
+   * one FIRST, then aliases (`x.com` and `twitter.com` are one network;
+   * `instagram.com` and `www.instagram.com` differ only by a prefix the
+   * canonicaliser already strips).
+   */
+  readonly profileHosts: readonly string[];
+  /** Fixed path segments before the handle (`bsky.app/profile/<handle>` ⇒ `['profile']`). */
+  readonly profilePathPrefix: readonly string[];
 }
 
 /**
@@ -77,10 +86,73 @@ export interface FederationNetwork {
  * would happen if the two paths each named the network themselves.
  */
 export const FEDERATION_NETWORKS = {
-  x: { id: 'x', name: 'X', domain: 'x.com' },
-  instagram: { id: 'instagram', name: 'Instagram', domain: 'instagram.com' },
-  bluesky: { id: 'bluesky', name: 'Bluesky', domain: 'bsky.social' },
+  x: {
+    id: 'x',
+    name: 'X',
+    domain: 'x.com',
+    profileHosts: ['x.com', 'twitter.com', 'mobile.twitter.com'],
+    profilePathPrefix: [],
+  },
+  instagram: {
+    id: 'instagram',
+    name: 'Instagram',
+    domain: 'instagram.com',
+    profileHosts: ['instagram.com'],
+    profilePathPrefix: [],
+  },
+  bluesky: {
+    id: 'bluesky',
+    name: 'Bluesky',
+    domain: 'bsky.social',
+    profileHosts: ['bsky.app'],
+    profilePathPrefix: ['profile'],
+  },
 } as const satisfies Record<string, FederationNetwork>;
+
+/**
+ * The upstream profile URL for a handle on a network.
+ *
+ * Deliberately the SAME declaration {@link parseUpstreamProfileUrl} reads
+ * backwards. Rendering a link and recognising a pasted one are the same fact
+ * stated in two directions, and holding them as two independent tables is how
+ * they drift — with the failure landing on the parsing side, where a search that
+ * silently finds nothing is indistinguishable from "we do not have that account"
+ * and so nobody ever reports it.
+ */
+export function upstreamProfileUrl(network: FederationNetwork, handle: string): string {
+  const path = [...network.profilePathPrefix, encodeURIComponent(handle)].join('/');
+  return `https://${network.profileHosts[0]}/${path}`;
+}
+
+/**
+ * The network and handle a pasted upstream profile URL names, or `undefined` when
+ * it is not one.
+ *
+ * Query strings and fragments are dropped (a pasted URL usually carries tracking
+ * parameters) and a trailing slash is tolerated. Purely syntactic: it never
+ * fetches the URL — resolving a user-supplied URL by fetching it would be an SSRF
+ * surface, and there is nothing here that needs the network.
+ */
+export function parseUpstreamProfileUrl(
+  candidateUrl: string,
+  networks: readonly FederationNetwork[] = Object.values(FEDERATION_NETWORKS),
+): { network: FederationNetwork; handle: string } | undefined {
+  let url: URL;
+  try {
+    url = new URL(candidateUrl.trim());
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+
+  const host = canonicalFederationHost(url.hostname);
+  for (const network of networks) {
+    if (!network.profileHosts.some((allowed) => canonicalFederationHost(allowed) === host)) continue;
+    const handle = profileUrlHandle(url.href, network.profileHosts, network.profilePathPrefix);
+    if (handle !== undefined && handle.length > 0) return { network, handle };
+  }
+  return undefined;
+}
 
 /** The Bluesky network's canonical identity domain — see {@link FEDERATION_NETWORKS}. */
 export const BSKY_NETWORK_DOMAIN = FEDERATION_NETWORKS.bluesky.domain;
@@ -185,8 +257,35 @@ export interface FederationBridgeEntry {
    *    would change what it addresses.
    */
   readonly caseRule: 'lowercase' | 'preserve';
-  /** Build the upstream profile URL for a derived handle (for links and review). */
-  readonly upstreamProfileUrl: (handle: string) => string;
+  /**
+   * Whether re-labelling this bridge's actors is SAFE TO APPLY yet.
+   *
+   * Re-labelling does not merely coexist with duplicates, it MANUFACTURES them:
+   * two bridges of one network that render as visibly different accounts today
+   * both render the SAME handle afterwards — identical, adjacent in search and in
+   * follow lists, and reading as a bug in a way the status quo does not. Where a
+   * network's collision set is non-empty, the merge has to land first.
+   *
+   *  - `enabled`        the identity moves.
+   *  - `pending_dedup`  the entry is committed and reviewed, and deliberately
+   *                     INERT: the derivation is exercised by tests but no actor
+   *                     is re-labelled, because doing so would create twins.
+   */
+  readonly relabel: 'enabled' | 'pending_dedup';
+  /**
+   * How stable the upstream identifier this rule derives actually is.
+   *
+   *  - `stable`     an immutable upstream id (an atproto DID, an ORCID iD). Two
+   *                 rows sharing it are the same account, permanently.
+   *  - `recyclable` a HANDLE. X and Instagram release abandoned handles, so two
+   *                 bridges capturing years apart can derive the same key for two
+   *                 different humans, and Bluesky handles are mutable — which is
+   *                 exactly why the atproto connector keys on the DID instead.
+   *
+   * Named rather than silently carried: it is the residual risk a merge inherits,
+   * and a reader deciding whether to trust a merge needs it stated.
+   */
+  readonly upstreamIdStability: 'stable' | 'recyclable';
   /**
    * The bridge's own appended boilerplate, to strip from the bio.
    *
@@ -327,197 +426,87 @@ export function blueskyUsernameFromHandle(handle: string): string {
     : handle;
 }
 
-/** bird.makeup / kilogram.makeup emit this notice, differing only in the network name. */
-/** Everything after the network name, which is the only part that varies. */
-const MAKEUP_REPLICA_NOTICE_TAIL =
-  "\\.\\s*Its author can't see your replies\\.\\s*If you find this service useful, "
-  + 'please consider supporting us via our Patreon\\.\\s*$';
-
-function makeupReplicaNotice(network: string): RegExp {
-  return new RegExp(`\\s*This account is a replica from ${network}${MAKEUP_REPLICA_NOTICE_TAIL}`);
+/** A reviewed bridge registry, and the readers an app drives it with. */
+export interface BridgeRelabeller {
+  /** The reviewed entry for a host, or `undefined` — most hosts are not bridges. */
+  findBridge: (host: string) => FederationBridgeEntry | undefined;
+  /**
+   * Whether `actorHost` is a reviewed bridge mirroring `networkDomain`. Both
+   * halves must match: a bridge vouches ONLY for the one network it mirrors, so
+   * being listed is never on its own a licence to claim any domain.
+   */
+  vouchesForNetwork: (actorHost: string, networkDomain: string) => boolean;
+  /** The {@link DeriveNetworkIdentity} hook an ingest path installs. */
+  deriveNetworkIdentity: DeriveNetworkIdentity;
 }
 
 /**
- * THE COMMITTED BRIDGE POLICY.
+ * Build the readers for a set of reviewed bridge entries.
  *
- * Arrived at by sweeping the self-description (nodeinfo + the Mastodon-style
- * instance API) of EVERY federated domain Mention holds an actor from, not a
- * sample of the largest ones — every bridge below sits far outside the top 60 by
- * actor count, so a survey of the head would have reported that none exist.
+ * The entries are a PARAMETER and this package ships none. Deciding that a given
+ * operator may be trusted to re-attribute somebody's account is a moderation
+ * judgement, not a platform fact — bake one app's list in here and every Oxy app
+ * silently inherits it, including consent calls their owners never made. Oxy holds
+ * the capability; the app holds the policy, commits it, and answers for it.
+ *
+ * A blocked host must be refused by the caller's domain policy BEFORE this is
+ * consulted: blocking and bridge-trust are opposite decisions about a host and the
+ * block wins. No blocklist is accepted here, so this can never be mistaken for the
+ * place that decision is made.
  */
-export const FEDERATION_BRIDGE_POLICY: readonly FederationBridgeEntry[] = [
-  {
-    host: 'bird.makeup',
-    network: FEDERATION_NETWORKS.x,
-    operator: 'Vincent Cloutier (bird.makeup)',
-    software: 'BirdsiteLive',
-    derive: upstreamHandleFromProfileField({ fieldName: 'Official', hosts: ['twitter.com', 'x.com'] }),
-    caseRule: 'lowercase',
-    upstreamProfileUrl: (handle) => `https://x.com/${handle}`,
-    boilerplate: [makeupReplicaNotice('Twitter')],
-    consent: 'unconsented',
-    evidence:
-      'Every mirrored actor publishes an `Official` profile field whose rel="me" link is '
-      + 'https://twitter.com/<handle> — the bridge states which upstream account it mirrors, so the '
-      + 'handle is read from that assertion rather than inferred. Verified against the stored actor '
-      + 'rows for typecache, gorskon and giswqs, and against a live fetch of bird.makeup/users/nasa.',
-    assumption: '',
-    since: '2026-08-02',
-  },
-  {
-    host: 'kilogram.makeup',
-    network: FEDERATION_NETWORKS.instagram,
-    operator: 'Vincent Cloutier (bird.makeup)',
-    software: 'BirdsiteLive',
-    derive: upstreamHandleFromProfileField({ fieldName: 'Official', hosts: ['instagram.com'] }),
-    caseRule: 'lowercase',
-    upstreamProfileUrl: (handle) => `https://www.instagram.com/${handle}`,
-    boilerplate: [makeupReplicaNotice('Instagram')],
-    consent: 'unconsented',
-    evidence:
-      'Same software and same `Official` rel="me" assertion as bird.makeup, pointing at '
-      + 'https://www.instagram.com/<handle>. Verified against the stored actor rows for '
-      + 'robert.habeck, umwelthilfe and plex — note Instagram handles may contain dots, which the '
-      + 'single-path-segment rule preserves.',
-    assumption: '',
-    since: '2026-08-02',
-  },
-  {
-    host: 'mastox.eu',
-    network: FEDERATION_NETWORKS.x,
-    operator: 'mastox.eu (contact @admin@mastox.eu)',
-    software: 'Mastodon',
-    derive: upstreamHandleFromPreferredUsername([
-      /\(bot from x to mastodon managed by mastox\.eu, contact @admin for any information\)\s*$/i,
-      /\(bot de x . mastodon g.r. par mastox\.eu, contactez @admin pour toute demande\)\s*$/i,
-    ]),
-    caseRule: 'lowercase',
-    upstreamProfileUrl: (handle) => `https://x.com/${handle}`,
-    boilerplate: [
-      /\s*\(bot from x to mastodon managed by mastox\.eu, contact @admin for any information\)\s*$/i,
-      /\s*\(bot de x . mastodon g.r. par mastox\.eu, contactez @admin pour toute demande\)\s*$/i,
-    ],
-    consent: 'unconsented',
-    evidence:
-      'The instance describes itself as "une instance Mastodon de miroir non officiels de comptes X '
-      + 'vers Mastodon", and every mirrored actor appends a per-account notice naming itself a bot '
-      + 'from X — which is what identifies a mirror here, since the operator\'s own @admin account '
-      + 'lives on the same host and carries no such notice. Verified against the stored rows for '
-      + 'mehdirhasan, FranceskAlbs and gbsumudflotilla (English notice) and a live fetch of '
-      + 'mastox.eu/users/RERB (French notice).',
-    assumption:
-      'That the mirrored account\'s preferredUsername equals the upstream X handle. Unlike the two '
-      + 'BirdsiteLive bridges, a mastox.eu actor publishes NO link to the X account it mirrors — no '
-      + 'alsoKnownAs, no rel="me" to x.com — so this mapping rests on the instance-level declaration '
-      + 'plus the naming convention, and is the one derivation here that is not read off an assertion '
-      + 'the actor makes about itself.',
-    since: '2026-08-02',
-  },
-  {
-    host: 'bsky.brid.gy',
-    network: FEDERATION_NETWORKS.bluesky,
-    operator: 'Ryan Barrett (Bridgy Fed)',
-    software: 'bridgy-fed',
-    // The `bsky.app/profile/<handle>` link carries the FULL Bluesky handle, so the
-    // same `.bsky.social`-suffix rule the atproto connector applies has to run
-    // here too — without it `georgemonbiot.bsky.social` would be stored as the
-    // doubled `@georgemonbiot.bsky.social@bsky.social` and would NOT match the row
-    // the direct connector already holds for that account.
-    derive: (candidate) => {
-      const handle = upstreamHandleFromProfileField({
-        fieldName: 'Web site',
-        hosts: ['bsky.app'],
-        pathPrefix: ['profile'],
-      })(candidate);
-      return handle === undefined ? undefined : blueskyUsernameFromHandle(handle);
+export function createBridgeRelabeller(
+  entries: readonly FederationBridgeEntry[],
+): BridgeRelabeller {
+  const byHost = new Map<string, FederationBridgeEntry>(
+    entries.map((entry) => [canonicalFederationHost(entry.host), entry]),
+  );
+  const findBridge = (host: string): FederationBridgeEntry | undefined =>
+    byHost.get(canonicalFederationHost(host));
+
+  return {
+    findBridge,
+    vouchesForNetwork: (actorHost, networkDomain) => {
+      const bridge = findBridge(actorHost);
+      if (!bridge) return false;
+      return canonicalFederationHost(bridge.network.domain) === canonicalFederationHost(networkDomain);
     },
-    caseRule: 'preserve',
-    upstreamProfileUrl: (handle) => `https://bsky.app/profile/${handle}`,
-    boilerplate: [
-      /\s*🌉\s*\S+\s+from\s+🦋\s+\S+, follow (?:@bsky\.brid\.gy|\S+) to interact\s*$/u,
-    ],
-    consent: 'opt-in',
-    evidence:
-      'Bridgy Fed only bridges a Bluesky account once that account opts in, and each bridged actor '
-      + 'publishes a `Web site` rel="me" link to https://bsky.app/profile/<handle> plus its atproto '
-      + 'DID in alsoKnownAs — the same DID the atproto connector keys its own row on, which is what '
-      + 'makes the two paths provably the same account. Verified against the stored rows for '
-      + 'thistleandmoss.com, georgemonbiot.bsky.social and assignedmale.bsky.social, and a live fetch '
-      + 'of bsky.brid.gy/ap/did:plc:z72i7hdynmk6r22z27h6tvur.',
-    assumption: '',
-    since: '2026-08-02',
-  },
-];
+    deriveNetworkIdentity: (candidate) => {
+      const entry = findBridge(candidate.host);
+      if (!entry) return undefined;
+      // A `pending_dedup` entry is committed, reviewed and deliberately inert:
+      // re-labelling it would manufacture visible twins of accounts we already
+      // hold under the same derived handle.
+      if (entry.relabel !== 'enabled') return undefined;
 
-/** The committed policy indexed by canonical host. */
-const BRIDGES_BY_HOST: ReadonlyMap<string, FederationBridgeEntry> = new Map(
-  FEDERATION_BRIDGE_POLICY.map((entry) => [canonicalFederationHost(entry.host), entry]),
-);
+      const derived = entry.derive(candidate);
+      if (derived === undefined) return undefined;
 
-/**
- * The reviewed bridge for a host, or `undefined` for the overwhelming majority of
- * hosts, which are not bridges.
- *
- * Callers that enforce a domain policy MUST refuse a blocked host BEFORE asking
- * this — blocking and bridge-trust are opposite decisions and the block wins. The
- * lookup deliberately does not take a blocklist argument, so it can never be
- * mistaken for the place that decision is made.
- */
-export function findFederationBridge(host: string): FederationBridgeEntry | undefined {
-  return BRIDGES_BY_HOST.get(canonicalFederationHost(host));
+      const handle = entry.caseRule === 'lowercase' ? derived.trim().toLowerCase() : derived.trim();
+      // An empty handle is the signature of a BROKEN derivation, not of an
+      // unusual account — and it is the most destructive possible outcome, since
+      // every actor on the domain would collapse onto one identity. We hold
+      // federated actors with no `preferredUsername` at all, so this is reachable
+      // rather than theoretical. An `@` or `/` would likewise produce an identity
+      // that reads as a different account than it addresses.
+      if (handle.length === 0 || handle.includes('@') || handle.includes('/')) return undefined;
+
+      const instanceDomain = canonicalFederationHost(entry.network.domain);
+      if (instanceDomain.length === 0) return undefined;
+
+      return {
+        federatedUsername: `${handle}@${instanceDomain}`,
+        instanceDomain,
+        bio: stripBridgeBoilerplate(candidate.bio, entry),
+      };
+    },
+  };
 }
 
-/**
- * Whether `actorHost` is a reviewed bridge that mirrors accounts from
- * `networkDomain` — the question oxy-api's `PUT /users/resolve` asks before it
- * accepts a federated identity whose actor URI host differs from the domain it is
- * being stored under.
- *
- * Both sides must match: a bridge vouches ONLY for the one network it mirrors, so
- * being a known bridge is never on its own a licence to claim any domain.
- */
-export function bridgeVouchesForNetwork(actorHost: string, networkDomain: string): boolean {
-  const bridge = findFederationBridge(actorHost);
-  if (!bridge) return false;
-  return canonicalFederationHost(bridge.network.domain) === canonicalFederationHost(networkDomain);
-}
-
-/** Strip a bridge's own appended boilerplate, leaving anything it does not match untouched. */
+/** Strip a bridge's own boilerplate, leaving anything it does not match untouched. */
 export function stripBridgeBoilerplate(bio: string, entry: FederationBridgeEntry): string {
   let result = bio;
   for (const pattern of entry.boilerplate) {
     result = result.replace(pattern, '');
   }
-  return result.trimEnd();
+  return result.trim();
 }
-
-/**
- * Re-label a bridged actor onto its real network, or return `undefined` when the
- * actor is not from a reviewed bridge or does not satisfy that bridge's rule.
- *
- * This is the whole policy applied end to end: look the host up, run the entry's
- * derivation, apply its case rule, and strip its boilerplate. It never inspects a
- * blocklist — see {@link findFederationBridge}.
- */
-export const deriveBridgedNetworkIdentity: DeriveNetworkIdentity = (candidate) => {
-  const entry = findFederationBridge(candidate.host);
-  if (!entry) return undefined;
-
-  const derived = entry.derive(candidate);
-  if (derived === undefined) return undefined;
-
-  const handle = entry.caseRule === 'lowercase' ? derived.toLowerCase() : derived;
-  // A handle carrying an `@` or a `/` would produce an unparseable or
-  // host-crossing identity; refuse rather than store something that reads as a
-  // different account than it addresses.
-  if (handle.length === 0 || handle.includes('@') || handle.includes('/')) return undefined;
-
-  const instanceDomain = canonicalFederationHost(entry.network.domain);
-  if (instanceDomain.length === 0) return undefined;
-
-  return {
-    federatedUsername: `${handle}@${instanceDomain}`,
-    instanceDomain,
-    bio: stripBridgeBoilerplate(candidate.bio, entry),
-  };
-};

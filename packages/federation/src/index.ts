@@ -46,32 +46,35 @@ export {
 export { createUrlBuilders, normalizeActorUsername, type UrlBuilders } from './urls';
 
 /**
- * The bridge policy: which hosts republish another network's accounts, how to
- * recover the upstream handle from one of their actors, and which network a
- * bridge is allowed to vouch for. Shared because an app's connector DERIVES a
- * bridged identity and oxy-api DECIDES whether to believe it — two copies of this
- * list would drift into oxy-api accepting an attribution nobody reviewed.
+ * Network identity: the MECHANISM for re-labelling an account republished by a
+ * bridge onto the network it actually came from, plus the network vocabulary and
+ * the bidirectional upstream-profile-URL rule.
+ *
+ * The mechanism is here; the ENTRIES are not, and must not be. Which operators
+ * may be trusted to re-attribute somebody's account is a moderation judgement an
+ * app commits and answers for — `createBridgeRelabeller` takes them as a
+ * parameter so no app inherits another's.
  */
 export {
   FEDERATION_NETWORKS,
-  FEDERATION_BRIDGE_POLICY,
   BSKY_NETWORK_DOMAIN,
   blueskyUsernameFromHandle,
-  findFederationBridge,
-  bridgeVouchesForNetwork,
+  createBridgeRelabeller,
   stripBridgeBoilerplate,
-  deriveBridgedNetworkIdentity,
+  upstreamProfileUrl,
+  parseUpstreamProfileUrl,
   upstreamHandleFromProfileField,
   upstreamHandleFromPreferredUsername,
   type FederationNetwork,
   type FederationBridgeEntry,
+  type BridgeRelabeller,
   type BridgeConsentModel,
   type BridgeDerivation,
   type BridgedActorField,
   type DeriveNetworkIdentity,
   type NetworkIdentity,
   type NetworkIdentityCandidate,
-} from './bridgePolicy';
+} from './networkIdentity';
 
 /**
  * The shared JSON-LD `@context` (load-bearing term declarations) and the

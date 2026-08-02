@@ -12,7 +12,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
-import { bridgeVouchesForNetwork, canonicalFederationHost, isSameFederationHost } from '@oxyhq/federation';
+import { canonicalFederationHost, isSameFederationHost } from '@oxyhq/federation';
 import { readBoundedBody } from '../services/linkPreview/boundedBody';
 import { getDb } from '../config/postgres';
 import { identityBackups } from '../db/schema/identityBackups';
@@ -94,6 +94,7 @@ const getUserIdsFromRequestBody = (body: unknown): unknown => {
 
 import { PAGINATION } from '../utils/constants';
 import { MAX_MUTUAL_IDS, MAX_FOLLOWS_OF_FOLLOWS_IDS } from '../utils/recommendationWeights';
+import { bridgeVouchesForNetwork } from '../config/federationBridgeTrust';
 import { federationService, isOwnFederationDomain } from '../services/federation.service';
 import { isPublicGraphTarget } from '../utils/profileQuery';
 
@@ -1787,11 +1788,11 @@ router.put(
       // belongs to `x.com`. WebFinger cannot settle that: X publishes none, and
       // no amount of asking bird.makeup would make it authoritative for x.com.
       //
-      // So the question is answered from `@oxyhq/federation`'s reviewed bridge
-      // policy, which is a decision THIS service makes, not one the caller
-      // asserts — the same list the calling connector derives from, imported
-      // rather than duplicated, because two copies would drift into accepting an
-      // attribution nobody reviewed. `bridgeVouchesForNetwork` requires BOTH
+      // So the question is answered from THIS service's own reviewed trust list
+      // (`config/federationBridgeTrust`) — a decision the API makes, never one the
+      // caller asserts, which is the entire point of the binding. The calling
+      // connector keeps its own list; the two are deliberately separate and fail
+      // CLOSED in both directions. `bridgeVouchesForNetwork` requires BOTH
       // halves to match, so a listed bridge can only ever claim the single
       // network it mirrors, and an unlisted host still cannot claim anything.
       // It is checked before the WebFinger probe purely because it is a local
