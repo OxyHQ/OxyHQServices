@@ -4,7 +4,6 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { BloomThemeProvider } from "@oxyhq/bloom/theme"
 import { ConnectionStatusToasts } from "@oxyhq/bloom/connection-status"
 import { OxyProvider } from "@oxyhq/services"
-import { Toaster } from "@/components/ui/sonner"
 import { getBloomThemeCSS, setBasePreset } from "@/lib/bloom-css"
 import { getApiBaseUrl } from "@/lib/oxy-api-client"
 import { OXY_CLIENT_ID } from "@/lib/oxy-client"
@@ -75,7 +74,6 @@ function App() {
                             <Route path="/" element={<ExternalRedirect url="https://oxy.so" />} />
                             <Route path="*" element={<Navigate to="/login" replace />} />
                         </Routes>
-                        <Toaster position="bottom-right" />
                     </BrowserRouter>
                 </OxyProvider>
                 </BloomThemeProvider>

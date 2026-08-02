@@ -57,8 +57,6 @@
     "react-native-worklets": "catalog:",
     "semver": "^7.7.2",
     "socket.io-client": "catalog:",
-    "sonner": "catalog:",
-    "sonner-native": "^0.26.4",
     "tailwindcss": "4.3.2",
     "tailwindcss-animate": "^1.0.7",
     "whatwg-fetch": "^3.6.20",

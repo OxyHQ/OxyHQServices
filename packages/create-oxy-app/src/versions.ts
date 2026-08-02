@@ -34,8 +34,6 @@ export const VERSIONS = {
   expoImagePicker: '~57.0.4',
   expoImageManipulator: '~57.0.4',
   reactNativeQrcodeSvg: '^6.3.0',
-  sonner: '^2.0.7', // web toast (Bloom toast.web)
-  sonnerNative: '^0.26.4', // native toast (Bloom toast.native)
 
   // --- React / React Native (Expo SDK 57 pins) ---
   react: '19.2.3',

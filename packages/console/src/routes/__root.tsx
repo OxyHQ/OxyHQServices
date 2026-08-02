@@ -5,7 +5,6 @@ import { OxyProvider } from '@oxyhq/services';
 import { BloomThemeProvider } from '@oxyhq/bloom/theme';
 import { ConnectionStatusToasts } from '@oxyhq/bloom/connection-status';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { Toaster } from '@/components/ui/sonner';
 import { AccountProvider } from '@/hooks/use-account';
 import { LocaleProvider } from '@/lib/i18n';
 
@@ -46,7 +45,6 @@ function RootComponent() {
             <AccountProvider>
               <TooltipProvider delayDuration={300}>
                 <Outlet />
-                <Toaster position="bottom-right" richColors closeButton />
               </TooltipProvider>
             </AccountProvider>
           </OxyProvider>

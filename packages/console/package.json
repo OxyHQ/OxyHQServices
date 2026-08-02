@@ -45,7 +45,6 @@
     "shadcn": "catalog:",
     "shiki": "^3.23.0",
     "socket.io-client": "catalog:",
-    "sonner": "catalog:",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.0.6",
     "tw-animate-css": "catalog:",

@@ -1,13 +1,12 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-    View,
-    Pressable,
     StyleSheet,
     Platform,
     type StyleProp,
     type ViewStyle,
 } from 'react-native';
+import { View, Pressable } from 'react-native-css/components';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import * as Skeleton from '@oxyhq/bloom/skeleton';

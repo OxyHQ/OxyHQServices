@@ -33,7 +33,6 @@
     "react-native-web": "^0.21.0",
     "shadcn": "catalog:",
     "socket.io-client": "catalog:",
-    "sonner": "catalog:",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.17",
     "tw-animate-css": "catalog:",
