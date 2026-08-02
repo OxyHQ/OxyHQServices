@@ -21,6 +21,14 @@ permissions:
   id-token: write
   contents: read
 
+concurrency:
+  # Serialize production rollouts. Two overlapping runs each register a task
+  # definition revision and then call update-service; interleaved, the older
+  # image wins and the newer run still reports success. Never cancel in
+  # progress: an interrupted run leaves an unmonitored rollout in ECS.
+  group: deploy-oxy-api
+  cancel-in-progress: false
+
 env:
   AWS_REGION: us-west-2
   ECR_REGISTRY: 237343248947.dkr.ecr.us-west-2.amazonaws.com
@@ -109,81 +117,40 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push (linux/arm64)
+        id: build
         run: |
           IMG=$ECR_REGISTRY/oxy/$APP
           docker build -f "$DOCKERFILE" -t "$IMG:${{ github.sha }}" -t "$IMG:latest" .
           docker push "$IMG:${{ github.sha }}"
+          # :latest is still moved, but nothing that deploys reads it. It exists
+          # so a from-scratch `terraform apply` -- whose app-service module
+          # declares `<repo>:latest` as the task definition's bootstrap image --
+          # creates the service on a current build rather than an ancient one.
           docker push "$IMG:latest"
 
-      - name: Deploy to ECS (rolling; skipped until the service exists)
+          # Resolve the digest from the per-commit tag, which no other build
+          # ever reuses. This is the artefact the rollout pins: a tag is a
+          # mutable pointer, and a task definition pinned to one silently
+          # re-pulls whatever that tag means at task-placement time.
+          DIGEST=$(aws ecr describe-images \
+            --repository-name "oxy/$APP" \
+            --image-ids imageTag=${{ github.sha }} \
+            --query 'imageDetails[0].imageDigest' --output text)
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::ECR returned no usable digest for ${{ github.sha }} (got: ${DIGEST:-<empty>})"
+            exit 1
+          fi
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Resolved ${{ github.sha }} -> $DIGEST"
+
+      - name: Register immutable task definition and deploy
+        env:
+          IMAGE_URI: ${{ env.ECR_REGISTRY }}/oxy/${{ env.APP }}@${{ steps.build.outputs.digest }}
         run: |
           STATUS=$(aws ecs describe-services --cluster "$CLUSTER" --services "$APP" --query 'services[0].status' --output text 2>/dev/null || echo NONE)
           if [ "$STATUS" != "ACTIVE" ]; then
-            echo "ECS service $APP not created yet — image is in ECR, skipping deploy"
+            echo "ECS service $APP not created yet - image is in ECR, skipping deploy"
             exit 0
           fi
 
-          # Capture the id of the deployment THIS run creates. Everything below
-          # polls that id specifically, never "whatever is currently PRIMARY":
-          # when the ECS circuit breaker rolls back, the deployment it rolls back
-          # TO becomes PRIMARY and immediately reports COMPLETED, so a
-          # PRIMARY-based poll reports a rollback as a successful deploy. That is
-          # not hypothetical — it shipped two consecutive green "deploys" while
-          # the service kept serving the previous image.
-          DEPLOY_ID=$(aws ecs update-service --cluster "$CLUSTER" --service "$APP" \
-            --force-new-deployment \
-            --query 'service.deployments[?status==`PRIMARY`].id | [0]' --output text)
-          if [ -z "$DEPLOY_ID" ] || [ "$DEPLOY_ID" = "None" ]; then
-            echo "::error::update-service returned no PRIMARY deployment id"
-            exit 1
-          fi
-          echo "Forced new deployment for $APP ($DEPLOY_ID); polling rollout state"
-
-          # Poll OUR deployment until it reaches steady state. AWS's
-          # `services-stable` waiter caps at 10 minutes which is too tight when a
-          # fresh task pulls the image and warms up against the ALB target group;
-          # raise the ceiling to 20 minutes.
-          DEADLINE=$(( $(date +%s) + 20 * 60 ))
-          while :; do
-            now=$(date +%s)
-            if [ "$now" -gt "$DEADLINE" ]; then
-              echo "::error::Deployment did not stabilize within 20 minutes"
-              aws ecs describe-services --cluster "$CLUSTER" --services "$APP" \
-                --query 'services[0].deployments' --output table || true
-              exit 1
-            fi
-            OURS=$(aws ecs describe-services --cluster "$CLUSTER" --services "$APP" \
-              --query "services[0].deployments[?id=='$DEPLOY_ID'] | [0]")
-            if [ -z "$OURS" ] || [ "$OURS" = "null" ]; then
-              # Our deployment is gone from the service: it was rolled back or
-              # superseded. Either way this run did NOT put its image in service.
-              echo "::error::Deployment $DEPLOY_ID is no longer on the service (rolled back or superseded)"
-              aws ecs describe-services --cluster "$CLUSTER" --services "$APP" \
-                --query 'services[0].events[0:10].[createdAt,message]' --output table || true
-              exit 1
-            fi
-            ROLLOUT=$(echo "$OURS" | jq -r '.rolloutState // "IN_PROGRESS"')
-            RUNNING=$(echo "$OURS" | jq -r '.runningCount // 0')
-            DESIRED=$(echo "$OURS" | jq -r '.desiredCount // 0')
-            STATE=$(echo "$OURS" | jq -r '.status // "UNKNOWN"')
-            echo "  status=$STATE  rolloutState=$ROLLOUT  running=$RUNNING/$DESIRED"
-            case "$ROLLOUT" in
-              COMPLETED)
-                # COMPLETED is only trustworthy while our deployment is still the
-                # PRIMARY one; a rolled-back deployment can report it too.
-                if [ "$STATE" != "PRIMARY" ]; then
-                  echo "::error::Deployment $DEPLOY_ID completed but is $STATE, not PRIMARY — it was superseded or rolled back"
-                  exit 1
-                fi
-                echo "deployed $APP"
-                exit 0
-                ;;
-              FAILED)
-                echo "::error::Rollout failed"
-                aws ecs describe-services --cluster "$CLUSTER" --services "$APP" \
-                  --query 'services[0].events[0:10].[createdAt,message]' --output table || true
-                exit 1
-                ;;
-            esac
-            sleep 15
-          done
+          bash .github/scripts/deploy-ecs-image.sh
