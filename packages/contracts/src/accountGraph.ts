@@ -89,6 +89,17 @@ export function isActAsEligibleKind(kind: AccountKind | null | undefined): boole
   return kind === 'organization' || kind === 'project' || kind === 'bot';
 }
 
+/**
+ * Narrow an unknown value to an {@link AccountKind}.
+ *
+ * The user-DTO serializers read from structurally-permissive `unknown` sources
+ * (a Drizzle row, a Mongo document, an already-formatted object), so each one
+ * would otherwise hand-roll this check and they would drift on what counts.
+ */
+export function isAccountKind(value: unknown): value is AccountKind {
+  return typeof value === 'string' && (ACCOUNT_KINDS as readonly string[]).includes(value);
+}
+
 export const ORGANIZATION_CATEGORIES = [
   'agency',
   'cooperative',
@@ -100,10 +111,25 @@ export type OrganizationCategory = (typeof ORGANIZATION_CATEGORIES)[number];
 
 export const organizationCategorySchema = z.enum(ORGANIZATION_CATEGORIES);
 
+/**
+ * An account's name on the create/update wire.
+ *
+ * `displayName` is EXPLICIT and stored, not derived. `first`/`last` model a
+ * human name, and composing a display string from them is right for a person —
+ * but a non-personal account has a TITLE, not a given and family name. Without
+ * this field the only way to name a channel "Notas de Nate" was to put the whole
+ * title in `first`, which renders correctly by accident while recording it as
+ * somebody's given name.
+ *
+ * When present it wins over the composed `first`/`last` (see the API's
+ * `composeDisplayName`, which already preferred an explicit value — only the
+ * storage for one was missing).
+ */
 const accountNameSchema = z
   .object({
     first: z.string().trim().max(100).optional(),
     last: z.string().trim().max(100).optional(),
+    displayName: z.string().trim().max(100).optional(),
   })
   .optional();
 

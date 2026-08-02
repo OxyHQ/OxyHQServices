@@ -1,4 +1,5 @@
 import type {
+  AccountKind,
   OrganizationCategory,
   UserNameResponse,
   UserRelationship,
@@ -134,6 +135,22 @@ export interface User {
     following?: number;
   };
   accountExpiresAfterInactivityDays?: number | null; // Days of inactivity before account expires (null = never expire)
+  /**
+   * Account-graph classification — WHAT this account is.
+   *
+   * ORTHOGONAL to `type` below, and easy to confuse with it: `type` says where
+   * the account lives and how it is driven (`local` / `federated` / `agent` /
+   * `automated`), `kind` says what it IS (`personal` / `organization` /
+   * `project` / `bot` / `channel`). A federated channel is `type: 'federated'`
+   * AND `kind: 'channel'`; neither value substitutes for the other.
+   *
+   * This is what a consumer rendering authored content reads to tell a
+   * channel's post from a person's — a channel is the author, so there is no
+   * second identity to carry alongside the user.
+   *
+   * Absent should be read as `personal` (the column's default), not as unknown.
+   */
+  kind?: AccountKind;
   // User type and external account support
   type?: 'local' | 'federated' | 'agent' | 'automated';
   isFederated?: boolean;

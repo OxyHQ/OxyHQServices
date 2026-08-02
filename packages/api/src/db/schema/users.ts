@@ -261,6 +261,15 @@ export const users = pgTable(
     // `composeDisplayName` already treats blank and absent identically.
     nameFirst: text(),
     nameLast: text(),
+    /**
+     * EXPLICIT display name, when the account has one. `name.displayName` was
+     * always a derived virtual composed from `nameFirst`/`nameLast`, and
+     * `composeDisplayName` already preferred an explicit value — there was just
+     * nowhere to put one. A non-personal account has a TITLE rather than a given
+     * and family name, so without this column naming a channel meant writing its
+     * whole title into `nameFirst`. NULL falls back to the composed pair.
+     */
+    nameDisplay: text(),
 
     // ---- account graph -----------------------------------------------------
     kind: text({ enum: ACCOUNT_KINDS }).notNull().default('personal'),

@@ -224,6 +224,7 @@ describe('GET /profiles/username/:username — wire shape', () => {
       createdAt: stored.createdAt.toISOString(),
       updatedAt: stored.updatedAt.toISOString(),
       type: 'local',
+      kind: 'personal',
       isFederated: false,
       fediverseSharing: true,
       _count: { followers: 1, following: 1 },

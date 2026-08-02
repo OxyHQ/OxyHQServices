@@ -68,6 +68,10 @@ jest.mock('../../utils/socket', () => ({
 const mockAuthMiddleware = jest.fn();
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
+  // The router also registers the service-scoped provisioning routes, which take
+  // this as a handler. A whole-module mock that omits it makes Express reject
+  // the route at import time, failing the suite before any test runs.
+  serviceAuthMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 const mockDecodeToken = jest.fn();

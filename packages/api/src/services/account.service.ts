@@ -78,9 +78,14 @@ const CREDENTIAL_ROTATION_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
  * `updateUserProfile` guards, so it has to run the same policy — otherwise the
  * policy is only enforced on whichever path the caller happens to pick.
  */
-function assertValidAccountName(name: { first?: string; last?: string } | undefined): void {
+function assertValidAccountName(
+  name: { first?: string; last?: string; displayName?: string } | undefined
+): void {
   if (!name || typeof name !== 'object') return;
-  for (const part of ['first', 'last'] as const) {
+  // `displayName` is validated by the SAME policy as the human halves. It is a
+  // third write path onto the display string, so exempting it would mean the
+  // character policy holds only on whichever field the caller happened to use.
+  for (const part of ['first', 'last', 'displayName'] as const) {
     const value = name[part];
     if (typeof value === 'string' && !isValidDisplayName(value)) {
       throw new BadRequestError(DISPLAY_NAME_INVALID_MESSAGE);
@@ -163,7 +168,7 @@ export interface AccountNode {
 export interface CreateChildAccountInput {
   kind: Exclude<AccountKind, 'personal'>;
   username: string;
-  name?: { first?: string; last?: string };
+  name?: { first?: string; last?: string; displayName?: string };
   bio?: string;
   avatar?: string;
   description?: string;
@@ -347,6 +352,7 @@ export class AccountService {
           username,
           nameFirst: input.name?.first,
           nameLast: input.name?.last,
+          nameDisplay: input.name?.displayName,
           bio: input.bio,
           description: input.description,
           avatar: input.avatar,
@@ -498,7 +504,7 @@ export class AccountService {
     accountId: string,
     input: {
       username?: string;
-      name?: { first?: string; last?: string };
+      name?: { first?: string; last?: string; displayName?: string };
       bio?: string;
       avatar?: string;
       description?: string;
@@ -531,6 +537,11 @@ export class AccountService {
       // columns are independent, so only the supplied half is written.
       if (input.name.first !== undefined) set.nameFirst = input.name.first;
       if (input.name.last !== undefined) set.nameLast = input.name.last;
+      // An empty string CLEARS the explicit name and falls back to the composed
+      // `first`/`last`, which is the only way back once one is set.
+      if (input.name.displayName !== undefined) {
+        set.nameDisplay = input.name.displayName === '' ? null : input.name.displayName;
+      }
     }
     if (input.bio !== undefined) set.bio = input.bio;
     if (input.avatar !== undefined) set.avatar = input.avatar;

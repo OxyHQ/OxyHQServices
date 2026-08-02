@@ -54,6 +54,7 @@ export const APPLICATION_SCOPES = [
   'notifications:write',
   'payments:read',
   'payments:write',
+  'accounts:provision',
 ] as const;
 
 export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
@@ -92,6 +93,11 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
  *   ledger-write authority, and so the apps that hold ledger-write authority do
  *   not inherit the ability to penalise conduct. Neither implies the other, and
  *   holding both is a decision someone has to make explicitly.
+ * - `accounts:provision` lets a service credential MINT a `channel` account
+ *   under an arbitrary user and grant membership on one. It creates no session
+ *   and writes no auth method — a channel cannot be acted as at all, which is
+ *   what bounds it — but it acts on behalf of users outside the app's own
+ *   tenant, so it is not self-grantable.
  * - `reputation:binding:register` lets an application assert that a named local
  *   principal is a particular Oxy user. The assertion must be backed by that
  *   user's own access token, but the scope is still privileged because a binding
@@ -109,6 +115,7 @@ export const PRIVILEGED_APPLICATION_SCOPES = [
   'reputation:binding:register',
   'signals:write',
   'notifications:write',
+  'accounts:provision',
 ] as const satisfies readonly ApplicationScope[];
 
 const PRIVILEGED_APPLICATION_SCOPE_SET: ReadonlySet<ApplicationScope> = new Set<ApplicationScope>(

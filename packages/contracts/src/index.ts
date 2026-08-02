@@ -15,6 +15,7 @@ export {
     accountKindSchema,
     CHILD_ACCOUNT_KINDS,
     childAccountKindSchema,
+    isAccountKind,
     isActAsEligibleKind,
     ORGANIZATION_CATEGORIES,
     organizationCategorySchema,

@@ -2,6 +2,7 @@ import {
   ACCOUNT_KINDS,
   CHILD_ACCOUNT_KINDS,
   createAccountRequestSchema,
+  isAccountKind,
   isActAsEligibleKind,
   organizationCategorySchema,
 } from '../accountGraph';
@@ -58,6 +59,42 @@ describe('@oxyhq/contracts account kinds', () => {
   it('treats a missing kind as ineligible', () => {
     expect(isActAsEligibleKind(undefined)).toBe(false);
     expect(isActAsEligibleKind(null)).toBe(false);
+  });
+
+  it('narrows only real kinds', () => {
+    for (const kind of ACCOUNT_KINDS) {
+      expect(isAccountKind(kind)).toBe(true);
+    }
+    for (const notAKind of ['', 'Channel', 'user', 'local', null, undefined, 3, {}]) {
+      expect(isAccountKind(notAKind)).toBe(false);
+    }
+  });
+
+  /**
+   * `kind` and `type` are different axes that coexist — `type` says where an
+   * account lives and how it is driven, `kind` says what it is. Neither value
+   * belongs in the other's vocabulary, and confusing them is the likeliest way
+   * a consumer misreads a channel.
+   */
+  it('shares no value with the federation type vocabulary', () => {
+    const federationTypes = ['local', 'federated', 'agent', 'automated'];
+    for (const kind of ACCOUNT_KINDS) {
+      expect(federationTypes).not.toContain(kind);
+    }
+  });
+
+  it('accepts an explicit displayName when creating an account', () => {
+    const parsed = createAccountRequestSchema.safeParse({
+      kind: 'channel',
+      username: 'notas-de-nate',
+      name: { displayName: 'Notas de Nate' },
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.name?.displayName).toBe('Notas de Nate');
+      // The title does NOT land in the given-name field.
+      expect(parsed.data.name?.first).toBeUndefined();
+    }
   });
 });
 

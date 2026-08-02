@@ -285,6 +285,7 @@ describe('GET /search — wire shape', () => {
         username: `shape${term}`,
         avatar: 'file_row',
         color: 'purple',
+        kind: 'personal',
         name: { displayName: 'Shape Row', first: 'Shape', last: 'Row', full: 'Shape Row' },
         // ONLY the public consent leaf. `isPrivateAccount`,
         // `discoverableByEmail` and the rest of the privacy block must not ride

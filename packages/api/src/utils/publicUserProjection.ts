@@ -39,6 +39,7 @@
  */
 
 import { sql, type SQL } from 'drizzle-orm';
+import type { AccountKind } from '@oxyhq/contracts';
 import { qualified } from '../db/casing';
 import { userFollows } from '../db/schema/userFollows';
 import { userLinkMetadata } from '../db/schema/userLinkMetadata';
@@ -80,6 +81,13 @@ export interface PublicUserView {
   linksMetadata?: LinkMetadataDto[];
   verified?: boolean;
   type?: string;
+  /**
+   * Account-graph classification. PUBLIC on purpose and on every profile row:
+   * whether an account is a person or a channel is what a consumer rendering
+   * authored content decides on, and it is observable anyway (a channel's AP
+   * actor is a `Service`). Orthogonal to `type` — both are carried.
+   */
+  kind?: AccountKind;
   federation?: { actorUri?: string; domain?: string };
   /** Only the two leaves a public row may carry — see the module header. */
   privacySettings?: { fediverseSharing?: boolean; isPrivateAccount?: boolean };
@@ -127,6 +135,8 @@ export const publicUserColumns = {
   username: users.username,
   nameFirst: users.nameFirst,
   nameLast: users.nameLast,
+  nameDisplay: users.nameDisplay,
+  kind: users.kind,
   avatar: users.avatar,
   color: users.color,
   bio: users.bio,
@@ -151,6 +161,8 @@ export interface PublicUserRow {
   username: string | null;
   nameFirst: string | null;
   nameLast: string | null;
+  nameDisplay: string | null;
+  kind: AccountKind;
   avatar: string | null;
   color: string;
   bio: string | null;
@@ -207,7 +219,12 @@ export function toPublicUserView(row: PublicUserRow): PublicUserView {
   return {
     _id: row.id,
     username: optional(row.username),
-    name: { first: optional(row.nameFirst), last: optional(row.nameLast) },
+    name: {
+      first: optional(row.nameFirst),
+      last: optional(row.nameLast),
+      displayName: optional(row.nameDisplay),
+    },
+    kind: row.kind,
     avatar: optional(row.avatar),
     color: row.color,
     bio: optional(row.bio),
@@ -238,6 +255,7 @@ export function toPublicUserView(row: PublicUserRow): PublicUserView {
 export const PUBLIC_USER_PROFILE_SELECT = [
   'username',
   'name',
+  'kind',
   'avatar',
   'color',
   'bio',
