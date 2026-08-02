@@ -102,10 +102,6 @@ const FACEPILE_AVATAR_SIZE = 32;
  */
 const FACEPILE_OVERLAP = 4;
 
-// Keep the animated container in the same react-native-css interop path as
-// View and Pressable. This preserves className styles on web and native.
-const AnimatedCssView = styled(Animated.View);
-
 /**
  * The hero's address line, shown under the "Hi, <name>!" greeting: the account's
  * canonical `@oxy.so` email when it has one, else its normalized `@handle`. Never
