@@ -21,6 +21,7 @@ AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-}"
 AWS_PARTITION="${AWS_PARTITION:-aws}"
 POST_DEPLOY_SMOKE_SCRIPT="${POST_DEPLOY_SMOKE_SCRIPT:-}"
 POST_DEPLOY_TASK_COMMAND_JSON="${POST_DEPLOY_TASK_COMMAND_JSON:-}"
+DEPLOY_HEAD_GUARD_SCRIPT="${DEPLOY_HEAD_GUARD_SCRIPT:-.github/scripts/require-current-main.sh}"
 
 if ! [[ "$MAX_WAIT_SECS" =~ ^[0-9]+$ ]] || (( MAX_WAIT_SECS < 1 )); then
   echo "::error::MAX_WAIT_SECS must be a positive integer."
@@ -36,6 +37,10 @@ if [[ "$RUN_MIGRATIONS" != "true" && "$RUN_MIGRATIONS" != "false" ]]; then
 fi
 if [[ -n "$POST_DEPLOY_SMOKE_SCRIPT" && ! -f "$POST_DEPLOY_SMOKE_SCRIPT" ]]; then
   echo "::error::POST_DEPLOY_SMOKE_SCRIPT does not exist: $POST_DEPLOY_SMOKE_SCRIPT"
+  exit 1
+fi
+if [[ -n "${DEPLOY_SHA:-}" && ! -f "$DEPLOY_HEAD_GUARD_SCRIPT" ]]; then
+  echo "::error::DEPLOY_HEAD_GUARD_SCRIPT does not exist: $DEPLOY_HEAD_GUARD_SCRIPT"
   exit 1
 fi
 if [[ -n "$POST_DEPLOY_TASK_COMMAND_JSON" ]] &&
@@ -59,7 +64,7 @@ if ! jq -e '
     (
       .value
       | type == "string" and
-        test("^arn:aws(-[a-z]+)?:ssm:[a-z0-9-]+:[0-9]{12}:parameter/[A-Za-z0-9_.\\-/]+$")
+        test("^arn:aws(-[a-z]+)?:ssm:[a-z0-9-]+:[0-9]{12}:parameter/[A-Za-z0-9_./-]+$")
     )
   )
 ' <<<"$TASK_SECRET_OVERRIDES_JSON" >/dev/null; then
@@ -344,6 +349,11 @@ if [[ -n "$INTERNAL_METRICS_PARAMETER" ]]; then
       echo "::error::AWS_ACCOUNT_ID must be a 12-digit account id when INTERNAL_METRICS_PARAMETER is a parameter name."
       exit 1
     fi
+    # The hyphen is LAST on purpose. This is a POSIX bracket expression, where a
+    # backslash is an ordinary character rather than an escape, so the `\-/` that
+    # reads as an escaped hyphen in PCRE is really a reversed `\`-to-`/` range and
+    # the class then matches no hyphen at all. Every `/oxy/<app>/...` parameter
+    # path whose app name contains one was silently rejected.
     if [[ ! "$AWS_PARTITION" =~ ^aws(-[a-z]+)?$ ||
           ! "$INTERNAL_METRICS_PARAMETER" =~ ^/[A-Za-z0-9_./-]+$ ]]; then
       echo "::error::AWS partition or INTERNAL_METRICS_PARAMETER name is invalid."
@@ -466,6 +476,11 @@ if [[ "$RUN_MIGRATIONS" == "true" ]]; then
     '["bun","packages/backend/dist/scripts/migrate.js"]'; then
     exit 1
   fi
+fi
+
+if [[ -n "${DEPLOY_SHA:-}" ]]; then
+  echo "Re-verifying origin/main immediately before the ECS service update."
+  bash "$DEPLOY_HEAD_GUARD_SCRIPT"
 fi
 
 if ! aws ecs update-service \
