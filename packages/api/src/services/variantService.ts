@@ -170,6 +170,42 @@ try {
   // Logger might not be initialized yet, ignore
 }
 
+/**
+ * Hard wall-clock ceiling for a single poster-frame decode before the ffmpeg
+ * process is SIGKILLed.
+ *
+ * Poster extraction is reachable from the UNAUTHENTICATED public CDN origin
+ * (`GET /cdn/:id?variant=…` → `assetService.ensureVariant`), so a stuck or
+ * pathological decode must not be able to pin a worker indefinitely. The frame
+ * is cached in S3 afterwards, so this cost is paid at most once per file.
+ */
+const POSTER_FFMPEG_TIMEOUT_MS = 30_000;
+
+/**
+ * Cap on the JPEG bytes buffered from ffmpeg's stdout. A single frame is orders
+ * of magnitude smaller than this; the cap exists so a crafted input that makes
+ * ffmpeg stream unbounded output cannot exhaust the process heap.
+ */
+const POSTER_MAX_OUTPUT_BYTES = 32 * 1024 * 1024; // 32 MiB
+
+/**
+ * The protocols ffmpeg is allowed to open for a poster decode, derived from the
+ * input URL's OWN scheme.
+ *
+ * The input is a presigned object URL we just built, so the exact protocol it
+ * needs is known — and `file` is never among them. That matters because the
+ * bytes ffmpeg demuxes are USER-UPLOADED: a crafted container (HLS/DASH
+ * playlist, or any format carrying an external reference) can name a URL for
+ * ffmpeg to open, and the resulting frame is then published at a public CDN
+ * key. Without a whitelist, `file:///etc/passwd` is such a reference. Deriving
+ * the list rather than hardcoding it keeps a deployment pointed at an
+ * `http://` S3-compatible endpoint (local MinIO) working, while a production
+ * `https://` endpoint additionally denies cleartext `http` targets.
+ */
+function posterProtocolWhitelist(inputUrl: string): string {
+  return inputUrl.startsWith('http://') ? 'http,tcp' : 'https,tls,tcp';
+}
+
 export interface VariantConfigWithType extends VariantConfig {
   type: string;
 }
@@ -637,6 +673,13 @@ export class VariantService {
       // Generate poster with scaling to max 1920px while maintaining exact aspect ratio
       // Stream output directly to stdout (memory) - no temp files
       const args = [
+        // Global options must precede `-i`. `-nostdin` so a decode can never
+        // block waiting on a stdin that will never be written, and the protocol
+        // whitelist so a crafted container cannot make ffmpeg open a local file
+        // or an unrelated network target (see `posterProtocolWhitelist`).
+        '-loglevel', 'error',
+        '-nostdin',
+        '-protocol_whitelist', posterProtocolWhitelist(videoUrl),
         '-i', videoUrl, // Use S3 presigned URL directly
         '-ss', timeSeconds.toString(),
         '-vframes', '1',
@@ -662,22 +705,56 @@ export class VariantService {
         scaleFilter
       });
       
-      const ffmpegProcess = spawn(ffmpegPath, args);
+      // Node kills the process itself once the wall-clock ceiling elapses; the
+      // `close` handler below sees a null exit code and a signal.
+      const ffmpegProcess = spawn(ffmpegPath, args, {
+        timeout: POSTER_FFMPEG_TIMEOUT_MS,
+        killSignal: 'SIGKILL',
+      });
 
       let stderr = '';
       const stdoutChunks: Buffer[] = [];
+      let stdoutBytes = 0;
+      let outputOverflowed = false;
 
       ffmpegProcess.stderr.on('data', (data) => {
         stderr += data.toString();
       });
 
-      ffmpegProcess.stdout.on('data', (data) => {
+      ffmpegProcess.stdout.on('data', (data: Buffer) => {
+        if (outputOverflowed) {
+          return;
+        }
+        stdoutBytes += data.length;
+        if (stdoutBytes > POSTER_MAX_OUTPUT_BYTES) {
+          // Stop buffering and tear the decode down; `close` reports the reason.
+          outputOverflowed = true;
+          stdoutChunks.length = 0;
+          ffmpegProcess.kill('SIGKILL');
+          return;
+        }
         stdoutChunks.push(data);
       });
 
-      ffmpegProcess.on('close', async (code) => {
+      ffmpegProcess.on('close', async (code, signal) => {
+        if (outputOverflowed) {
+          logger.error('Poster generation exceeded the output cap', {
+            maxOutputBytes: POSTER_MAX_OUTPUT_BYTES,
+          });
+          reject(new Error('Poster generation aborted: output exceeded the maximum allowed size'));
+          return;
+        }
+
         if (code !== 0) {
-          logger.error('Poster generation failed', { code, stderr: stderr.substring(0, 500) });
+          logger.error('Poster generation failed', { code, signal, stderr: stderr.substring(0, 500) });
+          if (code === null) {
+            reject(
+              new Error(
+                `Poster generation aborted after ${POSTER_FFMPEG_TIMEOUT_MS}ms (signal ${String(signal)})`
+              )
+            );
+            return;
+          }
           reject(new Error(`Poster generation failed with code ${code}: ${stderr.substring(0, 200)}`));
           return;
         }
@@ -1269,33 +1346,101 @@ export class VariantService {
         metadata // Pass metadata to preserve exact aspect ratio
       );
 
-      // Update file variants
-      const idx = file.variants.findIndex(v => v.type === 'poster');
-      if (idx >= 0) file.variants[idx] = posterVariant;
-      else file.variants.push(posterVariant);
-
-      try {
-        await this.commitVariants(file);
-      } catch (error) {
-        logger.warn('Failed committing poster variant, retrying', { fileId: file._id, error });
-        // Retry once with fresh document
-        const fresh = await File.findById(file._id);
-        if (fresh) {
-          const idx2 = fresh.variants.findIndex(v => v.type === 'poster');
-          if (idx2 >= 0) fresh.variants[idx2] = posterVariant;
-          else fresh.variants.push(posterVariant);
-          try {
-            await File.updateOne({ _id: fresh._id }, { $set: { variants: fresh.variants } });
-          } catch (err2) {
-            logger.error('Retry failed committing poster variant', { fileId: file._id, error: err2 });
-          }
-        }
-      }
+      await this.upsertVariant(file, posterVariant);
 
       return posterVariant;
     } catch (error) {
       logger.error('Error ensuring video poster', { fileId: file._id, error });
       throw error;
+    }
+  }
+
+  /**
+   * Render a sized image variant from an already-in-memory source image and
+   * upload it under this file's variant key.
+   *
+   * Shared by BOTH image-variant paths — the source is the canonical original
+   * for an image file, and the extracted poster frame for a video — so the two
+   * cannot drift in format, quality or sizing. `rotate()` applies the source's
+   * EXIF orientation before resizing; it is a no-op on an ffmpeg-produced
+   * poster, which carries none.
+   */
+  private async renderAndUploadImageVariant(
+    file: IFile,
+    config: VariantConfigWithType,
+    sourceBuffer: Buffer
+  ): Promise<IFileVariant> {
+    const format = config.format || 'webp';
+    let pipeline = sharp(sourceBuffer, { failOn: 'none' })
+      .rotate()
+      .resize({ width: config.width, height: config.height, fit: 'inside', withoutEnlargement: true });
+    if (format === 'webp') pipeline = pipeline.webp({ quality: config.quality ?? 82 });
+    if (format === 'jpeg') pipeline = pipeline.jpeg({ quality: config.quality ?? 82 });
+    if (format === 'png') pipeline = pipeline.png();
+
+    const out = await pipeline.toBuffer();
+    // The output mime deliberately need not match the source's: the key carries
+    // its own `format` and the upload sets `contentType` explicitly, which is
+    // what lets a `video/*` file own an `image/webp` variant (the `poster`
+    // variant has always relied on the same property).
+    const key = this.generateVariantKey(file.sha256, config.type, format, file.visibility);
+    await this.s3Service.uploadBuffer(key, out, {
+      contentType: format === 'jpeg' ? 'image/jpeg' : `image/${format}`,
+    });
+
+    const imgMeta = await sharp(out).metadata();
+    return {
+      type: config.type,
+      key,
+      width: imgMeta.width || config.width || 0,
+      height: imgMeta.height || config.height || 0,
+      readyAt: new Date(),
+      size: out.length,
+      metadata: { format, quality: config.quality }
+    };
+  }
+
+  /**
+   * Persist a freshly generated variant onto the file document, replacing any
+   * entry of the same type.
+   *
+   * Retries once against a re-read document so a concurrent write to a
+   * DIFFERENT variant of the same file cannot drop this one. A failed retry is
+   * logged, never thrown: the bytes are already in S3, so losing the
+   * bookkeeping costs a regeneration on the next request, not the request in
+   * flight.
+   */
+  private async upsertVariant(file: IFile, variant: IFileVariant): Promise<void> {
+    const idx = file.variants.findIndex(v => v.type === variant.type);
+    if (idx >= 0) file.variants[idx] = variant;
+    else file.variants.push(variant);
+
+    try {
+      await this.commitVariants(file);
+      return;
+    } catch (error) {
+      logger.warn('Failed committing ensured variant, retrying fetch & update', {
+        fileId: file._id,
+        variantType: variant.type,
+        error,
+      });
+    }
+
+    const fresh = await File.findById(file._id);
+    if (!fresh) {
+      return;
+    }
+    const freshIdx = fresh.variants.findIndex(v => v.type === variant.type);
+    if (freshIdx >= 0) fresh.variants[freshIdx] = variant;
+    else fresh.variants.push(variant);
+    try {
+      await File.updateOne({ _id: fresh._id }, { $set: { variants: fresh.variants } });
+    } catch (retryError) {
+      logger.error('Retry failed committing ensured variant', {
+        fileId: file._id,
+        variantType: variant.type,
+        error: retryError,
+      });
     }
   }
 
@@ -1314,51 +1459,48 @@ export class VariantService {
       throw new Error(`Unsupported image variant: ${variantType}`);
     }
 
-    const originalBuffer = await this.s3Service.downloadBuffer(file.storageKey);
-    let pipeline = sharp(originalBuffer, { failOn: 'none' }).rotate();
-    pipeline = pipeline.resize({ width: config.width, height: config.height, fit: 'inside', withoutEnlargement: true });
-    const format = (config.format || 'webp');
-  if (format === 'webp') pipeline = pipeline.webp({ quality: config.quality ?? 82 });
-  if (format === 'jpeg') pipeline = pipeline.jpeg({ quality: config.quality ?? 82 });
-  if (format === 'png') pipeline = pipeline.png();
+    const sourceBuffer = await this.s3Service.downloadBuffer(file.storageKey);
+    const variant = await this.renderAndUploadImageVariant(file, config, sourceBuffer);
+    await this.upsertVariant(file, variant);
 
-    const out = await pipeline.toBuffer();
-    const key = this.generateVariantKey(file.sha256, variantType, format, file.visibility);
-    await this.s3Service.uploadBuffer(key, out, {
-      contentType: format === 'jpeg' ? 'image/jpeg' : `image/${format}`,
-    });
+    return variant;
+  }
 
-    const imgMeta = await sharp(out).metadata();
-    const variant: IFileVariant = {
-      type: variantType,
-      key,
-      width: imgMeta.width || config.width || 0,
-      height: imgMeta.height || config.height || 0,
-      readyAt: new Date(),
-      size: out.length,
-      metadata: { format, quality: config.quality }
-    };
-
-    // Upsert in DB
-    const idx = file.variants.findIndex(v => v.type === variantType);
-    if (idx >= 0) file.variants[idx] = variant;
-    else file.variants.push(variant);
-    try {
-      await this.commitVariants(file);
-    } catch (error) {
-      logger.warn('Failed committing single ensured variant, retrying fetch & update', { fileId: file._id, variantType, error });
-      // Retry once with fresh document to mitigate race conditions
-      const fresh = await File.findById(file._id);
-      if (fresh) {
-        const idx2 = fresh.variants.findIndex(v => v.type === variantType);
-        if (idx2 >= 0) fresh.variants[idx2] = variant; else fresh.variants.push(variant);
-        try {
-          await File.updateOne({ _id: fresh._id }, { $set: { variants: fresh.variants } });
-        } catch (err2) {
-          logger.error('Retry failed committing ensured variant', { fileId: file._id, variantType, error: err2 });
-        }
-      }
+  /**
+   * Ensure a sized IMAGE variant of a VIDEO — the same `w96`…`w2048`/`thumb`
+   * sizes an image file offers, rendered from that video's poster frame.
+   *
+   * Why this exists: `getFileDownloadUrl(id, variant)` is a synchronous, purely
+   * lexical URL builder, so a caller holding a bare file id CANNOT know whether
+   * it addresses an image or a video. Before this, a size name was fatal for a
+   * video — `assetService.ensureVariant` threw, and the public CDN origin turned
+   * that into a 404 carrying no bytes at all, which is why a cached video
+   * rendered a placeholder where an image rendered a thumbnail. A size name
+   * therefore now means "an image of this asset at that size" for EVERY mime,
+   * which for a video is its poster frame.
+   *
+   * Deriving from the poster rather than re-decoding holds this to ONE ffmpeg
+   * pass per file however many sizes are requested: the poster is generated once
+   * (or reused when upload-time generation already produced it) and each size is
+   * a Sharp resize of those bytes. Generation stays LAZY — the first request for
+   * a size materialises it, every later request is served the cached S3 object —
+   * so the existing corpus needs no backfill.
+   */
+  async ensureVideoImageVariant(file: IFile, variantType: string): Promise<IFileVariant> {
+    const existing = await this.getUsableReadyVariant(file, variantType);
+    if (existing) {
+      return existing;
     }
+
+    const config = this.imageVariants.find(v => v.type === variantType);
+    if (!config) {
+      throw new Error(`Unsupported video image variant: ${variantType}`);
+    }
+
+    const poster = await this.ensureVideoPoster(file);
+    const sourceBuffer = await this.s3Service.downloadBuffer(poster.key);
+    const variant = await this.renderAndUploadImageVariant(file, config, sourceBuffer);
+    await this.upsertVariant(file, variant);
 
     return variant;
   }
