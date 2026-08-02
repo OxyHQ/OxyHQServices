@@ -26,6 +26,7 @@
 import type React from 'react';
 import { Fragment, useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native-css/components';
+import { styled } from 'react-native-css';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -54,6 +55,8 @@ import {
   type Theme,
   type Translate,
 } from './types';
+
+const AnimatedCssView = styled(Animated.View);
 
 /**
  * Leading glyph for the rows that live in a Bloom grouped section (the MENU
@@ -99,10 +102,9 @@ const FACEPILE_AVATAR_SIZE = 32;
  */
 const FACEPILE_OVERLAP = 4;
 
-// Vite/RN-Web does not install NativeWind's Metro global className polyfill.
-// Use the react-native-css components explicitly so the same className markup
-// works in web Vite hosts as well as Expo/Metro apps.
-const AnimatedCssView = Animated.createAnimatedComponent(View);
+// Keep the animated container in the same react-native-css interop path as
+// View and Pressable. This preserves className styles on web and native.
+const AnimatedCssView = styled(Animated.View);
 
 /**
  * The hero's address line, shown under the "Hi, <name>!" greeting: the account's
