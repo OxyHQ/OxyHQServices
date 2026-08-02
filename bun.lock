@@ -506,7 +506,7 @@
     },
     "packages/federation": {
       "name": "@oxyhq/federation",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "dependencies": {
         "@oxyhq/core": "workspace:^",
       },
