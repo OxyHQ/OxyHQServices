@@ -791,6 +791,7 @@
         "expo-linear-gradient",
         "expo-modules-core",
         "expo-notifications",
+        "expo-web-browser",
         "nativewind",
         "react-native-keyboard-controller",
       ],

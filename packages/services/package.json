@@ -266,6 +266,9 @@
     },
     "expo-image-picker": {
       "optional": true
+    },
+    "expo-web-browser": {
+      "optional": true
     }
   },
   "react-native-builder-bob": {
