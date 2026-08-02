@@ -324,8 +324,11 @@ describe('OxyAuthChooser', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Switch account' }));
     fireEvent.click(screen.getByRole('button', { name: 'Bob' }));
 
-    await waitFor(() => expect(controller.switchTo).toHaveBeenCalledWith('b'));
-    expect(invalidateQueries).toHaveBeenCalled();
+    // `invalidateQueries` runs AFTER `await controller.switchTo(...)` resolves,
+    // so waiting only for switchTo to have been CALLED races it — the assertion
+    // has to wait for the side effect itself, or a slow runner reads zero calls.
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalled());
+    expect(controller.switchTo).toHaveBeenCalledWith('b');
     // A successful switch fires no error toast.
     expect(toast.error).not.toHaveBeenCalled();
   });
