@@ -67,6 +67,8 @@ export {
   upstreamHandleFromProfileField,
   upstreamHandleFromAlsoKnownAs,
   upstreamHandleFromPreferredUsername,
+  upstreamHandleFromProxyOf,
+  readProxyDeclarations,
   type FederationNetwork,
   type FederationBridgeEntry,
   type BridgeRelabeller,
@@ -76,6 +78,7 @@ export {
   type DeriveNetworkIdentity,
   type NetworkIdentity,
   type NetworkIdentityCandidate,
+  type ProxyDeclaration,
 } from './networkIdentity';
 
 /**

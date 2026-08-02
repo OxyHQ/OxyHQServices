@@ -184,6 +184,51 @@ export interface BridgedActorField {
 }
 
 /**
+ * One FEP-fffd `proxyOf` entry: an actor stating, in machine-readable form, that
+ * it is a proxy for an object on another protocol.
+ *
+ * Observed on the wire (momostr.pink, 2026-08-02):
+ *
+ *     "proxyOf": [{
+ *       "protocol": "https://github.com/nostr-protocol/nostr",
+ *       "proxied": "npub1sg6plz…",
+ *       "authoritative": true
+ *     }]
+ *
+ * `protocol` is a URI naming the upstream protocol, `proxied` its identifier
+ * there, and `authoritative` says whether this actor is the canonical
+ * representation rather than one copy among several.
+ */
+export interface ProxyDeclaration {
+  readonly protocol: string;
+  readonly proxied: string;
+  readonly authoritative: boolean;
+}
+
+/**
+ * Parse an actor's `proxyOf` into well-formed declarations, dropping anything
+ * malformed. Pure; accepts `unknown` because it reads an untrusted document.
+ *
+ * `authoritative` DEFAULTS TO FALSE when absent. FEP-fffd leaves it optional, and
+ * the conservative reading is the only safe one here: the flag is what
+ * distinguishes "this actor IS that upstream account" from "this actor is one
+ * copy of it", and only the former could ever justify moving an identity.
+ */
+export function readProxyDeclarations(value: unknown): ProxyDeclaration[] {
+  if (!Array.isArray(value)) return [];
+  const declarations: ProxyDeclaration[] = [];
+  for (const raw of value) {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const entry = raw as Record<string, unknown>;
+    const protocol = typeof entry.protocol === 'string' ? entry.protocol.trim() : '';
+    const proxied = typeof entry.proxied === 'string' ? entry.proxied.trim() : '';
+    if (protocol.length === 0 || proxied.length === 0) continue;
+    declarations.push({ protocol, proxied, authoritative: entry.authoritative === true });
+  }
+  return declarations;
+}
+
+/**
  * Everything a derivation rule may look at. Every field is a value the caller has
  * already derived and verified, so a rule never re-parses the actor document.
  */
@@ -202,6 +247,8 @@ export interface NetworkIdentityCandidate {
   readonly alsoKnownAs: readonly string[];
   /** The actor's profile fields (PropertyValue), already sanitized. */
   readonly fields: readonly BridgedActorField[];
+  /** The actor's FEP-fffd `proxyOf` declarations (empty when it publishes none). */
+  readonly proxyOf: readonly ProxyDeclaration[];
   /** The actor's bio as plain text. */
   readonly bio: string;
 }
@@ -426,6 +473,58 @@ export function upstreamHandleFromAlsoKnownAs(options: {
   return (candidate) => {
     for (const href of candidate.alsoKnownAs) {
       const handle = profileUrlHandle(href, options.hosts, prefix);
+      if (handle !== undefined && handle.length > 0) return handle;
+    }
+    return undefined;
+  };
+}
+
+/**
+ * Read the upstream identifier out of an actor's FEP-fffd `proxyOf` declaration.
+ *
+ * THIS IS A STRATEGY A REVIEWED ENTRY OPTS INTO — NOT A REGISTRY-FREE LANE, AND
+ * THE DIFFERENCE IS THE WHOLE SECURITY ARGUMENT.
+ *
+ *   `proxyOf` is attractive precisely because it is self-describing: the actor
+ *   states what it proxies, in a ratified format, with no list to maintain. That
+ *   is exactly why it cannot be believed on its own. It is a claim made by an
+ *   UNTRUSTED REMOTE ACTOR about its own identity, and every field in it is
+ *   attacker-controlled. Honouring it wherever it appears would mean any actor on
+ *   any instance could publish
+ *
+ *       "proxyOf": [{ "protocol": "…", "proxied": "elonmusk", "authoritative": true }]
+ *
+ *   and be stored, rendered and searchable as that person on that network. The
+ *   reviewed bridge list is not bureaucracy around this; it IS the thing that
+ *   makes a re-attribution believable, because we checked who runs the host.
+ *
+ *   Inside an entry the claim is safe for the same reason the entry's other rules
+ *   are: we already decided we believe this operator about who it mirrors. So the
+ *   strategy exists, it is tested, and it is reachable only from a host somebody
+ *   reviewed.
+ *
+ * `authoritative` must be true — a non-authoritative proxy says the actor is one
+ * copy of the upstream object, not that it stands in for it.
+ *
+ * NOTHING WE INGEST USES THIS YET. The only actors in our corpus that publish
+ * `proxyOf` are the two Nostr bridges, and Nostr identities are npubs with no
+ * `@handle@domain` form to re-label onto, so no shipped entry names it. It is
+ * here so a bridge that adopts FEP-fffd needs an entry rather than new code —
+ * do not read its passing tests as evidence that it fires in production.
+ */
+export function upstreamHandleFromProxyOf(options: {
+  /** The protocol URIs this entry accepts, exactly as the actor spells them. */
+  readonly protocols: readonly string[];
+  /** Map the raw `proxied` identifier to an upstream handle; omit for verbatim. */
+  readonly handleFromProxied?: (proxied: string) => string | undefined;
+}): BridgeDerivation {
+  const accepted = new Set(options.protocols.map((protocol) => protocol.trim().toLowerCase()));
+  const toHandle = options.handleFromProxied ?? ((proxied: string) => proxied);
+  return (candidate) => {
+    for (const declaration of candidate.proxyOf) {
+      if (!declaration.authoritative) continue;
+      if (!accepted.has(declaration.protocol.trim().toLowerCase())) continue;
+      const handle = toHandle(declaration.proxied);
       if (handle !== undefined && handle.length > 0) return handle;
     }
     return undefined;

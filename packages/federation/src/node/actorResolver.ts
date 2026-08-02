@@ -20,10 +20,11 @@
  */
 
 import { canonicalFederationHost, isSameFederationHost } from '../apUri';
-import type {
-  DeriveNetworkIdentity,
-  NetworkIdentity,
-  NetworkIdentityCandidate,
+import {
+  readProxyDeclarations,
+  type DeriveNetworkIdentity,
+  type NetworkIdentity,
+  type NetworkIdentityCandidate,
 } from '../networkIdentity';
 import type { NormalizedExternalActor } from '../index';
 import type { SignedFetch } from './signedFetch';
@@ -476,6 +477,11 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
         actorType: asString(actor.type) || 'Person',
         alsoKnownAs: alsoKnownAs ?? [],
         fields,
+        // FEP-fffd: an actor's own machine-readable statement of what it proxies.
+        // Parsed here so a derivation rule never re-reads the raw document — and
+        // deliberately only ever CONSULTED by a reviewed entry, since every field
+        // in it is asserted by the untrusted actor itself.
+        proxyOf: readProxyDeclarations(actor.proxyOf),
         bio: summary,
       });
       const identityUsername = networkIdentity?.federatedUsername ?? acct;

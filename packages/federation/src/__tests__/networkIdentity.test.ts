@@ -17,6 +17,8 @@ import {
   stripBridgeBoilerplate,
   upstreamHandleFromPreferredUsername,
   upstreamHandleFromProfileField,
+  upstreamHandleFromProxyOf,
+  readProxyDeclarations,
   upstreamHandleFromAlsoKnownAs,
   upstreamProfileUrl,
   type FederationBridgeEntry,
@@ -51,6 +53,7 @@ function candidate(overrides: Partial<NetworkIdentityCandidate> = {}): NetworkId
     actorType: 'Service',
     alsoKnownAs: [],
     fields: [{ name: 'Official', value: '<a href="https://twitter.com/WIRED" rel="me">x</a>' }],
+    proxyOf: [],
     bio: 'The latest in tech.\nMirrored by mirror.example.',
     ...overrides,
   };
@@ -153,6 +156,7 @@ describe('createBridgeRelabeller — derivations it refuses', () => {
     ]);
     expect(relabeller.deriveNetworkIdentity(candidate({
       fields: [{ name: 'Official', value: '<a href="https://twitter.com/WIRED" rel="me">x</a>' }],
+    proxyOf: [],
     }))?.federatedUsername).toBe('wired@x.com');
     expect(relabeller.deriveNetworkIdentity(candidate({
       fields: [{ name: 'Official', value: '<a href="https://www.twitter.com/WIRED" rel="me">x</a>' }],
@@ -326,5 +330,118 @@ describe('federatedUsernameFromUpstreamUrl — the search direction', () => {
     expect(federatedUsernameFromUpstreamUrl('https://x.com/i/status/1')).toBeUndefined();
     expect(federatedUsernameFromUpstreamUrl('nasa')).toBeUndefined();
     expect(federatedUsernameFromUpstreamUrl('')).toBeUndefined();
+  });
+});
+
+describe('FEP-fffd proxyOf', () => {
+  /**
+   * The exact bytes momostr.pink serves, fetched 2026-08-02. A Nostr bridge is
+   * the only thing in our corpus that publishes `proxyOf` at all, which is also
+   * why no shipped entry names this strategy.
+   */
+  const REAL_MOMOSTR_PROXY_OF = [{
+    protocol: 'https://github.com/nostr-protocol/nostr',
+    proxied: 'npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m',
+    authoritative: true,
+  }];
+
+  describe('readProxyDeclarations', () => {
+    it('parses a real declaration off the wire', () => {
+      expect(readProxyDeclarations(REAL_MOMOSTR_PROXY_OF)).toEqual([{
+        protocol: 'https://github.com/nostr-protocol/nostr',
+        proxied: 'npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m',
+        authoritative: true,
+      }]);
+    });
+
+    it('defaults authoritative to false when the actor omits it', () => {
+      // FEP-fffd leaves the flag optional, and it is the one bit that separates
+      // "this actor IS that account" from "this actor is a copy of it".
+      const [parsed] = readProxyDeclarations([{ protocol: 'p', proxied: 'q' }]);
+      expect(parsed.authoritative).toBe(false);
+    });
+
+    it('drops malformed entries rather than inventing fields', () => {
+      expect(readProxyDeclarations([
+        { protocol: '', proxied: 'q' },
+        { protocol: 'p', proxied: '' },
+        { protocol: 'p' },
+        'not an object',
+        null,
+        [],
+      ])).toEqual([]);
+    });
+
+    it('reads a missing or non-array proxyOf as none', () => {
+      expect(readProxyDeclarations(undefined)).toEqual([]);
+      expect(readProxyDeclarations({ protocol: 'p', proxied: 'q' })).toEqual([]);
+    });
+  });
+
+  describe('upstreamHandleFromProxyOf', () => {
+    const derive = upstreamHandleFromProxyOf({
+      protocols: ['https://github.com/nostr-protocol/nostr'],
+    });
+
+    it('reads the proxied identifier for a protocol the entry accepts', () => {
+      expect(derive(candidate({ proxyOf: REAL_MOMOSTR_PROXY_OF }))).toBe(
+        'npub1sg6plzptd64u62a878hep2kev88swjh3tw00gjsfl8f237lmu63q0uf63m',
+      );
+    });
+
+    it('refuses a non-authoritative declaration', () => {
+      // A copy does not get to stand in for the account it copied.
+      expect(derive(candidate({
+        proxyOf: [{ ...REAL_MOMOSTR_PROXY_OF[0], authoritative: false }],
+      }))).toBeUndefined();
+    });
+
+    it('refuses a protocol the entry does not accept', () => {
+      expect(derive(candidate({
+        proxyOf: [{ protocol: 'https://example.invalid/other', proxied: 'x', authoritative: true }],
+      }))).toBeUndefined();
+    });
+
+    it('can map the proxied identifier to a handle', () => {
+      const mapped = upstreamHandleFromProxyOf({
+        protocols: ['https://atproto.com'],
+        handleFromProxied: (proxied) => proxied.replace(/^at:\/\//, '') || undefined,
+      });
+      expect(mapped(candidate({
+        proxyOf: [{ protocol: 'https://atproto.com', proxied: 'at://alice.bsky.social', authoritative: true }],
+      }))).toBe('alice.bsky.social');
+    });
+  });
+
+  describe('it is gated by the registry, not applied globally', () => {
+    /**
+     * The load-bearing property. `proxyOf` is asserted by the untrusted actor
+     * itself, so honouring it wherever it appears would let ANY actor on ANY
+     * instance publish `proxied: "elonmusk"` and be stored, rendered and searched
+     * as that person. Only a host somebody reviewed can reach this strategy.
+     */
+    it('re-labels nothing when the actor is on no listed host', () => {
+      const relabeller = createBridgeRelabeller([]);
+      expect(relabeller.deriveNetworkIdentity(candidate({
+        host: 'attacker.example',
+        proxyOf: [{ protocol: 'https://x.example', proxied: 'elonmusk', authoritative: true }],
+      }))).toBeUndefined();
+    });
+
+    it('re-labels nothing from an UNLISTED host even when a listed host uses the strategy', () => {
+      const relabeller = createBridgeRelabeller([entry({
+        host: 'mirror.example',
+        derive: upstreamHandleFromProxyOf({ protocols: ['https://x.example'] }),
+      })]);
+      const claim = {
+        proxyOf: [{ protocol: 'https://x.example', proxied: 'elonmusk', authoritative: true }],
+      };
+      expect(relabeller.deriveNetworkIdentity(candidate({ host: 'attacker.example', ...claim })))
+        .toBeUndefined();
+      // …and the very same claim from the REVIEWED host is honoured, which is
+      // what makes the previous assertion about trust rather than about parsing.
+      expect(relabeller.deriveNetworkIdentity(candidate({ host: 'mirror.example', ...claim }))
+        ?.federatedUsername).toBe('elonmusk@x.com');
+    });
   });
 });
