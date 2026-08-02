@@ -62,7 +62,10 @@ const BRIDGED_ACTOR = {
   ],
 };
 
-function makeResolver(deriveNetworkIdentity?: DeriveNetworkIdentity) {
+function makeResolver(
+  deriveNetworkIdentity?: DeriveNetworkIdentity,
+  actor: typeof BRIDGED_ACTOR = BRIDGED_ACTOR,
+) {
   const upserts: Array<{ uri: string; update: Record<string, unknown> }> = [];
   const resolved: NormalizedExternalActor[] = [];
   const warnings: string[] = [];
@@ -71,8 +74,8 @@ function makeResolver(deriveNetworkIdentity?: DeriveNetworkIdentity) {
     federationEnabled: true,
     signedFetch: async (url) => {
       // Collection counts are fetched too; only the actor URL returns a document.
-      if (url !== BRIDGED_ACTOR.id) return new Response(null, { status: 404 });
-      return new Response(JSON.stringify(BRIDGED_ACTOR), {
+      if (url !== actor.id) return new Response(null, { status: 404 });
+      return new Response(JSON.stringify(actor), {
         status: 200,
         headers: { 'content-type': 'application/activity+json' },
       });
@@ -141,6 +144,36 @@ describe('deriveNetworkIdentity — the identity moves, the address does not', (
 
     expect(rig.upserts[0].update.summary).toBe('The latest in tech.');
     expect(rig.resolved[0].bio).toBe('The latest in tech.');
+  });
+
+  /**
+   * The case the test above cannot reach: an account whose bio is the notice and
+   * NOTHING ELSE, which is most of what a mirror farm holds.
+   *
+   * Stripping it leaves the empty string, and an empty string is a RESULT — "this
+   * account has no bio" — not an absence of one. It has to reach `PUT
+   * /users/resolve` as a value, because that endpoint writes `bio` only when the
+   * key is a string: send `undefined` and `JSON.stringify` drops the key, Oxy
+   * leaves the field alone, and the notice it stored on some earlier resolve stays
+   * on the profile permanently. Which is exactly what happened — the strip was
+   * correct the whole time and could not be observed, because the correction never
+   * left this function.
+   */
+  it('sends an emptied bio as a CLEAR, not as an omission', async () => {
+    const rig = makeResolver(deriveBridgedNetworkIdentity, {
+      ...BRIDGED_ACTOR,
+      summary:
+        "This account is a replica from Twitter. Its author can't see your replies. "
+        + 'If you find this service useful, please consider supporting us via our Patreon.',
+    });
+
+    await rig.resolver.fetchRemoteActor(BRIDGED_ACTOR.id);
+
+    expect(rig.upserts[0].update.summary).toBe('');
+    expect(rig.resolved[0].bio).toBe('');
+    // `toBe('')` alone would also pass on `undefined` reaching a caller that
+    // defaults it, so pin the wire shape itself: the key must survive JSON.
+    expect(Object.keys(JSON.parse(JSON.stringify(rig.resolved[0])))).toContain('bio');
   });
 
   it('changes nothing at all when no hook is configured', async () => {

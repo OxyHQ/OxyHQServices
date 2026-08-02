@@ -542,7 +542,18 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
             displayName,
             avatarUrl,
             bannerUrl: headerUrl,
-            bio: identityBio || undefined,
+            // EMPTY IS AN ANSWER, AND IT HAS TO TRAVEL AS ONE.
+            //
+            // We just computed this bio; it is never "unknown". `PUT /users/resolve`
+            // writes `bio` only when the key is a string, so mapping an empty one to
+            // `undefined` (which `JSON.stringify` then drops entirely) told Oxy
+            // "leave whatever you have" — and what it had was the PREVIOUS bio.
+            //
+            // That is not a hypothetical tidiness point. A bridge whose boilerplate
+            // notice is the entire bio strips to exactly this, so every mirrored
+            // account whose bio Oxy had already stored kept the notice on its
+            // profile forever, no matter how many times it was re-resolved.
+            bio: identityBio,
             followersCount,
             followingCount,
             postsCount,
