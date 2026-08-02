@@ -1,16 +1,56 @@
+const { cpus, totalmem } = require('node:os');
+
+// Every worker opens its OWN Postgres pool against the one test server. With
+// `PG_MAX_POOL_SIZE = 8` (see `jest.globalSetup.ts`, where 8 is a floor set by
+// the backfill's own copy concurrency), 10 workers ask for at most 80
+// connections against a `max_connections` of 100 — under the ceiling with room
+// for the migrator's own session and a psql.
+//
+// Unbounded, jest forks one worker per core minus one, which on a 32-core
+// machine is 31 workers and up to 620 connections. The server then refuses
+// whichever worker happens to ask while it is saturated, so a different and
+// entirely innocent suite fails on each run. Five consecutive runs, five
+// different victims, every one green in isolation.
+const POSTGRES_WORKER_CEILING = 10;
+
+// That ceiling has to LOWER the worker count and never raise it. Written as a
+// bare `maxWorkers: 10` it did both, and on the machine CI actually runs on it
+// raised it: a GitHub-hosted `ubuntu-latest` runner has 4 vCPUs and 16 GiB, so
+// jest's own default there is 3 workers. Pinning 10 took the runner past its
+// memory and the kernel brought it down mid-run — five consecutive red runs on
+// `main`, each ending in `SIGTERM (Polite quit request)`, exit 143 and
+// `The runner has received a shutdown signal`, with not one test result
+// printed. That reads like a hung test rather than an exhausted machine, which
+// is what made it expensive to place.
+//
+// Measured on this suite in a cgroup held to the runner's shape (4 CPUs,
+// 16 GiB, no swap), peak ANONYMOUS bytes — page cache is reclaimable and does
+// not push a cgroup into OOM, so only anon counts: 3 workers = 7.06 GiB,
+// 10 workers = 13.68 GiB. Roughly a fixed 4.2 GiB for jest plus 0.95 GiB per
+// worker, because ts-jest holds a TypeScript program per worker and
+// `--coverage` instruments every file. 13.68 GiB does not fit in 16 GiB beside
+// the runner agent and the mongo and postgis service containers; 7.06 GiB does.
+const WORKER_BYTES = 1_000_000_000;
+const JEST_BASE_BYTES = 4_500_000_000;
+// A quarter of the machine left to the OS, docker and page cache.
+const MEMORY_BUDGET_FRACTION = 0.75;
+
+// The run has to be under all three ceilings, so take the smallest. On CI
+// (4 vCPUs, 16 GiB) that is the CPU bound at 3; on a 32-core workstation it is
+// the Postgres bound at 10, exactly as before. The memory bound only binds on a
+// machine with many cores and little RAM per core, where the CPU bound alone
+// would put us back where this started.
+const MAX_WORKERS = Math.min(
+  POSTGRES_WORKER_CEILING,
+  Math.max(1, cpus().length - 1),
+  Math.max(
+    1,
+    Math.floor((totalmem() * MEMORY_BUDGET_FRACTION - JEST_BASE_BYTES) / WORKER_BYTES)
+  )
+);
+
 module.exports = {
-  // Bounded because every worker opens its OWN Postgres pool against the one
-  // test server. With `PG_MAX_POOL_SIZE = 8` (see `jest.globalSetup.ts`, where
-  // 8 is a floor set by the backfill's own copy concurrency), 10 workers ask
-  // for at most 80 connections against a `max_connections` of 100 — under the
-  // ceiling with room for the migrator's own session and a psql.
-  //
-  // Unbounded, jest forks one worker per core minus one, which on a 32-core
-  // machine is 31 workers and up to 620 connections. The server then refuses
-  // whichever worker happens to ask while it is saturated, so a different and
-  // entirely innocent suite fails on each run. Five consecutive runs, five
-  // different victims, every one green in isolation.
-  maxWorkers: 10,
+  maxWorkers: MAX_WORKERS,
   preset: 'ts-jest',
   testEnvironment: 'node',
   // Creates ONE throwaway, fully-migrated Postgres database per run and points

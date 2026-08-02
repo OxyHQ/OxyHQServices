@@ -125,6 +125,18 @@ jobs:
         run: bun run lint
         working-directory: ./packages/api
 
+      # `jest.config.js` sizes its worker pool from this machine's cores and RAM,
+      # because a fixed count that fits a 32-core workstation exhausts a
+      # 4-vCPU/16-GiB runner: the kernel takes the runner down mid-run and the
+      # job ends in exit 143 having printed no test results at all, which reads
+      # like a hung test rather than an exhausted machine. Print what it decided
+      # and what it decided it from, so the next time that shape changes the
+      # evidence is already in the log.
+      - name: Report test parallelism
+        run: |
+          node -e "const os=require('node:os');console.log('cpus=%d totalmem=%s GiB maxWorkers=%d',os.cpus().length,(os.totalmem()/1073741824).toFixed(1),require('./jest.config.js').maxWorkers)"
+        working-directory: ./packages/api
+
       - name: Run tests with coverage
         run: bun run test:coverage
         working-directory: ./packages/api
