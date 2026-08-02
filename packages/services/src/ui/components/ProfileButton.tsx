@@ -134,7 +134,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     }, [openAccountDialog]);
 
     useEffect(() => {
-        if (!onNavigateManage && !onAddAccount && !onNavigateProfile) {
+        if (!onNavigateManage && !onAddAccount && !onNavigateProfile && !menuItems?.length) {
             return undefined;
         }
         return registerAccountDialogConsumerHooks({

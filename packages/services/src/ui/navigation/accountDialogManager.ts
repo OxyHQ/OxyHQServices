@@ -45,6 +45,13 @@ export interface AccountDialogConsumerHooks {
 let controls: AccountDialogControls | null = null;
 let consumerHooks: AccountDialogConsumerHooks | null = null;
 const visibilityListeners = new Set<(visible: boolean) => void>();
+const consumerHookListeners = new Set<() => void>();
+
+function notifyConsumerHookListeners(): void {
+  for (const listener of consumerHookListeners) {
+    listener();
+  }
+}
 
 export function registerAccountDialogControls(next: AccountDialogControls): () => void {
   controls = next;
@@ -60,15 +67,25 @@ export function registerAccountDialogConsumerHooks(
   next: AccountDialogConsumerHooks | null,
 ): () => void {
   consumerHooks = next;
+  notifyConsumerHookListeners();
   return () => {
     if (consumerHooks === next) {
       consumerHooks = null;
+      notifyConsumerHookListeners();
     }
   };
 }
 
 export function getAccountDialogConsumerHooks(): AccountDialogConsumerHooks | null {
   return consumerHooks;
+}
+
+/** Subscribe to consumer-hook registration changes (menu items, manage/add overrides). */
+export function subscribeToAccountDialogConsumerHooks(listener: () => void): () => void {
+  consumerHookListeners.add(listener);
+  return () => {
+    consumerHookListeners.delete(listener);
+  };
 }
 
 /** Open the account dialog on `view` (default `accounts`). No-op before mount. */

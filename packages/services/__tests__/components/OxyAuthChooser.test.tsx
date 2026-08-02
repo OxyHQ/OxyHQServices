@@ -98,7 +98,7 @@ let snapshot = makeSnapshot();
 const controller = {
   subscribe: jest.fn((_l: () => void) => () => undefined),
   getSnapshot: () => snapshot,
-  switchTo: jest.fn(async () => undefined),
+  switchTo: jest.fn(async () => true),
   add: jest.fn(),
   startSignup: jest.fn(),
   showQr: jest.fn(),
@@ -267,6 +267,23 @@ describe('OxyAuthChooser', () => {
     expect(controller.add).not.toHaveBeenCalled();
   });
 
+  it('renders app-owned menu items from registered consumer hooks', () => {
+    const onCustom = jest.fn();
+    registerAccountDialogConsumerHooks({
+      menuItems: [{ key: 'inbox-settings', label: 'Inbox settings', onPress: onCustom }],
+    });
+
+    snapshot = makeSnapshot({
+      activeAccountId: 'a',
+      accounts: [makeAccount({ accountId: 'a', displayName: 'Alice', isCurrent: true, sessionId: 's-a' })],
+    });
+
+    render(<OxyAuthChooser />);
+
+    fireEvent.click(screen.getByText('Inbox settings'));
+    expect(onCustom).toHaveBeenCalledTimes(1);
+  });
+
   it('toasts a failed account switch instead of rendering an inline banner', async () => {
     snapshot = makeSnapshot({
       activeAccountId: 'a',
@@ -279,6 +296,7 @@ describe('OxyAuthChooser', () => {
     // snapshot, which the chooser reads back at the point the switch settles.
     controller.switchTo.mockImplementationOnce(async () => {
       snapshot = makeSnapshot({ ...snapshot, error: 'Account switch did not return a valid session' });
+      return false;
     });
 
     render(<OxyAuthChooser />);
