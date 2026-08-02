@@ -382,8 +382,9 @@ const AccountsMenuView: React.FC<AccountsMenuViewProps> = ({
       {/* SWITCH ACCOUNT — own NativeWind card, NOT a Bloom grouped section: it
           is a disclosure header over an animated list, not a list of settings
           rows, and the grouped section is not a bare card container. */}
-      <Animated.View style={switchCardStyle}>
-        <View className="bg-fill overflow-hidden mb-space-16">
+      <View className="mb-space-16">
+        <Animated.View style={[{ overflow: 'hidden' }, switchCardStyle]}>
+          <View className="bg-fill">
           <HoverPressable
             baseClassName={`flex-row items-center gap-space-12 px-space-12 py-[10px] min-h-[44px]${
               switchingDisabled ? ' opacity-60' : ''
@@ -438,8 +439,9 @@ const AccountsMenuView: React.FC<AccountsMenuViewProps> = ({
               <View>{listItems}</View>
             </View>
           </Animated.View>
-        </View>
-      </Animated.View>
+          </View>
+        </Animated.View>
+      </View>
 
       {/* OXY STORAGE — own NativeWind card for the same reason: a title, a meter
           and two chips are not settings rows. Its cloud sits in the same 20px
