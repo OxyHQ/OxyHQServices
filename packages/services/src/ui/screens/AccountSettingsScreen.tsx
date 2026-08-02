@@ -143,11 +143,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
   const handleSave = useCallback(() => {
     const trimmed = displayName.trim();
     if (!trimmed || displayNameError) return;
-    const nameParts = trimmed.split(/\s+/).filter(Boolean);
-    const first = nameParts[0] || '';
-    const last = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
+    // Managed accounts (org / project / bot / channel) have a title, not a
+    // given-and-family name — persist the explicit displayName column.
     updateMutation.mutate({
-      name: { first, last },
+      name: { displayName: trimmed },
       bio: bio.trim() ? bio.trim() : null,
     });
   }, [displayName, displayNameError, bio, updateMutation]);

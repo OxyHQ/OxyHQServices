@@ -68,6 +68,13 @@ export default function ManagedAccountsScreen() {
   }, [showBottomSheet]);
 
   const handleEditProfile = useCallback((accountId: string) => {
+    const node = accounts.find((entry) => entry.accountId === accountId);
+    // Channels are content identities — nobody switches into them. Edit via the
+    // per-account settings sheet, which PATCHes by id without a session switch.
+    if (node?.kind === 'channel') {
+      showBottomSheet?.({ screen: 'AccountSettings', props: { accountId } });
+      return;
+    }
     // Editing a non-personal account's profile happens through the shared
     // profile editor, which targets the current account — so switch into the
     // account first, then open the editor.
@@ -81,7 +88,7 @@ export default function ManagedAccountsScreen() {
       .catch((error) => {
         console.error('Failed to switch account before editing', error);
       });
-  }, [switchToAccount, showBottomSheet]);
+  }, [switchToAccount, showBottomSheet, accounts]);
 
   const handleArchiveAccount = useCallback((node: AccountNode) => {
     const name =
@@ -187,6 +194,13 @@ export default function ManagedAccountsScreen() {
                 <Section title={t('managedAccounts.groups.bots')}>
                   <AccountCard>
                     <GroupedSection items={groups.bots.map(buildItem)} />
+                  </AccountCard>
+                </Section>
+              )}
+              {groups.channels.length > 0 && (
+                <Section title={t('managedAccounts.groups.channels')}>
+                  <AccountCard>
+                    <GroupedSection items={groups.channels.map(buildItem)} />
                   </AccountCard>
                 </Section>
               )}

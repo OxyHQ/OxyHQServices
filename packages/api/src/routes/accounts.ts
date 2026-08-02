@@ -768,6 +768,12 @@ router.post(
       organizationCategory?: OrganizationCategory;
     };
 
+    if (body.kind === 'channel') {
+      throw new BadRequestError(
+        'Channel accounts can only be created through service provisioning'
+      );
+    }
+
     const parentAccountId = body.parentAccountId ?? userId;
 
     // The caller must be allowed to create children on the chosen parent.

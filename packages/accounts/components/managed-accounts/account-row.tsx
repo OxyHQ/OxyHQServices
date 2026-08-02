@@ -78,7 +78,7 @@ function AccountRowContent({
 
   const role = getNodeRole(node);
   const badgeColor = getRoleBadgeColor(role, colors);
-  const canSwitchInto = SWITCHABLE_ROLES.includes(role);
+  const canSwitchInto = SWITCHABLE_ROLES.includes(role) && node.kind !== 'channel';
   const canManageMembers = MANAGE_MEMBER_ROLES.includes(role);
   const canEdit = EDIT_ROLES.includes(role);
   const canArchive = role === 'owner';
@@ -209,7 +209,7 @@ export function useAccountRowBuilder({
     const avatarUri = node.account?.avatar
       ? oxyServices.getFileDownloadUrl(node.account.avatar, 'thumb')
       : undefined;
-    const canSwitchInto = SWITCHABLE_ROLES.includes(role);
+    const canSwitchInto = SWITCHABLE_ROLES.includes(role) && node.kind !== 'channel';
     const canManageMembers = MANAGE_MEMBER_ROLES.includes(role);
 
     return {
