@@ -197,6 +197,14 @@ describe('OxyAuthChooser', () => {
     snapshot = makeSnapshot();
     mockController = controller;
     jest.clearAllMocks();
+    // `clearAllMocks` clears recorded calls but does NOT drain a queued
+    // `mockImplementationOnce`. The failed-switch test queues one; if its click
+    // does not reach `switchTo` the one-shot survives into the NEXT test, which
+    // then takes the failure branch and never runs the success side effects.
+    // Restore the default implementation explicitly so no test inherits another
+    // test's one-shot.
+    controller.switchTo.mockReset();
+    controller.switchTo.mockImplementation(async () => undefined);
     isWebBrowserMock.mockReturnValue(true);
     isOxyRpOriginMock.mockReturnValue(true);
   });
@@ -324,11 +332,10 @@ describe('OxyAuthChooser', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Switch account' }));
     fireEvent.click(screen.getByRole('button', { name: 'Bob' }));
 
+    await waitFor(() => expect(controller.switchTo).toHaveBeenCalledWith('b'));
     // `invalidateQueries` runs AFTER `await controller.switchTo(...)` resolves,
-    // so waiting only for switchTo to have been CALLED races it — the assertion
-    // has to wait for the side effect itself, or a slow runner reads zero calls.
+    // so it needs its own wait rather than being asserted on the next line.
     await waitFor(() => expect(invalidateQueries).toHaveBeenCalled());
-    expect(controller.switchTo).toHaveBeenCalledWith('b');
     // A successful switch fires no error toast.
     expect(toast.error).not.toHaveBeenCalled();
   });
