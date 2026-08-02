@@ -1,4 +1,16 @@
 module.exports = {
+  // Bounded because every worker opens its OWN Postgres pool against the one
+  // test server. With `PG_MAX_POOL_SIZE = 8` (see `jest.globalSetup.ts`, where
+  // 8 is a floor set by the backfill's own copy concurrency), 10 workers ask
+  // for at most 80 connections against a `max_connections` of 100 — under the
+  // ceiling with room for the migrator's own session and a psql.
+  //
+  // Unbounded, jest forks one worker per core minus one, which on a 32-core
+  // machine is 31 workers and up to 620 connections. The server then refuses
+  // whichever worker happens to ask while it is saturated, so a different and
+  // entirely innocent suite fails on each run. Five consecutive runs, five
+  // different victims, every one green in isolation.
+  maxWorkers: 10,
   preset: 'ts-jest',
   testEnvironment: 'node',
   // Creates ONE throwaway, fully-migrated Postgres database per run and points
