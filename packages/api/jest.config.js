@@ -51,7 +51,9 @@ module.exports = {
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', {
-      diagnostics: false,
+      // Hybrid moduleKind in tsconfig emits TS151002 on every file; ignore it —
+      // isolatedModules is intentionally off for this package's tsc build.
+      diagnostics: { ignoreCodes: [151002] },
     }],
   },
   testMatch: ['**/__tests__/**/*.ts', '**/*.test.ts'],
