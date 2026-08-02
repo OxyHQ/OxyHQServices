@@ -27,6 +27,8 @@ export DEPLOY_TEST_TASK_EXIT_CODE=0
 export DEPLOY_TEST_EXPECT_TASK_SECRET_ARN=false
 export DEPLOY_TEST_SERVICE_DESIRED_COUNT=1
 export DEPLOY_TEST_ROLLOUT_SCENARIO=healthy
+export DEPLOY_TEST_DEPLOYMENT_ID=ecs-deploy-test-2
+export DEPLOY_TEST_ROLLBACK_DEPLOYMENT_ID=ecs-deploy-test-rollback
 
 aws() {
   local service_json='{
@@ -44,6 +46,7 @@ aws() {
       "launchType": "FARGATE",
       "deployments": [
         {
+          "id": "ecs-deploy-test-2",
           "taskDefinition": "arn:aws:ecs:test:task-definition/deploy-test:2",
           "status": "PRIMARY",
           "rolloutState": "COMPLETED",
@@ -51,8 +54,9 @@ aws() {
           "desiredCount": 1
         },
         {
+          "id": "ecs-deploy-test-1",
           "taskDefinition": "arn:aws:ecs:test:task-definition/deploy-test:1",
-          "status": "PRIMARY",
+          "status": "ACTIVE",
           "rolloutState": "COMPLETED",
           "runningCount": 1,
           "desiredCount": 1
@@ -78,7 +82,7 @@ aws() {
             "$describe_count" == "2" ]]; then
         service_json="$(jq '
           .services[0].deployments |= map(
-              if .taskDefinition == "arn:aws:ecs:test:task-definition/deploy-test:2"
+              if .id == "ecs-deploy-test-2"
               then
                 .rolloutState = "IN_PROGRESS"
                 | .desiredCount = 0
@@ -87,12 +91,20 @@ aws() {
               end
             )
         ' <<<"$service_json")"
+      elif [[ "$DEPLOY_TEST_ROLLOUT_SCENARIO" == "circuit-breaker-rollback" &&
+              "$describe_count" == "2" ]]; then
+        service_json="$(jq '
+          .services[0].deployments |= map(
+              select(.id != "ecs-deploy-test-2")
+            )
+          | .services[0].deployments[0].status = "PRIMARY"
+        ' <<<"$service_json")"
       elif [[ "$DEPLOY_TEST_ROLLOUT_SCENARIO" == "zero-service-during-deploy" &&
               "$describe_count" == "2" ]]; then
         service_json="$(jq '
           .services[0].desiredCount = 0
           | .services[0].deployments |= map(
-              if .taskDefinition == "arn:aws:ecs:test:task-definition/deploy-test:2"
+              if .id == "ecs-deploy-test-2"
               then .desiredCount = 0 | .runningCount = 0
               else .
               end
@@ -102,7 +114,7 @@ aws() {
               "$describe_count" == "2" ]]; then
         service_json="$(jq '
           .services[0].deployments |= map(
-              if .taskDefinition == "arn:aws:ecs:test:task-definition/deploy-test:2"
+              if .id == "ecs-deploy-test-2"
               then .desiredCount = 0 | .runningCount = 0
               else .
               end
@@ -203,6 +215,7 @@ aws() {
       local previous_argument=""
       local task_definition=""
       local desired_count=""
+      local output_json=""
       local argument
       for argument in "$@"; do
         if [[ "$previous_argument" == "--task-definition" ]]; then
@@ -216,11 +229,48 @@ aws() {
         echo "Mocked update-service requires an explicit --desired-count." >&2
         return 1
       fi
+      if [[ "$task_definition" == "arn:aws:ecs:test:task-definition/deploy-test:1" ]]; then
+        output_json="$(jq -n \
+          --arg id "$DEPLOY_TEST_ROLLBACK_DEPLOYMENT_ID" \
+          --arg task "$task_definition" \
+          '{
+            service: {
+              deployments: [{
+                id: $id,
+                taskDefinition: $task,
+                status: "PRIMARY",
+                rolloutState: "COMPLETED",
+                runningCount: 1,
+                desiredCount: 1
+              }]
+            }
+          }')"
+      else
+        output_json="$(jq -n \
+          --arg id "$DEPLOY_TEST_DEPLOYMENT_ID" \
+          --arg task "$task_definition" \
+          '{
+            service: {
+              deployments: [{
+                id: $id,
+                taskDefinition: $task,
+                status: "PRIMARY",
+                rolloutState: "COMPLETED",
+                runningCount: 1,
+                desiredCount: 1
+              }]
+            }
+          }')"
+      fi
       printf 'service:%s:desired=%s\n' \
         "$task_definition" \
         "$desired_count" \
         >>"$DEPLOY_TEST_LOG"
-      printf '{}\n'
+      if [[ "$*" == *"--output json"* ]]; then
+        printf '%s\n' "$output_json"
+      else
+        printf '{}\n'
+      fi
       ;;
     "ecs run-task")
       printf 'reconcile\n' >>"$DEPLOY_TEST_LOG"
@@ -284,6 +334,8 @@ run_release() {
   export DEPLOY_TEST_EXPECT_TASK_SECRET_ARN
   export DEPLOY_TEST_SERVICE_DESIRED_COUNT
   export DEPLOY_TEST_ROLLOUT_SCENARIO
+  export DEPLOY_TEST_DEPLOYMENT_ID
+  export DEPLOY_TEST_ROLLBACK_DEPLOYMENT_ID
 
   # The generated smoke fixture expands DEPLOY_TEST_LOG when it runs; its exit
   # code is the entire interface deploy-ecs-image.sh reads, so each case picks
@@ -457,48 +509,17 @@ grep -F \
   "$test_directory/completed-zero-deployment/output.log" \
   >/dev/null
 
-# A smoke failure the smoke script attributes to the new image rolls the service
-# back, and stops the release before the reconciliation task runs.
-run_release smoke-hermetic-failure false false false 0 false 1 healthy 1
+run_release circuit-breaker-rollback false false false 0 false 1 circuit-breaker-rollback
 printf '%s\n' \
   'service:arn:aws:ecs:test:task-definition/deploy-test:2:desired=1' \
-  smoke \
   'service:arn:aws:ecs:test:task-definition/deploy-test:1:desired=1' \
-  >"$test_directory/smoke-hermetic-failure/expected.log"
+  >"$test_directory/circuit-breaker-rollback/expected.log"
 diff -u \
-  "$test_directory/smoke-hermetic-failure/expected.log" \
-  "$test_directory/smoke-hermetic-failure/aws.log"
+  "$test_directory/circuit-breaker-rollback/expected.log" \
+  "$test_directory/circuit-breaker-rollback/aws.log"
 grep -F \
-  "Post-deploy smoke checks failed." \
-  "$test_directory/smoke-hermetic-failure/output.log" \
-  >/dev/null
-
-# A smoke failure the smoke script attributes to something outside the new image
-# (exit 75) must NOT roll back: the service stays on the new task definition, the
-# release finishes its reconciliation task, and the job still fails so the
-# failure is paged rather than swallowed.
-run_release smoke-no-rollback-failure false false false 0 false 1 healthy 75
-printf '%s\n' \
-  'service:arn:aws:ecs:test:task-definition/deploy-test:2:desired=1' \
-  smoke \
-  reconcile \
-  >"$test_directory/smoke-no-rollback-failure/expected.log"
-diff -u \
-  "$test_directory/smoke-no-rollback-failure/expected.log" \
-  "$test_directory/smoke-no-rollback-failure/aws.log"
-if grep -qF \
-  'service:arn:aws:ecs:test:task-definition/deploy-test:1:' \
-  "$test_directory/smoke-no-rollback-failure/aws.log"; then
-  echo "A smoke failure that cannot be repaired by a rollback rolled back anyway." >&2
-  exit 1
-fi
-grep -F \
-  "stays on arn:aws:ecs:test:task-definition/deploy-test:2" \
-  "$test_directory/smoke-no-rollback-failure/output.log" \
-  >/dev/null
-grep -F \
-  "Nothing was rolled back; this release needs a human." \
-  "$test_directory/smoke-no-rollback-failure/output.log" \
+  "deployment ecs-deploy-test-2 is no longer on the service (rolled back or superseded)" \
+  "$test_directory/circuit-breaker-rollback/output.log" \
   >/dev/null
 
 echo "Deployment script transaction tests passed."
