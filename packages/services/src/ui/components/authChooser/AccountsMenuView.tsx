@@ -26,7 +26,6 @@
 import type React from 'react';
 import { Fragment, useCallback, useState } from 'react';
 import { Pressable, View } from 'react-native-css/components';
-import { styled } from 'react-native-css';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -55,11 +54,6 @@ import {
   type Theme,
   type Translate,
 } from './types';
-
-// `styled(Animated.View)` breaks bob's type emit (react-native-css `styled` does not
-// accept Reanimated's animated props). Compose from the css View instead.
-const CssView = styled(View);
-const AnimatedCssView = Animated.createAnimatedComponent(CssView);
 
 /**
  * Leading glyph for the rows that live in a Bloom grouped section (the MENU
@@ -387,8 +381,9 @@ const AccountsMenuView: React.FC<AccountsMenuViewProps> = ({
       {/* SWITCH ACCOUNT — own NativeWind card, NOT a Bloom grouped section: it
           is a disclosure header over an animated list, not a list of settings
           rows, and the grouped section is not a bare card container. */}
-      <AnimatedCssView className="bg-fill overflow-hidden mb-space-16" style={switchCardStyle}>
-        <HoverPressable
+      <Animated.View style={switchCardStyle}>
+        <View className="bg-fill overflow-hidden mb-space-16">
+          <HoverPressable
           baseClassName={`flex-row items-center gap-space-12 px-space-12 py-[10px] min-h-[44px]${
             switchingDisabled ? ' opacity-60' : ''
           }`}
@@ -425,23 +420,24 @@ const AccountsMenuView: React.FC<AccountsMenuViewProps> = ({
               <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.text} />
             </Animated.View>
           </View>
-        </HoverPressable>
+          </HoverPressable>
 
         {/* Animated reveal: an overflow-clipped container whose height + opacity
             are driven by `listProgress`; the inner style-based wrapper measures
             the natural content height via `onLayout`. */}
-        <AnimatedCssView
-          style={[styles.collapse, listStyle]}
-          pointerEvents={expanded ? 'auto' : 'none'}
-        >
-          <View
-            style={styles.collapseMeasure}
-            onLayout={(event) => setListContentHeight(event.nativeEvent.layout.height)}
+          <Animated.View
+            style={[styles.collapse, listStyle]}
+            pointerEvents={expanded ? 'auto' : 'none'}
           >
-            <View>{listItems}</View>
-          </View>
-        </AnimatedCssView>
-      </AnimatedCssView>
+            <View
+              style={styles.collapseMeasure}
+              onLayout={(event) => setListContentHeight(event.nativeEvent.layout.height)}
+            >
+              <View>{listItems}</View>
+            </View>
+          </Animated.View>
+        </View>
+      </Animated.View>
 
       {/* OXY STORAGE — own NativeWind card for the same reason: a title, a meter
           and two chips are not settings rows. Its cloud sits in the same 20px
