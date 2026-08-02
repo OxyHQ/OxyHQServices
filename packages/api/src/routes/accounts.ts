@@ -761,7 +761,7 @@ router.post(
       parentAccountId?: string;
       kind: ChildAccountKind;
       username: string;
-      name?: { first?: string; last?: string };
+      name?: { first?: string; last?: string; displayName?: string };
       bio?: string;
       avatar?: string;
       description?: string;
@@ -840,7 +840,7 @@ router.patch(
     }
     const body = req.body as {
       username?: string;
-      name?: { first?: string; last?: string };
+      name?: { first?: string; last?: string; displayName?: string };
       bio?: string;
       avatar?: string;
       description?: string;

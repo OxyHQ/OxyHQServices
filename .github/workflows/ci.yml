@@ -28,16 +28,6 @@ jobs:
     timeout-minutes: 30
 
     services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
       # Postgres target of the Mongo->Postgres port. Mirrors
       # docker-compose.dev.yml so a developer's local database and CI's agree.
       #
@@ -141,7 +131,6 @@ jobs:
         run: bun run test:coverage
         working-directory: ./packages/api
         env:
-          MONGODB_URI: mongodb://localhost:27017/oxyapi-test
           DATABASE_URL: postgres://oxy:oxy@127.0.0.1:5432/oxy_test
           ACCESS_TOKEN_SECRET: test_access_token_secret_minimum_32_characters
           REFRESH_TOKEN_SECRET: test_refresh_token_secret_minimum_32_characters

@@ -13,21 +13,6 @@ import { logger } from '../utils/logger';
  * Required environment variables
  */
 export interface RequiredEnvVars {
-  // MongoDB connection string. OPTIONAL since 2026-08-02: nothing in the
-  // serving path reads Mongo any more. The API had served every request from
-  // Postgres since the cutover on 2026-07-31, but three things still tied the
-  // PROCESS to Mongo — a boot-time `mongoose.connect` in `server.ts`, this
-  // entry in the `required` list below, and eleven type-only imports of
-  // `models/*` — and all three are gone. `src/models/` itself stays, because
-  // `src/scripts/` and `src/db/backfill/` (the migration, and the read-only
-  // `mongoSource` proxy) still use it: MongoDB is the ROLLBACK SOURCE.
-  //
-  // So this is still synced to SSM and still reaches the ECS task — a one-shot
-  // backfill or admin task needs it. It is simply no longer a condition of the
-  // API starting, which is the whole difference between "Postgres serves the
-  // traffic" and "Mongo is not in the serving path".
-  MONGODB_URI?: string;
-
   // PostgreSQL connection string, consumed by `config/postgres.ts` (Drizzle
   // over postgres.js) and by the migrator (`db/migrate.ts`). The live store.
   //
@@ -168,13 +153,6 @@ export function validateRequiredEnvVars(): void {
     if (!process.env[key]) {
       missing.push(key);
     }
-  }
-
-  // Check for commonly misconfigured variables. MONGODB_URI is no longer
-  // required, but a backfill or admin task that IS given one still deserves to
-  // hear that it is malformed before it fails to connect.
-  if (process.env.MONGODB_URI && !process.env.MONGODB_URI.startsWith('mongodb')) {
-    warnings.push('MONGODB_URI should start with "mongodb://" or "mongodb+srv://"');
   }
 
   if (process.env.DATABASE_URL && !POSTGRES_URL_SCHEMES.some(scheme => process.env.DATABASE_URL?.startsWith(scheme))) {
@@ -363,7 +341,6 @@ export function getSanitizedConfig(): Record<string, string> {
     AWS_S3_BUCKET: process.env.AWS_S3_BUCKET || '',
     AWS_ENDPOINT_URL: process.env.AWS_ENDPOINT_URL || 'default',
     ASSET_CDN_URL: process.env.ASSET_CDN_URL || 'https://cloud.oxy.so',
-    MONGODB_URI: process.env.MONGODB_URI ? maskConnectionString(process.env.MONGODB_URI) : '',
     DATABASE_URL: process.env.DATABASE_URL ? maskConnectionString(process.env.DATABASE_URL) : '',
   };
 }

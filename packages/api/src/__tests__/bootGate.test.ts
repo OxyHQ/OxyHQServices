@@ -15,11 +15,8 @@
  *    moderation bridge REJECTS every event naming a policy version it cannot
  *    find, so a boot that skipped them looks healthy and fails at the first real
  *    request. Asserted by reading the seeded rows back out of the database.
- * 3. **The API boots with no MongoDB connection string.** Asserted structurally
- *    rather than with an `expect`: MONGODB_URI is deleted before the import
- *    below, so a `validateRequiredEnvVars()` that still demanded it would
- *    `process.exit(1)` this jest worker instead of running any case here. Mongo
- *    is the rollback source, not a dependency of the serving process.
+ * 3. **The API boots without MongoDB.** Mongo is not a dependency of the
+ *    serving process.
  *
  * ## Why the failure case must run FIRST
  *
@@ -39,18 +36,6 @@ jest.unmock('socket.io');
 // CI supplies these; a developer running `bun run test` with no `.env` does not.
 // `??=` so a real value always wins.
 //
-// MONGODB_URI is the exception, and it is REMOVED rather than supplied: the
-// third guarantee this file holds is that the API boots with NO Mongo
-// connection string at all. It used to carry a
-// `mongodb://…/unused-by-the-api-process` placeholder — the name already
-// admitting the process never used it — purely to satisfy a `required` entry.
-// Deleting it here means the real `await import('../server')` below runs the
-// real `validateRequiredEnvVars()` with Mongo absent; put MONGODB_URI back in
-// `required` and this file does not fail an assertion, it kills its jest worker
-// on the import. Restored in `afterAll`, because `process.env` is shared with
-// every later test file in the same worker and the backfill suites read it.
-const sharedMongoUrl = process.env.MONGODB_URI;
-delete process.env.MONGODB_URI;
 process.env.ACCESS_TOKEN_SECRET ??= 'boot-gate-access-token-secret-32-chars';
 process.env.REFRESH_TOKEN_SECRET ??= 'boot-gate-refresh-token-secret-32-chars';
 process.env.AWS_REGION ??= 'us-west-2';
@@ -143,9 +128,6 @@ afterAll(async () => {
     await dropTestDatabase(ownDatabaseUrl);
   }
   process.env.DATABASE_URL = sharedDatabaseUrl;
-  if (sharedMongoUrl !== undefined) {
-    process.env.MONGODB_URI = sharedMongoUrl;
-  }
 }, SLOW_STEP_TIMEOUT_MS);
 
 describe('startup gate', () => {

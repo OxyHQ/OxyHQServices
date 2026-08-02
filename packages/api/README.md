@@ -6,7 +6,7 @@ A comprehensive Node.js/TypeScript backend server providing JWT-based authentica
 
 - 🔐 **JWT Authentication** - Secure token-based auth with automatic refresh
 - 📱 **Device Sessions** - One server-side `DeviceSession` per device (signed-in accounts, active account, revision) with instant cross-app socket sync
-- 🗄️ **MongoDB Integration** - Scalable data persistence with GridFS for file storage
+- 🗄️ **PostgreSQL** - Primary data store (Drizzle ORM); legacy Mongo scripts remain for one-shot backfill/admin only
 - ⚡ **Express.js Server** - RESTful API with comprehensive middleware
 - 🔒 **Security Features** - Rate limiting, CORS, password hashing, brute force protection
 - 📝 **TypeScript** - Full type safety and developer experience
@@ -27,7 +27,7 @@ bun install
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your MongoDB URI, JWT secrets, and other configs
+# Edit .env with your Postgres DATABASE_URL, JWT secrets, and other configs
 
 # Start development server
 bun run dev
@@ -179,14 +179,14 @@ Every device-session mutation broadcasts a `session_state` event to the Socket.I
 ## Requirements
 
 - Node.js 16+
-- MongoDB 4.4+
+- PostgreSQL 17+ (with PostGIS for location features)
 - Bun
 
 ## Environment Variables
 
 ```env
-# Database
-MONGODB_URI=mongodb://localhost:27017/oxyapi
+# Database (required)
+DATABASE_URL=postgres://oxy:oxy@127.0.0.1:5432/oxy_dev
 
 # Authentication
 ACCESS_TOKEN_SECRET=your_64_char_secret_here

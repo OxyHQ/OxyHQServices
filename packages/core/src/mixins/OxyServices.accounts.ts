@@ -146,10 +146,13 @@ export interface ListAccountsOptions {
   tree?: boolean;
 }
 
+/** Kinds a signed-in user may create via `POST /accounts`. Channels are service-provisioned only. */
+export type UserCreatableAccountKind = 'organization' | 'project' | 'bot';
+
 /** Input accepted by `createAccount`. */
 export interface CreateAccountInput {
-  /** Classification of the new account. `personal` accounts are not created here. */
-  kind: AccountKind;
+  /** Classification of the new account. `personal` and `channel` are not creatable here. */
+  kind: UserCreatableAccountKind;
   /**
    * Parent account `_id` to nest the new account under. Omitted → the API roots
    * it under the caller's personal account.
@@ -184,6 +187,30 @@ export interface UpdateAccountInput {
   avatar?: string | null;
   /** Clears the category when `null`; only valid on `kind: 'organization'`. */
   organizationCategory?: OrganizationCategory | null;
+}
+
+/** Input accepted by `provisionChannelAccount` (service token + `accounts:provision`). */
+export interface ProvisionChannelInput {
+  /** Personal account `_id` whose tree owns the new channel. */
+  ownerUserId: string;
+  username: string;
+  name?: { first?: string; last?: string; displayName?: string };
+  bio?: string;
+  description?: string;
+  avatar?: string;
+}
+
+/** Input accepted by `provisionChannelMember` (service token + `accounts:provision`). */
+export interface ProvisionChannelMemberInput {
+  memberUserId: string;
+  role: Exclude<AccountRole, 'owner'>;
+  inherit?: boolean;
+}
+
+/** Result of `provisionChannelAccount`. */
+export interface ProvisionChannelResult {
+  account: User;
+  membership: AccountMember;
 }
 
 /** Input accepted by `inviteAccountMember`. The owner role cannot be invited. */
@@ -494,6 +521,17 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
       super(...(args as [any]));
     }
 
+    /**
+     * Inherited from the auth mixin at runtime. Declared here so service-scoped
+     * account provisioning methods can call it with correct typing.
+     */
+    declare makeServiceRequest: <R = unknown>(
+      method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+      url: string,
+      data?: unknown,
+      userId?: string,
+    ) => Promise<R>;
+
     // =========================================================================
     // Accounts
     // =========================================================================
@@ -627,6 +665,59 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
         // (flat + tree) so it appears on the next `listAccounts()` read.
         this._invalidateAccountLists();
         return res.account;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Mint a `channel` account under `ownerUserId` via service auth
+     * (`accounts:provision` scope). Requires `configureServiceAuth` first.
+     */
+    async provisionChannelAccount(data: ProvisionChannelInput): Promise<ProvisionChannelResult> {
+      try {
+        return await this.makeServiceRequest<ProvisionChannelResult>(
+          'POST',
+          '/accounts/service/channels',
+          data,
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Grant membership on a channel account via service auth
+     * (`accounts:provision` scope).
+     */
+    async provisionChannelMember(
+      channelAccountId: string,
+      data: ProvisionChannelMemberInput,
+    ): Promise<{ member: AccountMember }> {
+      try {
+        return await this.makeServiceRequest<{ member: AccountMember }>(
+          'POST',
+          `/accounts/service/channels/${encodeURIComponent(channelAccountId)}/members`,
+          data,
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Revoke membership on a channel account via service auth
+     * (`accounts:provision` scope).
+     */
+    async revokeChannelMember(
+      channelAccountId: string,
+      memberUserId: string,
+    ): Promise<AccountSuccessResult> {
+      try {
+        return await this.makeServiceRequest<AccountSuccessResult>(
+          'DELETE',
+          `/accounts/service/channels/${encodeURIComponent(channelAccountId)}/members/${encodeURIComponent(memberUserId)}`,
+        );
       } catch (error) {
         throw this.handleError(error);
       }

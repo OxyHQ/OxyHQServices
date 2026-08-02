@@ -13,8 +13,9 @@ const ENV_DB_MAP: Record<string, string> = {
 };
 
 /**
- * Returns the MongoDB database name for the current environment.
- * Convention: "{appName}-{envSuffix}" — e.g. "oxy-prod", "oxy-dev".
+ * Returns the legacy MongoDB database name for the current environment.
+ * Used only by backfill and one-shot admin scripts — the serving API uses
+ * Postgres (`DATABASE_URL`). Convention: "{appName}-{envSuffix}".
  */
 export function getDbName(): string {
   const nodeEnv = process.env.NODE_ENV || 'development';
