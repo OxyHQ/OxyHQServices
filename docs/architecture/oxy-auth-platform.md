@@ -428,7 +428,7 @@ Content-Type: application/json
 }
 ```
 
-6. Respuesta: `{ access_token, refresh_token, sessionId, user }` — **tokens nunca en la URL**.
+6. Respuesta: `{ data: { access_token, refresh_token, token_type, expires_in, session_id, deviceId, user } }` — **tokens nunca en la URL**. Un cliente RFC 6749 (snake_case + `grant_type`) recibe en cambio el cuerpo plano de §5.1; ver la [guía de integración](../auth/integration-guide.md#off-the-shelf-oauth-20--oidc-clients).
 7. RP guarda tokens en storage local; opcionalmente monta `OxyProvider` solo para refresh/UI account menu.
 
 **Backend propio del third party** (Node/Express):

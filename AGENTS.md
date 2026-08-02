@@ -385,6 +385,17 @@ Registering an `Application` (with `redirectUris`) now auto-authorizes that app'
 - Service-token JWT now embeds `credentialId` alongside `appId` (= applicationId); both are on `req.serviceApp`. The JWT claim name `appId` is unchanged.
 - Secrets are sha256-hashed (`secretHash`), returned exactly once on create or rotate, never retrievable again.
 
+## OAuth Token Endpoint — two dialects, one route
+
+`POST /auth/oauth/token` serves BOTH the original Oxy shape and RFC 6749, and the response shape ALWAYS matches the request shape. Do not add a versioned or parallel route for either.
+
+- **The rule lives in `packages/api/src/utils/oauthTokenRequest.ts`** (`THE DIALECT RULE` in its header). RFC is selected by an `Authorization: Basic` header OR any snake_case RFC parameter in the body (`grant_type`, `client_id`, `client_secret`, `redirect_uri`, `code_verifier`, `refresh_token`); everything else is legacy.
+- **Legacy** (camelCase `clientId`/`redirectUri`/`clientSecret`/`codeVerifier`, no `grant_type`) → `{ data: … }` envelope, 401 `{error,message}` errors. This is what `@oxyhq/core`'s `exchangeOAuthCode` sends; the sole in-repo caller.
+- **RFC 6749** → flat §5.1 body, flat §5.2 errors (`invalid_client` 401, everything else 400), `client_secret_basic` + `client_secret_post`, and `grant_type=refresh_token`.
+- **Refresh binding (§6):** `ISession.oauthClientIds` records every OAuth client the token endpoint minted tokens for on that session; only those clients may refresh it. Sessions from password login / device flow have no binding and cannot be refreshed here at all.
+- **OIDC surface:** `GET|POST /auth/oauth/userinfo` (flat claims) and `GET /.well-known/openid-configuration` (+ the RFC 8414 path), served at the API root by `packages/api/src/routes/oauthMetadata.ts`. There is **no `id_token` and no JWKS** — Oxy signs session tokens with an HMAC secret that has no public half. Relying parties read identity from UserInfo (MAS: `fetch_userinfo: true`). `email_verified` is never emitted; Oxy tracks no per-address verification state.
+- Issuer/authorization-endpoint come from `OAUTH_ISSUER` / `OAUTH_AUTHORIZATION_ENDPOINT` (`packages/api/src/config/oauth.ts`), defaulting to `https://api.$FEDERATION_DOMAIN` and `https://auth.$FEDERATION_DOMAIN/authorize`.
+
 ## Service Tokens (Internal Service-to-Service Auth)
 
 Internal Oxy ecosystem apps authenticate via short-lived service JWTs (OAuth2 Client Credentials pattern).
@@ -441,7 +452,7 @@ All limiters use `rate-limit-redis` with a shared ioredis client. The factory `r
 - `rl:idp:service:` — IdP worker server-to-server READ budget (`/session/validate/*`, 20000 / 15min prod)
 - `rl:auth:` — broad auth routes (`authRateLimiter`, 300 / 15min)
 - `rl:user:` — user routes (`userRateLimiter`, 200 / 15min)
-- `rl:auth:challenge:`, `rl:auth:verify:`, `rl:auth:refresh:`, `rl:auth:lookup:`, `rl:auth:session-claim:`, `rl:auth:oauth-authorize:`, `rl:auth:oauth-consent:`, `rl:auth:oauth-token:`, `rl:auth:service-token:`, `rl:auth:login:`, `rl:auth:client-lookup:`
+- `rl:auth:challenge:`, `rl:auth:verify:`, `rl:auth:refresh:`, `rl:auth:lookup:`, `rl:auth:session-claim:`, `rl:auth:oauth-authorize:`, `rl:auth:oauth-consent:`, `rl:auth:oauth-token:`, `rl:auth:oauth-userinfo:`, `rl:auth:service-token:`, `rl:auth:login:`, `rl:auth:client-lookup:`
 - `rl:session:device-token:` — the zero-cookie device-secret mint (`POST /session/device/token`, `packages/api/src/routes/sessionDevice.ts`)
 - `rl:apps:authorized:read:`, `rl:apps:authorized:revoke:` — connected-apps (`AppGrant`) surface; `rl:auth:grants:read:`, `rl:auth:grants:revoke:` — OAuth grant management
 - `rl:contacts:discover:` (200 hashes/request, 5 req/min/user)
@@ -734,7 +745,7 @@ Standalone Vite app at `auth.oxy.so` — the **OAuth authorize/consent IdP** for
 - `POST /auth/signup` — account creation
 - `POST /auth/recover/*` — password recovery flow
 - `GET /users/me` — current session check
-- `POST /auth/oauth/authorize`, `GET /auth/oauth/consent`, `GET /auth/oauth/client/:clientId`, `POST /auth/oauth/token` — the third-party OAuth authorize/consent/token surface this app exists to serve
+- `POST /auth/oauth/authorize`, `GET /auth/oauth/consent`, `GET /auth/oauth/client/:clientId`, `POST /auth/oauth/token` — the third-party OAuth authorize/consent/token surface this app exists to serve. `/authorize` here already reads the RFC 6749 §4.1.1 snake_case query parameters, so it is the `authorization_endpoint` advertised in the API's discovery document
 - `POST /auth/social/:provider` — social sign-in (now returns the device-first session arm incl. `deviceSecret`, committed via `handleWebSession`)
 
 **Pure-static SPA — NO Pages Function.** The device-account chooser is served entirely by the device-first SDK (`useSwitchableAccounts`), so `packages/auth/functions/` and its `/api/device-accounts` feed were DELETED in the 2c cutover. The IdP is now a pure-static Vite SPA that CF serves directly, with SPA history-fallback for unmatched navigations.

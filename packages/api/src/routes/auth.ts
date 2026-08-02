@@ -11,7 +11,7 @@ import type mongoose from 'mongoose';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { SessionController } from '../controllers/session.controller';
-import { User } from '../models/User';
+import { User, type IUser } from '../models/User';
 import { Application } from '../models/Application';
 import type { IApplication } from '../models/Application';
 import { intersectScopes } from '../utils/applicationScopes';
@@ -24,6 +24,14 @@ import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError } from '../utils/error';
+import { OAuthProtocolError, type OAuthErrorCode } from '../utils/oauthError';
+import {
+  parseOAuthTokenRequest,
+  type OAuthClientCredentials,
+  type OAuthTokenDialect,
+} from '../utils/oauthTokenRequest';
+import { ACCESS_TOKEN_TTL_SECONDS, validateRefreshToken } from '../utils/sessionUtils';
+import { OAUTH_ISSUER } from '../config/oauth';
 import { logger } from '../utils/logger';
 import SignatureService from '../services/signature.service';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
@@ -57,7 +65,6 @@ import {
   authSessionClaimSchema,
   serviceTokenSchema,
   oauthAuthorizeSchema,
-  oauthTokenSchema,
   oauthClientParams,
   oauthConsentQuerySchema,
   grantApplicationIdParams,
@@ -2291,6 +2298,176 @@ router.delete(
   })
 );
 
+// ============================================
+// OAuth2 Token Endpoint (RFC 6749 §4.1.3 + §6)
+// ============================================
+//
+// `POST /auth/oauth/token` serves TWO wire dialects on ONE route. The rule that
+// picks between them lives in `utils/oauthTokenRequest.ts` (see THE DIALECT
+// RULE there); this file implements the consequences:
+//
+//   • `rfc6749` — flat responses (§5.1) and flat errors (§5.2), because a
+//     conforming client such as Matrix Authentication Service parses nothing
+//     else. Supports `grant_type=authorization_code` and `grant_type=
+//     refresh_token`, and `client_secret_basic` as well as `client_secret_post`.
+//
+//   • `legacy` — the `{ data: … }` envelope and the `{ error, message }` error
+//     body that `@oxyhq/core`'s `exchangeOAuthCode` and every integration
+//     written against `docs/auth/integration-guide.md` already parse.
+//
+// A response NEVER mixes dialects: the caller gets back the dialect it spoke.
+// That is what makes standards compliance additive rather than a breaking
+// change — no existing client can observe a difference.
+//
+// The security properties are shared by both dialects and by both grants: the
+// same constant-time client-secret comparison, the same usable-credential
+// rules, the same single-use PKCE-bound code exchange, and the same rate
+// limiter.
+
+/** RFC 6749 §5.1 forbids caching a token response. Applied to errors too. */
+function setTokenResponseHeaders(res: express.Response): void {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+}
+
+/**
+ * Build the failure for a token request in the dialect the caller spoke.
+ *
+ * RFC callers get the flat §5.2 body with the spec status (401 for
+ * `invalid_client`, 400 for everything else). Legacy callers get exactly what
+ * they got before this endpoint learned RFC 6749: a 401 `UnauthorizedError`
+ * whose message is the OAuth error code.
+ *
+ * When the client authenticated with HTTP Basic, §5.2 REQUIRES a
+ * `WWW-Authenticate` challenge alongside the 401, so it is set here — the only
+ * place that knows both the failure and the authentication method used.
+ */
+function oauthFailure(
+  res: express.Response,
+  dialect: OAuthTokenDialect,
+  client: OAuthClientCredentials | undefined,
+  code: OAuthErrorCode,
+  description?: string,
+): Error {
+  if (dialect === 'legacy') {
+    return new UnauthorizedError(code);
+  }
+  if (code === 'invalid_client' && client?.viaBasicAuth) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="oxy", charset="UTF-8"');
+  }
+  return new OAuthProtocolError(code, description);
+}
+
+/**
+ * Resolve an OAuth `client_id` to its usable credential + active application,
+ * and verify a presented client secret in constant time.
+ *
+ * The secret is checked BEFORE any grant material is touched so an attacker
+ * without the secret cannot probe grant outcomes. It is compared as a SHA-256
+ * hash against the stored `secretHash` with `crypto.timingSafeEqual`, with a
+ * length guard first because `timingSafeEqual` throws on unequal lengths.
+ *
+ * Returns `secretVerified` (a secret was presented AND matched) and
+ * `isConfidential` (the credential HAS a secret, presented or not) so the
+ * authorization-code grant can keep its existing "confidential client OR PKCE"
+ * rule while the refresh grant applies the stricter §6 one.
+ */
+async function authenticateOAuthClient(
+  client: OAuthClientCredentials,
+): Promise<
+  | { ok: true; app: IApplication; secretVerified: boolean; isConfidential: boolean }
+  | { ok: false }
+> {
+  // Accept `active` OR `deprecated`-but-within-grace credentials; reject
+  // `revoked` and any whose rotation grace window has expired.
+  const credential = await ApplicationCredential.findOne({
+    publicKey: client.clientId,
+    status: { $ne: 'revoked' },
+  });
+  if (!credential || !isCredentialUsable(credential)) {
+    return { ok: false };
+  }
+
+  const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
+  if (!app) {
+    return { ok: false };
+  }
+
+  const isConfidential = Boolean(credential.secretHash);
+
+  if (client.clientSecret === undefined) {
+    return { ok: true, app, secretVerified: false, isConfidential };
+  }
+
+  if (!credential.secretHash) {
+    return { ok: false };
+  }
+  const expected = Buffer.from(credential.secretHash);
+  const provided = Buffer.from(
+    crypto.createHash('sha256').update(client.clientSecret).digest('hex')
+  );
+  if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
+    return { ok: false };
+  }
+  return { ok: true, app, secretVerified: true, isConfidential };
+}
+
+/** The token material both grants produce, before dialect serialisation. */
+interface IssuedTokens {
+  accessToken: string;
+  refreshToken: string;
+  sessionId: string;
+  deviceId: string;
+  deviceSecret?: string;
+  scopes: string[];
+}
+
+/**
+ * Serialise issued tokens in the caller's dialect.
+ *
+ * RFC (§5.1): a FLAT body with `access_token`, `token_type`, `expires_in`,
+ * `refresh_token` and — when the grant carried scopes — `scope`. `session_id`
+ * and `device_id` are Oxy extension parameters; §5.1 explicitly permits
+ * additional parameters and conforming clients ignore what they don't know.
+ * The user profile is deliberately NOT inlined: RFC clients read claims from
+ * `GET /auth/oauth/userinfo`, which is what an OIDC client does anyway.
+ *
+ * Legacy: byte-for-byte what this endpoint has always returned, inside the
+ * `{ data: … }` envelope, including the inline `user` object that
+ * `@oxyhq/core`'s `exchangeOAuthCode` requires.
+ */
+function sendTokenResponse(
+  res: express.Response,
+  dialect: OAuthTokenDialect,
+  tokens: IssuedTokens,
+  legacyUser: unknown,
+): void {
+  if (dialect === 'legacy') {
+    sendSuccess(res, {
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+      token_type: 'Bearer',
+      expires_in: ACCESS_TOKEN_TTL_SECONDS,
+      session_id: tokens.sessionId,
+      deviceId: tokens.deviceId,
+      ...(tokens.deviceSecret ? { deviceSecret: tokens.deviceSecret } : {}),
+      user: legacyUser,
+    });
+    return;
+  }
+
+  res.status(200).json({
+    access_token: tokens.accessToken,
+    token_type: 'Bearer',
+    expires_in: ACCESS_TOKEN_TTL_SECONDS,
+    refresh_token: tokens.refreshToken,
+    ...(tokens.scopes.length > 0 ? { scope: tokens.scopes.join(' ') } : {}),
+    session_id: tokens.sessionId,
+    device_id: tokens.deviceId,
+    ...(tokens.deviceSecret ? { device_secret: tokens.deviceSecret } : {}),
+  });
+}
+
 /**
  * @openapi
  * /auth/oauth/token:
@@ -2298,19 +2475,57 @@ router.delete(
  *     tags:
  *       - Authentication
  *     security: []
- *     summary: Exchange an OAuth2 authorization code for tokens
+ *     summary: OAuth2 token endpoint (RFC 6749 §4.1.3 and §6)
  *     description: >
- *       Single-use exchange of an authorization code (from
- *       `POST /auth/oauth/authorize`) for a bearer access token, refresh
- *       token, and session ID. Either `clientSecret` (confidential clients)
- *       or `codeVerifier` (public clients with PKCE) is required.
+ *       Exchanges an authorization code (from `POST /auth/oauth/authorize`) or a
+ *       refresh token for a bearer access token, refresh token, and session ID.
  *
- *       Replaying an already-used code, sending a code past its 60-second
- *       TTL, or mismatching the `redirectUri` returns 401 with no detail
- *       about why.
+ *       Two request dialects are accepted on this single endpoint and the
+ *       response always matches the request:
+ *
+ *       * **RFC 6749** — send `grant_type` plus snake_case parameters
+ *         (`code`, `client_id`, `redirect_uri`, `client_secret`,
+ *         `code_verifier`, `refresh_token`), as JSON or
+ *         `application/x-www-form-urlencoded`. Client credentials may be sent
+ *         with HTTP Basic (`client_secret_basic`) or in the body
+ *         (`client_secret_post`). The response is a FLAT JSON body per §5.1 and
+ *         errors are flat per §5.2 (`invalid_client` → 401, everything else →
+ *         400).
+ *       * **Legacy Oxy** — camelCase JSON (`code`, `clientId`, `redirectUri`,
+ *         `clientSecret`, `codeVerifier`) with no `grant_type`. The response
+ *         keeps the `{ data: … }` envelope and errors stay 401
+ *         `{ error, message }`. Only the authorization-code exchange exists in
+ *         this dialect.
+ *
+ *       Either a client secret (confidential clients) or a PKCE `code_verifier`
+ *       (public clients) is required for the authorization-code grant.
+ *       Replaying an already-used code, sending a code past its 60-second TTL,
+ *       or mismatching the redirect URI fails with no detail about why.
  *     requestBody:
  *       required: true
  *       content:
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - grant_type
+ *             properties:
+ *               grant_type:
+ *                 type: string
+ *                 enum: [authorization_code, refresh_token]
+ *               code:
+ *                 type: string
+ *               client_id:
+ *                 type: string
+ *               redirect_uri:
+ *                 type: string
+ *                 format: uri
+ *               client_secret:
+ *                 type: string
+ *               code_verifier:
+ *                 type: string
+ *               refresh_token:
+ *                 type: string
  *         application/json:
  *           schema:
  *             type: object
@@ -2334,80 +2549,75 @@ router.delete(
  *       200:
  *         description: Access token issued.
  *       400:
- *         description: Malformed request.
+ *         description: Malformed request, or (RFC dialect) an invalid grant.
  *       401:
- *         description: Invalid, expired, replayed, or mis-bound code.
+ *         description: Invalid client, or (legacy dialect) an invalid grant.
  */
 router.post(
   '/oauth/token',
   oauthTokenLimiter,
-  validate({ body: oauthTokenSchema }),
   asyncHandler(async (req, res) => {
-    const { code, clientId, redirectUri, clientSecret, codeVerifier } = req.body as {
-      code: string;
-      clientId: string;
-      redirectUri: string;
-      clientSecret?: string;
-      codeVerifier?: string;
-    };
+    // Set FIRST so it covers error responses as well as issued tokens. RFC 6749
+    // §5.1 requires it on the success path; a token-bearing error page is no
+    // safer to cache, and both dialects get it because no client can be broken
+    // by a stricter cache directive.
+    setTokenResponseHeaders(res);
 
-    // Accept `active` OR `deprecated`-but-within-grace credentials; reject
-    // `revoked` and any whose rotation grace window has expired.
-    const credential = await ApplicationCredential.findOne({
-      publicKey: clientId,
-      status: { $ne: 'revoked' },
+    const request = parseOAuthTokenRequest({
+      body: req.body,
+      authorizationHeader: req.headers.authorization,
     });
-    if (!credential || !isCredentialUsable(credential)) {
-      throw new UnauthorizedError('invalid_client');
-    }
+    const { dialect, client } = request;
 
-    const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
-    if (!app) {
-      throw new UnauthorizedError('invalid_client');
+    const authenticated = await authenticateOAuthClient(client);
+    if (!authenticated.ok) {
+      throw oauthFailure(res, dialect, client, 'invalid_client', 'Client authentication failed');
     }
+    const { app, secretVerified, isConfidential } = authenticated;
 
-    // If the caller asserts a confidential client secret, verify it in
-    // constant time BEFORE we attempt the code exchange — that way an
-    // attacker without a secret can't probe the code-binding outcomes. The
-    // secret is compared as a SHA-256 hash against the stored `secretHash`.
-    let clientSecretProvided = false;
-    if (clientSecret) {
-      if (!credential.secretHash) {
-        throw new UnauthorizedError('invalid_client');
-      }
-      const expected = Buffer.from(credential.secretHash);
-      const provided = Buffer.from(
-        crypto.createHash('sha256').update(clientSecret).digest('hex')
-      );
-      if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
-        throw new UnauthorizedError('invalid_client');
-      }
-      clientSecretProvided = true;
+    if (request.grantType === 'refresh_token') {
+      const tokens = await runRefreshTokenGrant({
+        res,
+        client,
+        requestedScope: request.scope,
+        refreshToken: request.refreshToken,
+        clientAuthenticated: secretVerified || !isConfidential,
+      });
+      // Hard-coded dialect, not the request's: the refresh grant only exists in
+      // the RFC dialect (`grant_type` is an RFC-only parameter), so there is no
+      // legacy body to fall back to and no legacy `user` to inline.
+      sendTokenResponse(res, 'rfc6749', tokens, undefined);
+      return;
     }
 
     const exchange = await exchangeAuthCode({
-      rawCode: code,
+      rawCode: request.code,
       appId: app._id.toString(),
-      redirectUri,
-      clientSecretProvided,
-      codeVerifier,
+      redirectUri: request.redirectUri,
+      clientSecretProvided: secretVerified,
+      codeVerifier: request.codeVerifier,
     });
 
     if (!exchange.ok) {
       logger.warn('[OAuth] Token exchange rejected', {
         reason: exchange.reason,
-        clientId: clientId.substring(0, 12) + '...',
+        clientId: client.clientId.substring(0, 12) + '...',
       });
-      if (exchange.reason === 'invalid_client') {
-        throw new UnauthorizedError('invalid_client');
-      }
-      throw new UnauthorizedError('invalid_grant');
+      throw oauthFailure(
+        res,
+        dialect,
+        client,
+        exchange.reason,
+        exchange.reason === 'invalid_client'
+          ? 'Client authentication failed'
+          : 'The authorization code is invalid, expired, or already used',
+      );
     }
 
     // Issue a session bound to the authenticated user from the code.
     const user = await User.findById(exchange.code.userId);
     if (!user) {
-      throw new UnauthorizedError('invalid_grant');
+      throw oauthFailure(res, dialect, client, 'invalid_grant', 'The authorization grant is no longer valid');
     }
 
     const userId = user._id.toString();
@@ -2423,6 +2633,9 @@ router.post(
       {
         deviceName: `${app.name} OAuth`,
         ...(sharedDeviceId ? { deviceId: sharedDeviceId } : {}),
+        // Records this client on the session so it — and only it — may later
+        // present the refresh token here (RFC 6749 §6).
+        oauthClientId: client.clientId,
       },
     );
 
@@ -2434,20 +2647,226 @@ router.post(
     app.lastUsedAt = new Date();
     await app.save();
 
-    const userData = formatUserResponse(user);
-
-    sendSuccess(res, {
-      access_token: session.accessToken,
-      refresh_token: session.refreshToken,
-      token_type: 'Bearer',
-      expires_in: 15 * 60,
-      session_id: session.sessionId,
-      deviceId: session.deviceId,
-      ...(deviceExtras.deviceSecret ? { deviceSecret: deviceExtras.deviceSecret } : {}),
-      user: userData,
-    });
+    sendTokenResponse(
+      res,
+      dialect,
+      {
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
+        sessionId: session.sessionId,
+        deviceId: session.deviceId,
+        ...(deviceExtras.deviceSecret ? { deviceSecret: deviceExtras.deviceSecret } : {}),
+        scopes: Array.isArray(exchange.code.scopes) ? exchange.code.scopes : [],
+      },
+      formatUserResponse(user),
+    );
   })
 );
+
+/**
+ * `grant_type=refresh_token` (RFC 6749 §6). RFC dialect only — the legacy
+ * camelCase dialect has no grant selector and never supported refresh.
+ *
+ * Three checks stand between a refresh token and a new access token:
+ *
+ *  1. **Client authentication.** §6 requires it for confidential clients, so a
+ *     client whose credential carries a `secretHash` MUST present a verified
+ *     secret. A public client (no stored secret) authenticates with its
+ *     `client_id` plus check 2.
+ *  2. **Token↔client binding.** §6 requires the server to "ensure that the
+ *     refresh token was issued to the authenticated client". The session
+ *     records every client the token endpoint minted tokens for
+ *     (`ISession.oauthClientIds`); a client absent from that set is refused,
+ *     and so is any session the OAuth endpoint never minted for (password
+ *     logins, device flow) — their refresh tokens were not issued here.
+ *  3. **The session itself**, via `sessionService.refreshTokens`, which owns
+ *     signature/expiry validation, single-use rotation with its multi-tab grace
+ *     window, and the managed-account operator re-check.
+ *
+ * Checks 1 and 2 run BEFORE rotation so a client that fails them cannot rotate
+ * (and thereby invalidate) tokens belonging to the legitimate client.
+ */
+async function runRefreshTokenGrant(params: {
+  res: express.Response;
+  client: OAuthClientCredentials;
+  requestedScope: string | undefined;
+  refreshToken: string;
+  /** False when a confidential client failed to present its secret. */
+  clientAuthenticated: boolean;
+}): Promise<IssuedTokens> {
+  const { res, client, requestedScope, refreshToken, clientAuthenticated } = params;
+
+  // Oxy sessions are not scope-limited, so a narrowing `scope` on refresh
+  // cannot be honoured. §5.2 `invalid_scope` is the honest answer; silently
+  // ignoring it would hand back a token broader than the client asked for.
+  if (requestedScope !== undefined) {
+    throw oauthFailure(
+      res,
+      'rfc6749',
+      client,
+      'invalid_scope',
+      'Scope narrowing is not supported on the refresh_token grant',
+    );
+  }
+
+  if (!clientAuthenticated) {
+    throw oauthFailure(
+      res,
+      'rfc6749',
+      client,
+      'invalid_client',
+      'Client authentication is required for the refresh_token grant',
+    );
+  }
+
+  const decoded = validateRefreshToken(refreshToken);
+  const sessionId = decoded.valid ? decoded.payload?.sessionId : undefined;
+  if (!sessionId) {
+    throw oauthFailure(res, 'rfc6749', client, 'invalid_grant', 'The refresh token is invalid or expired');
+  }
+
+  // Read past the session cache: the binding is an authorization decision.
+  const session = await sessionService.getSession(sessionId, false);
+  if (!session?.oauthClientIds?.includes(client.clientId)) {
+    logger.warn('[OAuth] Refresh rejected: token was not issued to this client', {
+      clientId: client.clientId.substring(0, 12) + '...',
+      sessionId: sessionId.substring(0, 8),
+    });
+    throw oauthFailure(res, 'rfc6749', client, 'invalid_grant', 'The refresh token was not issued to this client');
+  }
+
+  const refreshed = await sessionService.refreshTokens(refreshToken);
+  if (!refreshed) {
+    throw oauthFailure(res, 'rfc6749', client, 'invalid_grant', 'The refresh token is invalid or expired');
+  }
+
+  return {
+    accessToken: refreshed.accessToken,
+    refreshToken: refreshed.refreshToken,
+    sessionId: refreshed.session.sessionId,
+    deviceId: refreshed.session.deviceId,
+    scopes: [],
+  };
+}
+
+// ============================================
+// OpenID Connect UserInfo (OIDC Core §5.3)
+// ============================================
+
+const oauthUserInfoLimiter = rateLimit({
+  prefix: 'rl:auth:oauth-userinfo:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 200 : 60,
+});
+
+/**
+ * Build the OIDC `picture` claim from the stored avatar.
+ *
+ * Avatars are stored as asset ids, not URLs, so the claim must be an absolute
+ * URL built from the issuer origin. A value that is already an absolute http(s)
+ * URL (legacy/imported profiles) is passed through untouched.
+ */
+function userInfoPictureClaim(avatar: string | undefined): string | undefined {
+  if (!avatar) {
+    return undefined;
+  }
+  if (/^https?:\/\//i.test(avatar)) {
+    return avatar;
+  }
+  return `${OAUTH_ISSUER}/assets/${encodeURIComponent(avatar)}/stream?variant=thumb`;
+}
+
+/**
+ * Map an Oxy user onto the OpenID Connect standard claims (OIDC Core §5.1).
+ *
+ * Only claims Oxy can actually vouch for are emitted:
+ *  - `sub` is the immutable MongoDB id. It is NOT the username, which users
+ *    can change — OIDC requires `sub` to never be reassigned or mutated.
+ *  - `email_verified` is deliberately ABSENT. Oxy stores no per-address
+ *    verification state, and asserting `true` would be a lie a relying party
+ *    would act on. Consumers that need a verified address must configure their
+ *    own policy (MAS: `claims_imports.email.set_email_verification`).
+ */
+function buildUserInfoClaims(user: IUser): Record<string, unknown> {
+  const formatted = formatUserResponse(user);
+  if (!formatted) {
+    return {};
+  }
+  const picture = userInfoPictureClaim(formatted.avatar);
+  const updatedAt = formatted.updatedAt;
+  return {
+    sub: formatted.id,
+    ...(formatted.username ? { preferred_username: formatted.username } : {}),
+    ...(formatted.name?.full ? { name: formatted.name.full } : {}),
+    ...(formatted.name?.first ? { given_name: formatted.name.first } : {}),
+    ...(formatted.name?.last ? { family_name: formatted.name.last } : {}),
+    ...(picture ? { picture } : {}),
+    ...(formatted.email ? { email: formatted.email } : {}),
+    ...(updatedAt instanceof Date
+      ? { updated_at: Math.floor(updatedAt.getTime() / 1000) }
+      : {}),
+  };
+}
+
+/**
+ * @openapi
+ * /auth/oauth/userinfo:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: OpenID Connect UserInfo endpoint
+ *     description: >
+ *       Returns the OIDC standard claims for the user identified by the bearer
+ *       access token issued at `POST /auth/oauth/token`. The body is FLAT
+ *       (OIDC Core §5.3.2) rather than the API-wide `{ data: … }` envelope,
+ *       because that is what conforming OIDC clients parse.
+ *
+ *       `email_verified` is never returned: Oxy stores no per-address
+ *       verification state and will not assert one it cannot prove.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: OIDC standard claims.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sub:
+ *                   type: string
+ *                 preferred_username:
+ *                   type: string
+ *                 name:
+ *                   type: string
+ *                 given_name:
+ *                   type: string
+ *                 family_name:
+ *                   type: string
+ *                 picture:
+ *                   type: string
+ *                   format: uri
+ *                 email:
+ *                   type: string
+ *                 updated_at:
+ *                   type: integer
+ *       401:
+ *         description: Missing or invalid bearer token.
+ */
+const userInfoHandler = asyncHandler(async (req: AuthRequest, res) => {
+  const user = req.user;
+  if (!user) {
+    throw new UnauthorizedError('Authentication required');
+  }
+  // OIDC Core §5.3.2 — the claims are the whole body, and must not be cached.
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  res.status(200).json(buildUserInfoClaims(user));
+});
+
+// OIDC Core §5.3.1 requires the UserInfo endpoint to accept both GET and POST.
+router.get('/oauth/userinfo', oauthUserInfoLimiter, rejectQueryToken, authMiddleware, userInfoHandler);
+router.post('/oauth/userinfo', oauthUserInfoLimiter, rejectQueryToken, authMiddleware, userInfoHandler);
 
 /**
  * @openapi

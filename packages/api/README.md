@@ -94,7 +94,9 @@ Every device-session mutation broadcasts a `session_state` event to the Socket.I
 | `/auth/oauth/client/:clientId` | GET | Public Application metadata (name, logo, type, legal URLs) |
 | `/auth/oauth/consent` | GET | Whether the current user must see the consent screen |
 | `/auth/oauth/authorize` | POST | Mint a single-use authorization code (IdP-side, Bearer) |
-| `/auth/oauth/token` | POST | Exchange code (+ PKCE verifier or client secret) for tokens |
+| `/auth/oauth/token` | POST | Exchange code (+ PKCE verifier or client secret) or a refresh token for tokens. Accepts BOTH the legacy camelCase body (`{ data: … }` response) and RFC 6749 snake_case + `grant_type` with `client_secret_basic`/`client_secret_post` (flat §5.1/§5.2 response) — the response shape matches the request |
+| `/auth/oauth/userinfo` | GET/POST | OpenID Connect UserInfo claims for the bearer token (flat, OIDC Core §5.3) |
+| `/.well-known/openid-configuration` | GET | Provider metadata; also served at `/.well-known/oauth-authorization-server` (RFC 8414). No `id_token`, no JWKS — relying parties read identity from UserInfo |
 | `/auth/grants` | GET/DELETE | List / revoke the user's connected-app grants |
 
 ### Two-Factor (TOTP)

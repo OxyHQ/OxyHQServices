@@ -111,7 +111,10 @@ export interface OxySignInButtonProps {
      *   onOAuthResult={({ redirectUrl, state, codeVerifier }) => {
      *     if (!redirectUrl) return;
      *     const code = new URL(redirectUrl).searchParams.get('code');
-     *     // → POST /auth/oauth/token { code, code_verifier: codeVerifier, state }
+     *     // → POST /auth/oauth/token { code, clientId, redirectUri, codeVerifier }
+     *     //   (or the RFC 6749 form: grant_type=authorization_code&code=…
+     *     //    &client_id=…&redirect_uri=…&code_verifier=… — same endpoint,
+     *     //    flat response. `state` is validated here, never sent.)
      *   }}
      * />
      * ```

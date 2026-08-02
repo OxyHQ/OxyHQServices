@@ -30,6 +30,21 @@ export interface ISession extends Document {
    * the operator who performed them.
    */
   operatedByUserId?: mongoose.Types.ObjectId;
+  /**
+   * OAuth `client_id`s (ApplicationCredential `publicKey`s) that have been
+   * issued tokens for THIS session through `POST /auth/oauth/token`.
+   *
+   * RFC 6749 §6 requires the token endpoint to "ensure that the refresh token
+   * was issued to the authenticated client" before honouring a
+   * `grant_type=refresh_token`. An Oxy session is not owned by a single client
+   * (the same user+device session is reused across authorization-code
+   * exchanges), so the binding is a SET that only ever grows: a client may
+   * refresh a session it was itself issued a token for, and never one it was
+   * not. Sessions minted by password login / device flow carry an empty set and
+   * therefore cannot be refreshed through the OAuth token endpoint at all —
+   * their refresh tokens were not issued by it.
+   */
+  oauthClientIds?: string[];
   isActive: boolean;
   expiresAt: Date; // When this session expires
   lastRefresh: Date; // Last time tokens were refreshed
@@ -84,6 +99,10 @@ const SessionSchema: Schema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
+    },
+    oauthClientIds: {
+      type: [String],
+      default: undefined, // absent (not `[]`) on sessions no OAuth client minted
     },
     isActive: {
       type: Boolean,

@@ -407,7 +407,7 @@ class SessionService {
     options: SessionCreateOptions = {}
   ): Promise<ISession> {
     try {
-      const { deviceName, deviceFingerprint, stableDeviceKey, deviceId: explicitDeviceId, operatedByUserId } = options;
+      const { deviceName, deviceFingerprint, stableDeviceKey, deviceId: explicitDeviceId, operatedByUserId, oauthClientId } = options;
       // For a server-to-server session mint where the request itself carries no
       // stable client identity (UA = 'unknown', egress IP varies per call), the
       // UA/IP-derived deviceId would be random every time and sprawl a new
@@ -526,7 +526,11 @@ class SessionService {
               // switched in); leave it untouched for ordinary sessions.
               ...(operatedByUserId ? { operatedByUserId } : {}),
               updatedAt: now
-            }
+            },
+            // RFC 6749 §6 refresh binding. `$addToSet` because a reused session
+            // can legitimately serve several OAuth clients over its lifetime;
+            // each one may refresh only after it was itself issued a token.
+            ...(oauthClientId ? { $addToSet: { oauthClientIds: oauthClientId } } : {}),
           },
           { new: true }
         );
@@ -587,6 +591,8 @@ class SessionService {
         accessToken,
         refreshToken,
         operatedByUserId: operatedByUserId || null,
+        // RFC 6749 §6 refresh binding — see `ISession.oauthClientIds`.
+        ...(oauthClientId ? { oauthClientIds: [oauthClientId] } : {}),
         isActive: true,
         expiresAt,
         lastRefresh: now

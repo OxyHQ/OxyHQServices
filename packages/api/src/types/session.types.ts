@@ -37,6 +37,13 @@ export interface SessionCreateOptions {
    * and to bind its validity to the operator's `account:act_as` membership.
    */
   operatedByUserId?: string;
+  /**
+   * The OAuth `client_id` (ApplicationCredential `publicKey`) minting this
+   * session through `POST /auth/oauth/token`. Recorded on the session (as a
+   * growing set — see `ISession.oauthClientIds`) so the RFC 6749 §6 refresh
+   * grant can verify the refresh token was issued to the client presenting it.
+   */
+  oauthClientId?: string;
 }
 
 export interface SessionRefreshResult {

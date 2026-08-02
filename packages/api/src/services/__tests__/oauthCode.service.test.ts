@@ -57,14 +57,19 @@ jest.mock('../../models/AuthCode', () => ({
     findOne: jest.fn(async (query: { codeHash: string }) => {
       return store.get(query.codeHash) ?? null;
     }),
+    // Honours the FILTER the service passes, exactly as Mongo would. The
+    // service's single-use guarantee IS that filter (`{ _id, usedAt: null }`):
+    // hardcoding the used-check here instead would make the mock enforce
+    // single-use on the service's behalf, and a regression that dropped the
+    // atomic claim would pass unnoticed.
     findOneAndUpdate: jest.fn(
       async (
-        filter: { _id: string; usedAt: null | Date },
+        filter: { _id: string; usedAt?: null | Date },
         update: { $set: { usedAt: Date } }
       ) => {
         for (const record of store.values()) {
           if (record._id !== filter._id) continue;
-          if (record.usedAt !== null) return null;
+          if ('usedAt' in filter && record.usedAt !== filter.usedAt) return null;
           record.usedAt = update.$set.usedAt;
           return record;
         }
@@ -80,6 +85,7 @@ import {
   exchangeAuthCode,
   base64UrlEncode,
 } from '../oauthCode.service';
+import AuthCode from '../../models/AuthCode';
 
 const APP_ID = '64f7c2a1b8e9d3f4a1c2b3d4';
 const USER_ID = '74f7c2a1b8e9d3f4a1c2b3d5';
@@ -284,6 +290,34 @@ describe('exchangeAuthCode (H6 — single-use, binding checks)', () => {
     });
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.reason).toBe('invalid_grant');
+  });
+
+  it('claims the code with an ATOMIC conditional update, not a read-then-write', async () => {
+    const { code } = await issueAuthCode({
+      userId: USER_ID,
+      appId: APP_ID,
+      redirectUri: REDIRECT_URI,
+    });
+
+    const res = await exchangeAuthCode({
+      rawCode: code,
+      appId: APP_ID,
+      redirectUri: REDIRECT_URI,
+      clientSecretProvided: true,
+    });
+    expect(res.ok).toBe(true);
+
+    // Asserted on the QUERY rather than by racing two exchanges, because the
+    // race this defends against is between API INSTANCES. Within one process
+    // there is no await between reading `usedAt` and claiming the code, so two
+    // concurrent calls can never interleave there and a single-process race
+    // would pass even with the conditional dropped. The `usedAt: null` clause
+    // is the whole single-use guarantee under Mongo, so that is what is pinned.
+    expect(AuthCode.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ usedAt: null }),
+      { $set: { usedAt: expect.any(Date) } },
+      { new: true }
+    );
   });
 
   it('rejects an expired code', async () => {

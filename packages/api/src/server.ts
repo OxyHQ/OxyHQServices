@@ -55,6 +55,7 @@ import { sweepNodeLiveness } from './services/nodeRegistry.service';
 import { VALIDATION_SWEEP_INTERVAL_MS, PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS } from './utils/civic.constants';
 import { NODE_LIVENESS_SWEEP_INTERVAL_MS } from './utils/nodes.constants';
 import didRoutes from './routes/did';
+import oauthMetadataRoutes from './routes/oauthMetadata';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { startBackgroundJobs, stopBackgroundJobs } from './queue/backgroundJobs';
@@ -696,6 +697,14 @@ app.use('/federation', federationServiceLimiter, federationRoutes);
 // auth/CSRF — served at the API root beside the WebFinger/ActivityPub handlers
 // (the apex proxy must forward `/u/*/did.json` + `/.well-known/did.json`).
 app.use('/', didRoutes);
+
+// OAuth 2.0 / OpenID Connect discovery. Mounted at the API root because both
+// RFC 8414 §3 and OIDC Discovery §4 fix these paths relative to the ISSUER,
+// which is this API's public origin — the document would be unreachable under
+// any prefix. Public, unauthenticated, no CSRF: it is public infrastructure a
+// relying party (e.g. a Matrix homeserver's authentication service) fetches
+// before it holds any credential at all.
+app.use('/', oauthMetadataRoutes);
 
 // Swagger API documentation (non-production only)
 if (process.env.NODE_ENV !== 'production') {

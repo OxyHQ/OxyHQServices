@@ -1,7 +1,14 @@
 import { logger } from "./logger";
 import jwt from "jsonwebtoken";
 
-const ACCESS_TOKEN_EXPIRES_IN = '15m'; // Short-lived access tokens
+/**
+ * Access-token lifetime in SECONDS. Exported because the OAuth2 token endpoint
+ * must report it verbatim as RFC 6749 §5.1 `expires_in`; deriving both from one
+ * constant stops the advertised lifetime from drifting away from the real one.
+ */
+export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+
+const ACCESS_TOKEN_EXPIRES_IN = `${ACCESS_TOKEN_TTL_SECONDS}s`; // Short-lived access tokens
 const REFRESH_TOKEN_EXPIRES_IN = '7d'; // Longer refresh tokens
 
 /**

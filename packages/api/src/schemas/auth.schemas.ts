@@ -210,9 +210,16 @@ export const oauthAuthorizeSchema = z.object({
   scope: z.string().trim().max(512).optional(),
 });
 
-// POST /auth/oauth/token
+// POST /auth/oauth/token — grant_type=authorization_code
+//
+// These are the NORMALISED parameters, not the wire parameters. Both dialects
+// the endpoint accepts (RFC 6749 snake_case + HTTP Basic, and the legacy Oxy
+// camelCase body) are mapped onto this single shape by
+// `utils/oauthTokenRequest.parseOAuthTokenRequest` before validation, so the
+// two wire formats can never drift into two different validation rules.
+//
 // Confidential clients pass clientSecret. Public clients pass codeVerifier.
-export const oauthTokenSchema = z.object({
+export const oauthAuthorizationCodeGrantSchema = z.object({
   code: z.string().trim().min(1),
   clientId: z.string().trim().min(1),
   redirectUri: z.string().trim().url(),
@@ -222,6 +229,20 @@ export const oauthTokenSchema = z.object({
   (data) => Boolean(data.clientSecret) || Boolean(data.codeVerifier),
   { message: 'Either clientSecret (confidential client) or codeVerifier (PKCE) is required' }
 );
+
+// POST /auth/oauth/token — grant_type=refresh_token (RFC 6749 §6).
+//
+// RFC-dialect only: the legacy camelCase dialect has no grant selector and has
+// never supported refresh. Client authentication (clientSecret) is REQUIRED at
+// the route for any client that has a registered secret; a public client
+// authenticates with its client_id plus the session↔client binding recorded
+// when the refresh token was issued.
+export const oauthRefreshTokenGrantSchema = z.object({
+  clientId: z.string().trim().min(1),
+  clientSecret: z.string().trim().min(1).optional(),
+  refreshToken: z.string().trim().min(1),
+  scope: z.string().trim().max(512).optional(),
+});
 
 // GET /auth/oauth/client/:clientId
 // Public lookup of sanitized application metadata for the consent UI.

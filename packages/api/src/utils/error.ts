@@ -78,7 +78,16 @@ export class ApiError extends Error {
     }
   }
 
-  toJSON() {
+  /**
+   * The JSON body sent for this error by both `asyncHandler` and the global
+   * `errorHandler`.
+   *
+   * Typed as an open record rather than the concrete `{ error, message }` shape
+   * so a subclass may serialise itself in a foreign wire format it does not
+   * control — `OAuthProtocolError` must emit RFC 6749 §5.2's
+   * `{ error, error_description }`, which has no `message` at all.
+   */
+  toJSON(): Record<string, unknown> {
     return {
       error: this.code,
       message: this.message,

@@ -150,6 +150,8 @@ Content-Type: application/json
 }
 ```
 
+Off-the-shelf OAuth 2.0 / OIDC software (an authorization server, a gateway, an OIDC library) sends the RFC 6749 parameter set to the **same** endpoint instead — `grant_type` + snake_case, `client_secret_basic` or `client_secret_post`, with discovery at `/.well-known/openid-configuration` and claims at `/auth/oauth/userinfo`. The response shape always matches the request shape, so both dialects coexist without either affecting the other. See the [integration guide](./auth/integration-guide.md#off-the-shelf-oauth-20--oidc-clients).
+
 Native third-party RPs pass `onOAuthResult` to receive `{ redirectUrl, state, codeVerifier }` from the in-app auth session and finish the same exchange. Consent renders on `auth.oxy.so` via `OxyConsentScreen` (exported from `@oxyhq/services`), showing the Application's name, logo, scopes, and its `privacyPolicyUrl` / `termsUrl`. Full walkthrough: [integration guide](./auth/integration-guide.md).
 
 ## Backend — verifying requests

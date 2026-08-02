@@ -173,6 +173,66 @@ Content-Type: application/json
 
 The `clientSecret` **never** reaches the browser. What your backend does with the resulting tokens (its own app session, its own JWT, …) is your responsibility, not Oxy's.
 
+### Off-the-shelf OAuth 2.0 / OIDC clients
+
+The camelCase body above is Oxy's original shape. If you are wiring up software
+that speaks RFC 6749 — an authorization server such as Matrix Authentication
+Service, an OIDC library, a gateway — send the **standard** parameters instead
+and you get standard responses back. The same endpoint serves both; **the
+response shape always matches the request shape**, so nothing about the legacy
+dialect above changes.
+
+Discovery lives at the issuer root and is also served at the RFC 8414 path:
+
+```http
+GET https://api.oxy.so/.well-known/openid-configuration
+GET https://api.oxy.so/.well-known/oauth-authorization-server
+```
+
+```http
+POST https://api.oxy.so/auth/oauth/token
+Authorization: Basic <base64(client_id:client_secret)>
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=…&redirect_uri=https%3A%2F%2Fmerchant.example%2Fauth%2Fcallback
+```
+
+```json
+{
+  "access_token": "…",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "refresh_token": "…",
+  "scope": "openid profile",
+  "session_id": "…",
+  "device_id": "…"
+}
+```
+
+Notes for standards-based clients:
+
+- **Both client authentication methods work**: `client_secret_basic` (HTTP
+  Basic, as above) and `client_secret_post` (`client_id` + `client_secret` in
+  the body). Public clients send `client_id` + `code_verifier` and no secret.
+- **`grant_type=refresh_token` is supported** and rotates the session. The
+  refresh token must be presented by the same `client_id` it was issued to
+  (RFC 6749 §6); a confidential client must authenticate. Narrowing `scope` on
+  refresh is **not** supported and returns `invalid_scope` rather than silently
+  over-granting.
+- **Errors are flat** per RFC 6749 §5.2 — `{"error":"invalid_grant",
+  "error_description":"…"}` — with 401 for `invalid_client` and 400 for
+  everything else.
+- **Both JSON and form encoding are accepted.** What selects the standard
+  dialect is the snake_case parameter set / HTTP Basic header, not the
+  `Content-Type`.
+- **Identity comes from UserInfo**, not from an ID token: this provider does
+  **not** issue `id_token`s and publishes no JWKS. Call
+  `GET|POST https://api.oxy.so/auth/oauth/userinfo` with the access token. For
+  Matrix Authentication Service that means `fetch_userinfo: true`.
+- `email_verified` is never returned — Oxy stores no per-address verification
+  state and will not assert one it cannot prove. Configure your own policy
+  (MAS: `claims_imports.email.set_email_verification`).
+
 ---
 
 ## Step 4 — Native app (Expo / React Native)
@@ -325,9 +385,11 @@ Third-party integration is **standard OAuth only**. Do not expect — or try to 
 
 | Method | Endpoint | Auth | Purpose |
 |--------|----------|------|---------|
+| GET | `api.oxy.so/.well-known/openid-configuration` | none | Provider metadata (also at `/.well-known/oauth-authorization-server`) |
 | GET | `https://auth.oxy.so/authorize` | — (browser) | Authorization + consent UI. Query: `client_id`, `redirect_uri`, `response_type=code`, `state`, `scope`, `code_challenge`, `code_challenge_method=S256`, optional `prompt=none` for silent restore |
 | GET | `api.oxy.so/auth/oauth/client/:clientId` | none | Public, sanitized application metadata (name, icon, type, scopes, legal URLs). Generic 404 for unknown/revoked clients |
-| POST | `api.oxy.so/auth/oauth/token` | none (code-bound) | Exchange `{ code, clientId, redirectUri, codeVerifier \| clientSecret }` → `{ data: { access_token, refresh_token, token_type, expires_in, session_id, user } }` |
+| POST | `api.oxy.so/auth/oauth/token` | none (code-bound), or client credentials | **Legacy dialect:** `{ code, clientId, redirectUri, codeVerifier \| clientSecret }` → `{ data: { access_token, refresh_token, token_type, expires_in, session_id, deviceId, user } }`. **RFC 6749 dialect:** `grant_type=authorization_code\|refresh_token` + snake_case parameters, `client_secret_basic` or `client_secret_post` → a flat §5.1 body. The response shape always matches the request shape |
+| GET/POST | `api.oxy.so/auth/oauth/userinfo` | Bearer | OIDC standard claims (`sub`, `preferred_username`, `name`, `given_name`, `family_name`, `picture`, `email`, `updated_at`), flat |
 | GET | `api.oxy.so/auth/grants` | Bearer | User's connected apps |
 | DELETE | `api.oxy.so/auth/grants/:applicationId` | Bearer | Revoke a grant (idempotent) |
 
