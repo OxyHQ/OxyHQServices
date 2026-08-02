@@ -42,6 +42,12 @@ import { and, count, eq, gt } from 'drizzle-orm';
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
+  // `routes/accounts.ts` reaches this module too, and its service-scoped
+  // provisioning routes take `serviceAuthMiddleware` as a handler. Omitting it
+  // from a WHOLE-module mock makes Express refuse the route at import time
+  // ("requires a callback function but got [object Undefined]"), which fails the
+  // suite before a single test runs.
+  serviceAuthMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 jest.mock('../../middleware/requireStaff', () => ({
   requireStaff: (_req: unknown, _res: unknown, next: () => void) => next(),

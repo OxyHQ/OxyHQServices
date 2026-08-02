@@ -4,7 +4,7 @@
  */
 
 import { getUserLanguages } from '@oxyhq/core';
-import type { ThemePreference } from '@oxyhq/contracts';
+import { isAccountKind, type ThemePreference } from '@oxyhq/contracts';
 import { formatUserNameResponse, type NameParts, type NameResponse } from './displayName';
 
 type StringableId = string | { toString(): string };
@@ -108,6 +108,8 @@ export interface UserIdentitySource {
    */
   nameFirst?: unknown;
   nameLast?: unknown;
+  /** Flat `name_display` column — the explicit, stored display name. */
+  nameDisplay?: unknown;
   /**
    * Present only on objects that already went through the User schema's
    * toObject/toJSON transform, which deletes `_id` and folds the identifier into
@@ -164,7 +166,8 @@ function identityNameSource(source: UserIdentitySource): NameParts | undefined {
   }
   const first = typeof source.nameFirst === 'string' ? source.nameFirst : '';
   const last = typeof source.nameLast === 'string' ? source.nameLast : '';
-  return first || last ? { first, last } : undefined;
+  const displayName = typeof source.nameDisplay === 'string' ? source.nameDisplay : '';
+  return first || last || displayName ? { first, last, displayName } : undefined;
 }
 
 /**
@@ -244,6 +247,10 @@ export function formatUserResponse(user: unknown) {
     links: Array.isArray(user.links) ? user.links.filter((link): link is string => typeof link === 'string') : undefined,
     linksMetadata: Array.isArray(user.linksMetadata) ? user.linksMetadata : undefined,
     verifiedDomains: toVerifiedDomains(user.verifiedDomains),
+    // Account-graph classification. Orthogonal to `type` below — `kind` says
+    // WHAT the account is (person / organization / channel …), `type` says where
+    // it lives and how it is driven. Both ride every user DTO.
+    kind: isAccountKind(user.kind) ? user.kind : undefined,
     organizationCategory: stringValue(user.organizationCategory),
     // Portable theme preference — rides this self/session payload (login, device
     // sessions, getUserBySession) so account switches carry the theme too.

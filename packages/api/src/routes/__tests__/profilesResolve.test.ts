@@ -385,6 +385,7 @@ describe('GET /profiles/resolve — wire shape', () => {
         actorUri: `https://mastodon.social/users/${localPart}`,
         domain: 'mastodon.social',
       },
+      kind: 'personal',
       isFederated: true,
       fediverseSharing: true,
       _count: { followers: 0, following: 0 },

@@ -31,7 +31,7 @@
 
 import { z } from 'zod';
 import { verifiedDomainSchema } from './identity';
-import { organizationCategorySchema } from './accountGraph';
+import { accountKindSchema, organizationCategorySchema } from './accountGraph';
 
 /**
  * Structured human name subdocument. Mirrors `User.name` (`NameSchema`).
@@ -167,8 +167,22 @@ export const userResponseSchema = z
          */
         verifiedDomains: z.array(verifiedDomainSchema).optional(),
         /**
+         * Account-graph classification — what KIND of account this is.
+         *
+         * ORTHOGONAL to `type` (`local` / `federated` / `agent` / `automated`),
+         * which says where the account lives and how it is driven; the two
+         * coexist and neither substitutes for the other. A `channel` is a
+         * publishing identity nobody can act as, so a consumer that renders
+         * authored content reads THIS to tell a channel's post from a person's.
+         *
+         * Optional because a DTO produced from a source that never carried the
+         * column omits it; absent should be read as `personal`, the column's
+         * default, not as unknown.
+         */
+        kind: accountKindSchema.optional(),
+        /**
          * Real-estate / team taxonomy for `kind: 'organization'` accounts.
-         * Absent on personal, project, and bot accounts.
+         * Absent on personal, project, bot, and channel accounts.
          */
         organizationCategory: organizationCategorySchema.optional(),
         /**
@@ -195,6 +209,12 @@ export const userProfileUpdateSchema = z
             .object({
                 first: z.string().optional(),
                 last: z.string().optional(),
+                /**
+                 * Explicit display name, stored rather than composed. Wins over
+                 * `first`/`last` when set; send `''` to clear it and fall back
+                 * to the composed pair.
+                 */
+                displayName: z.string().optional(),
             })
             .optional(),
         username: z.string().optional(),

@@ -6,7 +6,12 @@ import {
   type ChildAccountKind,
   type OrganizationCategory,
 } from '@oxyhq/contracts';
-import { authMiddleware, type AuthRequest } from '../middleware/auth';
+import {
+  authMiddleware,
+  serviceAuthMiddleware,
+  type AuthRequest,
+  type ServiceAuthRequest,
+} from '../middleware/auth';
 import { isStaffUser } from '../middleware/requireStaff';
 import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
@@ -32,6 +37,7 @@ import { logger } from '../utils/logger';
 import type { SessionAuthResponse } from '../types/session';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import { isPrivilegedScope, type ApplicationScope } from '../utils/applicationScopes';
+import { accountMembers } from '../db/schema/accountMembers';
 import { stripSensitiveUrlQueryParams } from '../utils/sanitizeUrl';
 import { formatUserResponse } from '../utils/userTransform';
 import {
@@ -51,6 +57,9 @@ import {
   updateAccountMemberSchema,
   transferAccountOwnershipSchema,
   createAccountCredentialSchema,
+  provisionChannelSchema,
+  provisionChannelMemberSchema,
+  provisionChannelMemberParams,
 } from '../schemas/account.schemas';
 
 /**
@@ -64,7 +73,248 @@ interface AccountContextRequest extends AuthRequest {
 
 const router = express.Router();
 
-// All account routes require an authenticated user.
+// ===========================================================================
+// Service-scoped channel provisioning — REGISTERED BEFORE `authMiddleware`
+//
+// These two routes authenticate a SERVICE credential, not a user session, so
+// they must be registered above the `router.use(authMiddleware)` below: Express
+// runs middleware in registration order, and a service bearer is not a session
+// bearer. Same ordering requirement as `/email/inbound` before `/email` in
+// `server.ts` — move them down and they start answering 401 to a valid
+// credential. CSRF is a non-issue: `verifyCsrfToken` returns early for any
+// `Authorization: Bearer` request, because CSRF protects ambient cookie auth.
+//
+// WHY THIS DOES NOT REOPEN WHAT `isActAsEligibleKind` CLOSED
+//
+// The property is that no bearer can exist whose subject is a channel, so
+// nothing can add an auth method to one. Neither route touches
+// `user_auth_methods` and neither mints a session: minting one still requires
+// `POST /accounts/:id/switch`, which refuses a channel. Creating an account and
+// granting membership on it are not act-as.
+//
+// The gate that keeps it that way is `loadChannelAccount` on the membership
+// routes. Membership on a kind that CAN be acted as (`organization`, `project`,
+// `bot`) plus `account:act_as` is a session — so a membership endpoint that
+// accepted an arbitrary account id really would be an escalation, and would let
+// this credential add a principal to somebody's organization. Restricting the
+// target to `kind: 'channel'` is what bounds the scope to publishing rights on
+// an identity nobody can occupy. The create route hardcodes `kind: 'channel'`
+// for the mirror-image reason.
+// ===========================================================================
+
+/**
+ * Per-APP ceiling for channel provisioning.
+ *
+ * Keyed on the service `appId`, not the caller IP: a relying app's traffic
+ * arrives from a handful of NAT addresses, so an IP-keyed budget would make one
+ * busy deployment throttle every other app — the failure this ecosystem has
+ * already hit on the per-IP browser limiter. Declared HERE rather than reusing
+ * `writeLimiter` below for a second reason too: that one is a `const` defined
+ * after `router.use(authMiddleware)`, and referencing it from a route registered
+ * above would be a temporal-dead-zone `ReferenceError` at module load — the
+ * server would not boot.
+ */
+const channelProvisionLimiter = rateLimit({
+  prefix: 'rl:accounts:provision:',
+  windowMs: 60 * 1000,
+  max: 60,
+  message: 'Too many channel provisioning requests. Please slow down.',
+  keyGenerator: (req: Request) => {
+    const serviceApp = (req as ServiceAuthRequest).serviceApp;
+    return serviceApp?.appId
+      ? `accounts:provision:${serviceApp.appId}`
+      : `accounts:provision:ip:${hashedIpKey(req)}`;
+  },
+});
+
+/** Reject a service token that was not granted `scope`. */
+function requireServiceScope(req: ServiceAuthRequest, scope: ApplicationScope): void {
+  if (!req.serviceApp?.scopes?.includes(scope)) {
+    throw new ForbiddenError(`Missing required scope: ${scope}`);
+  }
+}
+
+/**
+ * Load an account and assert it is a CHANNEL.
+ *
+ * The load-bearing check of this whole surface — see the header above. A 404 for
+ * a non-channel rather than a 403: whether some other account exists is not this
+ * credential's business to learn.
+ */
+async function loadChannelAccount(accountId: string): Promise<AccountRow> {
+  const [account] = await getDb()
+    .select(publicColumns(users))
+    .from(users)
+    .where(eq(users.id, accountId))
+    .limit(1);
+  if (!account || account.kind !== 'channel' || account.accountStatus === 'archived') {
+    throw new NotFoundError('Channel account not found');
+  }
+  return account;
+}
+
+/**
+ * POST /accounts/service/channels
+ *
+ * Mint a `channel` account under `ownerUserId`, who becomes its `owner` member.
+ * `kind` is NOT accepted from the body — it is hardcoded, so this credential can
+ * never mint an account that anyone could subsequently act as.
+ */
+router.post(
+  '/service/channels',
+  serviceAuthMiddleware,
+  channelProvisionLimiter,
+  validate({ body: provisionChannelSchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res) => {
+    requireServiceScope(req, 'accounts:provision');
+
+    const body = req.body as {
+      ownerUserId: string;
+      username: string;
+      name?: { first?: string; last?: string; displayName?: string };
+      bio?: string;
+      description?: string;
+      avatar?: string;
+    };
+
+    const [owner] = await getDb()
+      .select(publicColumns(users))
+      .from(users)
+      .where(eq(users.id, body.ownerUserId))
+      .limit(1);
+    if (!owner || owner.accountStatus === 'archived') {
+      throw new NotFoundError('Owner account not found');
+    }
+    // A channel has no administrator of its own — its operators are members. So
+    // parenting a channel under a channel would create a subtree whose root
+    // nobody can act as; `createChildAccount` has no opinion on this, so it is
+    // stated here.
+    if (owner.kind === 'channel') {
+      throw new BadRequestError('A channel cannot own another channel');
+    }
+
+    const { account, membership } = await accountService.createChildAccount(
+      owner.id,
+      owner.id,
+      {
+        kind: 'channel',
+        username: body.username,
+        name: body.name,
+        bio: body.bio,
+        description: body.description,
+        avatar: body.avatar ? stripSensitiveUrlQueryParams(body.avatar) : body.avatar,
+      }
+    );
+
+    logger.info('Channel provisioned by service', {
+      accountId: account.id,
+      ownerUserId: owner.id,
+      appId: req.serviceApp?.appId,
+    });
+
+    res.status(201).json({
+      account: formatUserResponse(account),
+      membership: serializeMember(membership),
+    });
+  })
+);
+
+/**
+ * POST /accounts/service/channels/:id/members
+ *
+ * Grant membership on a CHANNEL. `owner` is not assignable (the schema's role
+ * enum excludes it) — ownership moves only via transfer-ownership.
+ */
+router.post(
+  '/service/channels/:id/members',
+  serviceAuthMiddleware,
+  channelProvisionLimiter,
+  validate({ params: accountIdRouteParams, body: provisionChannelMemberSchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res) => {
+    requireServiceScope(req, 'accounts:provision');
+
+    const body = req.body as {
+      memberUserId: string;
+      role: Exclude<AccountRole, 'owner'>;
+      inherit?: boolean;
+    };
+    const channel = await loadChannelAccount(req.params.id);
+
+    const [member] = await getDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, body.memberUserId))
+      .limit(1);
+    if (!member) {
+      throw new NotFoundError('Member account not found');
+    }
+
+    const membership = await accountService.addMember(
+      channel.id,
+      channel.id,
+      body.memberUserId,
+      body.role,
+      body.inherit ?? false
+    );
+
+    logger.info('Channel member added by service', {
+      accountId: channel.id,
+      memberUserId: body.memberUserId,
+      role: body.role,
+      appId: req.serviceApp?.appId,
+    });
+
+    res.status(201).json({ member: serializeMember(membership) });
+  })
+);
+
+/**
+ * DELETE /accounts/service/channels/:id/members/:memberUserId
+ *
+ * Revoke membership on a CHANNEL. Keyed on the member's USER id rather than the
+ * membership row id: the caller knows who it is removing, not which row records
+ * it. Removing the owner is refused by `accountService.removeMember`.
+ */
+router.delete(
+  '/service/channels/:id/members/:memberUserId',
+  serviceAuthMiddleware,
+  channelProvisionLimiter,
+  validate({ params: provisionChannelMemberParams }),
+  asyncHandler(async (req: ServiceAuthRequest, res) => {
+    requireServiceScope(req, 'accounts:provision');
+
+    const channel = await loadChannelAccount(req.params.id);
+
+    const [membership] = await getDb()
+      .select({ id: accountMembers.id })
+      .from(accountMembers)
+      .where(
+        and(
+          eq(accountMembers.accountId, channel.id),
+          eq(accountMembers.memberUserId, req.params.memberUserId),
+          ne(accountMembers.status, 'removed')
+        )
+      )
+      .limit(1);
+    if (!membership) {
+      throw new NotFoundError('Membership not found');
+    }
+
+    // `callerIsOwner: false` — a service credential is not an owner, so the
+    // owner-removal guard inside the service stays in force.
+    await accountService.removeMember(channel.id, membership.id, false);
+
+    logger.info('Channel member removed by service', {
+      accountId: channel.id,
+      memberUserId: req.params.memberUserId,
+      appId: req.serviceApp?.appId,
+    });
+
+    res.status(204).send();
+  })
+);
+
+// All remaining account routes require an authenticated user.
 router.use(authMiddleware);
 
 /** Resolve the authenticated user id, or throw 401. */

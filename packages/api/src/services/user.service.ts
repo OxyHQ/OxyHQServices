@@ -69,7 +69,7 @@ import {
 import { userIdentityFields, deriveIsFederated, toThemePreference } from '../utils/userTransform';
 import { DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName, normalizeLocale } from '@oxyhq/core';
 import { buildUserDid } from './did.service';
-import type { UserRelationship } from '@oxyhq/contracts';
+import { isAccountKind, type UserRelationship } from '@oxyhq/contracts';
 import type { NameParts } from '../utils/displayName';
 
 // Constants
@@ -127,6 +127,8 @@ export interface UserResponseSource {
   birthday?: unknown;
   themePreference?: unknown;
   type?: unknown;
+  /** Account-graph classification (`personal` / `organization` / `channel` …). */
+  kind?: unknown;
   federation?: unknown;
   privacySettings?: unknown;
 
@@ -139,6 +141,7 @@ export interface UserResponseSource {
   // object and drifting.
   nameFirst?: unknown;
   nameLast?: unknown;
+  nameDisplay?: unknown;
   federationActorUri?: unknown;
   federationDomain?: unknown;
   privacyFediverseSharing?: unknown;
@@ -548,7 +551,7 @@ export interface AccountDocument {
   email?: string;
   publicKey?: string;
   avatar?: string;
-  name: { first?: string; last?: string };
+  name: { first?: string; last?: string; displayName?: string };
   kind: (typeof ACCOUNT_KINDS)[number];
   type: (typeof USER_TYPES)[number];
   accountStatus: (typeof ACCOUNT_STATUSES)[number];
@@ -672,7 +675,11 @@ export class UserService {
       username: row.username ?? undefined,
       email: row.email ?? undefined,
       publicKey: row.publicKey ?? undefined,
-      name: { first: row.nameFirst ?? undefined, last: row.nameLast ?? undefined },
+      name: {
+        first: row.nameFirst ?? undefined,
+        last: row.nameLast ?? undefined,
+        displayName: row.nameDisplay ?? undefined,
+      },
       kind: row.kind,
       organizationCategory: row.organizationCategory ?? undefined,
       parentAccountId: row.parentAccountId ?? undefined,
@@ -861,7 +868,7 @@ export class UserService {
     // 400 so the user corrects the name at the source. Runs BEFORE sanitization
     // so the validation sees the user's raw input.
     if (updates.name && typeof updates.name === 'object') {
-      for (const part of ['first', 'last'] as const) {
+      for (const part of ['first', 'last', 'displayName'] as const) {
         const value = updates.name[part];
         if (typeof value === 'string' && !isValidDisplayName(value)) {
           throw new BadRequestError(DISPLAY_NAME_INVALID_MESSAGE);
@@ -2160,6 +2167,14 @@ export class UserService {
     if (user.type) {
       response.type = user.type;
     }
+    // Account-graph classification, on EVERY public profile row. This is the
+    // field a consumer rendering authored content reads to tell a channel's post
+    // from a person's; without it the only signal would be a second identity
+    // carried alongside the author, which is exactly what modelling a channel as
+    // an account removes. Orthogonal to `type` — both ride the DTO.
+    if (isAccountKind(user.kind)) {
+      response.kind = user.kind;
+    }
     const federation = user.federation ?? flatFederation(user);
     if (federation) {
       response.federation = federation;
@@ -2222,6 +2237,10 @@ function buildUserColumnUpdates(
     const name = filtered.name as NameParts;
     if ('first' in name) set.nameFirst = blankToNull(name.first);
     if ('last' in name) set.nameLast = blankToNull(name.last);
+    // `blankToNull` is what lets a caller CLEAR the explicit name and fall back
+    // to the composed `first`/`last` — the same semantics the other two halves
+    // already had.
+    if ('displayName' in name) set.nameDisplay = blankToNull(name.displayName);
   }
   if (typeof filtered.email === 'string') set.email = blankToNull(filtered.email);
   if (typeof filtered.username === 'string') set.username = blankToNull(filtered.username);

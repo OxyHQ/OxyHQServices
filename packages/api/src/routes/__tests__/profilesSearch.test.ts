@@ -486,6 +486,7 @@ describe('GET /profiles/search — wire shape', () => {
         createdAt: stored.createdAt.toISOString(),
         updatedAt: stored.updatedAt.toISOString(),
         type: 'local',
+        kind: 'personal',
         isFederated: false,
         fediverseSharing: true,
         _count: { followers: 0, following: 0 },

@@ -85,6 +85,13 @@
       "when": 1785694898075,
       "tag": "0011_account_kind_channel",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785701517753,
+      "tag": "0012_users_name_display",
+      "breakpoints": true
     }
   ]
 }
