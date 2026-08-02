@@ -5,9 +5,9 @@
  *
  * For each app this UPSERTS (never duplicates on re-run):
  *   - Application      keyed by (name + createdByUserId = oxyId), owned by the
- *                      minted Oxy `kind:'organization'` account (ownerAccountId)
- *   - AccountMember    a single owner membership for oxy on the Oxy org account
- *                      (app access derives from it — no per-app member row)
+ *                      root `oxy` account itself (ownerAccountId = oxyId) — app
+ *                      access derives from it, with no per-app member row and no
+ *                      intermediate organization account
  *   - ApplicationCredential  type:'public', environment:'production',
  *                            publicKey minted EXACTLY like the real create route
  *                            (`oxy_dk_` + 24 random bytes hex). A `public`
@@ -39,12 +39,10 @@
 import crypto from 'crypto';
 import { and, count, eq, inArray, ne, sql } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../src/config/postgres';
-import { accountMembers } from '../src/db/schema/accountMembers';
 import { applicationCredentials } from '../src/db/schema/applicationCredentials';
 import { applications } from '../src/db/schema/applications';
 import { users } from '../src/db/schema/users';
 import { selectSeedApplications } from '../src/scripts/seedApplicationSelection';
-import { accountService } from '../src/services/account.service';
 import {
   unionValidScopes,
   type ApplicationScope,
@@ -302,62 +300,6 @@ async function findUserByUsername(username: string): Promise<{ id: string } | nu
   return owner ?? null;
 }
 
-async function findOxyOrgAccount(
-  oxyId: string,
-  oxyAccountName: string,
-): Promise<{ id: string } | null> {
-  const [oxyOrg] = await getDb()
-    .select({ id: users.id })
-    .from(users)
-    .where(
-      and(
-        eq(users.parentAccountId, oxyId),
-        eq(users.kind, 'organization'),
-        eq(users.nameFirst, oxyAccountName),
-      ),
-    )
-    .limit(1);
-  return oxyOrg ?? null;
-}
-
-async function resolveUniqueOrgUsername(ownerUsername: string): Promise<string> {
-  const baseUsername = `${ownerUsername}-org`;
-  let username = baseUsername;
-  for (let suffix = 1; suffix <= 1000; suffix += 1) {
-    const [taken] = await getDb()
-      .select({ id: users.id })
-      .from(users)
-      .where(sql`lower(btrim(${users.username})) = lower(btrim(${username}))`)
-      .limit(1);
-    if (!taken) return username;
-    username = `${baseUsername}${suffix}`;
-  }
-  throw new Error(`Could not allocate a unique org username from "${baseUsername}"`);
-}
-
-async function ensureOwnerMembership(accountId: string, oxyId: string): Promise<void> {
-  const [existingOwner] = await getDb()
-    .select({ id: accountMembers.id })
-    .from(accountMembers)
-    .where(
-      and(
-        eq(accountMembers.accountId, accountId),
-        eq(accountMembers.memberUserId, oxyId),
-      ),
-    )
-    .limit(1);
-
-  if (!existingOwner) {
-    await getDb().insert(accountMembers).values({
-      accountId,
-      memberUserId: oxyId,
-      role: 'owner',
-      inherit: true,
-      status: 'active',
-      joinedAt: new Date(),
-    });
-  }
-}
 
 async function retireLegacyApplication(
   application: ApplicationRow,
@@ -415,31 +357,13 @@ async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
   const oxyId = owner.id;
   logger.info('Resolved owner user', { username: ownerUsername, oxyId });
 
-  const oxyAccountName = process.env.OXY_ACCOUNT_NAME || 'Oxy';
-  let oxyOrg = await findOxyOrgAccount(oxyId, oxyAccountName);
-  const createdOxyOrg = !oxyOrg;
-
-  if (!oxyOrg && !dryRun) {
-    const username = await resolveUniqueOrgUsername(ownerUsername);
-    const { account } = await accountService.createChildAccount(oxyId, oxyId, {
-      kind: 'organization',
-      username,
-      name: { first: oxyAccountName },
-    });
-    oxyOrg = account;
-  }
-
-  const oxyOrgId = oxyOrg?.id ?? DRY_RUN_PLACEHOLDER_ID;
-
-  if (oxyOrg && !dryRun) {
-    await ensureOwnerMembership(oxyOrg.id, oxyId);
-  }
-
-  logger.info('Oxy organization account', {
-    name: oxyAccountName,
-    ownerAccountId: oxyOrgId,
-    created: createdOxyOrg && !dryRun,
-  });
+  // Official apps are owned by the ROOT `oxy` account itself. This used to mint a
+  // child `oxy-org` organization under it, which put every official app on an
+  // account the operator never sees when signed in as `oxy` — so the apps looked
+  // missing in the Console and got re-registered by hand as self-service
+  // `third_party` duplicates. One account, one place to find them.
+  const oxyOrgId = oxyId;
+  logger.info('Oxy owner account', { username: ownerUsername, ownerAccountId: oxyOrgId });
 
   const mapping: MappingRow[] = [];
 
