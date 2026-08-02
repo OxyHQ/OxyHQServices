@@ -23,7 +23,7 @@ import type { CreateUpdateRequest } from '@oxyhq/contracts';
 const mockPresign = jest.fn();
 const mockHeadObject = jest.fn();
 
-jest.mock('../../assetServiceSingleton', () => ({
+jest.mock('../../s3ServiceSingleton', () => ({
   __esModule: true,
   s3Service: {
     getPresignedUploadUrl: (...args: unknown[]) => mockPresign(...args),

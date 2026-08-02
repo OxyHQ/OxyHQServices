@@ -17,7 +17,7 @@ import { applyCanonicalMediaMetadata, resolveFileMediaMetadata } from '../utils/
 import {
   findFileById,
   findVariantTwin,
-  replaceVariants,
+  upsertVariantSet,
   updateFile,
   upsertVariant,
 } from './fileRepository';
@@ -259,18 +259,23 @@ export class VariantService {
    * `VersionError` retry loop — optimistic concurrency over `__v`, which merged
    * the two sets by variant type when a racing writer bumped the version. None
    * of that travels: there is no document version to conflict on, and
-   * `replaceVariants` is a single transaction, so a racing writer either sees
+   * `upsertVariantSet` is a single transaction, so a racing writer either sees
    * the whole previous set or the whole new one. The retry loop, its
    * `VariantCommitRetryOptions`, and the declaration-merged `commitVariants`
    * that carried them are deleted rather than reproduced.
+   *
+   * The in-memory `file.variants` is merged by type to match what the
+   * transaction did — rows of types this batch did not write are preserved, so
+   * the record does not appear to have lost variants that are still there.
    */
   private async commitVariants(file: FileRecord, variants: NewFileVariant[]): Promise<void> {
-    const rows = await replaceVariants(
+    const rows = await upsertVariantSet(
       file.id,
       variants,
       file.metadata === undefined ? undefined : { metadata: file.metadata }
     );
-    file.variants = rows;
+    const written = new Set(rows.map((row) => row.type));
+    file.variants = [...file.variants.filter((v) => !written.has(v.type)), ...rows];
   }
 
   private async getUsableReadyVariant(
@@ -600,7 +605,18 @@ export class VariantService {
       );
       variants.push(posterVariant);
 
-      // Generate multiple bitrate variants
+      // Generate multiple bitrate variants.
+      //
+      // `generateVideoVariant` resolves `null` on an ffmpeg failure rather than
+      // rejecting, so ONE rendition failing does not cost the poster and the
+      // renditions that did encode. Total loss is a different thing and must not
+      // be silent: a video whose every attempted rendition failed used to reach
+      // the end of this method, log "generated successfully", and be
+      // indistinguishable from a healthy upload from outside (issue #759).
+      // Counting attempts separately from successes is what tells the two apart
+      // — a source smaller than every target legitimately attempts nothing.
+      let renditionsAttempted = 0;
+      let renditionsSucceeded = 0;
       for (const config of this.videoVariants) {
         // Skip if source resolution is smaller than target
         if (metadata.width && metadata.height) {
@@ -614,6 +630,7 @@ export class VariantService {
           }
         }
 
+        renditionsAttempted += 1;
         const variant = await this.generateVideoVariant(
           videoUrl, // Use S3 presigned URL directly - no temp files
           file.sha256,
@@ -621,6 +638,7 @@ export class VariantService {
           file.visibility
         );
         if (variant) {
+          renditionsSucceeded += 1;
           variants.push(variant);
         }
       }
@@ -654,6 +672,18 @@ export class VariantService {
       });
 
       await this.commitVariants(file, variants);
+
+      // Raised AFTER the commit, deliberately. Everything that did encode — the
+      // poster above all, which is the one video rendition with real consumers
+      // (`ensureVideoPoster`) — is already persisted and is not thrown away by
+      // reporting the failure. The throw is what marks the queue job failed so
+      // the loss is visible and retried; swallowing it is what made a video with
+      // no renditions look exactly like a healthy upload (issue #759).
+      if (renditionsAttempted > 0 && renditionsSucceeded === 0) {
+        throw new Error(
+          `All ${renditionsAttempted} video rendition(s) failed to encode for file ${file.id}`
+        );
+      }
 
       logger.info('Video variants generated successfully', {
         fileId: file.id,

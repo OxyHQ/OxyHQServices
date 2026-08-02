@@ -9,6 +9,7 @@ import {
   isAllowedCacheMime,
 } from '../constants/federationCache';
 import { VariantService } from './variantService';
+import { enqueueAssetVariantGeneration } from '../queue/assetVariants.queue';
 import {
   buildCdnUrl,
   cdnUrlForStorageKey,
@@ -1863,25 +1864,25 @@ export class AssetService {
   }
 
   /**
-   * Queue variant generation
+   * Schedule variant generation for a freshly stored (or relocated/replaced)
+   * file.
+   *
+   * This HANDS THE WORK OFF and returns; it does not generate anything. The
+   * previous implementation awaited `generateVariants` here, which meant every
+   * upload started up to seven sharp encodes — or three x264 transcodes plus HLS
+   * segmentation — in this process with nothing bounding how many ran at once.
+   * None of the eight call sites await this method, so the response was never
+   * blocked; the damage was CPU and memory contention on a fractional-vCPU task,
+   * which starved the JS thread until the ELB's `/health` probe timed out and
+   * the task was killed. See `queue/assetVariants.queue.ts`.
+   *
+   * Synchronous by design so a caller cannot accidentally await a transcode.
    */
-  private async queueVariantGeneration(file: FileRecord): Promise<void> {
-    try {
-      logger.info('Starting variant generation', {
-        fileId: file.id,
-        mime: file.mime
-      });
-
-      // For now, generate variants synchronously
-      // In production, this would be queued to a background worker
-      await this.variantService.generateVariants(file.id);
-
-      logger.info('Variant generation completed', {
-        fileId: file.id
-      });
-    } catch (error) {
-      logger.error('Error in variant generation:', error);
-      // Don't throw error here to avoid failing the upload
-    }
+  private queueVariantGeneration(file: FileRecord): void {
+    logger.info('Queueing variant generation', {
+      fileId: file.id,
+      mime: file.mime,
+    });
+    enqueueAssetVariantGeneration(file.id);
   }
 }

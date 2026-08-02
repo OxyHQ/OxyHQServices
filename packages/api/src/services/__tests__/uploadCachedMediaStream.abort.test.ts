@@ -47,6 +47,23 @@ jest.mock('../variantService', () => ({
   },
 }));
 
+import {
+  startAssetVariantJobs,
+  stopAssetVariantJobs,
+} from '../../queue/assetVariants.queue';
+
+/**
+ * Variant generation is now HANDED OFF to `queue/assetVariants.queue` rather
+ * than run inline, so `mockGenerateVariants` is reached on a later tick via the
+ * queue's in-process drain. Every assertion about it — the negative ones above
+ * all — must let that drain run first, or it asserts on a queue that simply has
+ * not got there yet and can no longer tell success from failure.
+ */
+const settleVariantQueue = async (): Promise<void> => {
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+};
+
 const CACHE_MAX_BYTES = 256 * 1024 * 1024;
 
 /** Distinct, valid-PNG bytes per case — see the header. */
@@ -135,10 +152,18 @@ afterAll(async () => {
   await closePostgres();
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  // The queue keeps a module-level pending set; without a stop/start an item
+  // enqueued by the previous test drains into this one's spy.
+  await stopAssetVariantJobs();
+  await startAssetVariantJobs();
   fileCache.clear();
   mockGenerateVariants.mockReset();
   mockGenerateVariants.mockResolvedValue(undefined);
+});
+
+afterAll(async () => {
+  await stopAssetVariantJobs();
 });
 
 describe('uploadCachedMediaStream — abort cleanup', () => {
@@ -345,6 +370,7 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
       metadata: { source: 'federation-avatar' },
     });
     expect(uploadBuffer).toHaveBeenCalled();
+    await settleVariantQueue();
     expect(mockGenerateVariants).toHaveBeenCalledWith(result.id);
 
     // The victim's row is exactly the one they had.
@@ -583,6 +609,7 @@ describe('AssetService.uploadFileDirect — empty-file guard', () => {
       .where(eq(files.sha256, emptyHash));
     expect(stored).toEqual([]);
     expect(uploadBuffer).not.toHaveBeenCalled();
+    await settleVariantQueue();
     expect(mockGenerateVariants).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
-import { assetService, s3Service } from '../services/assetServiceSingleton';
+import { assetService } from '../services/assetServiceSingleton';
+import { s3Service } from '../services/s3ServiceSingleton';
 import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { optionalAuthMiddleware, getMediaViewerUserId } from '../middleware/optionalAuth';
 import { mediaHeadersMiddleware } from '../middleware/mediaHeaders';
