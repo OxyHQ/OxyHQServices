@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "26.0.2",
+  "version": "26.0.4",
   "description": "OxyHQ Expo/React Native SDK \u2014 UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -139,7 +139,6 @@
   },
   "dependencies": {
     "@oxyhq/contracts": "workspace:*",
-    "@oxyhq/core": "^17.0.2",
     "@simplewebauthn/browser": "^13.3.0",
     "color": "^4.2.3"
   },
