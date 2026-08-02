@@ -252,7 +252,12 @@ extract_primary_deployment_id() {
     | .id
   ' <<<"$update_json" | head -1)"
   if [[ -z "$deployment_id" || "$deployment_id" == "null" ]]; then
-    echo "::error::ECS update-service returned no PRIMARY deployment id for $label."
+    # >&2, because this function RETURNS its value on stdout: both callers read
+    # it through `$(...)`, so an unredirected message is captured into their
+    # variable instead of reaching the workflow log. The deploy still fails
+    # correctly — only the reason disappears, on the one path where the operator
+    # has nothing else to go on.
+    echo "::error::ECS update-service returned no PRIMARY deployment id for $label." >&2
     return 1
   fi
   printf '%s\n' "$deployment_id"
