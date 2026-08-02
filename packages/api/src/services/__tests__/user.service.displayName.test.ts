@@ -35,10 +35,11 @@ jest.mock('../securityActivityService', () => ({
 import User from '../../models/User';
 import { userService } from '../user.service';
 import { BadRequestError } from '../../utils/error';
+import { DISPLAY_NAME_INVALID_MESSAGE } from '@oxyhq/core';
 
 const mockUser = User as jest.Mocked<typeof User>;
 
-const INVALID_NAME_MESSAGE = 'Name may only contain letters, spaces and apostrophes.';
+const INVALID_NAME_MESSAGE = DISPLAY_NAME_INVALID_MESSAGE;
 
 describe('UserService.updateUserProfile display-name policy', () => {
   beforeEach(() => {

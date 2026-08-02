@@ -1,5 +1,17 @@
 # Changelog — `@oxyhq/core`
 
+## 16.1.0
+
+### Display-name policy — separators admitted, swastika ideographs denied
+
+`isValidDisplayName` / `cleanDisplayName` now admit four punctuation separators that
+join real names (`·`, `־`, `་`, `・`) when flanked by letters, and reject the two
+swastika ideographs (`卍`, `卐`) that slipped through the letter-only allowlist.
+
+**Minor rather than patch:** the same input can return a different verdict than
+`16.0.0` (e.g. `Codeur·euses` is now valid). No API surface changed beyond
+`DISPLAY_NAME_INVALID_MESSAGE` (new export for shared client/server copy).
+
 ## 16.0.0
 
 ### BREAKING — `getServiceAssetMetadataByIds` fails closed by default

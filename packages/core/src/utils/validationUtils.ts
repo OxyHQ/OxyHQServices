@@ -16,6 +16,10 @@ import {
  */
 export const MAX_DISPLAY_NAME_LENGTH = 80;
 
+/** Shared 400 / inline-validation copy for native display-name policy rejections. */
+export const DISPLAY_NAME_INVALID_MESSAGE =
+  'Name may only contain letters, spaces, apostrophes, and name separators (·, ־, ་, ・).';
+
 /**
  * Email validation regex
  */

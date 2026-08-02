@@ -12,7 +12,7 @@ import { Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
-import { getNormalizedUserHandle, MAX_DISPLAY_NAME_LENGTH, type UpdateAccountInput } from '@oxyhq/core';
+import { DISPLAY_NAME_INVALID_MESSAGE, getNormalizedUserHandle, isValidDisplayName, MAX_DISPLAY_NAME_LENGTH, type UpdateAccountInput } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useOxy } from '../context/OxyContext';
@@ -62,6 +62,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
   // Editable fields, seeded lazily from the loaded account once.
   const [seeded, setSeeded] = useState(false);
   const [displayName, setDisplayName] = useState('');
+  const [displayNameError, setDisplayNameError] = useState('');
   const [bio, setBio] = useState('');
 
   // Seed the form from the account during render (no useEffect): the first time
@@ -121,8 +122,27 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
     if (confirmed) archiveMutation.mutate();
   }, [archiveMutation, t]);
 
+  const handleDisplayNameChange = useCallback((value: string) => {
+    setDisplayName(value);
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setDisplayNameError('');
+      return;
+    }
+    const nameParts = trimmed.split(/\s+/).filter(Boolean);
+    const first = nameParts[0] || '';
+    const last = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+    const invalidPart = [first, last].find((part) => part && !isValidDisplayName(part));
+    setDisplayNameError(
+      invalidPart
+        ? (t('accounts.settings.displayName.invalidChars') || DISPLAY_NAME_INVALID_MESSAGE)
+        : '',
+    );
+  }, [t]);
+
   const handleSave = useCallback(() => {
     const trimmed = displayName.trim();
+    if (!trimmed || displayNameError) return;
     const nameParts = trimmed.split(/\s+/).filter(Boolean);
     const first = nameParts[0] || '';
     const last = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
@@ -130,7 +150,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
       name: { first, last },
       bio: bio.trim() ? bio.trim() : null,
     });
-  }, [displayName, bio, updateMutation]);
+  }, [displayName, displayNameError, bio, updateMutation]);
 
   const title = t('accounts.settings.title') || 'Account settings';
 
@@ -171,15 +191,23 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
               {/* Profile edit */}
               {canUpdate ? (
                 <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
-                  <TextField>
-                    <TextFieldInput
-                      floatingLabel
-                      label={t('accounts.settings.displayName.label') || 'Display name'}
-                      value={displayName}
-                      onChangeText={setDisplayName}
-                      maxLength={DISPLAY_NAME_MAX}
-                    />
-                  </TextField>
+                  <View className="gap-space-4">
+                    <TextField isInvalid={Boolean(displayNameError)}>
+                      <TextFieldInput
+                        floatingLabel
+                        label={t('accounts.settings.displayName.label') || 'Display name'}
+                        value={displayName}
+                        onChangeText={handleDisplayNameChange}
+                        isInvalid={Boolean(displayNameError)}
+                        maxLength={DISPLAY_NAME_MAX}
+                      />
+                    </TextField>
+                    {displayNameError ? (
+                      <Text className="text-caption font-caption text-negative px-space-4">
+                        {displayNameError}
+                      </Text>
+                    ) : null}
+                  </View>
                   <View className="gap-space-4">
                     <TextField>
                       <TextFieldInput
@@ -200,7 +228,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
                   <Button
                     variant="primary"
                     onPress={handleSave}
-                    disabled={updateMutation.isPending || !displayName.trim()}
+                    disabled={updateMutation.isPending || !displayName.trim() || Boolean(displayNameError)}
                     loading={updateMutation.isPending}
                     accessibilityLabel={t('accounts.settings.save') || 'Save changes'}
                     className="w-full"

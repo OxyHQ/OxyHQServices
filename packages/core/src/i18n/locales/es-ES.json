@@ -203,7 +203,7 @@
         "firstNamePlaceholder": "Introduce tu nombre",
         "lastName": "Apellido",
         "lastNamePlaceholder": "Introduce tu apellido (opcional)",
-        "invalidChars": "Usa solo letras y espacios"
+        "invalidChars": "Usa solo letras, espacios, apóstrofos y separadores de nombre"
       },
       "username": {
         "title": "Usuario",
@@ -1752,7 +1752,8 @@
       "title": "Crear cuenta",
       "subtitle": "Crea una cuenta que tú controlas. Tendrá su propio perfil, miembros y aplicaciones.",
       "displayName": {
-        "label": "Nombre visible"
+        "label": "Nombre visible",
+        "invalidChars": "Usa solo letras, espacios, apóstrofos y separadores de nombre"
       },
       "bio": {
         "label": "Biografía (opcional)"
@@ -1829,7 +1830,8 @@
       "subtitle": "Gestiona el perfil, los miembros y el acceso de esta cuenta.",
       "save": "Guardar cambios",
       "displayName": {
-        "label": "Nombre visible"
+        "label": "Nombre visible",
+        "invalidChars": "Usa solo letras, espacios, apóstrofos y separadores de nombre"
       },
       "bio": {
         "label": "Biografía (opcional)"

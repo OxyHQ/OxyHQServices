@@ -678,7 +678,7 @@
         "firstNamePlaceholder": "Enter first name",
         "lastName": "Last Name",
         "lastNamePlaceholder": "Enter last name (optional)",
-        "invalidChars": "Use letters and spaces only"
+        "invalidChars": "Use letters, spaces, apostrophes, and name separators only"
       },
       "username": {
         "title": "Username",
@@ -1752,7 +1752,8 @@
       "title": "Create account",
       "subtitle": "Create an account you control. It will have its own profile, members, and apps.",
       "displayName": {
-        "label": "Display name"
+        "label": "Display name",
+        "invalidChars": "Use letters, spaces, apostrophes, and name separators only"
       },
       "bio": {
         "label": "Bio (optional)"
@@ -1829,7 +1830,8 @@
       "subtitle": "Manage this account’s profile, members, and access.",
       "save": "Save changes",
       "displayName": {
-        "label": "Display name"
+        "label": "Display name",
+        "invalidChars": "Use letters, spaces, apostrophes, and name separators only"
       },
       "bio": {
         "label": "Bio (optional)"

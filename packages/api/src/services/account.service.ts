@@ -33,6 +33,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../utils/error';
+import { DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName } from '@oxyhq/core';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
 import crypto from 'crypto';
@@ -49,6 +50,16 @@ const SECRET_RANDOM_BYTES = 32;
 const CREDENTIAL_ROTATION_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
 type ObjectId = mongoose.Types.ObjectId;
+
+function assertValidAccountName(name: { first?: string; last?: string } | undefined): void {
+  if (!name || typeof name !== 'object') return;
+  for (const part of ['first', 'last'] as const) {
+    const value = name[part];
+    if (typeof value === 'string' && !isValidDisplayName(value)) {
+      throw new BadRequestError(DISPLAY_NAME_INVALID_MESSAGE);
+    }
+  }
+}
 
 /** Account kinds that may be CREATED as children (personal accounts are roots). */
 const CHILD_ACCOUNT_KINDS: readonly AccountKind[] = ['organization', 'project', 'bot'];
@@ -254,6 +265,8 @@ export class AccountService {
 
     const username = await this.resolveUniqueUsername(input.username);
 
+    assertValidAccountName(input.name);
+
     const ancestors = childAncestorsOf(parent);
     const rootAccountId = childRootOf(parent);
 
@@ -416,6 +429,7 @@ export class AccountService {
       account.username = await this.resolveUniqueUsername(input.username, account._id);
     }
     if (input.name !== undefined) {
+      assertValidAccountName(input.name);
       account.name = {
         ...(account.name ?? {}),
         ...input.name,

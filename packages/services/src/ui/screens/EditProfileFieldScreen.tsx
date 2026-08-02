@@ -20,7 +20,7 @@ import { SurfaceHeaderAction } from '../components/SurfaceHeaderAction';
 import { useOxy } from '../context/OxyContext';
 import { useProfileEditing } from '../hooks/useProfileEditing';
 import { toast } from '@oxyhq/bloom/toast';
-import { EMAIL_REGEX, isValidDisplayName } from '@oxyhq/core';
+import { EMAIL_REGEX, DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName } from '@oxyhq/core';
 import { getLinkTitle, getLinkDescription, linksToListItems } from './linkFormat';
 
 /**
@@ -202,7 +202,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                                 isValidDisplayName(value)
                                     ? undefined
                                     : (t('editProfile.items.displayName.invalidChars')
-                                        || 'Use letters and spaces only'),
+                                        || DISPLAY_NAME_INVALID_MESSAGE),
                         },
                         {
                             key: 'lastName',
@@ -212,7 +212,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                                 isValidDisplayName(value)
                                     ? undefined
                                     : (t('editProfile.items.displayName.invalidChars')
-                                        || 'Use letters and spaces only'),
+                                        || DISPLAY_NAME_INVALID_MESSAGE),
                         },
                     ],
                 };

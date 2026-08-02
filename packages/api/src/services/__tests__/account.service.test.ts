@@ -379,6 +379,32 @@ describe('updateAccount', () => {
 
     expect(updated.name).toEqual({ first: 'Augusta', last: 'Lovelace' });
   });
+
+  test('accepts name separators that join real names', async () => {
+    const account = seedAccount({
+      kind: 'organization',
+      name: { first: 'Acme', last: 'Corp' },
+    });
+
+    const updated = await accountService.updateAccount(account._id.toString(), {
+      name: { first: 'Codeur·euses' },
+    });
+
+    expect(updated.name).toEqual({ first: 'Codeur·euses', last: 'Corp' });
+  });
+
+  test('rejects invalid display names before persisting', async () => {
+    const account = seedAccount({
+      kind: 'organization',
+      name: { first: 'Acme', last: 'Corp' },
+    });
+
+    await expect(
+      accountService.updateAccount(account._id.toString(), {
+        name: { first: 'Agent007' },
+      }),
+    ).rejects.toThrow(/name separators/i);
+  });
 });
 
 // ===========================================================================
@@ -438,6 +464,17 @@ describe('createChildAccount', () => {
         organizationCategory: 'landlord',
       })
     ).rejects.toThrow(/organizationCategory/i);
+  });
+
+  test('rejects invalid display names on create', async () => {
+    const root = seedAccount({ kind: 'personal' });
+    await expect(
+      accountService.createChildAccount(root._id.toString(), root._id.toString(), {
+        kind: 'project',
+        username: 'proj',
+        name: { first: 'Agent007' },
+      }),
+    ).rejects.toThrow(/name separators/i);
   });
 
   test('suffixes the username on collision', async () => {

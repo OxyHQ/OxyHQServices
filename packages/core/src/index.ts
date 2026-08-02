@@ -480,6 +480,7 @@ export {
     USERNAME_REGEX,
     PASSWORD_REGEX,
     MAX_DISPLAY_NAME_LENGTH,
+    DISPLAY_NAME_INVALID_MESSAGE,
     isValidEmail,
     isValidUsername,
     isValidPassword,

@@ -43,7 +43,7 @@ import {
   resolveUserSubscriptionPlan,
 } from '../utils/subscriptionPlan';
 import { userIdentityFields, deriveIsFederated, toThemePreference } from '../utils/userTransform';
-import { isValidDisplayName, normalizeLocale } from '@oxyhq/core';
+import { DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName, normalizeLocale } from '@oxyhq/core';
 import type { UserRelationship } from '@oxyhq/contracts';
 
 // Constants
@@ -375,7 +375,7 @@ export class UserService {
       'themePreference',
     ] as const;
 
-    // Reject invalid native display names (letters/spaces/apostrophe only).
+    // Reject invalid native display names (letters/spaces/apostrophe/separators).
     // Federated writes strip silently via cleanDisplayName; native edits get a
     // 400 so the user corrects the name at the source. Runs BEFORE sanitization
     // so the validation sees the user's raw input.
@@ -383,7 +383,7 @@ export class UserService {
       for (const part of ['first', 'last'] as const) {
         const value = updates.name[part];
         if (typeof value === 'string' && !isValidDisplayName(value)) {
-          throw new BadRequestError('Name may only contain letters, spaces and apostrophes.');
+          throw new BadRequestError(DISPLAY_NAME_INVALID_MESSAGE);
         }
       }
     }
