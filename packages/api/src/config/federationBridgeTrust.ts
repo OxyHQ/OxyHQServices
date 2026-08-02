@@ -21,11 +21,29 @@
  * WHY IT IS NOT THE CALLING APP'S LIST EITHER
  *
  *   The whole point of the host binding is that it is not the caller's decision.
- *   A connector derives a bridged identity and asks; this endpoint decides. The
- *   two lists are therefore expected to be maintained separately, and they FAIL
- *   CLOSED in both directions: an app that lists a bridge this file does not
- *   simply has its resolve refused, and the actor keeps its bridge identity; a
- *   host listed here that no app derives for does nothing at all.
+ *   A connector DERIVES a bridged identity; this endpoint ADJUDICATES it. An
+ *   adjudicator that reads the applicant's own list is not adjudicating — it is
+ *   taking their word, which is exactly the impersonation vector the binding
+ *   exists to close.
+ *
+ * ⚠ THE SECOND LIST IS NOT DUPLICATION. DO NOT CONSOLIDATE THEM.
+ *
+ *   A reader who finds this file and a connector's bridge policy side by side
+ *   will see two lists of the same domains and reach for the obvious tidy-up:
+ *   import one from the other, or hoist both into the shared package. Doing that
+ *   silently deletes the property that makes this safe.
+ *
+ *   Kept separate, drift between the two FAILS CLOSED in BOTH directions:
+ *
+ *     app lists a bridge this file does not   → resolve refused; the actor
+ *                                               simply keeps its bridge identity
+ *     this file lists one no app derives for  → nothing happens at all
+ *
+ *   Neither direction can produce an ACCEPTED ATTRIBUTION NOBODY REVIEWED, which
+ *   is the failure both halves of this design exist to prevent. Consolidate them
+ *   and one side's list becomes the other's authority, so a single unreviewed
+ *   entry — in either repository — starts re-attributing real people's writing.
+ *   The redundancy is the safety mechanism, not an oversight.
  *
  * A wrong entry attributes one person's writing to another, which is heavier than
  * a wrong block, so an entry states what was verified about the operator and when

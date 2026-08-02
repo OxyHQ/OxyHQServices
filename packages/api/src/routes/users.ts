@@ -1791,8 +1791,11 @@ router.put(
       // So the question is answered from THIS service's own reviewed trust list
       // (`config/federationBridgeTrust`) — a decision the API makes, never one the
       // caller asserts, which is the entire point of the binding. The calling
-      // connector keeps its own list; the two are deliberately separate and fail
-      // CLOSED in both directions. `bridgeVouchesForNetwork` requires BOTH
+      // connector keeps its own list; the two are deliberately separate and NOT
+      // duplication — drift between them fails CLOSED in both directions, and
+      // consolidating them would delete that. See the note in
+      // `config/federationBridgeTrust` before "tidying" it.
+      // `bridgeVouchesForNetwork` requires BOTH
       // halves to match, so a listed bridge can only ever claim the single
       // network it mirrors, and an unlisted host still cannot claim anything.
       // It is checked before the WebFinger probe purely because it is a local
