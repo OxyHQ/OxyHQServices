@@ -448,8 +448,19 @@ export class AssetService {
       return this.variantService.ensureImageVariant(fileObj, variantType);
     }
 
-    if (fileObj.mime.startsWith('video/') && variantType === 'poster') {
-      return this.variantService.ensureVideoPoster(fileObj);
+    if (fileObj.mime.startsWith('video/')) {
+      if (variantType === 'poster') {
+        const variant = await this.variantService.ensureVideoPoster(fileObj);
+        return variant;
+      }
+      // A SIZE name (`thumb`, `w320`, …) asked of a video means "an image of
+      // this asset at that size", which for a video is a render of its poster
+      // frame. Callers hold a bare file id and cannot know the mime — the URL
+      // builder they use is synchronous and lexical — so refusing a size name
+      // here is what turned every video thumbnail into a 404. A name that is
+      // not a real size still throws, preserving the 404 for a bogus variant.
+      const variant = await this.variantService.ensureVideoImageVariant(fileObj, variantType);
+      return variant;
     }
 
     throw new Error(`Variant ${variantType} not supported for mime ${fileObj.mime}`);

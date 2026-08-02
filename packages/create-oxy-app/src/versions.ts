@@ -9,31 +9,31 @@
  */
 export const VERSIONS = {
   // --- Oxy SDK ---
-  oxyServices: '^25.0.1', // @oxyhq/services
-  oxyCore: '^16.1.0', // @oxyhq/core
+  oxyServices: '^26.0.0', // @oxyhq/services
+  oxyCore: '^17.0.0', // @oxyhq/core
   oxyBloom: '^0.67.0', // @oxyhq/bloom
-  oxyContracts: '^0.20.0', // @oxyhq/contracts
+  oxyContracts: '^0.21.0', // @oxyhq/contracts
   oxyAppPreset: '^0.1.0', // @oxyhq/app-preset
 
   // --- Expo SDK 57 core ---
-  expo: '^57.0.4',
-  expoConstants: '~57.0.3',
-  expoFont: '~57.0.0',
-  expoImage: '~57.0.0',
-  expoLinking: '~57.0.2',
-  expoRouter: '~57.0.4',
+  expo: '^57.0.6',
+  expoConstants: '~57.0.5',
+  expoFont: '~57.0.1',
+  expoImage: '~57.0.1',
+  expoLinking: '~57.0.3',
+  expoRouter: '~57.0.6',
   expoSplashScreen: '~57.0.2',
-  expoStatusBar: '~57.0.0',
-  expoSystemUi: '~57.0.0',
-  expoWebBrowser: '~57.0.0',
-  expoBuildProperties: '~57.0.3',
+  expoStatusBar: '~57.0.1',
+  expoSystemUi: '~57.0.1',
+  expoWebBrowser: '~57.0.1',
+  expoBuildProperties: '~57.0.5',
   expoVectorIcons: '^15.1.1', // @expo/vector-icons
 
   // --- Oxy SDK UI optional peers (toast / haptics / avatar crop / QR sign-in) ---
-  expoHaptics: '~57.0.0',
+  expoHaptics: '~57.0.1',
   expoImagePicker: '~57.0.4',
-  expoImageManipulator: '~57.0.0',
-  reactNativeQrcodeSvg: '^6.3.15',
+  expoImageManipulator: '~57.0.4',
+  reactNativeQrcodeSvg: '^6.3.0',
   sonner: '^2.0.7', // web toast (Bloom toast.web)
   sonnerNative: '^0.26.4', // native toast (Bloom toast.native)
 
@@ -79,7 +79,7 @@ export const VERSIONS = {
   nodeTypes: '^20.0.0', // @types/node
 
   // --- Backend (Express + Mongoose + Socket.IO) ---
-  express: '^4.22.1',
+  express: '^4.22.2',
   expressTypes: '^4.17.23', // @types/express
   mongoose: '^8.22.1',
   socketIo: '^4.8.1', // socket.io

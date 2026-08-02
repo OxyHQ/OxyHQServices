@@ -17,18 +17,25 @@ import {
 } from '../services/federation.service';
 import { userService } from '../services/user.service';
 import {
+  DEFAULT_PURGE_LIMIT,
+  purgeBlockedDomain,
+  UnpurgeableDomainError,
+} from '../services/federation/blockedDomainPurge.service';
+import {
   publicKeyParamsSchema,
   publicKeyQuerySchema,
   signRequestSchema,
   federationFollowSchema,
   federationActorGoneSchema,
   federationActorDeleteSchema,
+  federationDomainPurgeSchema,
   type PublicKeyParams,
   type PublicKeyQuery,
   type SignRequestBody,
   type FederationFollowBody,
   type FederationActorGoneBody,
   type FederationActorDeleteBody,
+  type FederationDomainPurgeBody,
 } from '../schemas/federation.schemas';
 
 const router = Router();
@@ -398,6 +405,110 @@ router.post(
       deleted: true,
       followEdgesRemoved,
     });
+  }),
+);
+
+/**
+ * Whether this deployment is ARMED for blocked-domain deletion.
+ *
+ * Deliberately separate from the request: `dryRun:false` says the caller
+ * intends to delete, this says an operator has decided this environment may.
+ * Both are required, so a confused, replayed or compromised caller cannot
+ * destroy anything against a deployment nobody armed — and disarming is an env
+ * change that needs no code deploy.
+ *
+ * Read per request rather than at module load so arming takes effect on the
+ * next task start without a rebuild, and so tests can exercise both states.
+ */
+function isDomainPurgeArmed(): boolean {
+  return process.env.FEDERATION_DOMAIN_PURGE_ENABLED === 'true';
+}
+
+/**
+ * POST /federation/domain-purge
+ *
+ * Removes what the Oxy PLATFORM holds for a fediverse instance the calling app
+ * has blocked: the app's mirrored media, the avatars Oxy fetched, and the
+ * `type:'federated'` user rows themselves with their social-graph edges.
+ *
+ * Oxy holds NO blocklist and never will — the calling app owns that policy and
+ * names one domain per call. The rationale, the ownership rules and the exact
+ * host-matching semantics live in
+ * `services/federation/blockedDomainPurge.service.ts`; this route is only the
+ * authenticated door to them.
+ *
+ * WHOSE DATA: files are deleted only when their recorded `serviceAppId` is the
+ * caller's own application id, taken from the SERVICE CREDENTIAL
+ * (`req.serviceApp.appId`) and never from the request body — an app cannot ask
+ * Oxy to delete another app's data. A user row shared with another application
+ * is archived and kept, and the response names the apps that kept it.
+ *
+ * SAFE BY DEFAULT: `dryRun` defaults to true, so a caller that omits it gets a
+ * plan. A real deletion needs `dryRun:false` AND
+ * `FEDERATION_DOMAIN_PURGE_ENABLED=true` on the deployment; otherwise 409.
+ *
+ * BOUNDED AND RESUMABLE: at most `limit` actors (default 200) per call. The
+ * response carries `done`, `nextCursor`, and `remaining` (informational only).
+ * Loop until `done`, echoing `nextCursor` as `afterId` on each subsequent call.
+ * Repeating a completed purge is a no-op, so a retry after a partial failure
+ * converges.
+ */
+router.post(
+  '/domain-purge',
+  serviceAuthMiddleware,
+  validate({ body: federationDomainPurgeSchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res: Response) => {
+    assertFederationScope(req);
+
+    const { domain, dryRun, limit, afterId } = req.body as FederationDomainPurgeBody;
+
+    const callerAppId = req.serviceApp?.appId;
+    if (typeof callerAppId !== 'string' || callerAppId.length === 0) {
+      // Without a caller identity there is no way to tell whose files these
+      // are, so a purge would delete rows while sparing every file. Refuse.
+      throw new ForbiddenError('service credential does not resolve to an application');
+    }
+
+    if (!dryRun && !isDomainPurgeArmed()) {
+      throw new ConflictError(
+        'blocked-domain purge is not armed on this deployment (FEDERATION_DOMAIN_PURGE_ENABLED)',
+      );
+    }
+
+    let result: Awaited<ReturnType<typeof purgeBlockedDomain>>;
+    try {
+      result = await purgeBlockedDomain({
+        domain,
+        callerAppId,
+        dryRun,
+        limit: limit ?? DEFAULT_PURGE_LIMIT,
+        afterId,
+      });
+    } catch (error) {
+      // An unpurgeable domain (our own apex, or one that canonicalises to
+      // nothing) is a caller mistake about WHICH domain, not a server fault.
+      if (error instanceof UnpurgeableDomainError) {
+        throw new ConflictError(error.message);
+      }
+      throw error;
+    }
+
+    logger.info('federation/domain-purge: pass complete', {
+      requestedDomain: result.requestedDomain,
+      canonicalDomain: result.canonicalDomain,
+      dryRun: result.dryRun,
+      appId: callerAppId,
+      credentialId: req.serviceApp?.credentialId,
+      actorsProcessed: result.actorsProcessed,
+      actorsDeleted: result.actorsDeleted,
+      actorsRetained: result.actorsRetained.length,
+      filesDeleted: result.filesDeleted,
+      localFollowersAffected: result.localFollowersAffected,
+      remaining: result.remaining,
+      done: result.done,
+    });
+
+    return sendSuccess(res, result);
   }),
 );
 

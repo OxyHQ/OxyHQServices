@@ -21,4 +21,10 @@ describe('VERSIONS drift guard', () => {
     const major = workspaceVersion.split('.')[0];
     expect(VERSIONS.oxyCore).toBe(`^${major}.0.0`);
   });
+
+  test('oxyContracts matches packages/contracts major.minor', () => {
+    const workspaceVersion = readWorkspaceVersion('contracts');
+    const [major, minor] = workspaceVersion.split('.');
+    expect(VERSIONS.oxyContracts).toBe(`^${major}.${minor}.0`);
+  });
 });
