@@ -1,5 +1,29 @@
 # Changelog — `@oxyhq/core`
 
+## 17.0.2
+
+### Fixes `17.0.0`, which could not be imported at all
+
+`17.0.0` shipped `@oxyhq/core/server/userInvalidation`, which imports
+`OXY_USER_INVALIDATION_CHANNEL`, `isPublishedOxyUserChangeReason` and
+`oxyUserInvalidationEventSchema` from `@oxyhq/contracts` — but it pinned
+`@oxyhq/contracts@^0.20.0`, and `0.20.0` exports none of them. A clean install of
+`17.0.0` therefore failed on any import of `@oxyhq/core/server`:
+
+```
+The requested module '@oxyhq/contracts' does not provide an export named
+'OXY_USER_INVALIDATION_CHANNEL'
+```
+
+That subpath carries `createOxyAuthMiddleware`, `safeFetch`, `createOxyCors` and
+`verifySecret`, so a backend on `17.0.0` did not boot. `17.0.2` pins
+`@oxyhq/contracts@^0.21.0`, which is the version that actually exports the symbols.
+`17.0.0` is deprecated; no consumer had bumped to it. (`17.0.1` was versioned on
+`main` but never published, so `17.0.2` is the first release carrying its changes.)
+
+Nothing else changed. `17.0.1`'s wider cache sweep and `17.0.0`'s helpers are
+unmodified — this release exists solely to correct the dependency range.
+
 ## 17.0.1
 
 ### `@oxyhq/core/server` — cross-service identity cache eviction
