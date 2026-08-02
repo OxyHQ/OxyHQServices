@@ -79,6 +79,7 @@ import { File } from '../../models/File';
 import Follow from '../../models/Follow';
 import User from '../../models/User';
 import { logger } from '../../utils/logger';
+import userCache from '../../utils/userCache';
 import { assetService } from '../assetServiceSingleton';
 import { isOwnFederationDomain } from '../federation.service';
 import { userService } from '../user.service';
@@ -407,6 +408,7 @@ export async function purgeBlockedDomain(
           { _id: oxyUserId, type: 'federated' },
           { $set: { accountStatus: 'archived' } },
         );
+        userCache.invalidate(oxyUserId);
       }
       result.actorsRetained.push({ oxyUserId, username, referencedByAppIds: otherAppIds });
       logger.info('blockedDomainPurge: actor retained, referenced by another application', {

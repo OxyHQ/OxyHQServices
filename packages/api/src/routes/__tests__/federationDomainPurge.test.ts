@@ -341,6 +341,9 @@ jest.mock('../../middleware/auth', () => ({
 
 import federationRouter from '../federation';
 import { errorHandler } from '../../middleware/errorHandler';
+import userCache from '../../utils/userCache';
+
+const mockUserCacheInvalidate = userCache.invalidate as jest.Mock;
 
 interface PurgeData {
   requestedDomain: string;
@@ -706,6 +709,7 @@ describe('POST /federation/domain-purge — multi-tenancy', () => {
     // The avatar belongs to the row, which survived, so it survives too.
     expect(files.has('avatar-a')).toBe(true);
     expect(users.get(ACTOR_A)?.accountStatus).toBe('archived');
+    expect(mockUserCacheInvalidate).toHaveBeenCalledWith(ACTOR_A);
     expect(mockUserDeleteOne).not.toHaveBeenCalled();
   });
 
