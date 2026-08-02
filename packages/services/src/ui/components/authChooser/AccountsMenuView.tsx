@@ -212,6 +212,7 @@ const AccountsMenuView: React.FC<AccountsMenuViewProps> = ({
   // compact header it is not represented anywhere else once the hero moved out
   // of the card, and the list is where you switch back to it.
   const switchableAccounts = current ? [current, ...others] : others;
+  const switchableAccountKey = switchableAccounts.map((account) => account.accountId).join(':');
   const facepile: AvatarGroupItem[] = switchableAccounts.map((account) => ({
     id: account.accountId,
     uri: account.avatarUrl ?? undefined,
@@ -384,52 +385,53 @@ const AccountsMenuView: React.FC<AccountsMenuViewProps> = ({
       <Animated.View style={switchCardStyle}>
         <View className="bg-fill overflow-hidden mb-space-16">
           <HoverPressable
-          baseClassName={`flex-row items-center gap-space-12 px-space-12 py-[10px] min-h-[44px]${
-            switchingDisabled ? ' opacity-60' : ''
-          }`}
-          hoverClassName="bg-fill-secondary"
-          onPress={toggleExpanded}
-          disabled={switchingDisabled}
-          accessibilityRole="button"
-          // The ARIA prop, not `accessibilityState`: react-native-web 0.21
-          // forwards only this one, and RN maps it to
-          // `accessibilityState.expanded` natively — so the disclosure state
-          // reaches assistive tech on BOTH platforms.
-          aria-expanded={expanded}
-          accessibilityLabel={switchLabel}
-        >
-          <Text className="flex-1 text-body text-text" numberOfLines={1}>
-            {switchLabel}
-          </Text>
-          {/* The facepile previews who you can switch to; once the list is open
-              it would just restate the rows below it. */}
-          {expanded ? null : (
-            <AvatarGroup
-              items={facepile}
-              layout="stack"
-              size={FACEPILE_AVATAR_SIZE}
-              max={FACEPILE_MAX}
-              overlap={FACEPILE_OVERLAP}
-              variant="thumb"
-              showInitials
-              ringColor={theme.colors.card}
-            />
-          )}
-          <View style={[styles.chevronCircle, { backgroundColor: theme.colors.contrast50 }]}>
-            <Animated.View style={chevronStyle}>
-              <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.text} />
-            </Animated.View>
-          </View>
+            baseClassName={`flex-row items-center gap-space-12 px-space-12 py-[10px] min-h-[44px]${
+              switchingDisabled ? ' opacity-60' : ''
+            }`}
+            hoverClassName="bg-fill-secondary"
+            onPress={toggleExpanded}
+            disabled={switchingDisabled}
+            accessibilityRole="button"
+            // The ARIA prop, not `accessibilityState`: react-native-web 0.21
+            // forwards only this one, and RN maps it to
+            // `accessibilityState.expanded` natively — so the disclosure state
+            // reaches assistive tech on BOTH platforms.
+            aria-expanded={expanded}
+            accessibilityLabel={switchLabel}
+          >
+            <Text className="flex-1 text-body text-text" numberOfLines={1}>
+              {switchLabel}
+            </Text>
+            {/* The facepile previews who you can switch to; once the list is open
+                it would just restate the rows below it. */}
+            {expanded ? null : (
+              <AvatarGroup
+                items={facepile}
+                layout="stack"
+                size={FACEPILE_AVATAR_SIZE}
+                max={FACEPILE_MAX}
+                overlap={FACEPILE_OVERLAP}
+                variant="thumb"
+                showInitials
+                ringColor={theme.colors.card}
+              />
+            )}
+            <View style={[styles.chevronCircle, { backgroundColor: theme.colors.contrast50 }]}>
+              <Animated.View style={chevronStyle}>
+                <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.text} />
+              </Animated.View>
+            </View>
           </HoverPressable>
 
-        {/* Animated reveal: an overflow-clipped container whose height + opacity
-            are driven by `listProgress`; the inner style-based wrapper measures
-            the natural content height via `onLayout`. */}
+          {/* Animated reveal: an overflow-clipped container whose height + opacity
+              are driven by `listProgress`; the inner style-based wrapper measures
+              the natural content height via `onLayout`. */}
           <Animated.View
             style={[styles.collapse, listStyle]}
             pointerEvents={expanded ? 'auto' : 'none'}
           >
             <View
+              key={switchableAccountKey}
               style={styles.collapseMeasure}
               onLayout={(event) => setListContentHeight(event.nativeEvent.layout.height)}
             >

@@ -79,8 +79,8 @@ export interface AuthState {
 export interface AuthActions {
   /**
    * Sign in
-   * - Web: Redirects to auth.oxy.so (no public key needed)
-   * - Native: Uses cryptographic identity from keychain
+   * - Web + native: opens the in-app Oxy account dialog (`openAccountDialog('signin')`).
+   *   Never navigates to auth.oxy.so — that origin is third-party OAuth only.
    *
    * @param publicKey - Native: identity public key. Ignored on web.
    */
@@ -119,8 +119,8 @@ export interface UseAuthReturn extends AuthState, AuthActions {
  * Features:
  * - Zero config: Just wrap with OxyProvider and use
  * - Cross-platform: Same API on native and web
- * - Auto session restore: Web apps silently restore via device-secret mint, then
- *   silent OAuth against the IdP hub; native apps use the shared keychain
+ * - Auto session restore: device-first cold boot (`deviceId` + `deviceSecret` mint);
+ *   never auto-redirects to the IdP
  * - Type-safe: Full TypeScript support
  */
 export function useAuth(): UseAuthReturn {
