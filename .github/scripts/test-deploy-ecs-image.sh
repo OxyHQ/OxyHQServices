@@ -29,6 +29,7 @@ export DEPLOY_TEST_SERVICE_DESIRED_COUNT=1
 export DEPLOY_TEST_ROLLOUT_SCENARIO=healthy
 export DEPLOY_TEST_DEPLOYMENT_ID=ecs-deploy-test-2
 export DEPLOY_TEST_ROLLBACK_DEPLOYMENT_ID=ecs-deploy-test-rollback
+export DEPLOY_TEST_MISSING_PRIMARY_DEPLOYMENT=false
 
 aws() {
   local service_json='{
@@ -246,6 +247,23 @@ aws() {
             }
           }')"
       else
+        if [[ "$DEPLOY_TEST_MISSING_PRIMARY_DEPLOYMENT" == "true" ]]; then
+          output_json="$(jq -n \
+            --arg id "$DEPLOY_TEST_DEPLOYMENT_ID" \
+            --arg task "$task_definition" \
+            '{
+              service: {
+                deployments: [{
+                  id: $id,
+                  taskDefinition: $task,
+                  status: "ACTIVE",
+                  rolloutState: "IN_PROGRESS",
+                  runningCount: 0,
+                  desiredCount: 1
+                }]
+              }
+            }')"
+        else
         output_json="$(jq -n \
           --arg id "$DEPLOY_TEST_DEPLOYMENT_ID" \
           --arg task "$task_definition" \
@@ -261,6 +279,7 @@ aws() {
               }]
             }
           }')"
+        fi
       fi
       printf 'service:%s:desired=%s\n' \
         "$task_definition" \
@@ -521,5 +540,50 @@ grep -F \
   "deployment ecs-deploy-test-2 is no longer on the service (rolled back or superseded)" \
   "$test_directory/circuit-breaker-rollback/output.log" \
   >/dev/null
+
+# `extract_primary_deployment_id` RETURNS on stdout; its failure `::error::` must
+# land on stderr so a caller's `$(...)` capture cannot swallow the reason.
+case_directory="$test_directory/missing-primary-deployment-stderr"
+mkdir -p "$case_directory"
+DEPLOY_TEST_LOG="$case_directory/aws.log"
+DEPLOY_TEST_MISSING_PRIMARY_DEPLOYMENT=true
+export DEPLOY_TEST_LOG DEPLOY_TEST_MISSING_PRIMARY_DEPLOYMENT
+smoke_script="$case_directory/smoke.sh"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "smoke\n" >>"$DEPLOY_TEST_LOG"' \
+  'exit 0' \
+  >"$smoke_script"
+if env \
+  AWS_REGION=test \
+  AWS_ACCOUNT_ID=123456789012 \
+  CLUSTER=deploy-test \
+  APP=deploy-test \
+  CONTAINER_NAME=deploy-test \
+  IMAGE_URI="example.invalid/deploy-test@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+  MAX_WAIT_SECS=5 \
+  POLL_INTERVAL=1 \
+  RUN_MIGRATIONS=false \
+  POST_DEPLOY_SMOKE_SCRIPT="$smoke_script" \
+  POST_DEPLOY_TASK_COMMAND_JSON='["reconcile"]' \
+  bash "$repository_root/.github/scripts/deploy-ecs-image.sh" \
+  >"$case_directory/stdout.log" \
+  2>"$case_directory/stderr.log"; then
+  echo "Expected missing-primary-deployment case to fail." >&2
+  exit 1
+fi
+grep -F \
+  '::error::ECS update-service returned no PRIMARY deployment id for deployment.' \
+  "$case_directory/stderr.log" \
+  >/dev/null
+if grep -F \
+  '::error::ECS update-service returned no PRIMARY deployment id for deployment.' \
+  "$case_directory/stdout.log" \
+  >/dev/null; then
+  echo "Missing-primary deployment error leaked to stdout (would be swallowed by \$(...))." >&2
+  exit 1
+fi
+DEPLOY_TEST_MISSING_PRIMARY_DEPLOYMENT=false
+export DEPLOY_TEST_MISSING_PRIMARY_DEPLOYMENT
 
 echo "Deployment script transaction tests passed."
