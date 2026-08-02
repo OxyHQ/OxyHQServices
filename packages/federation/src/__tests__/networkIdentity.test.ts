@@ -361,6 +361,19 @@ describe('FEP-fffd proxyOf', () => {
       expect(parsed.authoritative).toBe(false);
     });
 
+    it('requires authoritative to be the boolean true, not merely truthy', () => {
+      // The remote actor writes this JSON, so it chooses the TYPE as well as the
+      // value. `"false"`, `1` and `{}` are all truthy, so a `Boolean(...)` read
+      // here would let an actor claim to BE an account while publishing
+      // something that reads, to a human, as a denial. `=== true` is what makes
+      // the flag mean what it says — and a strict check with no test for it is
+      // one refactor away from silently becoming the loose one.
+      for (const value of ['false', 'true', 1, {}, []]) {
+        const [parsed] = readProxyDeclarations([{ protocol: 'p', proxied: 'q', authoritative: value }]);
+        expect(parsed.authoritative).toBe(false);
+      }
+    });
+
     it('drops malformed entries rather than inventing fields', () => {
       expect(readProxyDeclarations([
         { protocol: '', proxied: 'q' },
