@@ -206,7 +206,26 @@ export function applyDefaultFns(table: PgTable, rows: readonly BuiltRow[]): Buil
 let stagingCounter = 0;
 function nextStagingName(): string {
   stagingCounter += 1;
-  return `oxy_backfill_stage_${process.pid}_${stagingCounter}`;
+  return stagingNameFor(stagingCounter);
+}
+
+function stagingNameFor(counter: number): string {
+  return `oxy_backfill_stage_${process.pid}_${counter}`;
+}
+
+/**
+ * The name the NEXT load will use, without consuming it.
+ *
+ * Exported for one test, and the test cannot be written without it: the
+ * regression is that a table left behind by a crashed run blocks the next one,
+ * so the case has to squat the exact name the loader is about to create. A
+ * guessed name — a high counter the run will never reach — produces a test that
+ * passes whether or not the fix is present, which is the failure it exists to
+ * prevent. Verified by removing the drop-first: with a guessed name the suite
+ * stayed green, with this one it fails on `42P07 already exists`.
+ */
+export function peekNextStagingName(): string {
+  return stagingNameFor(stagingCounter + 1);
 }
 
 /**
@@ -248,6 +267,21 @@ export async function copyRowsInto(
     // UNLOGGED: the staging table lives for one batch, so writing WAL for it is
     // pure cost. `on commit drop` is not used because the copy runs outside a
     // transaction block here; the explicit drop below is the pair.
+    //
+    // Dropped FIRST as well, and that is what makes the run genuinely
+    // re-runnable rather than only claiming to be. The name is
+    // `pid + counter`, and in a container the pid is 1 and the counter restarts
+    // at 0 — so every run generates the SAME names. A run that dies hard skips
+    // the drop below (the first production attempt did, on a foreign-key
+    // violation mid-level-2), and the next run then fails on
+    // `relation "oxy_backfill_stage_1_51" already exists` — nowhere near the
+    // collection at fault, and with the previous failure's cause long since
+    // scrolled away.
+    //
+    // TEMP would drop itself, and is wrong here: the COPY and the INSERT can
+    // land on different pooled connections, and a temporary table is invisible
+    // to any session but its own.
+    await client.unsafe(`drop table if exists "${staging}"`);
     await client.unsafe(
       `create unlogged table "${staging}" as select ${columnList} from "${tableName}" with no data`
     );

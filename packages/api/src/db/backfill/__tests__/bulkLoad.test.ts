@@ -22,7 +22,12 @@ import { eq } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getPostgresClient, type Database } from '../../../config/postgres';
 import { createTestDatabase, dropTestDatabase } from '../../testDatabase';
 import { files, users, wallets, webauthnCredentials } from '../../schema';
-import { copyRowsInto, encodeCopyValue, groupByColumnSet } from '../bulkLoad';
+import {
+  copyRowsInto,
+  encodeCopyValue,
+  groupByColumnSet,
+  peekNextStagingName,
+} from '../bulkLoad';
 import { buildRow } from '../rowBuilder';
 
 jest.setTimeout(180_000);
@@ -294,5 +299,49 @@ describe('encodeCopyValue', () => {
 
   it('refuses a value it cannot encode rather than stringifying it', () => {
     expect(() => encodeCopyValue(Symbol('x'), 'text')).toThrow(/Cannot encode symbol/);
+  });
+});
+
+describe('a crashed run does not poison the next one', () => {
+  /**
+   * The staging table name is `pid + counter`, and in a container the pid is 1
+   * and the counter restarts at 0 — so every run generates the SAME names. The
+   * loader drops each one when it finishes, but a run that dies hard never gets
+   * there: the first production backfill attempt aborted on a foreign-key
+   * violation mid-level-2 and left its staging tables behind. The next run then
+   * failed with `relation "oxy_backfill_stage_1_51" already exists`, nowhere
+   * near the collection at fault.
+   *
+   * `bulkLoad.ts`'s own header calls idempotence — "safe to re-run" — the whole
+   * reason the COPY is followed by an INSERT rather than used directly. A
+   * leftover table breaks that claim on the one path it exists to protect.
+   *
+   * The test squats on the name the loader is about to use, which is what makes
+   * it a regression test rather than a restatement: without the drop-first, the
+   * CREATE raises 42P07 and this fails with that exact message.
+   */
+  it('reclaims a staging table an aborted run left behind', async () => {
+    const client = getPostgresClient();
+    // The name the loader is ABOUT to use, not a guessed one. A guess passes
+    // with or without the fix — measured: with `_9999` the drop-first mutation
+    // stayed green, because the counter never reaches it.
+    const squatted = peekNextStagingName();
+    await client.unsafe(`drop table if exists "${squatted}"`);
+    // Deliberately the WRONG shape, so a load that reused it instead of
+    // recreating it would fail on the columns rather than silently pass.
+    await client.unsafe(`create unlogged table "${squatted}" (wrong_column text)`);
+
+    try {
+      const owner = await copyRowsInto(client, users, [
+        buildRow(users, { id: 'stale-staging-owner', username: 'stale-staging-owner' }),
+      ]);
+      expect(owner).toBe(1);
+
+      const [row] = await db.select().from(users).where(eq(users.id, 'stale-staging-owner'));
+      expect(row?.username).toBe('stale-staging-owner');
+    } finally {
+      await client.unsafe(`drop table if exists "${squatted}"`);
+      await db.delete(users).where(eq(users.id, 'stale-staging-owner'));
+    }
   });
 });
