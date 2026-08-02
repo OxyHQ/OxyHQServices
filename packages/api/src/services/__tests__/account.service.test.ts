@@ -22,6 +22,7 @@ import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
 import { accountCredentials } from '../../db/schema/accountCredentials';
 import { accountMembers } from '../../db/schema/accountMembers';
 import { MAX_ACCOUNT_DEPTH, userAncestors } from '../../db/schema/userAncestors';
+import { userAuthMethods } from '../../db/schema/userAuthMethods';
 import { users } from '../../db/schema/users';
 import {
   accountService,
@@ -306,6 +307,44 @@ describe('createChildAccount', () => {
         username: uniqueUsername('nope'),
       })
     ).rejects.toThrow(/child account kind/i);
+  });
+
+  /**
+   * A channel is a real child account, minted the same way as every other kind
+   * — and with NO credential of any sort. `user_auth_methods` staying empty is
+   * the first half of "no login, ever"; the second half is that no bearer whose
+   * subject is a channel can ever be minted (see `accountsSwitch.test.ts` and
+   * `authSession.service.test.ts`), so nothing can add a row here later.
+   */
+  test('mints a channel child account with no auth methods', async () => {
+    const root = await seedAccount();
+
+    const { account, membership } = await accountService.createChildAccount(root.id, root.id, {
+      kind: 'channel',
+      username: uniqueUsername('daily-news'),
+    });
+
+    expect(account.kind).toBe('channel');
+    expect(account.parentAccountId).toBe(root.id);
+    expect(membership.role).toBe('owner');
+    expect(membership.memberUserId).toBe(root.id);
+
+    const methods = await getDb()
+      .select({ id: userAuthMethods.id })
+      .from(userAuthMethods)
+      .where(eq(userAuthMethods.userId, account.id));
+    expect(methods).toEqual([]);
+  });
+
+  test('rejects organizationCategory on channel accounts', async () => {
+    const root = await seedAccount();
+    await expect(
+      accountService.createChildAccount(root.id, root.id, {
+        kind: 'channel',
+        username: uniqueUsername('chan'),
+        organizationCategory: 'agency',
+      })
+    ).rejects.toThrow(/organizationCategory/i);
   });
 
   test('persists organizationCategory on organization accounts', async () => {

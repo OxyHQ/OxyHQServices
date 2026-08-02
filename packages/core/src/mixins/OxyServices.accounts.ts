@@ -33,7 +33,7 @@
  * registers the switched session into the operator's device-set directly).
  */
 import type { User } from '../models/interfaces';
-import type { OrganizationCategory } from '@oxyhq/contracts';
+import type { AccountKind, OrganizationCategory } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { normalizeUserIdentity } from '../utils/userIdentity';
@@ -46,14 +46,14 @@ import { CACHE_TIMES } from './mixinHelpers';
 /**
  * Account classification, orthogonal to the federation `type`
  * (`local|federated|agent|automated`). `personal` accounts have a direct login;
- * `organization` / `project` / `bot` accounts are operated via `AccountMember`
- * and have no direct login.
+ * `organization` / `project` / `bot` / `channel` accounts are operated via
+ * `AccountMember` and have no direct login. Of those, only the first three may
+ * be acted AS — see `isActAsEligibleKind`.
+ *
+ * Single source of truth is `@oxyhq/contracts`.
  */
-export type AccountKind = 'personal' | 'organization' | 'project' | 'bot';
-
-/** Real-estate / team taxonomy for `kind: 'organization'` accounts. */
-export type { OrganizationCategory } from '@oxyhq/contracts';
-export { ORGANIZATION_CATEGORIES } from '@oxyhq/contracts';
+export type { AccountKind, OrganizationCategory } from '@oxyhq/contracts';
+export { ACCOUNT_KINDS, ORGANIZATION_CATEGORIES, isActAsEligibleKind } from '@oxyhq/contracts';
 
 /**
  * The calling user's relationship to an account node, as resolved by the API:

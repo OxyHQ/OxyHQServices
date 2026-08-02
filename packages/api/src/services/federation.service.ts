@@ -541,8 +541,13 @@ interface BuildActorOptions {
 
 /**
  * Map an account `kind` to its ActivityPub actor `type`. A personal account is a
- * `Person`; organizations/projects/bots map to the corresponding AP actor types
- * so remote servers render them appropriately.
+ * `Person`; organizations/projects/bots/channels map to the corresponding AP
+ * actor types so remote servers render them appropriately.
+ *
+ * A channel is a `Service`: a non-human publishing identity nobody logs into.
+ * `Group` would be wrong — remote implementations that treat `Group` specially
+ * read it as a community that re-broadcasts its members' posts, whereas a
+ * channel publishes its own.
  */
 function actorTypeForKind(kind: AccountKind | undefined): string {
   switch (kind) {
@@ -551,6 +556,7 @@ function actorTypeForKind(kind: AccountKind | undefined): string {
     case 'project':
       return 'Group';
     case 'bot':
+    case 'channel':
       return 'Service';
     default:
       return 'Person';

@@ -18,6 +18,7 @@
  */
 
 import type { DeviceSessionState } from '@oxyhq/contracts';
+import { isActAsEligibleKind } from '@oxyhq/contracts';
 import type { User } from '../models/interfaces';
 import type {
   AccountNode,
@@ -142,6 +143,9 @@ export interface ProjectSwitchableAccountsInput {
  * graph-only rows (in graph order). An account present as BOTH a device session
  * and a graph node is deduped into ONE device row enriched with the graph
  * metadata (relationship / kind / parent / membership).
+ *
+ * Graph nodes of a kind nobody may act as (`channel`) are omitted — see the
+ * filter below.
  */
 export function projectSwitchableAccounts(input: ProjectSwitchableAccountsInput): SwitchableAccount[] {
   const { state, graph, profilesById, activeUser, locale, resolveAvatarUrl } = input;
@@ -227,6 +231,17 @@ export function projectSwitchableAccounts(input: ProjectSwitchableAccountsInput)
       continue;
     }
     // Graph-only account (owned org / shared, not yet a device session).
+    //
+    // This lane is why a no-login account is NOT kept out of the switcher "by
+    // construction": the graph contributes accounts that have no device session
+    // and no credentials at all, which is exactly how an org first becomes
+    // switchable. So a kind that must never be switched into has to be filtered
+    // HERE, and `isActAsEligibleKind` is the same predicate the server enforces
+    // on `POST /accounts/:id/switch` — offering a row the server would 403 is a
+    // dead button.
+    if (!isActAsEligibleKind(node.kind)) {
+      continue;
+    }
     remember(toRow(node.account, {
       relationship: node.relationship,
       kind: node.kind,
@@ -247,6 +262,9 @@ export function projectSwitchableAccounts(input: ProjectSwitchableAccountsInput)
  * `oxyServices.getUsersByIds(...)`; graph nodes already embed their `account`
  * document, but including their ids lets the caller pass one id set and lets the
  * projection prefer freshly-fetched profiles uniformly.
+ *
+ * Applies the SAME act-as filter as {@link projectSwitchableAccounts} to graph
+ * nodes, so this never fetches a profile for a row the projection will drop.
  */
 export function switchableAccountIds(
   state: DeviceSessionState | null,
@@ -259,7 +277,7 @@ export function switchableAccountIds(
     }
   }
   for (const node of graph) {
-    if (node.accountId) {
+    if (node.accountId && isActAsEligibleKind(node.kind)) {
       ids.add(node.accountId);
     }
   }

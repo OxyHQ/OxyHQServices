@@ -17,8 +17,18 @@ import { toast } from '@oxyhq/bloom/toast';
 
 type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
 
-/** Kind of account this screen can create. `personal` is a signup-minted root and is never created here. */
-type CreatableAccountKind = Exclude<AccountKind, 'personal'>;
+/**
+ * Kind of account this screen can create.
+ *
+ * A strict subset of what `POST /accounts` accepts, not `Exclude<AccountKind,
+ * 'personal'>`: this screen SWITCHES INTO the account it just created, so it can
+ * only offer kinds an operator may act as. `personal` is a signup-minted root,
+ * and a `channel` is a content identity nobody occupies — creating one is
+ * Mention's job, through the API. Spelling the subset out here is what keeps a
+ * newly-added kind from silently inheriting the `project` label in
+ * {@link kindLabel}'s fallback.
+ */
+type CreatableAccountKind = Extract<AccountKind, 'organization' | 'project' | 'bot'>;
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,30}$/;
 const DEBOUNCE_MS = 400;

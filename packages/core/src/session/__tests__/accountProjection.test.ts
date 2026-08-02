@@ -115,6 +115,29 @@ describe('projectSwitchableAccounts', () => {
     expect(org.parentAccountId).toBe('a1');
   });
 
+  /**
+   * A channel is a content identity nobody acts as, so it must never be offered
+   * as a switch target. It reaches the projection through the GRAPH lane, not
+   * the device lane — a channel has no credentials and so can never be a device
+   * session, which is exactly why "no-login accounts can't appear here by
+   * construction" is false: `listAccounts()` contributes credential-less
+   * accounts on purpose (that is how an org first becomes switchable).
+   */
+  it('omits a graph-only channel account from the switcher', () => {
+    const rows = projectSwitchableAccounts({
+      state: state([{ accountId: 'a1', sessionId: 's1' }], 'a1'),
+      graph: [
+        graphNode('org1', { kind: 'organization' }),
+        graphNode('chan1', { kind: 'channel' }),
+      ],
+      profilesById: mapOf(user('a1')),
+      resolveAvatarUrl: noAvatar,
+    });
+
+    expect(rows.map((r) => r.accountId)).toEqual(['a1', 'org1']);
+    expect(rows.some((r) => r.kind === 'channel')).toBe(false);
+  });
+
   it('dedups an account present as BOTH device session and graph node into ONE enriched row', () => {
     const rows = projectSwitchableAccounts({
       state: state([{ accountId: 'a1', sessionId: 's1', authuser: 0 }], 'a1'),
@@ -207,5 +230,13 @@ describe('switchableAccountIds', () => {
 
   it('returns [] for null state and empty graph', () => {
     expect(switchableAccountIds(null, [])).toEqual([]);
+  });
+
+  it('omits a graph-only channel, so no profile is fetched for a dropped row', () => {
+    const ids = switchableAccountIds(null, [
+      graphNode('org1', { kind: 'organization' }),
+      graphNode('chan1', { kind: 'channel' }),
+    ]);
+    expect(ids).toEqual(['org1']);
   });
 });

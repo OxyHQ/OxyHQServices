@@ -69,8 +69,10 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import {
+  ACCOUNT_KINDS as CONTRACT_ACCOUNT_KINDS,
   ORGANIZATION_CATEGORIES as CONTRACT_ORGANIZATION_CATEGORIES,
   TRUST_TIERS as CONTRACT_TRUST_TIERS,
+  type AccountKind as ContractAccountKind,
   type OrganizationCategory,
   type TrustTier,
 } from '@oxyhq/contracts';
@@ -115,10 +117,21 @@ export const USER_TYPES = ['local', 'federated', 'agent', 'automated'] as const;
 /**
  * Account-graph classification. `personal` is the only kind that may
  * authenticate directly; the rest are operated through `account_members`.
+ *
+ * Derived from `@oxyhq/contracts`, which owns the vocabulary. `satisfies` proves
+ * every value here is a valid contract kind; the `Gap` type below proves the
+ * reverse, so adding a kind in contracts fails THIS file's typecheck — and
+ * therefore the `users_kind_check` CHECK constraint built from this list — rather
+ * than silently accepting a value the database would reject.
  */
-export const ACCOUNT_KINDS = ['personal', 'organization', 'project', 'bot'] as const;
+export const ACCOUNT_KINDS = [
+  ...CONTRACT_ACCOUNT_KINDS,
+] as const satisfies readonly ContractAccountKind[];
 
 export type AccountKind = (typeof ACCOUNT_KINDS)[number];
+
+/** `never` while `ACCOUNT_KINDS` covers the contract union. */
+export type AccountKindGap = Exclude<ContractAccountKind, (typeof ACCOUNT_KINDS)[number]>;
 
 /** Account-graph lifecycle. `archived` accounts keep their tree edges. */
 export const ACCOUNT_STATUSES = ['active', 'archived'] as const;

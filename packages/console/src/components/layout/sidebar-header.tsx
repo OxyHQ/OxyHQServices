@@ -56,6 +56,7 @@ const kindSubtitles: Record<AccountKind, string> = {
   organization: 'Organization workspace',
   project: 'Project workspace',
   bot: 'Bot workspace',
+  channel: 'Channel',
 };
 
 /** Canonical display label: the account's `name.displayName`, else its handle. */

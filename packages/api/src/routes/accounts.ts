@@ -1,7 +1,11 @@
 import express from 'express';
 import type { Request } from 'express';
 import { and, count, eq, ne } from 'drizzle-orm';
-import type { OrganizationCategory } from '@oxyhq/contracts';
+import {
+  isActAsEligibleKind,
+  type ChildAccountKind,
+  type OrganizationCategory,
+} from '@oxyhq/contracts';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { isStaffUser } from '../middleware/requireStaff';
 import { validate } from '../middleware/validate';
@@ -399,10 +403,18 @@ router.post(
     if (!account || account.accountStatus === 'archived') {
       throw new NotFoundError('Account not found');
     }
-    // Only managed accounts are switch targets. Personal accounts are human
-    // logins and must never be assumed via a switch (that would be impersonation).
-    if (!account.kind || account.kind === 'personal') {
-      throw new ForbiddenError('Cannot switch into a personal account');
+    // Only OPERABLE managed accounts are switch targets. A personal account is a
+    // human login and must never be assumed (that would be impersonation); a
+    // channel is a content identity nobody occupies, and refusing it here is what
+    // makes "a channel can never be logged into" structural — no session whose
+    // subject is a channel can be minted, so no bearer exists that could add an
+    // auth method to one.
+    if (!isActAsEligibleKind(account.kind)) {
+      throw new ForbiddenError(
+        account.kind === 'channel'
+          ? 'Cannot switch into a channel account'
+          : 'Cannot switch into a personal account'
+      );
     }
 
     // Mint a REAL session for the managed account, recording the operator so the
@@ -497,7 +509,7 @@ router.post(
     const userId = requireUserId(req);
     const body = req.body as {
       parentAccountId?: string;
-      kind: 'organization' | 'project' | 'bot';
+      kind: ChildAccountKind;
       username: string;
       name?: { first?: string; last?: string };
       bio?: string;

@@ -43,7 +43,7 @@ import {
   USERS_PROTECTED_COLUMNS,
 } from '../db/schema/protectedColumns';
 import type { AccountKind } from '../db/schema/users';
-import type { OrganizationCategory } from '@oxyhq/contracts';
+import { CHILD_ACCOUNT_KINDS, type OrganizationCategory } from '@oxyhq/contracts';
 import {
   permissionsForAccountRole,
   roleCanActAs,
@@ -87,9 +87,6 @@ function assertValidAccountName(name: { first?: string; last?: string } | undefi
     }
   }
 }
-
-/** Account kinds that may be CREATED as children (personal accounts are roots). */
-const CHILD_ACCOUNT_KINDS: readonly AccountKind[] = ['organization', 'project', 'bot'];
 
 /** How the caller is related to an account in their accessible forest. */
 export type AccountRelationship = 'self' | 'owner' | 'member';
