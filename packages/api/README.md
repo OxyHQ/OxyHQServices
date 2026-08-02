@@ -94,7 +94,8 @@ Every device-session mutation broadcasts a `session_state` event to the Socket.I
 | `/auth/oauth/client/:clientId` | GET | Public Application metadata (name, logo, type, legal URLs) |
 | `/auth/oauth/consent` | GET | Whether the current user must see the consent screen |
 | `/auth/oauth/authorize` | POST | Mint a single-use authorization code (IdP-side, Bearer) |
-| `/auth/oauth/token` | POST | Exchange code (+ PKCE verifier or client secret) for tokens |
+| `/auth/oauth/token` | POST | RFC 6749 §4.1.3 exchange: form-urlencoded code (+ PKCE verifier or client secret) for tokens |
+| `/auth/oauth/userinfo` | GET/POST | OpenID Connect claims for the bearer's account (`sub`, `preferred_username`, `name`, `picture`) |
 | `/auth/grants` | GET/DELETE | List / revoke the user's connected-app grants |
 
 ### Sign in with Oxy — Commons QR handoff + automatic delivery

@@ -418,7 +418,8 @@ POST /auth/session/deny/:authorizeCode        # Deny/cancel
 
 ```
 POST   /auth/oauth/authorize      # Mint single-use authorization code (IdP, Bearer)
-POST   /auth/oauth/token          # Code → tokens (PKCE or confidential)
+POST   /auth/oauth/token          # Code → tokens, RFC 6749 §4.1.3 (PKCE or confidential)
+GET    /auth/oauth/userinfo       # OpenID Connect claims for the bearer (GET or POST)
 GET    /auth/oauth/consent        # Consent decision for the current user + client
 GET    /auth/oauth/client/:clientId  # Public Application metadata
 GET    /auth/grants               # Connected apps

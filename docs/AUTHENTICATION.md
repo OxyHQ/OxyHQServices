@@ -140,15 +140,15 @@ For third-party web, the SDK generates the CSRF `state` and PKCE pair with `gene
 
 ```http
 POST https://api.oxy.so/auth/oauth/token
-Content-Type: application/json
+Content-Type: application/x-www-form-urlencoded
 
-{
-  "code": "…",
-  "clientId": "oxy_dk_…",
-  "redirectUri": "https://merchant.example/oauth/callback",
-  "codeVerifier": "…"
-}
+grant_type=authorization_code&code=…&redirect_uri=https%3A%2F%2Fmerchant.example%2Foauth%2Fcallback&client_id=oxy_dk_…&code_verifier=…
 ```
+
+The endpoint is RFC 6749 §4.1.3, so any standard OAuth client library can drive
+it. The response is a flat §5.1 document (`access_token`, `token_type`,
+`expires_in`, plus Oxy's `session_id` / `deviceId` / `deviceSecret` / `user`);
+errors are §5.2 `{ error, error_description }`.
 
 Native third-party RPs pass `onOAuthResult` to receive `{ redirectUrl, state, codeVerifier }` from the in-app auth session and finish the same exchange. Consent renders on `auth.oxy.so` via `OxyConsentScreen` (exported from `@oxyhq/services`), showing the Application's name, logo, scopes, and its `privacyPolicyUrl` / `termsUrl`. Full walkthrough: [integration guide](./auth/integration-guide.md).
 

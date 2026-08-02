@@ -11,6 +11,7 @@ import express from 'express';
 import type mongoose from 'mongoose';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { z } from 'zod';
 import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
 import { Application } from '../models/Application';
@@ -24,6 +25,9 @@ import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middlewar
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, InternalServerError } from '../utils/error';
+import { OAuthError, oauthHandler, sendOAuthSuccess } from '../utils/oauthResponse';
+import { resolveClientAuthentication } from '../utils/oauthClientAuth';
+import { ACCESS_TOKEN_TTL_SECONDS } from '../utils/sessionUtils';
 import { logger } from '../utils/logger';
 import SignatureService from '../services/signature.service';
 import { emitAuthSessionUpdate, emitAuthSessionProgress } from '../utils/authSessionSocket';
@@ -49,7 +53,11 @@ import {
 } from '../services/authSessionDelivery.service';
 import { isAllowedRedirectUri } from '../utils/oauthRedirect';
 import Session from '../models/Session';
-import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
+import {
+  authenticateRequestNonBlocking,
+  extractTokenFromRequest,
+  decodeToken,
+} from '../middleware/authUtils';
 import {
   registerPublicKeySchema,
   challengeSchema,
@@ -1924,6 +1932,12 @@ router.post(
 //      PKCE `code_verifier`) POSTs `/auth/oauth/token` to exchange the code
 //      for `{ access_token, deviceId, deviceSecret, session_id, user }`.
 //
+// Step 5 is the ONE endpoint in this file that speaks a standard rather than
+// Oxy's conventions: it is RFC 6749 §4.1.3 verbatim — a form-urlencoded
+// request with `grant_type=authorization_code`, a FLAT §5.1 response, and
+// §5.2 `{ error, error_description }` failures. Steps 2–4 remain Oxy's own
+// JSON API, because the browser leg is served by our own auth UI.
+//
 // Access tokens never appear in the URL bar.
 
 /**
@@ -2012,6 +2026,14 @@ const oauthTokenLimiter = rateLimit({
   prefix: 'rl:auth:oauth-token:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
+// Bearer-authenticated claim read. Sized like the other authenticated reads —
+// a relying party calls it once per sign-in, not per request.
+const oauthUserinfoLimiter = rateLimit({
+  prefix: 'rl:auth:oauth-userinfo:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 200 : 60,
 });
 
 const oauthClientLookupLimiter = rateLimit({
@@ -2445,64 +2467,190 @@ router.delete(
 );
 
 /**
+ * The only grant this endpoint implements. Oxy issues no refresh tokens — the
+ * device-first `deviceId` + `deviceSecret` pair replaces them — so
+ * `refresh_token`, `client_credentials` and `password` are all unsupported.
+ */
+const SUPPORTED_GRANT_TYPE = 'authorization_code';
+
+/**
+ * The ONE description every code-binding failure reports.
+ *
+ * `exchangeAuthCode` distinguishes internally between an unknown code, a
+ * replayed one, an expired one, a code minted for another app, a mismatched
+ * `redirect_uri`, and a failed PKCE verification — and the caller MUST NOT.
+ * An attacker holding a stolen code would otherwise learn which precondition it
+ * still satisfies, turning the endpoint into an oracle. One code, one sentence,
+ * for all of them.
+ */
+const INVALID_GRANT_DESCRIPTION =
+  'The authorization code is invalid, expired, already used, or was not issued for this client and redirect URI.';
+
+/**
+ * Read the RFC 6749 §4.1.3 token request off an `application/x-www-form-urlencoded`
+ * body, mapping every rejection to the RFC error code the client expects.
+ *
+ * The generic `validate` middleware is deliberately NOT used here: it answers
+ * with the house `{ error: 'BAD_REQUEST', message, details }` envelope, which no
+ * OAuth client can interpret. Parsing inline keeps the endpoint's entire error
+ * contract in one shape.
+ */
+function parseTokenRequest(req: express.Request): z.infer<typeof oauthTokenSchema> {
+  // RFC 6749 §4.1.3 fixes the request encoding. Rejecting anything else keeps
+  // the contract unambiguous instead of silently half-accepting a JSON body.
+  if (!req.is('application/x-www-form-urlencoded')) {
+    throw OAuthError.invalidRequest(
+      'The token request must be application/x-www-form-urlencoded.',
+    );
+  }
+
+  const body: Record<string, unknown> = isRecord(req.body) ? req.body : {};
+
+  // Checked before the schema so an unknown grant is reported as
+  // `unsupported_grant_type` (RFC 6749 §5.2) instead of a generic
+  // `invalid_request` about a missing `code`.
+  if (body.grant_type !== SUPPORTED_GRANT_TYPE) {
+    throw OAuthError.unsupportedGrantType(
+      `Only grant_type=${SUPPORTED_GRANT_TYPE} is supported.`,
+    );
+  }
+
+  const parsed = oauthTokenSchema.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const parameter = issue?.path.join('.') || 'request';
+    throw OAuthError.invalidRequest(`Invalid or missing parameter: ${parameter}.`);
+  }
+  return parsed.data;
+}
+
+/** True for a plain object body (an urlencoded body is always one, when present). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
  * @openapi
  * /auth/oauth/token:
  *   post:
  *     tags:
  *       - Authentication
  *     security: []
- *     summary: Exchange an OAuth2 authorization code for tokens
+ *     summary: Exchange an OAuth2 authorization code for tokens (RFC 6749)
  *     description: >
- *       Single-use exchange of an authorization code (from
- *       `POST /auth/oauth/authorize`) for a bearer access token, rotating
- *       device credentials, and session ID. Either `clientSecret` (confidential
- *       clients) or `codeVerifier` (public clients with PKCE) is required.
+ *       Standards-compliant RFC 6749 §4.1.3 token endpoint. Single-use exchange
+ *       of an authorization code (from `POST /auth/oauth/authorize`) for a
+ *       bearer access token, rotating device credentials, and session ID.
  *
- *       Replaying an already-used code, sending a code past its 60-second
- *       TTL, or mismatching the `redirectUri` returns 401 with no detail
- *       about why.
+ *       The request MUST be `application/x-www-form-urlencoded` with
+ *       `grant_type=authorization_code`. Confidential clients authenticate with
+ *       `client_secret` — either in the body (`client_secret_post`) or via HTTP
+ *       Basic (`client_secret_basic`), never both. Public clients send
+ *       `client_id` plus the PKCE `code_verifier`.
+ *
+ *       The response is a FLAT JSON document (no `data` wrapper) sent with
+ *       `Cache-Control: no-store`, as RFC 6749 §5.1 requires. Alongside the
+ *       standard `access_token` / `token_type` / `expires_in` it carries Oxy's
+ *       device-first extras (`session_id`, `deviceId`, `deviceSecret`, `user`),
+ *       which §5.1 permits as additional parameters.
+ *
+ *       Errors follow RFC 6749 §5.2 (`{ "error": ..., "error_description": ... }`).
+ *       Replaying an already-used code, sending a code past its 60-second TTL,
+ *       or mismatching the `redirect_uri` all return the same
+ *       `400 invalid_grant` with no detail about which check failed.
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         application/x-www-form-urlencoded:
  *           schema:
  *             type: object
  *             required:
+ *               - grant_type
  *               - code
- *               - clientId
- *               - redirectUri
+ *               - redirect_uri
  *             properties:
+ *               grant_type:
+ *                 type: string
+ *                 enum: [authorization_code]
  *               code:
  *                 type: string
- *               clientId:
- *                 type: string
- *               redirectUri:
+ *               redirect_uri:
  *                 type: string
  *                 format: uri
- *               clientSecret:
+ *               client_id:
  *                 type: string
- *               codeVerifier:
+ *                 description: Required unless supplied via HTTP Basic authentication.
+ *               client_secret:
  *                 type: string
+ *                 description: Confidential clients only. Mutually exclusive with HTTP Basic.
+ *               code_verifier:
+ *                 type: string
+ *                 description: PKCE verifier. Required for public clients.
  *     responses:
  *       200:
  *         description: Access token issued.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 access_token:
+ *                   type: string
+ *                 token_type:
+ *                   type: string
+ *                   enum: [Bearer]
+ *                 expires_in:
+ *                   type: integer
+ *                 scope:
+ *                   type: string
+ *                   description: Space-delimited granted scopes. Omitted when the grant carries none.
+ *                 session_id:
+ *                   type: string
+ *                 deviceId:
+ *                   type: string
+ *                 deviceSecret:
+ *                   type: string
+ *                 user:
+ *                   type: object
  *       400:
- *         description: Malformed request.
+ *         description: >
+ *           RFC 6749 §5.2 error — `invalid_request`, `invalid_grant`, or
+ *           `unsupported_grant_type`.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/OAuthError'
  *       401:
- *         description: Invalid, expired, replayed, or mis-bound code.
+ *         description: >
+ *           `invalid_client` — unknown client, or client authentication failed.
+ *           Carries a `WWW-Authenticate: Basic` challenge.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/OAuthError'
  */
 router.post(
   '/oauth/token',
   oauthTokenLimiter,
-  validate({ body: oauthTokenSchema }),
-  asyncHandler(async (req, res) => {
-    const { code, clientId, redirectUri, clientSecret, codeVerifier } = req.body as {
-      code: string;
-      clientId: string;
-      redirectUri: string;
-      clientSecret?: string;
-      codeVerifier?: string;
-    };
+  oauthHandler(async (req, res) => {
+    const params = parseTokenRequest(req);
+    const { clientId, clientSecret } = resolveClientAuthentication({
+      authorizationHeader: req.headers.authorization,
+      bodyClientId: params.client_id,
+      bodyClientSecret: params.client_secret,
+    });
+
+    if (!clientId) {
+      throw OAuthError.invalidRequest('client_id is required.');
+    }
+    // A caller that presents neither a client secret nor a PKCE verifier has
+    // proven nothing. Rejected here, before any code lookup, so an unauthorised
+    // caller cannot reach the exchange at all.
+    if (!clientSecret && !params.code_verifier) {
+      throw OAuthError.invalidRequest(
+        'Either client_secret (confidential client) or code_verifier (PKCE) is required.',
+      );
+    }
 
     // Accept `active` OR `deprecated`-but-within-grace credentials; reject
     // `revoked` and any whose rotation grace window has expired.
@@ -2511,12 +2659,12 @@ router.post(
       status: { $ne: 'revoked' },
     });
     if (!credential || !isCredentialUsable(credential)) {
-      throw new UnauthorizedError('invalid_client');
+      throw OAuthError.invalidClient('Client authentication failed.');
     }
 
     const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
     if (!app) {
-      throw new UnauthorizedError('invalid_client');
+      throw OAuthError.invalidClient('Client authentication failed.');
     }
 
     // If the caller asserts a confidential client secret, verify it in
@@ -2526,24 +2674,24 @@ router.post(
     let clientSecretProvided = false;
     if (clientSecret) {
       if (!credential.secretHash) {
-        throw new UnauthorizedError('invalid_client');
+        throw OAuthError.invalidClient('Client authentication failed.');
       }
       const expected = Buffer.from(credential.secretHash);
       const provided = Buffer.from(
         crypto.createHash('sha256').update(clientSecret).digest('hex')
       );
       if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
-        throw new UnauthorizedError('invalid_client');
+        throw OAuthError.invalidClient('Client authentication failed.');
       }
       clientSecretProvided = true;
     }
 
     const exchange = await exchangeAuthCode({
-      rawCode: code,
+      rawCode: params.code,
       appId: app._id.toString(),
-      redirectUri,
+      redirectUri: params.redirect_uri,
       clientSecretProvided,
-      codeVerifier,
+      codeVerifier: params.code_verifier,
     });
 
     if (!exchange.ok) {
@@ -2552,15 +2700,17 @@ router.post(
         clientId: clientId.substring(0, 12) + '...',
       });
       if (exchange.reason === 'invalid_client') {
-        throw new UnauthorizedError('invalid_client');
+        // The code carried no PKCE challenge and the caller presented no
+        // secret — a client-authentication failure, not a bad code.
+        throw OAuthError.invalidClient('Client authentication failed.');
       }
-      throw new UnauthorizedError('invalid_grant');
+      throw OAuthError.invalidGrant(INVALID_GRANT_DESCRIPTION);
     }
 
     // Issue a session bound to the authenticated user from the code.
     const user = await User.findById(exchange.code.userId);
     if (!user) {
-      throw new UnauthorizedError('invalid_grant');
+      throw OAuthError.invalidGrant(INVALID_GRANT_DESCRIPTION);
     }
 
     const userId = user._id.toString();
@@ -2599,18 +2749,26 @@ router.post(
         sessionId: session.sessionId,
         deviceId: session.deviceId,
       });
-      throw new InternalServerError('Failed to finalize device session');
+      throw OAuthError.serverError('Failed to finalize the device session.');
     }
 
     app.lastUsedAt = new Date();
     await app.save();
 
     const userData = formatUserResponse(user);
+    const grantedScopes = Array.isArray(exchange.code.scopes) ? exchange.code.scopes : [];
 
-    sendSuccess(res, {
+    // FLAT body, no `sendSuccess` wrapper — see `utils/oauthResponse.ts` for why
+    // the OAuth surface is the one place that may not use the house envelope.
+    sendOAuthSuccess(res, {
       access_token: session.accessToken,
       token_type: 'Bearer',
-      expires_in: 15 * 60,
+      expires_in: ACCESS_TOKEN_TTL_SECONDS,
+      // RFC 6749 §5.1: REQUIRED when the granted scope differs from the
+      // requested one, which it can (the authorize step intersects the request
+      // with the app's registered scopes). Omitted when the grant carries none.
+      ...(grantedScopes.length > 0 ? { scope: grantedScopes.join(' ') } : {}),
+      // Oxy's device-first extras, permitted by §5.1 as additional parameters.
       session_id: session.sessionId,
       deviceId: session.deviceId,
       deviceSecret: deviceExtras.deviceSecret,
@@ -2618,6 +2776,152 @@ router.post(
     });
   })
 );
+
+/** A claim value, or undefined when the source holds nothing usable. */
+function stringClaim(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Resolve the OpenID Connect `picture` claim to an ABSOLUTE URL.
+ *
+ * `User.avatar` holds either an Oxy file id or — for a mirrored federated
+ * account — an already-absolute URL. File ids become an our-origin
+ * `/assets/<id>/stream` URL, the same public, unauthenticated endpoint the
+ * asset API itself advertises; it 302s to `cloud.oxy.so` for CDN-backed public
+ * assets. Building the URL here costs no I/O, where resolving the CDN URL
+ * directly would put an S3 probe on every userinfo call.
+ */
+function resolveUserinfoPicture(req: express.Request, avatar: unknown): string | undefined {
+  const value = stringClaim(avatar);
+  if (!value) {
+    return undefined;
+  }
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+  const host = req.get('host');
+  if (!host) {
+    return undefined;
+  }
+  return `${req.protocol}://${host}/assets/${encodeURIComponent(value)}/stream`;
+}
+
+/**
+ * OpenID Connect userinfo (OIDC Core §5.3).
+ *
+ * Bearer-authenticated, and — like the token endpoint — answers with a FLAT
+ * JSON document and RFC 6750 challenge headers rather than the house envelopes.
+ * Registered for both GET and POST because OIDC Core §5.3.1 requires both; the
+ * access token is only ever read from the `Authorization` header.
+ */
+async function handleOAuthUserinfo(req: express.Request, res: express.Response): Promise<void> {
+  // RFC 6750 §2.3 permits the token as a URI query parameter; Oxy does not.
+  // Tokens in URLs leak into proxy access logs, browser history, and `Referer`
+  // headers — the same rule `rejectQueryToken` enforces elsewhere, restated
+  // here so this endpoint's error shape stays RFC-consistent.
+  if (req.query.access_token !== undefined || req.query.token !== undefined) {
+    throw OAuthError.invalidRequest(
+      'The access token must be sent in the Authorization header, not the query string.',
+    );
+  }
+
+  const { user } = await authenticateRequestNonBlocking(req);
+  if (!user) {
+    // RFC 6750 §3.1 says a request carrying NO credentials SHOULD omit the
+    // error code. We report `invalid_token` for that case too, deliberately:
+    // one indistinguishable answer for missing, malformed, expired, and revoked
+    // tokens means the response never confirms that a token was recognised.
+    throw OAuthError.invalidToken('The access token is invalid or expired.');
+  }
+
+  const rawName = isRecord(user.name) ? user.name : undefined;
+  const preferredUsername = stringClaim(user.username);
+  // The user's REAL name, or undefined when they have none — the API never
+  // synthesizes one from the handle (see `composeDisplayName`). Relying parties
+  // fall back to `preferred_username`.
+  const displayName = composeDisplayName({
+    name: {
+      first: stringClaim(rawName?.first),
+      last: stringClaim(rawName?.last),
+      full: stringClaim(rawName?.full),
+      displayName: stringClaim(rawName?.displayName),
+    },
+  });
+  const picture = resolveUserinfoPicture(req, user.avatar);
+
+  sendOAuthSuccess(res, {
+    // `sub` is the Mongo `_id` — the account's PERMANENT identifier — and never
+    // the username. Usernames are mutable and case-sensitive (`Nate` and `nate`
+    // can be different accounts), so a username-derived `sub` would let a
+    // renamed or re-registered handle inherit another user's identity in every
+    // relying party that keyed on it. `normalizeUser` guarantees this is the
+    // ObjectId string and never the publicKey.
+    sub: user._id,
+    ...(preferredUsername ? { preferred_username: preferredUsername } : {}),
+    ...(displayName ? { name: displayName } : {}),
+    ...(picture ? { picture } : {}),
+  });
+}
+
+/**
+ * @openapi
+ * /auth/oauth/userinfo:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: OpenID Connect userinfo for the bearer's account
+ *     description: >
+ *       Returns the standard OpenID Connect claims for the account the access
+ *       token belongs to. The response is a FLAT JSON document (no `data`
+ *       wrapper) so any OIDC client can read it, and `sub` is the account's
+ *       permanent Mongo `_id` — NEVER the username, which is mutable and
+ *       case-sensitive.
+ *
+ *       `name` is omitted for accounts with no real name (the API never
+ *       synthesizes one from the handle) and `picture` is omitted for accounts
+ *       with no avatar. Also accepts POST, as OIDC Core §5.3.1 requires; the
+ *       token is read only from the `Authorization` header.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: The bearer's claims.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               required: [sub]
+ *               properties:
+ *                 sub:
+ *                   type: string
+ *                   description: Permanent account identifier (Mongo ObjectId).
+ *                 preferred_username:
+ *                   type: string
+ *                 name:
+ *                   type: string
+ *                 picture:
+ *                   type: string
+ *                   format: uri
+ *       400:
+ *         description: '`invalid_request` — the token was sent in the query string.'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/OAuthError'
+ *       401:
+ *         description: >
+ *           `invalid_token` — missing, malformed, or expired bearer token.
+ *           Carries a `WWW-Authenticate: Bearer` challenge.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/OAuthError'
+ */
+router.get('/oauth/userinfo', oauthUserinfoLimiter, oauthHandler(handleOAuthUserinfo));
+router.post('/oauth/userinfo', oauthUserinfoLimiter, oauthHandler(handleOAuthUserinfo));
 
 /**
  * @openapi

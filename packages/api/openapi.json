@@ -67,6 +67,35 @@
           }
         }
       },
+      "OAuthError": {
+        "type": "object",
+        "description": "RFC 6749 §5.2 / RFC 6750 §3 error document. The OAuth endpoints (`/auth/oauth/token`, `/auth/oauth/userinfo`) use this instead of the house `Error` envelope because standard OAuth clients branch on the top-level `error` code — that requirement comes from the specification, not from Oxy's conventions.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "RFC error code.",
+            "enum": [
+              "invalid_request",
+              "invalid_client",
+              "invalid_grant",
+              "unauthorized_client",
+              "unsupported_grant_type",
+              "invalid_scope",
+              "server_error",
+              "invalid_token",
+              "insufficient_scope"
+            ],
+            "example": "invalid_grant"
+          },
+          "error_description": {
+            "type": "string",
+            "description": "Human-readable detail. Never discloses which internal check failed."
+          }
+        }
+      },
       "PaginatedResponse": {
         "type": "object",
         "properties": {
@@ -2343,35 +2372,44 @@
           "Authentication"
         ],
         "security": [],
-        "summary": "Exchange an OAuth2 authorization code for tokens",
-        "description": "Single-use exchange of an authorization code (from `POST /auth/oauth/authorize`) for a bearer access token, refresh token, and session ID. Either `clientSecret` (confidential clients) or `codeVerifier` (public clients with PKCE) is required.\nReplaying an already-used code, sending a code past its 60-second TTL, or mismatching the `redirectUri` returns 401 with no detail about why.\n",
+        "summary": "Exchange an OAuth2 authorization code for tokens (RFC 6749)",
+        "description": "Standards-compliant RFC 6749 §4.1.3 token endpoint. Single-use exchange of an authorization code (from `POST /auth/oauth/authorize`) for a bearer access token, rotating device credentials, and session ID.\nThe request MUST be `application/x-www-form-urlencoded` with `grant_type=authorization_code`. Confidential clients authenticate with `client_secret` — either in the body (`client_secret_post`) or via HTTP Basic (`client_secret_basic`), never both. Public clients send `client_id` plus the PKCE `code_verifier`.\nThe response is a FLAT JSON document (no `data` wrapper) sent with `Cache-Control: no-store`, as RFC 6749 §5.1 requires. Alongside the standard `access_token` / `token_type` / `expires_in` it carries Oxy's device-first extras (`session_id`, `deviceId`, `deviceSecret`, `user`), which §5.1 permits as additional parameters.\nErrors follow RFC 6749 §5.2 (`{ \"error\": ..., \"error_description\": ... }`). Replaying an already-used code, sending a code past its 60-second TTL, or mismatching the `redirect_uri` all return the same `400 invalid_grant` with no detail about which check failed.\n",
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": {
+            "application/x-www-form-urlencoded": {
               "schema": {
                 "type": "object",
                 "required": [
+                  "grant_type",
                   "code",
-                  "clientId",
-                  "redirectUri"
+                  "redirect_uri"
                 ],
                 "properties": {
+                  "grant_type": {
+                    "type": "string",
+                    "enum": [
+                      "authorization_code"
+                    ]
+                  },
                   "code": {
                     "type": "string"
                   },
-                  "clientId": {
-                    "type": "string"
-                  },
-                  "redirectUri": {
+                  "redirect_uri": {
                     "type": "string",
                     "format": "uri"
                   },
-                  "clientSecret": {
-                    "type": "string"
+                  "client_id": {
+                    "type": "string",
+                    "description": "Required unless supplied via HTTP Basic authentication."
                   },
-                  "codeVerifier": {
-                    "type": "string"
+                  "client_secret": {
+                    "type": "string",
+                    "description": "Confidential clients only. Mutually exclusive with HTTP Basic."
+                  },
+                  "code_verifier": {
+                    "type": "string",
+                    "description": "PKCE verifier. Required for public clients."
                   }
                 }
               }
@@ -2380,15 +2418,157 @@
         },
         "responses": {
           "200": {
-            "description": "Access token issued."
+            "description": "Access token issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": {
+                      "type": "string"
+                    },
+                    "token_type": {
+                      "type": "string",
+                      "enum": [
+                        "Bearer"
+                      ]
+                    },
+                    "expires_in": {
+                      "type": "integer"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "description": "Space-delimited granted scopes. Omitted when the grant carries none."
+                    },
+                    "session_id": {
+                      "type": "string"
+                    },
+                    "deviceId": {
+                      "type": "string"
+                    },
+                    "deviceSecret": {
+                      "type": "string"
+                    },
+                    "user": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
           },
           "400": {
-            "description": "Malformed request."
+            "description": "RFC 6749 §5.2 error — `invalid_request`, `invalid_grant`, or `unsupported_grant_type`.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Invalid, expired, replayed, or mis-bound code."
+            "description": "`invalid_client` — unknown client, or client authentication failed. Carries a `WWW-Authenticate: Basic` challenge.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
           }
         }
+      }
+    },
+    "/auth/oauth/userinfo": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "OpenID Connect userinfo for the bearer's account",
+        "description": "Returns the standard OpenID Connect claims for the account the access token belongs to. The response is a FLAT JSON document (no `data` wrapper) so any OIDC client can read it, and `sub` is the account's permanent Mongo `_id` — NEVER the username, which is mutable and case-sensitive.\n`name` is omitted for accounts with no real name (the API never synthesizes one from the handle) and `picture` is omitted for accounts with no avatar. Also accepts POST, as OIDC Core §5.3.1 requires; the token is read only from the `Authorization` header.\n",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bearer's claims.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "sub"
+                  ],
+                  "properties": {
+                    "sub": {
+                      "type": "string",
+                      "description": "Permanent account identifier (Mongo ObjectId)."
+                    },
+                    "preferred_username": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "picture": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request` — the token was sent in the query string.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`invalid_token` — missing, malformed, or expired bearer token. Carries a `WWW-Authenticate: Bearer` challenge.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "POST /auth/oauth/userinfo",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/auth.ts` to fill in summary, description, request/response examples.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
       }
     },
     "/auth/oauth/client/{clientId}": {

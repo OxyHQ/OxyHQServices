@@ -32,6 +32,13 @@ import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/use
  */
 const COMMONS_SIGN_IN_EXPIRY_MS = 5 * 60 * 1000;
 
+/**
+ * Fallback access-token lifetime used only if the token endpoint ever omits the
+ * RFC 6749 `expires_in` member. Matches the server's current 15-minute access
+ * token; the server's value always wins when present.
+ */
+const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+
 export interface ChallengeResponse {
   challenge: string;
   expiresAt: string;
@@ -1677,6 +1684,13 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * after sign-in at auth.oxy.so) for a device-first session.
      * Public first-party clients use PKCE (`codeVerifier`); the access token is
      * planted immediately on success.
+     *
+     * Speaks the standard RFC 6749 §4.1.3 token request — a form-urlencoded
+     * body with snake_case parameters and `grant_type=authorization_code` — and
+     * reads the flat §5.1 response. The camelCase JSON request and `{ data }`
+     * response this method used before were an Oxy invention no OAuth library
+     * could interoperate with; the endpoint no longer accepts them. The method's
+     * OWN signature is unchanged, so callers are unaffected.
      */
     async exchangeOAuthCode(params: {
       code: string;
@@ -1685,38 +1699,39 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       codeVerifier: string;
     }): Promise<LoginSessionResult> {
       try {
-        const res = await this.makeRequest<unknown>('POST', '/auth/oauth/token', {
+        const form = new URLSearchParams({
+          grant_type: 'authorization_code',
           code: params.code,
-          clientId: params.clientId,
-          redirectUri: params.redirectUri,
-          codeVerifier: params.codeVerifier,
-        }, { cache: false, skipAuth: true });
-        const payload =
-          (res as { data?: Record<string, unknown> }).data ??
-          (res as Record<string, unknown>);
-        if (!payload || typeof payload !== 'object') {
+          redirect_uri: params.redirectUri,
+          client_id: params.clientId,
+          code_verifier: params.codeVerifier,
+        });
+        const res = await this.makeRequest<unknown>(
+          'POST',
+          '/auth/oauth/token',
+          form,
+          { cache: false, skipAuth: true },
+        );
+        if (!res || typeof res !== 'object') {
           throw new Error('auth/oauth/token returned an unexpected response shape');
         }
-        const record = payload as Record<string, unknown>;
-        const accessToken = (record.access_token ?? record.accessToken) as string | undefined;
-        const sessionId = (record.session_id ?? record.sessionId) as string | undefined;
-        const deviceId = (record.deviceId ?? record.device_id) as string | undefined;
-        const deviceSecret = (record.deviceSecret ?? record.device_secret) as string | undefined;
+        // RFC 6749 §5.1: every member sits at the TOP LEVEL of the document.
+        const record = res as Record<string, unknown>;
+        const accessToken = typeof record.access_token === 'string' ? record.access_token : undefined;
+        const sessionId = typeof record.session_id === 'string' ? record.session_id : undefined;
+        const deviceId = typeof record.deviceId === 'string' ? record.deviceId : undefined;
+        const deviceSecret = typeof record.deviceSecret === 'string' ? record.deviceSecret : undefined;
         const userRaw = record.user;
         if (!sessionId || !deviceId || !deviceSecret || !userRaw || typeof userRaw !== 'object') {
           throw new Error('auth/oauth/token returned an incomplete session payload');
         }
         const userObj = userRaw as Record<string, unknown>;
-        const userId = userObj.id as string | undefined;
+        const userId = typeof userObj.id === 'string' ? userObj.id : undefined;
         if (!userId) {
           throw new Error('auth/oauth/token returned a session without user.id');
         }
         const expiresInSec =
-          typeof record.expires_in === 'number'
-            ? record.expires_in
-            : typeof record.expiresIn === 'number'
-              ? record.expiresIn
-              : 15 * 60;
+          typeof record.expires_in === 'number' ? record.expires_in : DEFAULT_ACCESS_TOKEN_TTL_SECONDS;
         const expiresAt = new Date(Date.now() + expiresInSec * 1000).toISOString();
         if (accessToken) {
           this.setTokens(accessToken);
