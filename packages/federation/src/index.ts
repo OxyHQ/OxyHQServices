@@ -46,6 +46,42 @@ export {
 export { createUrlBuilders, normalizeActorUsername, type UrlBuilders } from './urls';
 
 /**
+ * Network identity: the MECHANISM for re-labelling an account republished by a
+ * bridge onto the network it actually came from, plus the network vocabulary and
+ * the bidirectional upstream-profile-URL rule.
+ *
+ * The mechanism is here; the ENTRIES are not, and must not be. Which operators
+ * may be trusted to re-attribute somebody's account is a moderation judgement an
+ * app commits and answers for — `createBridgeRelabeller` takes them as a
+ * parameter so no app inherits another's.
+ */
+export {
+  FEDERATION_NETWORKS,
+  BSKY_NETWORK_DOMAIN,
+  blueskyUsernameFromHandle,
+  createBridgeRelabeller,
+  stripBridgeBoilerplate,
+  upstreamProfileUrl,
+  parseUpstreamProfileUrl,
+  federatedUsernameFromUpstreamUrl,
+  upstreamHandleFromProfileField,
+  upstreamHandleFromAlsoKnownAs,
+  upstreamHandleFromPreferredUsername,
+  upstreamHandleFromProxyOf,
+  readProxyDeclarations,
+  type FederationNetwork,
+  type FederationBridgeEntry,
+  type BridgeRelabeller,
+  type BridgeConsentModel,
+  type BridgeDerivation,
+  type BridgedActorField,
+  type DeriveNetworkIdentity,
+  type NetworkIdentity,
+  type NetworkIdentityCandidate,
+  type ProxyDeclaration,
+} from './networkIdentity';
+
+/**
  * The shared JSON-LD `@context` (load-bearing term declarations) and the
  * ActivityPub URI helpers (actor-uri extraction + the per-instance domain policy:
  * blocked-domain check + local-post-id extraction).

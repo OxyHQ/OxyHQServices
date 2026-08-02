@@ -15,10 +15,12 @@
  *    {@link FileRecord}. `links.length` IS the usage count and decides whether
  *    an unlinked file falls to `trash`, so a file loaded without its links would
  *    read as unused and be trashed.
- * 2. **A child-set replacement is one transaction.** `commitVariants` replaces
- *    the whole variant set; done as a bare delete-then-insert a crash or a
- *    concurrent read lands on a file with NO variants, which the callers read as
- *    "not generated yet" and would regenerate from scratch.
+ * 2. **A child-set write is one transaction.** `commitVariants` swaps a batch of
+ *    variants; done as a bare delete-then-insert a crash or a concurrent read
+ *    lands on a file with NO variants, which the callers read as "not generated
+ *    yet" and would regenerate from scratch. The delete is scoped to the types
+ *    being written (`upsertVariantSet`), so a batch cannot destroy a rendition
+ *    the lazy read path materialised and does not itself produce.
  *
  * Ordering is explicit on every read (`created_at, id` for links; `type, id` for
  * variants) because Postgres guarantees none, and a caller that indexes into
@@ -279,22 +281,37 @@ export async function deleteFileLink(
 }
 
 /**
- * Replace a file's entire variant set, optionally alongside its `metadata`, in
- * ONE transaction.
+ * Write a batch of renditions for a file, optionally alongside its `metadata`,
+ * in ONE transaction — replacing any existing row of the SAME `type` and
+ * leaving rows of every other type untouched.
  *
- * Mongoose wrote both in a single `$set` because they were fields of one
- * document; the transaction is what keeps that indivisible. Intrinsic metadata
- * (dimensions, duration) is derived from the same decode pass that produced the
- * renditions, so a state with one and not the other never existed and must not
- * become reachable.
+ * Mongoose wrote variants and metadata in a single `$set` because they were
+ * fields of one document; the transaction is what keeps that indivisible.
+ * Intrinsic metadata (dimensions, duration) is derived from the same decode pass
+ * that produced the renditions, so a state with one and not the other never
+ * existed and must not become reachable.
+ *
+ * Scoping the delete to the types being written — rather than clearing the
+ * file's whole set — is what lets background generation and the lazy read path
+ * coexist. `assetService.ensureVariant` materialises ONE variant on demand
+ * (`upsertVariant`), and for a video that is a poster-derived image size which
+ * background generation does not produce: poster, `360p`/`720p`/`1080p` and HLS.
+ * A whole-set clear would delete exactly those, and the next read would pay the
+ * ffmpeg pass again to rebuild what it already had — duplicated work that grows
+ * with how long a job waits in the queue.
  */
-export async function replaceVariants(
+export async function upsertVariantSet(
   fileId: string,
   variants: NewFileVariant[],
   patch?: FilePatch
 ): Promise<FileVariantRecord[]> {
   return getDb().transaction(async (tx) => {
-    await tx.delete(fileVariants).where(eq(fileVariants.fileId, fileId));
+    const types = variants.map((variant) => variant.type);
+    if (types.length > 0) {
+      await tx
+        .delete(fileVariants)
+        .where(and(eq(fileVariants.fileId, fileId), inArray(fileVariants.type, types)));
+    }
 
     const inserted =
       variants.length > 0

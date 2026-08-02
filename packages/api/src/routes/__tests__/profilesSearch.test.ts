@@ -242,6 +242,16 @@ describe('GET /profiles/search — match surface', () => {
 
     expect(res.status).toBe(400);
   });
+
+  it('finds a bridged account when the query is a pasted upstream profile URL', async () => {
+    const marker = token();
+    const bridged = await account({ username: `${marker}@x.com`, type: 'federated' });
+    await account({ username: `other${token()}`, description: `see https://x.com/${marker} for more` });
+
+    expect(ids(await search(`https://x.com/${marker}?s=20&t=abc`))).toEqual([bridged]);
+    expect(ids(await search(`https://twitter.com/${marker}`))).toEqual([bridged]);
+    expect(ids(await search(`https://mobile.x.com/${marker}`))).toEqual([bridged]);
+  });
 });
 
 describe('GET /profiles/search — leading @ handling', () => {

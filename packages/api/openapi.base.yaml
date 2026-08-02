@@ -96,8 +96,9 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: >
-        User session JWT obtained from /auth/login, /auth/signup, or
-        /auth/verify. Send as `Authorization: Bearer <token>`.
+        User session JWT obtained from /auth/verify, /auth/webauthn/login/verify,
+        /auth/oauth/token, or POST /session/device/token. Send as
+        `Authorization: Bearer <token>`.
     serviceTokenAuth:
       type: http
       scheme: bearer
@@ -294,7 +295,7 @@ components:
           example: 2
     AuthSuccess:
       type: object
-      description: Successful authentication response from /auth/signup, /auth/login, or /auth/verify.
+      description: Successful authentication response from /auth/verify, /auth/webauthn/login/verify, or /auth/oauth/token.
       properties:
         user:
           $ref: '#/components/schemas/User'

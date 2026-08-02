@@ -41,6 +41,7 @@ import {
   eligibleUserPredicate,
   FEDERATED_RECOMMENDATION_MAX_AGE_MS,
   isPublicGraphTarget,
+  normalizePeopleSearchTerm,
   peopleSearchMatch,
   peopleSearchOrder,
   peopleSearchPredicate,
@@ -438,7 +439,7 @@ router.get(
     // matches the stored `user@host`. Only ONE leading `@` is removed — a
     // mid-string `@` (the `user@host` separator) is preserved. The term is
     // passed RAW: `peopleSearchMatch` escapes it for LIKE and binds it.
-    const sanitizedQuery = query.trim().replace(/^@/, '').substring(0, 100);
+    const sanitizedQuery = normalizePeopleSearchTerm(query);
 
     // Run local DB search and (if query is a fediverse handle) remote resolution in parallel
     const isFediverse = isFediverseHandle(sanitizedQuery);
