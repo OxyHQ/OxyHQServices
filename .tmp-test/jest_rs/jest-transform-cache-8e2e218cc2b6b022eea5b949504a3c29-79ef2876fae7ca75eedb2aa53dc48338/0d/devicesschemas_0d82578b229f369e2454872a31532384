@@ -1,0 +1,10 @@
+b8f3f6a6b1418bf344aa50761a0b1eb7
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.deviceIdParams = void 0;
+const zod_1 = require("zod");
+// DELETE /devices/:deviceId
+exports.deviceIdParams = zod_1.z.object({
+    deviceId: zod_1.z.string().trim().min(1),
+});
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2NoZW1hcy9kZXZpY2VzLnNjaGVtYXMudHMiLCJtYXBwaW5ncyI6Ijs7O0FBQUEsNkJBQXdCO0FBRXhCLDRCQUE0QjtBQUNmLFFBQUEsY0FBYyxHQUFHLE9BQUMsQ0FBQyxNQUFNLENBQUM7SUFDckMsUUFBUSxFQUFFLE9BQUMsQ0FBQyxNQUFNLEVBQUUsQ0FBQyxJQUFJLEVBQUUsQ0FBQyxHQUFHLENBQUMsQ0FBQyxDQUFDO0NBQ25DLENBQUMsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9zY2hlbWFzL2RldmljZXMuc2NoZW1hcy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyB6IH0gZnJvbSAnem9kJztcblxuLy8gREVMRVRFIC9kZXZpY2VzLzpkZXZpY2VJZFxuZXhwb3J0IGNvbnN0IGRldmljZUlkUGFyYW1zID0gei5vYmplY3Qoe1xuICBkZXZpY2VJZDogei5zdHJpbmcoKS50cmltKCkubWluKDEpLFxufSk7XG4iXSwidmVyc2lvbiI6M30=

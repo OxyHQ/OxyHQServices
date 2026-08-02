@@ -1,0 +1,173 @@
+59b71b81af4934992b805f8038ee3cd3
+"use strict";
+/**
+ * Transparency-checkpoint scheduling.
+ *
+ * Publishes the periodic signed commitment to every subject's chain head. The
+ * cadence is a SECURITY parameter, not a cost one: it bounds how long an
+ * equivocation could go unpublished (and, once phase 2 lands, unanchored).
+ *
+ * Mirrors `nodeIngest.queue.ts` exactly, for the same reason:
+ *   - **BullMQ path** (`REDIS_URL` set): one repeatable job deduped by a stable
+ *     scheduler id, so exactly ONE schedule exists across the fleet.
+ *   - **In-process fallback** (no `REDIS_URL`, e.g. local dev / tests): an
+ *     unref'd interval, so it can never hold the event loop open.
+ *
+ * Fleet-wide scheduling is a nicety here, not the safety net: the real mutex is
+ * the unique index on `TransparencyCheckpoint.index`, and the service adopts the
+ * winner's root on collision. Two signed roots for one index is exactly the
+ * equivocation the log exists to detect, so that guarantee must not depend on
+ * scheduling being perfect.
+ *
+ * A publish failure is logged and retried on the next tick — it never blocks
+ * record writes. Gaps in `index` are impossible by construction: the next run
+ * derives its index from the newest stored checkpoint, so a missed period is
+ * simply published late and the chain stays contiguous.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CHECKPOINT_INTERVAL_MS = void 0;
+exports.publishCheckpoint = publishCheckpoint;
+exports.startTransparencyCheckpointJobs = startTransparencyCheckpointJobs;
+exports.stopTransparencyCheckpointJobs = stopTransparencyCheckpointJobs;
+const bullmq_1 = require("bullmq");
+const transparency_service_1 = require("../services/transparency.service");
+const logger_1 = require("../utils/logger");
+const connection_1 = require("./connection");
+const queueManager_1 = require("./queueManager");
+const constants_1 = require("./constants");
+/** Queue name. BullMQ rejects `:` in queue names — use dashes. */
+const CHECKPOINT_QUEUE_NAME = 'transparency-checkpoint';
+const CHECKPOINT_SCHEDULER_ID = 'transparency-checkpoint-publish';
+const CHECKPOINT_JOB = 'transparency-checkpoint-publish';
+/**
+ * How often a checkpoint is published (6 hours). Shortening this tightens the
+ * detection window; lengthening it widens the blind spot between commitments.
+ */
+exports.CHECKPOINT_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let queue = null;
+let worker = null;
+let fallbackTimer = null;
+/**
+ * Publish one checkpoint for the period ending now. Never throws — a failure is
+ * logged and the next tick retries.
+ */
+function publishCheckpoint(periodEnd) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const checkpoint = yield (0, transparency_service_1.buildCheckpoint)(periodEnd);
+            logger_1.logger.info('Published transparency checkpoint', {
+                index: checkpoint.index,
+                treeSize: checkpoint.treeSize,
+                root: checkpoint.root,
+            });
+        }
+        catch (err) {
+            logger_1.logger.error('Transparency checkpoint publish failed', err instanceof Error ? err : new Error(String(err)), { component: 'transparencyCheckpoint' });
+        }
+    });
+}
+/**
+ * Publish a genesis checkpoint on boot when the log is empty, and surface a
+ * distinct error when signing is misconfigured so silent 404s do not linger.
+ */
+function bootstrapTransparencyPublishing() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const latest = yield (0, transparency_service_1.getLatestCheckpoint)();
+        if (!process.env.OXY_PRIVATE_KEY) {
+            if (!latest) {
+                logger_1.logger.error('Transparency log cannot publish: OXY_PRIVATE_KEY is not configured and no checkpoint exists yet', { component: 'transparencyCheckpoint' });
+            }
+            else {
+                logger_1.logger.warn('Transparency log cannot publish new checkpoints: OXY_PRIVATE_KEY is not configured', { component: 'transparencyCheckpoint', latestIndex: latest.index });
+            }
+            return;
+        }
+        if (!latest) {
+            yield publishCheckpoint(Date.now());
+        }
+    });
+}
+/** Start the unref'd in-process publish interval (fallback path). */
+function startFallback() {
+    var _a;
+    if (fallbackTimer)
+        return;
+    fallbackTimer = setInterval(() => {
+        void publishCheckpoint(Date.now());
+    }, exports.CHECKPOINT_INTERVAL_MS);
+    // Never hold the event loop open — an interval on a module singleton hangs
+    // Jest runs and delays shutdown otherwise.
+    (_a = fallbackTimer.unref) === null || _a === void 0 ? void 0 : _a.call(fallbackTimer);
+}
+/** Close the BullMQ worker + queue (and the connections they own). */
+function teardownQueue() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const w = worker;
+        const q = queue;
+        worker = null;
+        queue = null;
+        try {
+            yield (w === null || w === void 0 ? void 0 : w.close());
+            yield (q === null || q === void 0 ? void 0 : q.close());
+        }
+        catch (err) {
+            logger_1.logger.error('Transparency checkpoint queue teardown failed', err instanceof Error ? err : new Error(String(err)));
+        }
+    });
+}
+/**
+ * Start checkpoint publishing: BullMQ when Redis is configured, otherwise the
+ * in-process interval. Never throws — a queue setup failure logs and falls back.
+ */
+function startTransparencyCheckpointJobs() {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (!(0, queueManager_1.isQueueEnabled)()) {
+            startFallback();
+            logger_1.logger.info('Transparency checkpoints using in-process interval fallback (REDIS_URL unset)');
+            void bootstrapTransparencyPublishing();
+            return;
+        }
+        try {
+            queue = new bullmq_1.Queue(CHECKPOINT_QUEUE_NAME, {
+                connection: (0, connection_1.getQueueConnectionOptions)(),
+                defaultJobOptions: {
+                    removeOnComplete: constants_1.COMPLETED_JOBS_RETENTION,
+                    removeOnFail: constants_1.FAILED_JOBS_RETENTION,
+                },
+            });
+            queue.on('error', (err) => logger_1.logger.error('Transparency checkpoint queue error', { error: err.message }));
+            worker = new bullmq_1.Worker(CHECKPOINT_QUEUE_NAME, (_job) => __awaiter(this, void 0, void 0, function* () {
+                yield publishCheckpoint(Date.now());
+            }), { connection: (0, connection_1.getQueueConnectionOptions)() });
+            worker.on('error', (err) => logger_1.logger.error('Transparency checkpoint worker error', { error: err.message }));
+            yield queue.upsertJobScheduler(CHECKPOINT_SCHEDULER_ID, { every: exports.CHECKPOINT_INTERVAL_MS }, { name: CHECKPOINT_JOB });
+            logger_1.logger.info('Transparency checkpoints started via BullMQ (durable, fleet-wide scheduling)');
+        }
+        catch (err) {
+            logger_1.logger.error('Transparency checkpoint BullMQ setup failed — falling back to in-process interval', err instanceof Error ? err : new Error(String(err)));
+            yield teardownQueue();
+            startFallback();
+        }
+        void bootstrapTransparencyPublishing();
+    });
+}
+/** Stop publishing (test teardown / graceful shutdown). */
+function stopTransparencyCheckpointJobs() {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (fallbackTimer) {
+            clearInterval(fallbackTimer);
+            fallbackTimer = null;
+        }
+        yield teardownQueue();
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcXVldWUvdHJhbnNwYXJlbmN5Q2hlY2twb2ludC5xdWV1ZS50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBdUJHOzs7Ozs7Ozs7Ozs7QUE0QkgsOENBZUM7QUE0REQsMEVBZ0RDO0FBR0Qsd0VBTUM7QUE5SkQsbUNBQWlEO0FBQ2pELDJFQUF3RjtBQUN4Riw0Q0FBeUM7QUFDekMsNkNBQXlEO0FBQ3pELGlEQUFnRDtBQUNoRCwyQ0FBOEU7QUFFOUUsa0VBQWtFO0FBQ2xFLE1BQU0scUJBQXFCLEdBQUcseUJBQXlCLENBQUM7QUFDeEQsTUFBTSx1QkFBdUIsR0FBRyxpQ0FBaUMsQ0FBQztBQUNsRSxNQUFNLGNBQWMsR0FBRyxpQ0FBaUMsQ0FBQztBQUV6RDs7O0dBR0c7QUFDVSxRQUFBLHNCQUFzQixHQUFHLENBQUMsR0FBRyxFQUFFLEdBQUcsRUFBRSxHQUFHLElBQUksQ0FBQztBQUV6RCxJQUFJLEtBQUssR0FBaUIsSUFBSSxDQUFDO0FBQy9CLElBQUksTUFBTSxHQUFrQixJQUFJLENBQUM7QUFDakMsSUFBSSxhQUFhLEdBQTBDLElBQUksQ0FBQztBQUVoRTs7O0dBR0c7QUFDSCxTQUFzQixpQkFBaUIsQ0FBQyxTQUFpQjs7UUFDdkQsSUFBSSxDQUFDO1lBQ0gsTUFBTSxVQUFVLEdBQUcsTUFBTSxJQUFBLHNDQUFlLEVBQUMsU0FBUyxDQUFDLENBQUM7WUFDcEQsZUFBTSxDQUFDLElBQUksQ0FBQyxtQ0FBbUMsRUFBRTtnQkFDL0MsS0FBSyxFQUFFLFVBQVUsQ0FBQyxLQUFLO2dCQUN2QixRQUFRLEVBQUUsVUFBVSxDQUFDLFFBQVE7Z0JBQzdCLElBQUksRUFBRSxVQUFVLENBQUMsSUFBSTthQUN0QixDQUFDLENBQUM7UUFDTCxDQUFDO1FBQUMsT0FBTyxHQUFHLEVBQUUsQ0FBQztZQUNiLGVBQU0sQ0FBQyxLQUFLLENBQ1Ysd0NBQXdDLEVB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U0FBc0IsOEJBQThCOztRQUNsRCxJQUFJLGFBQWEsRUFBRSxDQUFDO1lBQ2xCLGFBQWEsQ0FBQyxhQUFhLENBQUMsQ0FBQztZQUM3QixhQUFhLEdBQUcsSUFBSSxDQUFDO1FBQ3ZCLENBQUM7UUFDRCxNQUFNLGFBQWEsRUFBRSxDQUFDO0lBQ3hCLENBQUM7Q0FBQSIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9xdWV1ZS90cmFuc3BhcmVuY3lDaGVja3BvaW50LnF1ZXVlLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogVHJhbnNwYXJlbmN5LWNoZWNrcG9pbnQgc2NoZWR1bGluZy5cbiAqXG4gKiBQdWJsaXNoZXMgdGhlIHBlcmlvZGljIHNpZ25lZCBjb21taXRtZW50IHRvIGV2ZXJ5IHN1YmplY3QncyBjaGFpbiBoZWFkLiBUaGVcbiAqIGNhZGVuY2UgaXMgYSBTRUNVUklUWSBwYXJhbWV0ZXIsIG5vdCBhIGNvc3Qgb25lOiBpdCBib3VuZHMgaG93IGxvbmcgYW5cbiAqIGVxdWl2b2NhdGlvbiBjb3VsZCBnbyB1bnB1Ymxpc2hlZCAoYW5kLCBvbmNlIHBoYXNlIDIgbGFuZHMsIHVuYW5jaG9yZWQpLlxuICpcbiAqIE1pcnJvcnMgYG5vZGVJbmdlc3QucXVldWUudHNgIGV4YWN0bHksIGZvciB0aGUgc2FtZSByZWFzb246XG4gKiAgIC0gKipCdWxsTVEgcGF0aCoqIChgUkVESVNfVVJMYCBzZXQpOiBvbmUgcmVwZWF0YWJsZSBqb2IgZGVkdXBlZCBieSBhIHN0YWJsZVxuICogICAgIHNjaGVkdWxlciBpZCwgc28gZXhhY3RseSBPTkUgc2NoZWR1bGUgZXhpc3RzIGFjcm9zcyB0aGUgZmxlZXQuXG4gKiAgIC0gKipJbi1wcm9jZXNzIGZhbGxiYWNrKiogKG5vIGBSRURJU19VUkxgLCBlLmcuIGxvY2FsIGRldiAvIHRlc3RzKTogYW5cbiAqICAgICB1bnJlZidkIGludGVydmFsLCBzbyBpdCBjYW4gbmV2ZXIgaG9sZCB0aGUgZXZlbnQgbG9vcCBvcGVuLlxuICpcbiAqIEZsZWV0LXdpZGUgc2NoZWR1bGluZyBpcyBhIG5pY2V0eSBoZXJlLCBub3QgdGhlIHNhZmV0eSBuZXQ6IHRoZSByZWFsIG11dGV4IGlzXG4gKiB0aGUgdW5pcXVlIGluZGV4IG9uIGBUcmFuc3BhcmVuY3lDaGVja3BvaW50LmluZGV4YCwgYW5kIHRoZSBzZXJ2aWNlIGFkb3B0cyB0aGVcbiAqIHdpbm5lcidzIHJvb3Qgb24gY29sbGlzaW9uLiBUd28gc2lnbmVkIHJvb3RzIGZvciBvbmUgaW5kZXggaXMgZXhhY3RseSB0aGVcbiAqIGVxdWl2b2NhdGlvbiB0aGUgbG9nIGV4aXN0cyB0byBkZXRlY3QsIHNvIHRoYXQgZ3VhcmFudGVlIG11c3Qgbm90IGRlcGVuZCBvblxuICogc2NoZWR1bGluZyBiZWluZyBwZXJmZWN0LlxuICpcbiAqIEEgcHVibGlzaCBmYWlsdXJlIGlzIGxvZ2dlZCBhbmQgcmV0cmllZCBvbiB0aGUgbmV4dCB0aWNrIOKAlCBpdCBuZXZlciBibG9ja3NcbiAqIHJlY29yZCB3cml0ZXMuIEdhcHMgaW4gYGluZGV4YCBhcmUgaW1wb3NzaWJsZSBieSBjb25zdHJ1Y3Rpb246IHRoZSBuZXh0IHJ1blxuICogZGVyaXZlcyBpdHMgaW5kZXggZnJvbSB0aGUgbmV3ZXN0IHN0b3JlZCBjaGVja3BvaW50LCBzbyBhIG1pc3NlZCBwZXJpb2QgaXNcbiAqIHNpbXBseSBwdWJsaXNoZWQgbGF0ZSBhbmQgdGhlIGNoYWluIHN0YXlzIGNvbnRpZ3VvdXMuXG4gKi9cblxuaW1wb3J0IHsgUXVldWUsIFdvcmtlciwgdHlwZSBKb2IgfSBmcm9tICdidWxsbXEnO1xuaW1wb3J0IHsgYnVpbGRDaGVja3BvaW50LCBnZXRMYXRlc3RDaGVja3BvaW50IH0gZnJvbSAnLi4vc2VydmljZXMvdHJhbnNwYXJlbmN5LnNlcnZpY2UnO1xuaW1wb3J0IHsgbG9nZ2VyIH0gZnJvbSAnLi4vdXRpbHMvbG9nZ2VyJztcbmltcG9ydCB7IGdldFF1ZXVlQ29ubmVjdGlvbk9wdGlvbnMgfSBmcm9tICcuL2Nvbm5lY3Rpb24nO1xuaW1wb3J0IHsgaXNRdWV1ZUVuYWJsZWQgfSBmcm9tICcuL3F1ZXVlTWFuYWdlcic7XG5pbXBvcnQgeyBDT01QTEVURURfSk9CU19SRVRFTlRJT04sIEZBSUxFRF9KT0JTX1JFVEVOVElPTiB9IGZyb20gJy4vY29uc3RhbnRzJztcblxuLyoqIFF1ZXVlIG5hbWUuIEJ1bGxNUSByZWplY3RzIGA6YCBpbiBxdWV1ZSBuYW1lcyDigJQgdXNlIGRhc2hlcy4gKi9cbmNvbnN0IENIRUNLUE9JTlRfUVVFVUVfTkFNRSA9ICd0cmFuc3BhcmVuY3ktY2hlY2twb2ludCc7XG5jb25zdCBDSEVDS1BPSU5UX1NDSEVEVUxFUl9JRCA9ICd0cmFuc3BhcmVuY3ktY2hlY2twb2ludC1wdWJsaXNoJztcbmNvbnN0IENIRUNLUE9JTlRfSk9CID0gJ3RyYW5zcGFyZW5jeS1jaGVja3BvaW50LXB1Ymxpc2gnO1xuXG4vKipcbiAqIEhvdyBvZnRlbiBhIGNoZWNrcG9pbnQgaXMgcHVibGlzaGVkICg2IGhvdXJzKS4gU2hvcnRlbmluZyB0aGlzIHRpZ2h0ZW5zIHRoZVxuICogZGV0ZWN0aW9uIHdpbmRvdzsgbGVuZ3RoZW5pbmcgaXQgd2lkZW5zIHRoZSBibGluZCBzcG90IGJldHdlZW4gY29tbWl0bWVudHMuXG4gKi9cbmV4cG9ydCBjb25zdCBDSEVDS1BPSU5UX0lOVEVSVkFMX01TID0gNiAqIDYwICogNjAgKiAxMDAwO1xuXG5sZXQgcXVldWU6IFF1ZXVlIHwgbnVsbCA9IG51bGw7XG5sZXQgd29ya2VyOiBXb3JrZXIgfCBudWxsID0gbnVsbDtcbmxldCBmYWxsYmFja1RpbWVyOiBSZXR1cm5UeXBlPHR5cGVvZiBzZXRJbnRlcnZhbD4gfCBudWxsID0gbnVsbDtcblxuLyoqXG4gKiBQdWJsaXNoIG9uZSBjaGVja3BvaW50IGZvciB0aGUgcGVyaW9kIGVuZGluZyBub3cuIE5ldmVyIHRocm93cyDigJQgYSBmYWlsdXJlIGlzXG4gKiBsb2dnZWQgYW5kIHRoZSBuZXh0IHRpY2sgcmV0cmllcy5cbiAqL1xuZXhwb3J0IGFzeW5jIGZ1bmN0aW9uIHB1Ymxpc2hDaGVja3BvaW50KHBlcmlvZEVuZDogbnVtYmVyKTogUHJvbWlzZTx2b2lkPiB7XG4gIHRyeSB7XG4gICAgY29uc3QgY2hlY2twb2ludCA9IGF3YWl0IGJ1aWxkQ2hlY2twb2ludChwZXJpb2RFbmQpO1xuICAgIGxvZ2dlci5pbmZvKCdQdWJsaXNoZWQgdHJhbnNwYXJlbmN5IGNoZWNrcG9pbnQnLCB7XG4gICAgICBpbmRleDogY2hlY2twb2ludC5pbmRleCxcbiAgICAgIHRyZWVTaXplOiBjaGVja3BvaW50LnRyZWVTaXplLFxuICAgICAgcm9vdDogY2hlY2twb2ludC5yb290LFxuICAgIH0pO1xuICB9IGNhdGNoIChlcnIpIHtcbiAgICBsb2dnZXIuZXJyb3IoXG4gICAgICAnVHJhbnNwYXJlbmN5IGNoZWNrcG9pbnQgcHVibGlzaCBmYWlsZWQnLFxuICAgICAgZXJyIGluc3RhbmNlb2YgRXJyb3IgPyBlcnIgOiBuZXcgRXJyb3IoU3RyaW5nKGVycikpLFxuICAgICAgeyBjb21wb25lbnQ6ICd0cmFuc3BhcmVuY3lDaGVja3BvaW50JyB9LFxuICAgICk7XG4gIH1cbn1cblxuLyoqXG4gKiBQdWJsaXNoIGEgZ2VuZXNpcyBjaGVja3BvaW50IG9uIGJvb3Qgd2hlbiB0aGUgbG9nIGlzIGVtcHR5LCBhbmQgc3VyZmFjZSBhXG4gKiBkaXN0aW5jdCBlcnJvciB3aGVuIHNpZ25pbmcgaXMgbWlzY29uZmlndXJlZCBzbyBzaWxlbnQgNDA0cyBkbyBub3QgbGluZ2VyLlxuICovXG5hc3luYyBmdW5jdGlvbiBib290c3RyYXBUcmFuc3BhcmVuY3lQdWJsaXNoaW5nKCk6IFByb21pc2U8dm9pZD4ge1xuICBjb25zdCBsYXRlc3QgPSBhd2FpdCBnZXRMYXRlc3RDaGVja3BvaW50KCk7XG4gIGlmICghcHJvY2Vzcy5lbnYuT1hZX1BSSVZBVEVfS0VZKSB7XG4gICAgaWYgKCFsYXRlc3QpIHtcbiAgICAgIGxvZ2dlci5lcnJvcihcbiAgICAgICAgJ1RyYW5zcGFyZW5jeSBsb2cgY2Fubm90IHB1Ymxpc2g6IE9YWV9QUklWQVRFX0tFWSBpcyBub3QgY29uZmlndXJlZCBhbmQgbm8gY2hlY2twb2ludCBleGlzdHMgeWV0JyxcbiAgICAgICAgeyBjb21wb25lbnQ6ICd0cmFuc3BhcmVuY3lDaGVja3BvaW50JyB9LFxuICAgICAgKTtcbiAgICB9IGVsc2Uge1xuICAgICAgbG9nZ2VyLndhcm4oXG4gICAgICAgICdUcmFuc3BhcmVuY3kgbG9nIGNhbm5vdCBwdWJsaXNoIG5ldyBjaGVja3BvaW50czogT1hZX1BSSVZBVEVfS0VZIGlzIG5vdCBjb25maWd1cmVkJyxcbiAgICAgICAgeyBjb21wb25lbnQ6ICd0cmFuc3BhcmVuY3lDaGVja3BvaW50JywgbGF0ZXN0SW5kZXg6IGxhdGVzdC5pbmRleCB9LFxuICAgICAgKTtcbiAgICB9XG4gICAgcmV0dXJuO1xuICB9XG5cbiAgaWYgKCFsYXRlc3QpIHtcbiAgICBhd2FpdCBwdWJsaXNoQ2hlY2twb2ludChEYXRlLm5vdygpKTtcbiAgfVxufVxuXG4vKiogU3RhcnQgdGhlIHVucmVmJ2QgaW4tcHJvY2VzcyBwdWJsaXNoIGludGVydmFsIChmYWxsYmFjayBwYXRoKS4gKi9cbmZ1bmN0aW9uIHN0YXJ0RmFsbGJhY2soKTogdm9pZCB7XG4gIGlmIChmYWxsYmFja1RpbWVyKSByZXR1cm47XG4gIGZhbGxiYWNrVGltZXIgPSBzZXRJbnRlcnZhbCgoKSA9PiB7XG4gICAgdm9pZCBwdWJsaXNoQ2hlY2twb2ludChEYXRlLm5vdygpKTtcbiAgfSwgQ0hFQ0tQT0lOVF9JTlRFUlZBTF9NUyk7XG4gIC8vIE5ldmVyIGhvbGQgdGhlIGV2ZW50IGxvb3Agb3BlbiDigJQgYW4gaW50ZXJ2YWwgb24gYSBtb2R1bGUgc2luZ2xldG9uIGhhbmdzXG4gIC8vIEplc3QgcnVucyBhbmQgZGVsYXlzIHNodXRkb3duIG90aGVyd2lzZS5cbiAgZmFsbGJhY2tUaW1lci51bnJlZj8uKCk7XG59XG5cbi8qKiBDbG9zZSB0aGUgQnVsbE1RIHdvcmtlciArIHF1ZXVlIChhbmQgdGhlIGNvbm5lY3Rpb25zIHRoZXkgb3duKS4gKi9cbmFzeW5jIGZ1bmN0aW9uIHRlYXJkb3duUXVldWUoKTogUHJvbWlzZTx2b2lkPiB7XG4gIGNvbnN0IHcgPSB3b3JrZXI7XG4gIGNvbnN0IHEgPSBxdWV1ZTtcbiAgd29ya2VyID0gbnVsbDtcbiAgcXVldWUgPSBudWxsO1xuICB0cnkge1xuICAgIGF3YWl0IHc/LmNsb3NlKCk7XG4gICAgYXdhaXQgcT8uY2xvc2UoKTtcbiAgfSBjYXRjaCAoZXJyKSB7XG4gICAgbG9nZ2VyLmVycm9yKFxuICAgICAgJ1RyYW5zcGFyZW5jeSBjaGVja3BvaW50IHF1ZXVlIHRlYXJkb3duIGZhaWxlZCcsXG4gICAgICBlcnIgaW5zdGFuY2VvZiBFcnJvciA/IGVyciA6IG5ldyBFcnJvcihTdHJpbmcoZXJyKSksXG4gICAgKTtcbiAgfVxufVxuXG4vKipcbiAqIFN0YXJ0IGNoZWNrcG9pbnQgcHVibGlzaGluZzogQnVsbE1RIHdoZW4gUmVkaXMgaXMgY29uZmlndXJlZCwgb3RoZXJ3aXNlIHRoZVxuICogaW4tcHJvY2VzcyBpbnRlcnZhbC4gTmV2ZXIgdGhyb3dzIOKAlCBhIHF1ZXVlIHNldHVwIGZhaWx1cmUgbG9ncyBhbmQgZmFsbHMgYmFjay5cbiAqL1xuZXhwb3J0IGFzeW5jIGZ1bmN0aW9uIHN0YXJ0VHJhbnNwYXJlbmN5Q2hlY2twb2ludEpvYnMoKTogUHJvbWlzZTx2b2lkPiB7XG4gIGlmICghaXNRdWV1ZUVuYWJsZWQoKSkge1xuICAgIHN0YXJ0RmFsbGJhY2soKTtcbiAgICBsb2dnZXIuaW5mbygnVHJhbnNwYXJlbmN5IGNoZWNrcG9pbnRzIHVzaW5nIGluLXByb2Nlc3MgaW50ZXJ2YWwgZmFsbGJhY2sgKFJFRElTX1VSTCB1bnNldCknKTtcbiAgICB2b2lkIGJvb3RzdHJhcFRyYW5zcGFyZW5jeVB1Ymxpc2hpbmcoKTtcbiAgICByZXR1cm47XG4gIH1cblxuICB0cnkge1xuICAgIHF1ZXVlID0gbmV3IFF1ZXVlKENIRUNLUE9JTlRfUVVFVUVfTkFNRSwge1xuICAgICAgY29ubmVjdGlvbjogZ2V0UXVldWVDb25uZWN0aW9uT3B0aW9ucygpLFxuICAgICAgZGVmYXVsdEpvYk9wdGlvbnM6IHtcbiAgICAgICAgcmVtb3ZlT25Db21wbGV0ZTogQ09NUExFVEVEX0pPQlNfUkVURU5USU9OLFxuICAgICAgICByZW1vdmVPbkZhaWw6IEZBSUxFRF9KT0JTX1JFVEVOVElPTixcbiAgICAgIH0sXG4gICAgfSk7XG4gICAgcXVldWUub24oJ2Vycm9yJywgKGVycjogRXJyb3IpID0+XG4gICAgICBsb2dnZXIuZXJyb3IoJ1RyYW5zcGFyZW5jeSBjaGVja3BvaW50IHF1ZXVlIGVycm9yJywgeyBlcnJvcjogZXJyLm1lc3NhZ2UgfSksXG4gICAgKTtcblxuICAgIHdvcmtlciA9IG5ldyBXb3JrZXIoXG4gICAgICBDSEVDS1BPSU5UX1FVRVVFX05BTUUsXG4gICAgICBhc3luYyAoX2pvYjogSm9iKSA9PiB7XG4gICAgICAgIGF3YWl0IHB1Ymxpc2hDaGVja3BvaW50KERhdGUubm93KCkpO1xuICAgICAgfSxcbiAgICAgIHsgY29ubmVjdGlvbjogZ2V0UXVldWVDb25uZWN0aW9uT3B0aW9ucygpIH0sXG4gICAgKTtcbiAgICB3b3JrZXIub24oJ2Vycm9yJywgKGVycjogRXJyb3IpID0+XG4gICAgICBsb2dnZXIuZXJyb3IoJ1RyYW5zcGFyZW5jeSBjaGVja3BvaW50IHdvcmtlciBlcnJvcicsIHsgZXJyb3I6IGVyci5tZXNzYWdlIH0pLFxuICAgICk7XG5cbiAgICBhd2FpdCBxdWV1ZS51cHNlcnRKb2JTY2hlZHVsZXIoXG4gICAgICBDSEVDS1BPSU5UX1NDSEVEVUxFUl9JRCxcbiAgICAgIHsgZXZlcnk6IENIRUNLUE9JTlRfSU5URVJWQUxfTVMgfSxcbiAgICAgIHsgbmFtZTogQ0hFQ0tQT0lOVF9KT0IgfSxcbiAgICApO1xuXG4gICAgbG9nZ2VyLmluZm8oJ1RyYW5zcGFyZW5jeSBjaGVja3BvaW50cyBzdGFydGVkIHZpYSBCdWxsTVEgKGR1cmFibGUsIGZsZWV0LXdpZGUgc2NoZWR1bGluZyknKTtcbiAgfSBjYXRjaCAoZXJyKSB7XG4gICAgbG9nZ2VyLmVycm9yKFxuICAgICAgJ1RyYW5zcGFyZW5jeSBjaGVja3BvaW50IEJ1bGxNUSBzZXR1cCBmYWlsZWQg4oCUIGZhbGxpbmcgYmFjayB0byBpbi1wcm9jZXNzIGludGVydmFsJyxcbiAgICAgIGVyciBpbnN0YW5jZW9mIEVycm9yID8gZXJyIDogbmV3IEVycm9yKFN0cmluZyhlcnIpKSxcbiAgICApO1xuICAgIGF3YWl0IHRlYXJkb3duUXVldWUoKTtcbiAgICBzdGFydEZhbGxiYWNrKCk7XG4gIH1cblxuICB2b2lkIGJvb3RzdHJhcFRyYW5zcGFyZW5jeVB1Ymxpc2hpbmcoKTtcbn1cblxuLyoqIFN0b3AgcHVibGlzaGluZyAodGVzdCB0ZWFyZG93biAvIGdyYWNlZnVsIHNodXRkb3duKS4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiBzdG9wVHJhbnNwYXJlbmN5Q2hlY2twb2ludEpvYnMoKTogUHJvbWlzZTx2b2lkPiB7XG4gIGlmIChmYWxsYmFja1RpbWVyKSB7XG4gICAgY2xlYXJJbnRlcnZhbChmYWxsYmFja1RpbWVyKTtcbiAgICBmYWxsYmFja1RpbWVyID0gbnVsbDtcbiAgfVxuICBhd2FpdCB0ZWFyZG93blF1ZXVlKCk7XG59XG4iXSwidmVyc2lvbiI6M30=

@@ -1,0 +1,283 @@
+4580de5882caef24ca097f7b93364d3d
+{
+  "signin": {
+    "title": "登录",
+    "subtitle": "登录以继续",
+    "addAccountTitle": "添加另一个账户",
+    "addAccountSubtitle": "使用另一个账户登录",
+    "username": {
+      "label": "用户名",
+      "placeholder": "输入您的用户名",
+      "helper": "3-30个字符，仅字母和数字",
+      "required": "请输入您的用户名。",
+      "minLength": "用户名必须至少包含3个字符。"
+    },
+    "password": {
+      "label": "密码",
+      "placeholder": "输入您的密码",
+      "required": "请输入您的密码。",
+      "hint": "输入您的密码以登录"
+    },
+    "actions": {
+      "continue": "继续",
+      "back": "返回",
+      "signIn": "登录",
+      "verify": "验证",
+      "openAccountSwitcher": "切换到另一个账户",
+      "openAccountSwitcherSubtitle": "{{count}}个其他账户可用",
+      "openAccountSwitcherSubtitle_singular": "1个其他账户可用",
+      "openAccountSwitcherSubtitle_zero": "查看您保存的账户",
+      "manageAccounts": "管理保存的账户",
+      "manageAccountsSubtitle": "查看会话、删除或登出",
+      "loadingOtherAccounts": "加载其他账户中…",
+      "switchAccountFailed": "无法切换账户。请重试。"
+    },
+    "forgotPrompt": "忘记密码？",
+    "security": {
+      "dataSecure": "您的数据已加密且安全"
+    },
+    "currentlySignedInAs": "当前登录为",
+    "alreadySignedInWith": "已登录",
+    "alreadySignedIn": "已登录",
+    "alreadySignedInMessage": "此账户已登录。继续使用此账户？",
+    "continueWithAccount": "继续",
+    "currentAccount": "当前",
+    "or": "或",
+    "viewAllAccounts": "查看更多{{count}}个",
+    "createAccountLink": "初次使用 Oxy？创建账户",
+    "status": {
+      "accountSwitched": "正在使用{{name}}",
+      "signingIn": "正在登录…"
+    }
+  },
+  "signup": {
+    "title": "创建您的账户",
+    "subtitle": "一个身份，畅行整个生态系统。",
+    "commonsHeadline": "在 Commons 中创建您的身份",
+    "commonsExplainer": "Commons 是您完全自主保管的 Oxy 身份——一个应用，随处可用。",
+    "createInCommons": "在 Commons 中创建您的身份",
+    "passkeyAlternative": "没有 Commons？改为在此设备上创建通行密钥",
+    "createAccount": "创建账户",
+    "creating": "正在创建…",
+    "usernamePlaceholder": "选择一个用户名",
+    "usernameChecking": "正在检查…",
+    "usernameAvailable": "可用",
+    "usernameTaken": "该用户名已被占用",
+    "backToSignInLink": "已有账户？登录",
+    "hubExplainer": "在安全窗口中创建您的 Oxy ID，然后立即返回。",
+    "continueInWindow": "在新窗口中继续",
+    "welcome": {
+      "title": "欢迎使用Oxy！",
+      "subtitle": "只需几步即可创建您的账户",
+      "haveAccount": "已有账户？",
+      "signInCta": "登录"
+    },
+    "identity": {
+      "title": "您是谁？",
+      "subtitle": "选择您的用户名并输入您的电子邮件"
+    },
+    "username": {
+      "helper": "3-30个字符，仅字母和数字",
+      "required": "请输入用户名",
+      "minLength": "用户名必须至少包含3个字符"
+    },
+    "email": {
+      "required": "请输入电子邮件地址",
+      "invalid": "请输入有效的电子邮件地址",
+      "helper": "我们绝不会分享您的电子邮件"
+    },
+    "security": {
+      "title": "保护您的账户",
+      "subtitle": "创建强密码以保护您的账户"
+    },
+    "password": {
+      "helper": "至少8个字符",
+      "required": "请输入密码",
+      "minLength": "密码必须至少包含8个字符",
+      "confirmRequired": "请确认您的密码",
+      "mismatch": "密码不匹配",
+      "confirmHint": "重新输入您的密码以确认"
+    },
+    "summary": {
+      "title": "快完成了！",
+      "subtitle": "查看您的信息并创建账户",
+      "sectionTitle": "账户信息",
+      "fields": {
+        "username": "用户名",
+        "email": "电子邮件",
+        "password": "密码"
+      },
+      "notSet": "未设置",
+      "securityTip": "为了更强的安全性，创建账户后，请在账户设置中启用生物识别身份验证。",
+      "legalReminder": "创建账户即表示您同意我们的服务条款和隐私政策。"
+    }
+  },
+  "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "你的账户"
+    },
+    "loading": "正在加载账户...",
+    "qrHeadline": "使用您的 Oxy 身份登录",
+    "signInWithOxy": "使用 Oxy 登录",
+    "useIdentityOnDevice": "没有 Commons？改用此设备上的通行密钥",
+    "passkeySigningIn": "正在登录…",
+    "getCommons": "获取 Commons",
+    "commonsNotInstalled": "没有 Commons？获取应用以使用您的 Oxy ID 登录。",
+    "showQrAnyway": "我在另一台设备上有 Commons",
+    "switchWhileSignedInAs": "切换账号，当前登录为 {{name}}",
+    "manageOnDevice": "管理此设备上的账号",
+    "continueWithOxy": "使用 Oxy 继续",
+    "havingTrouble": "遇到问题？",
+    "progress": {
+      "preparing": "正在准备请求",
+      "awaitingApproval": "正在等待批准",
+      "scanWithCommons": "请用手机上的 Commons 扫描",
+      "continueInCommons": "请在 Commons 中继续",
+      "checkCommons": "请查看手机上的 Commons",
+      "openedInCommons": "已在 Commons 中打开",
+      "confirming": "正在确认身份",
+      "confirmed": "身份已确认"
+    }
+  },
+  "common": {
+    "actions": {
+      "back": "返回",
+      "continue": "继续",
+      "next": "下一步",
+      "getStarted": "开始",
+      "createAccount": "创建账户",
+      "signIn": "登录",
+      "verify": "验证",
+      "resetPassword": "重置密码",
+      "signedOut": "已退出",
+      "close": "关闭",
+      "tryAgain": "重试"
+    },
+    "links": {
+      "recoverAccount": "恢复您的账户",
+      "signUp": "注册"
+    },
+    "labels": {
+      "username": "用户名",
+      "email": "电子邮件",
+      "password": "密码",
+      "confirmPassword": "确认密码"
+    },
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "退出所有账户时出现问题。请重试。"
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "subtitle": "Manage push, email, and security alerts",
+    "updateError": "Failed to update notification preferences",
+    "sections": {
+      "channels": "Channels",
+      "alerts": "Alerts",
+      "marketing": "Marketing"
+    },
+    "items": {
+      "push": {
+        "title": "Push notifications",
+        "subtitle": "Real-time alerts on your devices"
+      },
+      "emailDigest": {
+        "title": "Email digest",
+        "subtitle": "Periodic summary of your account activity"
+      },
+      "securityAlerts": {
+        "title": "Security alerts",
+        "subtitle": "Sign-ins, recovery codes, and key changes"
+      },
+      "marketingEmails": {
+        "title": "Marketing emails",
+        "subtitle": "Product news and occasional offers"
+      }
+    }
+  },
+  "preferences": {
+    "title": "Preferences",
+    "subtitle": "Theme, motion, and regional settings",
+    "sections": {
+      "appearance": "Appearance",
+      "language": "Language",
+      "region": "Region"
+    },
+    "theme": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System default"
+    },
+    "items": {
+      "theme": {
+        "title": "Theme"
+      },
+      "reduceMotion": {
+        "title": "Reduce motion",
+        "subtitle": "Minimise animations across Oxy apps",
+        "systemOn": "Following system: reduce motion is on"
+      },
+      "language": {
+        "title": "Language"
+      },
+      "timezone": {
+        "title": "Timezone",
+        "unknown": "Unable to detect timezone"
+      },
+      "about": {
+        "title": "About preferences",
+        "subtitle": "Preferences sync across every Oxy app you sign into"
+      }
+    }
+  },
+  "connectedApps": {
+    "title": "Connected apps",
+    "subtitle": "Manage third-party app access",
+    "empty": {
+      "title": "No connected apps",
+      "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
+    },
+    "item": {
+      "granted": "已于 {{relative}} 授权",
+      "lastUsed": "Last used {{relative}}"
+    },
+    "confirm": {
+      "title": "Revoke access",
+      "message": "Revoke {{name}}'s access to your Oxy account?"
+    },
+    "toasts": {
+      "revoked": "Revoked access for {{name}}",
+      "revokeFailed": "Failed to revoke access"
+    }
+  },
+  "accountMenu": {
+    "label": "账户菜单",
+    "manage": "管理您的 Oxy 账户",
+    "viewProfile": "查看个人资料",
+    "addAnother": "添加其他账户",
+    "signOutAll": "退出所有账户",
+    "open": "账户菜单",
+    "openHint": "打开账户菜单",
+    "openWithUser": "{{name}} 的账户菜单",
+    "switching": "正在切换账户…",
+    "signOutAccount": "退出 {{name}}",
+    "greeting": "你好，{{name}}！",
+    "switchAccount": "切换账号",
+    "storage": {
+      "title": "Oxy 存储",
+      "usage": "已使用 {{used}} / {{total}}",
+      "used": "已用",
+      "free": "可用",
+      "unavailable": "无法获取用量详情",
+      "upgrade": "升级方案",
+      "manage": "管理存储"
+    },
+    "data": "你在 Oxy 中的数据",
+    "settings": "Oxy 设置",
+    "help": "帮助与反馈",
+    "signOut": "退出登录",
+    "privacy": "隐私政策",
+    "terms": "服务条款"
+  }
+}

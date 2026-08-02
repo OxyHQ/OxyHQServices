@@ -1,0 +1,42 @@
+f96295ce5835dd9c00bd8c7634c89137
+"use strict";
+/**
+ * Placeholder SVG and image utilities
+ * Used for missing or deleted files
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.TRANSPARENT_PNG_PLACEHOLDER = exports.MISSING_FILE_SVG_PLACEHOLDER = void 0;
+exports.generateMissingFilePlaceholder = generateMissingFilePlaceholder;
+/**
+ * Visible SVG placeholder for missing files
+ * Shows a grid pattern with "Missing or deleted" message
+ */
+exports.MISSING_FILE_SVG_PLACEHOLDER = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200" role="img" aria-label="Missing file">
+  <defs>
+    <pattern id="grid" width="16" height="16" patternUnits="userSpaceOnUse">
+      <rect width="16" height="16" fill="#f3f4f6"/>
+      <path d="M16 0H0V16" fill="none" stroke="#e5e7eb" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#grid)"/>
+  <g fill="none" stroke="#9ca3af" stroke-width="3">
+    <rect x="8" y="8" width="304" height="184" rx="8"/>
+    <path d="M80 140l40-40 30 30 40-50 50 60"/>
+    <circle cx="115" cy="88" r="10"/>
+  </g>
+  <text x="50%" y="50%" text-anchor="middle" fill="#6b7280" font-family="sans-serif" font-size="14" dy="56">Missing or deleted</text>
+  <text x="50%" y="50%" text-anchor="middle" fill="#9ca3af" font-family="sans-serif" font-size="12" dy="76">id: {FILE_ID}</text>
+</svg>`;
+/**
+ * Generate SVG placeholder with file ID
+ */
+function generateMissingFilePlaceholder(fileId) {
+    return exports.MISSING_FILE_SVG_PLACEHOLDER.replace('{FILE_ID}', fileId);
+}
+/**
+ * 1x1 transparent PNG (invisible placeholder)
+ * Base64 encoded PNG
+ */
+exports.TRANSPARENT_PNG_PLACEHOLDER = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvcGxhY2Vob2xkZXJzLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7O0dBR0c7OztBQTJCSCx3RUFFQztBQTNCRDs7O0dBR0c7QUFDVSxRQUFBLDRCQUE0QixHQUFHOzs7Ozs7Ozs7Ozs7Ozs7O09BZ0JyQyxDQUFDO0FBRVI7O0dBRUc7QUFDSCxTQUFnQiw4QkFBOEIsQ0FBQyxNQUFjO0lBQzNELE9BQU8sb0NBQTRCLENBQUMsT0FBTyxDQUFDLFdBQVcsRUFBRSxNQUFNLENBQUMsQ0FBQztBQUNuRSxDQUFDO0FBRUQ7OztHQUdHO0FBQ1UsUUFBQSwyQkFBMkIsR0FBRyw4RkFBOEYsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy91dGlscy9wbGFjZWhvbGRlcnMudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBQbGFjZWhvbGRlciBTVkcgYW5kIGltYWdlIHV0aWxpdGllc1xuICogVXNlZCBmb3IgbWlzc2luZyBvciBkZWxldGVkIGZpbGVzXG4gKi9cblxuLyoqXG4gKiBWaXNpYmxlIFNWRyBwbGFjZWhvbGRlciBmb3IgbWlzc2luZyBmaWxlc1xuICogU2hvd3MgYSBncmlkIHBhdHRlcm4gd2l0aCBcIk1pc3Npbmcgb3IgZGVsZXRlZFwiIG1lc3NhZ2VcbiAqL1xuZXhwb3J0IGNvbnN0IE1JU1NJTkdfRklMRV9TVkdfUExBQ0VIT0xERVIgPSBgPD94bWwgdmVyc2lvbj1cIjEuMFwiIGVuY29kaW5nPVwiVVRGLThcIj8+XG48c3ZnIHhtbG5zPVwiaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmdcIiB3aWR0aD1cIjMyMFwiIGhlaWdodD1cIjIwMFwiIHZpZXdCb3g9XCIwIDAgMzIwIDIwMFwiIHJvbGU9XCJpbWdcIiBhcmlhLWxhYmVsPVwiTWlzc2luZyBmaWxlXCI+XG4gIDxkZWZzPlxuICAgIDxwYXR0ZXJuIGlkPVwiZ3JpZFwiIHdpZHRoPVwiMTZcIiBoZWlnaHQ9XCIxNlwiIHBhdHRlcm5Vbml0cz1cInVzZXJTcGFjZU9uVXNlXCI+XG4gICAgICA8cmVjdCB3aWR0aD1cIjE2XCIgaGVpZ2h0PVwiMTZcIiBmaWxsPVwiI2YzZjRmNlwiLz5cbiAgICAgIDxwYXRoIGQ9XCJNMTYgMEgwVjE2XCIgZmlsbD1cIm5vbmVcIiBzdHJva2U9XCIjZTVlN2ViXCIgc3Ryb2tlLXdpZHRoPVwiMVwiLz5cbiAgICA8L3BhdHRlcm4+XG4gIDwvZGVmcz5cbiAgPHJlY3Qgd2lkdGg9XCIxMDAlXCIgaGVpZ2h0PVwiMTAwJVwiIGZpbGw9XCJ1cmwoI2dyaWQpXCIvPlxuICA8ZyBmaWxsPVwibm9uZVwiIHN0cm9rZT1cIiM5Y2EzYWZcIiBzdHJva2Utd2lkdGg9XCIzXCI+XG4gICAgPHJlY3QgeD1cIjhcIiB5PVwiOFwiIHdpZHRoPVwiMzA0XCIgaGVpZ2h0PVwiMTg0XCIgcng9XCI4XCIvPlxuICAgIDxwYXRoIGQ9XCJNODAgMTQwbDQwLTQwIDMwIDMwIDQwLTUwIDUwIDYwXCIvPlxuICAgIDxjaXJjbGUgY3g9XCIxMTVcIiBjeT1cIjg4XCIgcj1cIjEwXCIvPlxuICA8L2c+XG4gIDx0ZXh0IHg9XCI1MCVcIiB5PVwiNTAlXCIgdGV4dC1hbmNob3I9XCJtaWRkbGVcIiBmaWxsPVwiIzZiNzI4MFwiIGZvbnQtZmFtaWx5PVwic2Fucy1zZXJpZlwiIGZvbnQtc2l6ZT1cIjE0XCIgZHk9XCI1NlwiPk1pc3Npbmcgb3IgZGVsZXRlZDwvdGV4dD5cbiAgPHRleHQgeD1cIjUwJVwiIHk9XCI1MCVcIiB0ZXh0LWFuY2hvcj1cIm1pZGRsZVwiIGZpbGw9XCIjOWNhM2FmXCIgZm9udC1mYW1pbHk9XCJzYW5zLXNlcmlmXCIgZm9udC1zaXplPVwiMTJcIiBkeT1cIjc2XCI+aWQ6IHtGSUxFX0lEfTwvdGV4dD5cbjwvc3ZnPmA7XG5cbi8qKlxuICogR2VuZXJhdGUgU1ZHIHBsYWNlaG9sZGVyIHdpdGggZmlsZSBJRFxuICovXG5leHBvcnQgZnVuY3Rpb24gZ2VuZXJhdGVNaXNzaW5nRmlsZVBsYWNlaG9sZGVyKGZpbGVJZDogc3RyaW5nKTogc3RyaW5nIHtcbiAgcmV0dXJuIE1JU1NJTkdfRklMRV9TVkdfUExBQ0VIT0xERVIucmVwbGFjZSgne0ZJTEVfSUR9JywgZmlsZUlkKTtcbn1cblxuLyoqXG4gKiAxeDEgdHJhbnNwYXJlbnQgUE5HIChpbnZpc2libGUgcGxhY2Vob2xkZXIpXG4gKiBCYXNlNjQgZW5jb2RlZCBQTkdcbiAqL1xuZXhwb3J0IGNvbnN0IFRSQU5TUEFSRU5UX1BOR19QTEFDRUhPTERFUiA9ICdpVkJPUncwS0dnb0FBQUFOU1VoRVVnQUFBQUVBQUFBQkNBUUFBQUMxSEF3Q0FBQUFDMGxFUVZSNG5HTmdZQUFBQUFNQUFTc0pUWVFBQUFBQVNVVk9SSzVDWUlJPSc7XG5cbiJdLCJ2ZXJzaW9uIjozfQ==

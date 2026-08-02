@@ -1,0 +1,47 @@
+d815cb64856edc2e09ed49166f6284a9
+"use strict";
+/**
+ * Email Proxy Routes
+ *
+ * Proxy endpoint for external email images and fonts.
+ * Provides CORS bypass and tracking protection.
+ *
+ * Note: This endpoint is public (no auth) because it's called from sandboxed
+ * iframes that cannot send credentials. Security is provided by:
+ * - Rate limiting by privacy-preserving hashed IP key (never raw IPs in Redis)
+ * - Only proxying image/font content types
+ * - SSRF protection
+ * - The proxied content is already publicly accessible
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const rateLimiter_1 = require("../middleware/rateLimiter");
+const asyncHandler_1 = require("../utils/asyncHandler");
+const emailProxy_controller_1 = require("../controllers/emailProxy.controller");
+const router = (0, express_1.Router)();
+// Rate limit: 100 requests per minute per client (hashedIpKey default — no raw IPs at rest)
+const proxyRateLimit = (0, rateLimiter_1.rateLimit)({
+    prefix: 'rl:email:proxy:',
+    windowMs: 60 * 1000,
+    max: 100,
+    message: 'Too many proxy requests, please try again later.',
+});
+// Add CORS headers to allow iframe access
+const corsMiddleware = (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+        res.status(204).end();
+        return;
+    }
+    next();
+};
+router.use(corsMiddleware);
+router.use(proxyRateLimit);
+// GET /email/proxy?url=<encoded-url>
+// Proxies external images and fonts for email content
+router.get('/', (0, asyncHandler_1.asyncHandler)(emailProxy_controller_1.proxyResource));
+exports.default = router;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcm91dGVzL2VtYWlsUHJveHkudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7R0FZRzs7QUFFSCxxQ0FBc0Q7QUFDdEQsMkRBQXNEO0FBQ3RELHdEQUFxRDtBQUNyRCxnRkFBcUU7QUFFckUsTUFBTSxNQUFNLEdBQUcsSUFBQSxnQkFBTSxHQUFFLENBQUM7QUFFeEIsNEZBQTRGO0FBQzVGLE1BQU0sY0FBYyxHQUFHLElBQUEsdUJBQVMsRUFBQztJQUMvQixNQUFNLEVBQUUsaUJBQWlCO0lBQ3pCLFFBQVEsRUFBRSxFQUFFLEdBQUcsSUFBSTtJQUNuQixHQUFHLEVBQUUsR0FBRztJQUNSLE9BQU8sRUFBRSxrREFBa0Q7Q0FDNUQsQ0FBQyxDQUFDO0FBRUgsMENBQTBDO0FBQzFDLE1BQU0sY0FBYyxHQUFtQixDQUFDLEdBQUcsRUFBRSxHQUFHLEVBQUUsSUFBSSxFQUFFLEVBQUU7SUFDeEQsR0FBRyxDQUFDLFNBQVMsQ0FBQyw2QkFBNkIsRUFBRSxHQUFHLENBQUMsQ0FBQztJQUNsRCxHQUFHLENBQUMsU0FBUyxDQUFDLDhCQUE4QixFQUFFLGNBQWMsQ0FBQyxDQUFDO0lBQzlELEdBQUcsQ0FBQyxTQUFTLENBQUMsOEJBQThCLEVBQUUsY0FBYyxDQUFDLENBQUM7SUFFOUQsbUJBQW1CO0lBQ25CLElBQUksR0FBRyxDQUFDLE1BQU0sS0FBSyxTQUFTLEVBQUUsQ0FBQztRQUM3QixHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLEdBQUcsRUFBRSxDQUFDO1FBQ3RCLE9BQU87SUFDVCxDQUFDO0lBQ0QsSUFBSSxFQUFFLENBQUM7QUFDVCxDQUFDLENBQUM7QUFFRixNQUFNLENBQUMsR0FBRyxDQUFDLGNBQWMsQ0FBQyxDQUFDO0FBQzNCLE1BQU0sQ0FBQyxHQUFHLENBQUMsY0FBYyxDQUFDLENBQUM7QUFFM0IscUNBQXFDO0FBQ3JDLHNEQUFzRDtBQUN0RCxNQUFNLENBQUMsR0FBRyxDQUFDLEdBQUcsRUFBRSxJQUFBLDJCQUFZLEVBQUMscUNBQWEsQ0FBQyxDQUFDLENBQUM7QUFFN0Msa0JBQWUsTUFBTSxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3JvdXRlcy9lbWFpbFByb3h5LnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogRW1haWwgUHJveHkgUm91dGVzXG4gKlxuICogUHJveHkgZW5kcG9pbnQgZm9yIGV4dGVybmFsIGVtYWlsIGltYWdlcyBhbmQgZm9udHMuXG4gKiBQcm92aWRlcyBDT1JTIGJ5cGFzcyBhbmQgdHJhY2tpbmcgcHJvdGVjdGlvbi5cbiAqXG4gKiBOb3RlOiBUaGlzIGVuZHBvaW50IGlzIHB1YmxpYyAobm8gYXV0aCkgYmVjYXVzZSBpdCdzIGNhbGxlZCBmcm9tIHNhbmRib3hlZFxuICogaWZyYW1lcyB0aGF0IGNhbm5vdCBzZW5kIGNyZWRlbnRpYWxzLiBTZWN1cml0eSBpcyBwcm92aWRlZCBieTpcbiAqIC0gUmF0ZSBsaW1pdGluZyBieSBwcml2YWN5LXByZXNlcnZpbmcgaGFzaGVkIElQIGtleSAobmV2ZXIgcmF3IElQcyBpbiBSZWRpcylcbiAqIC0gT25seSBwcm94eWluZyBpbWFnZS9mb250IGNvbnRlbnQgdHlwZXNcbiAqIC0gU1NSRiBwcm90ZWN0aW9uXG4gKiAtIFRoZSBwcm94aWVkIGNvbnRlbnQgaXMgYWxyZWFkeSBwdWJsaWNseSBhY2Nlc3NpYmxlXG4gKi9cblxuaW1wb3J0IHsgUm91dGVyLCB0eXBlIFJlcXVlc3RIYW5kbGVyIH0gZnJvbSAnZXhwcmVzcyc7XG5pbXBvcnQgeyByYXRlTGltaXQgfSBmcm9tICcuLi9taWRkbGV3YXJlL3JhdGVMaW1pdGVyJztcbmltcG9ydCB7IGFzeW5jSGFuZGxlciB9IGZyb20gJy4uL3V0aWxzL2FzeW5jSGFuZGxlcic7XG5pbXBvcnQgeyBwcm94eVJlc291cmNlIH0gZnJvbSAnLi4vY29udHJvbGxlcnMvZW1haWxQcm94eS5jb250cm9sbGVyJztcblxuY29uc3Qgcm91dGVyID0gUm91dGVyKCk7XG5cbi8vIFJhdGUgbGltaXQ6IDEwMCByZXF1ZXN0cyBwZXIgbWludXRlIHBlciBjbGllbnQgKGhhc2hlZElwS2V5IGRlZmF1bHQg4oCUIG5vIHJhdyBJUHMgYXQgcmVzdClcbmNvbnN0IHByb3h5UmF0ZUxpbWl0ID0gcmF0ZUxpbWl0KHtcbiAgcHJlZml4OiAncmw6ZW1haWw6cHJveHk6JyxcbiAgd2luZG93TXM6IDYwICogMTAwMCxcbiAgbWF4OiAxMDAsXG4gIG1lc3NhZ2U6ICdUb28gbWFueSBwcm94eSByZXF1ZXN0cywgcGxlYXNlIHRyeSBhZ2FpbiBsYXRlci4nLFxufSk7XG5cbi8vIEFkZCBDT1JTIGhlYWRlcnMgdG8gYWxsb3cgaWZyYW1lIGFjY2Vzc1xuY29uc3QgY29yc01pZGRsZXdhcmU6IFJlcXVlc3RIYW5kbGVyID0gKHJlcSwgcmVzLCBuZXh0KSA9PiB7XG4gIHJlcy5zZXRIZWFkZXIoJ0FjY2Vzcy1Db250cm9sLUFsbG93LU9yaWdpbicsICcqJyk7XG4gIHJlcy5zZXRIZWFkZXIoJ0FjY2Vzcy1Db250cm9sLUFsbG93LU1ldGhvZHMnLCAnR0VULCBPUFRJT05TJyk7XG4gIHJlcy5zZXRIZWFkZXIoJ0FjY2Vzcy1Db250cm9sLUFsbG93LUhlYWRlcnMnLCAnQ29udGVudC1UeXBlJyk7XG5cbiAgLy8gSGFuZGxlIHByZWZsaWdodFxuICBpZiAocmVxLm1ldGhvZCA9PT0gJ09QVElPTlMnKSB7XG4gICAgcmVzLnN0YXR1cygyMDQpLmVuZCgpO1xuICAgIHJldHVybjtcbiAgfVxuICBuZXh0KCk7XG59O1xuXG5yb3V0ZXIudXNlKGNvcnNNaWRkbGV3YXJlKTtcbnJvdXRlci51c2UocHJveHlSYXRlTGltaXQpO1xuXG4vLyBHRVQgL2VtYWlsL3Byb3h5P3VybD08ZW5jb2RlZC11cmw+XG4vLyBQcm94aWVzIGV4dGVybmFsIGltYWdlcyBhbmQgZm9udHMgZm9yIGVtYWlsIGNvbnRlbnRcbnJvdXRlci5nZXQoJy8nLCBhc3luY0hhbmRsZXIocHJveHlSZXNvdXJjZSkpO1xuXG5leHBvcnQgZGVmYXVsdCByb3V0ZXI7XG4iXSwidmVyc2lvbiI6M30=

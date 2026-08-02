@@ -1,0 +1,49 @@
+b2e7da0ac500fb2719e0e523482410f9
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.discoverContactsSchema = exports.MAX_HASHES_PER_REQUEST = void 0;
+const zod_1 = require("zod");
+/**
+ * Schemas for the contact discovery routes (`/contacts/...`).
+ *
+ * Discovery uploads only opaque SHA-256 hex digests — never raw email or
+ * phone. See `utils/contactHash.ts` for the canonical hashing rules the
+ * client must use.
+ */
+/** A single 64-char lowercase hex SHA-256 digest. */
+const sha256HexSchema = zod_1.z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-f0-9]{64}$/u, 'Must be a 64-character lowercase SHA-256 hex digest');
+/**
+ * Hard upper bound on how many hashed identifiers a single request can carry.
+ * Combined with the per-user 5-req/min rate limit this caps discovery at
+ * 1,000 identifiers per minute per user — enough for the typical address
+ * book without enabling mass enumeration.
+ */
+exports.MAX_HASHES_PER_REQUEST = 200;
+// POST /contacts/discover
+exports.discoverContactsSchema = zod_1.z
+    .object({
+    hashedEmails: zod_1.z.array(sha256HexSchema).max(exports.MAX_HASHES_PER_REQUEST).default([]),
+    hashedPhones: zod_1.z.array(sha256HexSchema).max(exports.MAX_HASHES_PER_REQUEST).default([]),
+})
+    .superRefine((value, ctx) => {
+    if (value.hashedEmails.length === 0 && value.hashedPhones.length === 0) {
+        ctx.addIssue({
+            code: zod_1.z.ZodIssueCode.custom,
+            message: 'At least one hashedEmail or hashedPhone is required',
+            path: ['hashedEmails'],
+        });
+    }
+    if (value.hashedEmails.length + value.hashedPhones.length >
+        exports.MAX_HASHES_PER_REQUEST * 2) {
+        ctx.addIssue({
+            code: zod_1.z.ZodIssueCode.custom,
+            message: `Total identifiers must not exceed ${exports.MAX_HASHES_PER_REQUEST * 2}`,
+            path: ['hashedEmails'],
+        });
+    }
+});
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2NoZW1hcy9jb250YWN0cy5zY2hlbWFzLnRzIiwibWFwcGluZ3MiOiI7OztBQUFBLDZCQUF3QjtBQUV4Qjs7Ozs7O0dBTUc7QUFFSCxxREFBcUQ7QUFDckQsTUFBTSxlQUFlLEdBQUcsT0FBQztLQUN0QixNQUFNLEVBQUU7S0FDUixJQUFJLEVBQUU7S0FDTixXQUFXLEVBQUU7S0FDYixLQUFLLENBQUMsaUJBQWlCLEVBQUUscURBQXFELENBQUMsQ0FBQztBQUVuRjs7Ozs7R0FLRztBQUNVLFFBQUEsc0JBQXNCLEdBQUcsR0FBRyxDQUFDO0FBRTFDLDBCQUEwQjtBQUNiLFFBQUEsc0JBQXNCLEdBQUcsT0FBQztLQUNwQyxNQUFNLENBQUM7SUFDTixZQUFZLEVBQUUsT0FBQyxDQUFDLEtBQUssQ0FBQyxlQUFlLENBQUMsQ0FBQyxHQUFHLENBQUMsOEJBQXNCLENBQUMsQ0FBQyxPQUFPLENBQUMsRUFBRSxDQUFDO0lBQzlFLFlBQVksRUFBRSxPQUFDLENBQUMsS0FBSyxDQUFDLGVBQWUsQ0FBQyxDQUFDLEdBQUcsQ0FBQyw4QkFBc0IsQ0FBQyxDQUFDLE9BQU8sQ0FBQyxFQUFFLENBQUM7Q0FDL0UsQ0FBQztLQUNELFdBQVcsQ0FBQyxDQUFDLEtBQUssRUFBRSxHQUFHLEVBQUUsRUFBRTtJQUMxQixJQUFJLEtBQUssQ0FBQyxZQUFZLENBQUMsTUFBTSxLQUFLLENBQUMsSUFBSSxLQUFLLENBQUMsWUFBWSxDQUFDLE1BQU0sS0FBSyxDQUFDLEVBQUUsQ0FBQztRQUN2RSxHQUFHLENBQUMsUUFBUSxDQUFDO1lBQ1gsSUFBSSxFQUFFLE9BQUMsQ0FBQyxZQUFZLENBQUMsTUFBTTtZQUMzQixPQUFPLEVBQUUscURBQXFEO1lBQzlELElBQUksRUFBRSxDQUFDLGNBQWMsQ0FBQztTQUN2QixDQUFDLENBQUM7SUFDTCxDQUFDO0lBQ0QsSUFDRSxLQUFLLENBQUMsWUFBWSxDQUFDLE1BQU0sR0FBRyxLQUFLLENBQUMsWUFBWSxDQUFDLE1BQU07UUFDckQsOEJBQXNCLEdBQUcsQ0FBQyxFQUMxQixDQUFDO1FBQ0QsR0FBRyxDQUFDLFFBQVEsQ0FBQztZQUNYLElBQUksRUFBRSxPQUFDLENBQUMsWUFBWSxDQUFDLE1BQU07WUFDM0IsT0FBTyxFQUFFLHFDQUFxQyw4QkFBc0IsR0FBRyxDQUFDLEVBQUU7WUFDMUUsSUFBSSxFQUFFLENBQUMsY0FBYyxDQUFDO1NBQ3ZCLENBQUMsQ0FBQztJQUNMLENBQUM7QUFDSCxDQUFDLENBQUMsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9zY2hlbWFzL2NvbnRhY3RzLnNjaGVtYXMudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHsgeiB9IGZyb20gJ3pvZCc7XG5cbi8qKlxuICogU2NoZW1hcyBmb3IgdGhlIGNvbnRhY3QgZGlzY292ZXJ5IHJvdXRlcyAoYC9jb250YWN0cy8uLi5gKS5cbiAqXG4gKiBEaXNjb3ZlcnkgdXBsb2FkcyBvbmx5IG9wYXF1ZSBTSEEtMjU2IGhleCBkaWdlc3RzIOKAlCBuZXZlciByYXcgZW1haWwgb3JcbiAqIHBob25lLiBTZWUgYHV0aWxzL2NvbnRhY3RIYXNoLnRzYCBmb3IgdGhlIGNhbm9uaWNhbCBoYXNoaW5nIHJ1bGVzIHRoZVxuICogY2xpZW50IG11c3QgdXNlLlxuICovXG5cbi8qKiBBIHNpbmdsZSA2NC1jaGFyIGxvd2VyY2FzZSBoZXggU0hBLTI1NiBkaWdlc3QuICovXG5jb25zdCBzaGEyNTZIZXhTY2hlbWEgPSB6XG4gIC5zdHJpbmcoKVxuICAudHJpbSgpXG4gIC50b0xvd2VyQ2FzZSgpXG4gIC5yZWdleCgvXlthLWYwLTldezY0fSQvdSwgJ011c3QgYmUgYSA2NC1jaGFyYWN0ZXIgbG93ZXJjYXNlIFNIQS0yNTYgaGV4IGRpZ2VzdCcpO1xuXG4vKipcbiAqIEhhcmQgdXBwZXIgYm91bmQgb24gaG93IG1hbnkgaGFzaGVkIGlkZW50aWZpZXJzIGEgc2luZ2xlIHJlcXVlc3QgY2FuIGNhcnJ5LlxuICogQ29tYmluZWQgd2l0aCB0aGUgcGVyLXVzZXIgNS1yZXEvbWluIHJhdGUgbGltaXQgdGhpcyBjYXBzIGRpc2NvdmVyeSBhdFxuICogMSwwMDAgaWRlbnRpZmllcnMgcGVyIG1pbnV0ZSBwZXIgdXNlciDigJQgZW5vdWdoIGZvciB0aGUgdHlwaWNhbCBhZGRyZXNzXG4gKiBib29rIHdpdGhvdXQgZW5hYmxpbmcgbWFzcyBlbnVtZXJhdGlvbi5cbiAqL1xuZXhwb3J0IGNvbnN0IE1BWF9IQVNIRVNfUEVSX1JFUVVFU1QgPSAyMDA7XG5cbi8vIFBPU1QgL2NvbnRhY3RzL2Rpc2NvdmVyXG5leHBvcnQgY29uc3QgZGlzY292ZXJDb250YWN0c1NjaGVtYSA9IHpcbiAgLm9iamVjdCh7XG4gICAgaGFzaGVkRW1haWxzOiB6LmFycmF5KHNoYTI1NkhleFNjaGVtYSkubWF4KE1BWF9IQVNIRVNfUEVSX1JFUVVFU1QpLmRlZmF1bHQoW10pLFxuICAgIGhhc2hlZFBob25lczogei5hcnJheShzaGEyNTZIZXhTY2hlbWEpLm1heChNQVhfSEFTSEVTX1BFUl9SRVFVRVNUKS5kZWZhdWx0KFtdKSxcbiAgfSlcbiAgLnN1cGVyUmVmaW5lKCh2YWx1ZSwgY3R4KSA9PiB7XG4gICAgaWYgKHZhbHVlLmhhc2hlZEVtYWlscy5sZW5ndGggPT09IDAgJiYgdmFsdWUuaGFzaGVkUGhvbmVzLmxlbmd0aCA9PT0gMCkge1xuICAgICAgY3R4LmFkZElzc3VlKHtcbiAgICAgICAgY29kZTogei5ab2RJc3N1ZUNvZGUuY3VzdG9tLFxuICAgICAgICBtZXNzYWdlOiAnQXQgbGVhc3Qgb25lIGhhc2hlZEVtYWlsIG9yIGhhc2hlZFBob25lIGlzIHJlcXVpcmVkJyxcbiAgICAgICAgcGF0aDogWydoYXNoZWRFbWFpbHMnXSxcbiAgICAgIH0pO1xuICAgIH1cbiAgICBpZiAoXG4gICAgICB2YWx1ZS5oYXNoZWRFbWFpbHMubGVuZ3RoICsgdmFsdWUuaGFzaGVkUGhvbmVzLmxlbmd0aCA+XG4gICAgICBNQVhfSEFTSEVTX1BFUl9SRVFVRVNUICogMlxuICAgICkge1xuICAgICAgY3R4LmFkZElzc3VlKHtcbiAgICAgICAgY29kZTogei5ab2RJc3N1ZUNvZGUuY3VzdG9tLFxuICAgICAgICBtZXNzYWdlOiBgVG90YWwgaWRlbnRpZmllcnMgbXVzdCBub3QgZXhjZWVkICR7TUFYX0hBU0hFU19QRVJfUkVRVUVTVCAqIDJ9YCxcbiAgICAgICAgcGF0aDogWydoYXNoZWRFbWFpbHMnXSxcbiAgICAgIH0pO1xuICAgIH1cbiAgfSk7XG5cbmV4cG9ydCB0eXBlIERpc2NvdmVyQ29udGFjdHNCb2R5ID0gei5pbmZlcjx0eXBlb2YgZGlzY292ZXJDb250YWN0c1NjaGVtYT47XG4iXSwidmVyc2lvbiI6M30=

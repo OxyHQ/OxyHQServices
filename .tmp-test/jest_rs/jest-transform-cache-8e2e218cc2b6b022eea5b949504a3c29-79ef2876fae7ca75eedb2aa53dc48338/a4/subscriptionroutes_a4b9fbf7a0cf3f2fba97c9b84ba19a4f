@@ -1,0 +1,40 @@
+cbf441ce8e03a7f725f9ac3fa447ce42
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const subscription_controller_1 = require("../controllers/subscription.controller");
+const auth_1 = require("../middleware/auth");
+const asyncHandler_1 = require("../utils/asyncHandler");
+const validate_1 = require("../middleware/validate");
+const subscription_schemas_1 = require("../schemas/subscription.schemas");
+const router = express_1.default.Router();
+// All subscription routes require authentication
+router.use(auth_1.authMiddleware);
+/**
+ * GET /api/subscription/:userId
+ * Get user subscription
+ */
+router.get('/:userId', (0, validate_1.validate)({ params: subscription_schemas_1.subscriptionUserIdParams }), (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    yield (0, subscription_controller_1.getSubscription)(req, res);
+})));
+/**
+ * DELETE /api/subscription/:userId
+ * Cancel user subscription
+ */
+router.delete('/:userId', (0, validate_1.validate)({ params: subscription_schemas_1.subscriptionUserIdParams }), (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    yield (0, subscription_controller_1.cancelSubscription)(req, res);
+})));
+exports.default = router;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcm91dGVzL3N1YnNjcmlwdGlvbi5yb3V0ZXMudHMiLCJtYXBwaW5ncyI6Ijs7Ozs7Ozs7Ozs7Ozs7QUFBQSxzREFBOEI7QUFDOUIsb0ZBQTZGO0FBQzdGLDZDQUFzRTtBQUN0RSx3REFBcUQ7QUFDckQscURBQWtEO0FBQ2xELDBFQUEyRTtBQUUzRSxNQUFNLE1BQU0sR0FBRyxpQkFBTyxDQUFDLE1BQU0sRUFBRSxDQUFDO0FBRWhDLGlEQUFpRDtBQUNqRCxNQUFNLENBQUMsR0FBRyxDQUFDLHFCQUFjLENBQUMsQ0FBQztBQUUzQjs7O0dBR0c7QUFDSCxNQUFNLENBQUMsR0FBRyxDQUFDLFVBQVUsRUFBRSxJQUFBLG1CQUFRLEVBQUMsRUFBRSxNQUFNLEVBQUUsK0NBQXdCLEVBQUUsQ0FBQyxFQUFFLElBQUEsMkJBQVksRUFBQyxDQUFPLEdBQUcsRUFBRSxHQUFHLEVBQUUsRUFBRTtJQUNyRyxNQUFNLElBQUEseUNBQWUsRUFBQyxHQUFrQixFQUFFLEdBQUcsQ0FBQyxDQUFDO0FBQ2pELENBQUMsQ0FBQSxDQUFDLENBQUMsQ0FBQztBQUVKOzs7R0FHRztBQUNILE1BQU0sQ0FBQyxNQUFNLENBQUMsVUFBVSxFQUFFLElBQUEsbUJBQVEsRUFBQyxFQUFFLE1BQU0sRUFBRSwrQ0FBd0IsRUFBRSxDQUFDLEVBQUUsSUFBQSwyQkFBWSxFQUFDLENBQU8sR0FBRyxFQUFFLEdBQUcsRUFBRSxFQUFFO0lBQ3hHLE1BQU0sSUFBQSw0Q0FBa0IsRUFBQyxHQUFrQixFQUFFLEdBQUcsQ0FBQyxDQUFDO0FBQ3BELENBQUMsQ0FBQSxDQUFDLENBQUMsQ0FBQztBQUVKLGtCQUFlLE1BQU0sQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9yb3V0ZXMvc3Vic2NyaXB0aW9uLnJvdXRlcy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgZXhwcmVzcyBmcm9tICdleHByZXNzJztcbmltcG9ydCB7IGdldFN1YnNjcmlwdGlvbiwgY2FuY2VsU3Vic2NyaXB0aW9uIH0gZnJvbSAnLi4vY29udHJvbGxlcnMvc3Vic2NyaXB0aW9uLmNvbnRyb2xsZXInO1xuaW1wb3J0IHsgYXV0aE1pZGRsZXdhcmUsIHR5cGUgQXV0aFJlcXVlc3QgfSBmcm9tICcuLi9taWRkbGV3YXJlL2F1dGgnO1xuaW1wb3J0IHsgYXN5bmNIYW5kbGVyIH0gZnJvbSAnLi4vdXRpbHMvYXN5bmNIYW5kbGVyJztcbmltcG9ydCB7IHZhbGlkYXRlIH0gZnJvbSAnLi4vbWlkZGxld2FyZS92YWxpZGF0ZSc7XG5pbXBvcnQgeyBzdWJzY3JpcHRpb25Vc2VySWRQYXJhbXMgfSBmcm9tICcuLi9zY2hlbWFzL3N1YnNjcmlwdGlvbi5zY2hlbWFzJztcblxuY29uc3Qgcm91dGVyID0gZXhwcmVzcy5Sb3V0ZXIoKTtcblxuLy8gQWxsIHN1YnNjcmlwdGlvbiByb3V0ZXMgcmVxdWlyZSBhdXRoZW50aWNhdGlvblxucm91dGVyLnVzZShhdXRoTWlkZGxld2FyZSk7XG5cbi8qKlxuICogR0VUIC9hcGkvc3Vic2NyaXB0aW9uLzp1c2VySWRcbiAqIEdldCB1c2VyIHN1YnNjcmlwdGlvblxuICovXG5yb3V0ZXIuZ2V0KCcvOnVzZXJJZCcsIHZhbGlkYXRlKHsgcGFyYW1zOiBzdWJzY3JpcHRpb25Vc2VySWRQYXJhbXMgfSksIGFzeW5jSGFuZGxlcihhc3luYyAocmVxLCByZXMpID0+IHtcbiAgYXdhaXQgZ2V0U3Vic2NyaXB0aW9uKHJlcSBhcyBBdXRoUmVxdWVzdCwgcmVzKTtcbn0pKTtcblxuLyoqXG4gKiBERUxFVEUgL2FwaS9zdWJzY3JpcHRpb24vOnVzZXJJZFxuICogQ2FuY2VsIHVzZXIgc3Vic2NyaXB0aW9uXG4gKi9cbnJvdXRlci5kZWxldGUoJy86dXNlcklkJywgdmFsaWRhdGUoeyBwYXJhbXM6IHN1YnNjcmlwdGlvblVzZXJJZFBhcmFtcyB9KSwgYXN5bmNIYW5kbGVyKGFzeW5jIChyZXEsIHJlcykgPT4ge1xuICBhd2FpdCBjYW5jZWxTdWJzY3JpcHRpb24ocmVxIGFzIEF1dGhSZXF1ZXN0LCByZXMpO1xufSkpO1xuXG5leHBvcnQgZGVmYXVsdCByb3V0ZXI7XG5cbiJdLCJ2ZXJzaW9uIjozfQ==

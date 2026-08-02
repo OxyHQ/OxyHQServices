@@ -1,0 +1,18 @@
+b220a85c400bd47b706c1ac26706f26d
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.hostnameOf = hostnameOf;
+/**
+ * The hostname of a URL string, or `undefined` when the input cannot be parsed.
+ * Shared by the resolver's site-name fallback and the cache's `isUsablePreview`
+ * hostname-vs-title check so the parse + failure handling live in one place.
+ */
+function hostnameOf(url) {
+    try {
+        return new URL(url).hostname;
+    }
+    catch (_a) {
+        return undefined;
+    }
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2VydmljZXMvbGlua1ByZXZpZXcvdXJsLnRzIiwibWFwcGluZ3MiOiI7O0FBS0EsZ0NBTUM7QUFYRDs7OztHQUlHO0FBQ0gsU0FBZ0IsVUFBVSxDQUFDLEdBQVc7SUFDcEMsSUFBSSxDQUFDO1FBQ0gsT0FBTyxJQUFJLEdBQUcsQ0FBQyxHQUFHLENBQUMsQ0FBQyxRQUFRLENBQUM7SUFDL0IsQ0FBQztJQUFDLFdBQU0sQ0FBQztRQUNQLE9BQU8sU0FBUyxDQUFDO0lBQ25CLENBQUM7QUFDSCxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3NlcnZpY2VzL2xpbmtQcmV2aWV3L3VybC50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIFRoZSBob3N0bmFtZSBvZiBhIFVSTCBzdHJpbmcsIG9yIGB1bmRlZmluZWRgIHdoZW4gdGhlIGlucHV0IGNhbm5vdCBiZSBwYXJzZWQuXG4gKiBTaGFyZWQgYnkgdGhlIHJlc29sdmVyJ3Mgc2l0ZS1uYW1lIGZhbGxiYWNrIGFuZCB0aGUgY2FjaGUncyBgaXNVc2FibGVQcmV2aWV3YFxuICogaG9zdG5hbWUtdnMtdGl0bGUgY2hlY2sgc28gdGhlIHBhcnNlICsgZmFpbHVyZSBoYW5kbGluZyBsaXZlIGluIG9uZSBwbGFjZS5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIGhvc3RuYW1lT2YodXJsOiBzdHJpbmcpOiBzdHJpbmcgfCB1bmRlZmluZWQge1xuICB0cnkge1xuICAgIHJldHVybiBuZXcgVVJMKHVybCkuaG9zdG5hbWU7XG4gIH0gY2F0Y2gge1xuICAgIHJldHVybiB1bmRlZmluZWQ7XG4gIH1cbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

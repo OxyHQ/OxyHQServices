@@ -1,0 +1,79 @@
+ee8e3c200ff38ab52b8dd6a71432256c
+"use strict";
+/**
+ * Federation media-cache constants.
+ *
+ * These pin down a single, reserved namespace for assets created via the
+ * service-token cache endpoints (`POST /assets/service/cache`,
+ * `DELETE /assets/service/cache/:id`). Backend services (e.g. the Mention
+ * backend, which holds an Oxy service token via `configureServiceAuth`) use
+ * those endpoints to cache federated/remote media to Oxy S3.
+ *
+ * Scoping rationale: a leaked or abused service token must NEVER be able to
+ * read or delete user-owned media. Every asset created through the cache path
+ * is forced onto the `__federation_media_cache__` system owner
+ * (`files.system_owner`, one of `FILE_SYSTEM_OWNERS`) AND tagged with
+ * {@link FEDERATION_MEDIA_CACHE_PURPOSE}. The delete endpoint re-loads the asset
+ * and rejects anything that is not in this namespace, so the blast radius of the
+ * service token is bounded to cache objects only.
+ *
+ * The owner id used to live here as `FEDERATION_CACHE_OWNER_ID`, a sentinel
+ * STRING written into the same column that holds real user ids. It is now a
+ * value of its own `system_owner` column, declared once in `schema/files.ts`.
+ * Its doc comment claimed the sentinel was safe "because the media-privacy block
+ * checks short-circuit it" — that short-circuit was the fail-open guard in
+ * `mediaPrivacyService`, which skipped block and restrict enforcement for ANY id
+ * that was not 24-hex, not just this one. Both are gone.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DISALLOWED_CACHE_MIME_PREFIXES = exports.FEDERATION_CACHE_ALLOWED_MIME_PREFIXES = exports.USER_MEDIA_MAX_BYTES = exports.FEDERATION_CACHE_MAX_BYTES = exports.FEDERATION_MEDIA_CACHE_PURPOSE = void 0;
+exports.isSvgMime = isSvgMime;
+exports.isAllowedCacheMime = isAllowedCacheMime;
+/**
+ * `purpose` tag stamped onto every File created via the cache path. The delete
+ * endpoint requires this value before it will touch an asset.
+ */
+exports.FEDERATION_MEDIA_CACHE_PURPOSE = 'federation-media-cache';
+/**
+ * Maximum size (bytes) accepted by the cache upload endpoint. 256 MiB leaves
+ * head-room for federated video while still bounding S3 write cost and the
+ * work an abused token could trigger.
+ */
+exports.FEDERATION_CACHE_MAX_BYTES = 256 * 1024 * 1024;
+/**
+ * Maximum size (bytes) for service-token user-media uploads (MCP / compose
+ * intent-media). Tighter than the federation cache cap because Mention buffers
+ * the body in memory before streaming to Oxy.
+ */
+exports.USER_MEDIA_MAX_BYTES = 40 * 1024 * 1024;
+/**
+ * Content-type prefixes the cache endpoint will accept. Federated media is
+ * always image / video / audio; anything else (documents, archives,
+ * executables) is rejected to keep the cache a pure media surface.
+ */
+exports.FEDERATION_CACHE_ALLOWED_MIME_PREFIXES = ['image/', 'video/', 'audio/'];
+/**
+ * Content-type prefixes that are explicitly REJECTED even when they match an
+ * allowed prefix. `image/svg+xml` (and any `image/svg*`) is an active document:
+ * an SVG can embed `<script>` and execute in a browsing context, so caching
+ * one and serving it back is a stored-XSS vector. SVG is therefore disallowed
+ * despite matching the `image/` family.
+ */
+exports.DISALLOWED_CACHE_MIME_PREFIXES = ['image/svg'];
+/**
+ * True when `mime` is an SVG content-type (`image/svg+xml`, `image/svg`, …).
+ */
+function isSvgMime(mime) {
+    return exports.DISALLOWED_CACHE_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix));
+}
+/**
+ * True when `mime` is one of the allowed media families AND not an explicitly
+ * disallowed type (e.g. SVG, which is rejected as a stored-XSS vector).
+ */
+function isAllowedCacheMime(mime) {
+    if (isSvgMime(mime)) {
+        return false;
+    }
+    return exports.FEDERATION_CACHE_ALLOWED_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix));
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY29uc3RhbnRzL2ZlZGVyYXRpb25DYWNoZS50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQXdCRzs7O0FBeUNILDhCQUVDO0FBTUQsZ0RBS0M7QUFwREQ7OztHQUdHO0FBQ1UsUUFBQSw4QkFBOEIsR0FBRyx3QkFBd0IsQ0FBQztBQUV2RTs7OztHQUlHO0FBQ1UsUUFBQSwwQkFBMEIsR0FBRyxHQUFHLEdBQUcsSUFBSSxHQUFHLElBQUksQ0FBQztBQUU1RDs7OztHQUlHO0FBQ1UsUUFBQSxvQkFBb0IsR0FBRyxFQUFFLEdBQUcsSUFBSSxHQUFHLElBQUksQ0FBQztBQUVyRDs7OztHQUlHO0FBQ1UsUUFBQSxzQ0FBc0MsR0FBRyxDQUFDLFFBQVEsRUFBRSxRQUFRLEVBQUUsUUFBUSxDQUFVLENBQUM7QUFFOUY7Ozs7OztHQU1HO0FBQ1UsUUFBQSw4QkFBOEIsR0FBRyxDQUFDLFdBQVcsQ0FBVSxDQUFDO0FBRXJFOztHQUVHO0FBQ0gsU0FBZ0IsU0FBUyxDQUFDLElBQVk7SUFDcEMsT0FBTyxzQ0FBOEIsQ0FBQyxJQUFJLENBQUMsQ0FBQyxNQUFNLEVBQUUsRUFBRSxDQUFDLElBQUksQ0FBQyxVQUFVLENBQUMsTUFBTSxDQUFDLENBQUMsQ0FBQztBQUNsRixDQUFDO0FBRUQ7OztHQUdHO0FBQ0gsU0FBZ0Isa0JBQWtCLENBQUMsSUFBWTtJQUM3QyxJQUFJLFNBQVMsQ0FBQyxJQUFJLENBQUMsRUFBRSxDQUFDO1FBQ3BCLE9BQU8sS0FBSyxDQUFDO0lBQ2YsQ0FBQztJQUNELE9BQU8sOENBQXNDLENBQUMsSUFBSSxDQUFDLENBQUMsTUFBTSxFQUFFLEVBQUUsQ0FBQyxJQUFJLENBQUMsVUFBVSxDQUFDLE1BQU0sQ0FBQyxDQUFDLENBQUM7QUFDMUYsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9jb25zdGFudHMvZmVkZXJhdGlvbkNhY2hlLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogRmVkZXJhdGlvbiBtZWRpYS1jYWNoZSBjb25zdGFudHMuXG4gKlxuICogVGhlc2UgcGluIGRvd24gYSBzaW5nbGUsIHJlc2VydmVkIG5hbWVzcGFjZSBmb3IgYXNzZXRzIGNyZWF0ZWQgdmlhIHRoZVxuICogc2VydmljZS10b2tlbiBjYWNoZSBlbmRwb2ludHMgKGBQT1NUIC9hc3NldHMvc2VydmljZS9jYWNoZWAsXG4gKiBgREVMRVRFIC9hc3NldHMvc2VydmljZS9jYWNoZS86aWRgKS4gQmFja2VuZCBzZXJ2aWNlcyAoZS5nLiB0aGUgTWVudGlvblxuICogYmFja2VuZCwgd2hpY2ggaG9sZHMgYW4gT3h5IHNlcnZpY2UgdG9rZW4gdmlhIGBjb25maWd1cmVTZXJ2aWNlQXV0aGApIHVzZVxuICogdGhvc2UgZW5kcG9pbnRzIHRvIGNhY2hlIGZlZGVyYXRlZC9yZW1vdGUgbWVkaWEgdG8gT3h5IFMzLlxuICpcbiAqIFNjb3BpbmcgcmF0aW9uYWxlOiBhIGxlYWtlZCBvciBhYnVzZWQgc2VydmljZSB0b2tlbiBtdXN0IE5FVkVSIGJlIGFibGUgdG9cbiAqIHJlYWQgb3IgZGVsZXRlIHVzZXItb3duZWQgbWVkaWEuIEV2ZXJ5IGFzc2V0IGNyZWF0ZWQgdGhyb3VnaCB0aGUgY2FjaGUgcGF0aFxuICogaXMgZm9yY2VkIG9udG8gdGhlIGBfX2ZlZGVyYXRpb25fbWVkaWFfY2FjaGVfX2Agc3lzdGVtIG93bmVyXG4gKiAoYGZpbGVzLnN5c3RlbV9vd25lcmAsIG9uZSBvZiBgRklMRV9TWVNURU1fT1dORVJTYCkgQU5EIHRhZ2dlZCB3aXRoXG4gKiB7QGxpbmsgRkVERVJBVElPTl9NRURJQV9DQUNIRV9QVVJQT1NFfS4gVGhlIGRlbGV0ZSBlbmRwb2ludCByZS1sb2FkcyB0aGUgYXNzZXRcbiAqIGFuZCByZWplY3RzIGFueXRoaW5nIHRoYXQgaXMgbm90IGluIHRoaXMgbmFtZXNwYWNlLCBzbyB0aGUgYmxhc3QgcmFkaXVzIG9mIHRoZVxuICogc2VydmljZSB0b2tlbiBpcyBib3VuZGVkIHRvIGNhY2hlIG9iamVjdHMgb25seS5cbiAqXG4gKiBUaGUgb3duZXIgaWQgdXNlZCB0byBsaXZlIGhlcmUgYXMgYEZFREVSQVRJT05fQ0FDSEVfT1dORVJfSURgLCBhIHNlbnRpbmVsXG4gKiBTVFJJTkcgd3JpdHRlbiBpbnRvIHRoZSBzYW1lIGNvbHVtbiB0aGF0IGhvbGRzIHJlYWwgdXNlciBpZHMuIEl0IGlzIG5vdyBhXG4gKiB2YWx1ZSBvZiBpdHMgb3duIGBzeXN0ZW1fb3duZXJgIGNvbHVtbiwgZGVjbGFyZWQgb25jZSBpbiBgc2NoZW1hL2ZpbGVzLnRzYC5cbiAqIEl0cyBkb2MgY29tbWVudCBjbGFpbWVkIHRoZSBzZW50aW5lbCB3YXMgc2FmZSBcImJlY2F1c2UgdGhlIG1lZGlhLXByaXZhY3kgYmxvY2tcbiAqIGNoZWNrcyBzaG9ydC1jaXJjdWl0IGl0XCIg4oCUIHRoYXQgc2hvcnQtY2lyY3VpdCB3YXMgdGhlIGZhaWwtb3BlbiBndWFyZCBpblxuICogYG1lZGlhUHJpdmFjeVNlcnZpY2VgLCB3aGljaCBza2lwcGVkIGJsb2NrIGFuZCByZXN0cmljdCBlbmZvcmNlbWVudCBmb3IgQU5ZIGlkXG4gKiB0aGF0IHdhcyBub3QgMjQtaGV4LCBub3QganVzdCB0aGlzIG9uZS4gQm90aCBhcmUgZ29uZS5cbiAqL1xuXG4vKipcbiAqIGBwdXJwb3NlYCB0YWcgc3RhbXBlZCBvbnRvIGV2ZXJ5IEZpbGUgY3JlYXRlZCB2aWEgdGhlIGNhY2hlIHBhdGguIFRoZSBkZWxldGVcbiAqIGVuZHBvaW50IHJlcXVpcmVzIHRoaXMgdmFsdWUgYmVmb3JlIGl0IHdpbGwgdG91Y2ggYW4gYXNzZXQuXG4gKi9cbmV4cG9ydCBjb25zdCBGRURFUkFUSU9OX01FRElBX0NBQ0hFX1BVUlBPU0UgPSAnZmVkZXJhdGlvbi1tZWRpYS1jYWNoZSc7XG5cbi8qKlxuICogTWF4aW11bSBzaXplIChieXRlcykgYWNjZXB0ZWQgYnkgdGhlIGNhY2hlIHVwbG9hZCBlbmRwb2ludC4gMjU2IE1pQiBsZWF2ZXNcbiAqIGhlYWQtcm9vbSBmb3IgZmVkZXJhdGVkIHZpZGVvIHdoaWxlIHN0aWxsIGJvdW5kaW5nIFMzIHdyaXRlIGNvc3QgYW5kIHRoZVxuICogd29yayBhbiBhYnVzZWQgdG9rZW4gY291bGQgdHJpZ2dlci5cbiAqL1xuZXhwb3J0IGNvbnN0IEZFREVSQVRJT05fQ0FDSEVfTUFYX0JZVEVTID0gMjU2ICogMTAyNCAqIDEwMjQ7XG5cbi8qKlxuICogTWF4aW11bSBzaXplIChieXRlcykgZm9yIHNlcnZpY2UtdG9rZW4gdXNlci1tZWRpYSB1cGxvYWRzIChNQ1AgLyBjb21wb3NlXG4gKiBpbnRlbnQtbWVkaWEpLiBUaWdodGVyIHRoYW4gdGhlIGZlZGVyYXRpb24gY2FjaGUgY2FwIGJlY2F1c2UgTWVudGlvbiBidWZmZXJzXG4gKiB0aGUgYm9keSBpbiBtZW1vcnkgYmVmb3JlIHN0cmVhbWluZyB0byBPeHkuXG4gKi9cbmV4cG9ydCBjb25zdCBVU0VSX01FRElBX01BWF9CWVRFUyA9IDQwICogMTAyNCAqIDEwMjQ7XG5cbi8qKlxuICogQ29udGVudC10eXBlIHByZWZpeGVzIHRoZSBjYWNoZSBlbmRwb2ludCB3aWxsIGFjY2VwdC4gRmVkZXJhdGVkIG1lZGlhIGlzXG4gKiBhbHdheXMgaW1hZ2UgLyB2aWRlbyAvIGF1ZGlvOyBhbnl0aGluZyBlbHNlIChkb2N1bWVudHMsIGFyY2hpdmVzLFxuICogZXhlY3V0YWJsZXMpIGlzIHJlamVjdGVkIHRvIGtlZXAgdGhlIGNhY2hlIGEgcHVyZSBtZWRpYSBzdXJmYWNlLlxuICovXG5leHBvcnQgY29uc3QgRkVERVJBVElPTl9DQUNIRV9BTExPV0VEX01JTUVfUFJFRklYRVMgPSBbJ2ltYWdlLycsICd2aWRlby8nLCAnYXVkaW8vJ10gYXMgY29uc3Q7XG5cbi8qKlxuICogQ29udGVudC10eXBlIHByZWZpeGVzIHRoYXQgYXJlIGV4cGxpY2l0bHkgUkVKRUNURUQgZXZlbiB3aGVuIHRoZXkgbWF0Y2ggYW5cbiAqIGFsbG93ZWQgcHJlZml4LiBgaW1hZ2Uvc3ZnK3htbGAgKGFuZCBhbnkgYGltYWdlL3N2ZypgKSBpcyBhbiBhY3RpdmUgZG9jdW1lbnQ6XG4gKiBhbiBTVkcgY2FuIGVtYmVkIGA8c2NyaXB0PmAgYW5kIGV4ZWN1dGUgaW4gYSBicm93c2luZyBjb250ZXh0LCBzbyBjYWNoaW5nXG4gKiBvbmUgYW5kIHNlcnZpbmcgaXQgYmFjayBpcyBhIHN0b3JlZC1YU1MgdmVjdG9yLiBTVkcgaXMgdGhlcmVmb3JlIGRpc2FsbG93ZWRcbiAqIGRlc3BpdGUgbWF0Y2hpbmcgdGhlIGBpbWFnZS9gIGZhbWlseS5cbiAqL1xuZXhwb3J0IGNvbnN0IERJU0FMTE9XRURfQ0FDSEVfTUlNRV9QUkVGSVhFUyA9IFsnaW1hZ2Uvc3ZnJ10gYXMgY29uc3Q7XG5cbi8qKlxuICogVHJ1ZSB3aGVuIGBtaW1lYCBpcyBhbiBTVkcgY29udGVudC10eXBlIChgaW1hZ2Uvc3ZnK3htbGAsIGBpbWFnZS9zdmdgLCDigKYpLlxuICovXG5leHBvcnQgZnVuY3Rpb24gaXNTdmdNaW1lKG1pbWU6IHN0cmluZyk6IGJvb2xlYW4ge1xuICByZXR1cm4gRElTQUxMT1dFRF9DQUNIRV9NSU1FX1BSRUZJWEVTLnNvbWUoKHByZWZpeCkgPT4gbWltZS5zdGFydHNXaXRoKHByZWZpeCkpO1xufVxuXG4vKipcbiAqIFRydWUgd2hlbiBgbWltZWAgaXMgb25lIG9mIHRoZSBhbGxvd2VkIG1lZGlhIGZhbWlsaWVzIEFORCBub3QgYW4gZXhwbGljaXRseVxuICogZGlzYWxsb3dlZCB0eXBlIChlLmcuIFNWRywgd2hpY2ggaXMgcmVqZWN0ZWQgYXMgYSBzdG9yZWQtWFNTIHZlY3RvcikuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBpc0FsbG93ZWRDYWNoZU1pbWUobWltZTogc3RyaW5nKTogYm9vbGVhbiB7XG4gIGlmIChpc1N2Z01pbWUobWltZSkpIHtcbiAgICByZXR1cm4gZmFsc2U7XG4gIH1cbiAgcmV0dXJuIEZFREVSQVRJT05fQ0FDSEVfQUxMT1dFRF9NSU1FX1BSRUZJWEVTLnNvbWUoKHByZWZpeCkgPT4gbWltZS5zdGFydHNXaXRoKHByZWZpeCkpO1xufVxuIl0sInZlcnNpb24iOjN9

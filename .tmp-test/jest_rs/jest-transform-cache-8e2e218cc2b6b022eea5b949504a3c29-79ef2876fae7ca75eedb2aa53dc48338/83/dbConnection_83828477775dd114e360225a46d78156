@@ -1,0 +1,110 @@
+bc932292122a1252d05a66aaa8e0b84b
+"use strict";
+/**
+ * Database readiness — the startup gate and its synchronous companion.
+ *
+ * This file used to wrap `mongoose.connection.readyState` and the driver's
+ * `connected`/`error` events. Neither has a Postgres counterpart, and the
+ * difference is not cosmetic:
+ *
+ *  - Mongoose's driver retries server selection internally and emits
+ *    `connected` whenever it eventually succeeds, so "wait for the connection"
+ *    was a matter of subscribing to an event.
+ *  - `postgres.js` has no such event. `connectPostgres()` issues ONE `select 1`
+ *    and either resolves or throws — a single attempt. On ECS the task can
+ *    start before RDS finishes a failover or a security group settles, so a
+ *    single attempt would turn a few seconds of unavailability into a crash
+ *    loop.
+ *
+ * {@link waitForDatabaseConnection} therefore RETRIES until the deadline, which
+ * is what preserves the old behaviour: `server.ts` does not call `listen` until
+ * the database has actually answered, and gives up with a thrown error after
+ * the timeout exactly as the Mongo version did.
+ *
+ * The probe is a real round trip in both functions that claim liveness. A pool
+ * object existing proves nothing — that is the failure the `/health` endpoint
+ * used to have, where `readyState === 1` reported "connected" against a server
+ * that was refusing work.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isDatabaseConnected = isDatabaseConnected;
+exports.isDatabaseReachable = isDatabaseReachable;
+exports.waitForDatabaseConnection = waitForDatabaseConnection;
+const postgres_1 = require("../config/postgres");
+const logger_1 = require("./logger");
+/** How long to wait between connection attempts inside the deadline. */
+const RETRY_INTERVAL_MS = 1000;
+/**
+ * Whether a connection pool is open.
+ *
+ * SYNCHRONOUS, and therefore NOT a liveness check — a pool can be open while
+ * the server is unreachable. It answers "has startup published a handle yet?",
+ * which is the question a background job asks before deciding whether it can
+ * issue a query at all. Anything that must know the database ANSWERS uses
+ * {@link isDatabaseReachable}.
+ */
+function isDatabaseConnected() {
+    return (0, postgres_1.isPostgresConnected)();
+}
+/**
+ * Whether the database answers a query RIGHT NOW.
+ *
+ * Round-trips `select 1` through the application's own pool, so it reports on
+ * the same connections real requests use. Never throws — an unreachable
+ * database is this function's RESULT, not an exception for the caller.
+ */
+function isDatabaseReachable() {
+    return (0, postgres_1.checkPostgresHealth)();
+}
+/**
+ * Open the connection pool, retrying until it answers or `timeout` elapses.
+ *
+ * Idempotent (`connectPostgres` returns the existing handle), so calling it
+ * when already connected costs one `select 1` at most.
+ *
+ * @param timeout - Milliseconds to keep retrying before giving up.
+ * @throws The last connection error once the deadline passes — startup must
+ *   fail loudly rather than serve traffic against a database that never came
+ *   up.
+ */
+function waitForDatabaseConnection() {
+    return __awaiter(this, arguments, void 0, function* (timeout = 30000) {
+        const deadline = Date.now() + timeout;
+        let lastError;
+        let attempts = 0;
+        while (Date.now() < deadline) {
+            attempts += 1;
+            try {
+                yield (0, postgres_1.connectPostgres)();
+                if (attempts > 1) {
+                    logger_1.logger.info('PostgreSQL connection established after retrying', { attempts });
+                }
+                return;
+            }
+            catch (error) {
+                lastError = error;
+                logger_1.logger.warn('PostgreSQL not ready yet, retrying', {
+                    attempts,
+                    msRemaining: Math.max(0, deadline - Date.now()),
+                    error: error instanceof Error ? error.message : String(error),
+                });
+                const msRemaining = deadline - Date.now();
+                if (msRemaining <= 0)
+                    break;
+                yield new Promise((resolve) => setTimeout(resolve, Math.min(RETRY_INTERVAL_MS, msRemaining)));
+            }
+        }
+        throw new Error(`PostgreSQL connection timeout after ${timeout}ms (${attempts} attempt(s)): ` +
+            (lastError instanceof Error ? lastError.message : String(lastError)));
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvZGJDb25uZWN0aW9uLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQXlCRzs7Ozs7Ozs7Ozs7QUFpQkgsa0RBRUM7QUFTRCxrREFFQztBQWFELDhEQThCQztBQXZFRCxpREFBK0Y7QUFDL0YscUNBQWtDO0FBRWxDLHdFQUF3RTtBQUN4RSxNQUFNLGlCQUFpQixHQUFHLElBQUssQ0FBQztBQUVoQzs7Ozs7Ozs7R0FRRztBQUNILFNBQWdCLG1CQUFtQjtJQUNqQyxPQUFPLElBQUEsOEJBQW1CLEdBQUUsQ0FBQztBQUMvQixDQUFDO0FBRUQ7Ozs7OztHQU1HO0FBQ0gsU0FBZ0IsbUJBQW1CO0lBQ2pDLE9BQU8sSUFBQSw4QkFBbUIsR0FBRSxDQUFDO0FBQy9CLENBQUM7QUFFRDs7Ozs7Ozs7OztHQVVHO0FBQ0gsU0FBc0IseUJBQXlCO3lEQUFDLE9BQU8sR0FBRyxLQUFNO1FBQzlELE1BQU0sUUFBUSxHQUFHLElBQUksQ0FBQyxHQUFHLEVBQUUsR0FBRyxPQUFPLENBQUM7UUFDdEMsSUFBSSxTQUFrQixDQUFDO1FBQ3ZCLElBQUksUUFBUSxHQUFHLENBQUMsQ0FBQztRQUVqQixPQUFPLElBQUksQ0FBQyxHQUFHLEVBQUUsR0FBRyxRQUFRLEVBQUUsQ0FBQztZQUM3QixRQUFRLElBQUksQ0FBQyxDQUFDO1lBQ2QsSUFBSSxDQUFDO2dCQUNILE1BQU0sSUFBQSwwQkFBZSxHQUFFLENBQUM7Z0JBQ3hCLElBQUksUUFBUSxHQUFHLENBQUMsRUFBRSxDQUFDO29CQUNqQixlQUFNLENBQUMsSUFBSSxDQUFDLGtEQUFrRCxFQUFFLEVBQUUsUUFBUSxFQUFFLENBQUMsQ0FBQztnQkFDaEYsQ0FBQztnQkFDRCxPQUFPO1lBQ1QsQ0FBQztZQUFDLE9BQU8sS0FBSyxFQUFFLENBQUM7Z0JBQ2YsU0FBUyxHQUFHLEtBQUssQ0FBQztnQkFDbEIsZUFBTSxDQUFDLElBQUksQ0FBQyxvQ0FBb0MsRUFBRTtvQkFDaEQsUUFBUTtvQkFDUixXQUFXLEVBQUUsSUFBSSxDQUFDLEdBQUcsQ0FBQyxDQUFDLEVBQUUsUUFBUSxHQUFHLElBQUksQ0FBQyxHQUFHLEVBQUUsQ0FBQztvQkFDL0MsS0FBSyxFQUFFLEtBQUssWUFBWSxLQUFLLENBQUMsQ0FBQyxDQUFDLEtBQUssQ0FBQyxPQUFPLENBQUMsQ0FBQyxDQUFDLE1BQU0sQ0FBQyxLQUFLLENBQUM7aUJBQzlELENBQUMsQ0FBQztnQkFDSCxNQUFNLFdBQVcsR0FBRyxRQUFRLEdBQUcsSUFBSSxDQUFDLEdBQUcsRUFBRSxDQUFDO2dCQUMxQyxJQUFJLFdBQVcsSUFBSSxDQUFDO29CQUFFLE1BQU07Z0JBQzVCLE1BQU0sSUFBSSxPQUFPLENBQUMsQ0FBQyxPQUFPLEVBQUUsRUFBRSxDQUFDLFVBQVUsQ0FBQyxPQUFPLEVBQUUsSUFBSSxDQUFDLEdBQUcsQ0FBQyxpQkFBaUIsRUFBRSxXQUFXLENBQUMsQ0FBQyxDQUFDLENBQUM7WUFDaEcsQ0FBQztRQUNILENBQUM7UUFFRCxNQUFNLElBQUksS0FBSyxDQUNiLHVDQUF1QyxPQUFPLE9BQU8sUUFBUSxnQkFBZ0I7WUFDN0UsQ0FBQyxTQUFTLFlBQVksS0FBSyxDQUFDLENBQUMsQ0FBQyxTQUFTLENBQUMsT0FBTyxDQUFDLENBQUMsQ0FBQyxNQUFNLENBQUMsU0FBUyxDQUFDLENBQUMsQ0FDckUsQ0FBQztJQUNKLENBQUM7Q0FBQSIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy91dGlscy9kYkNvbm5lY3Rpb24udHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBEYXRhYmFzZSByZWFkaW5lc3Mg4oCUIHRoZSBzdGFydHVwIGdhdGUgYW5kIGl0cyBzeW5jaHJvbm91cyBjb21wYW5pb24uXG4gKlxuICogVGhpcyBmaWxlIHVzZWQgdG8gd3JhcCBgbW9uZ29vc2UuY29ubmVjdGlvbi5yZWFkeVN0YXRlYCBhbmQgdGhlIGRyaXZlcidzXG4gKiBgY29ubmVjdGVkYC9gZXJyb3JgIGV2ZW50cy4gTmVpdGhlciBoYXMgYSBQb3N0Z3JlcyBjb3VudGVycGFydCwgYW5kIHRoZVxuICogZGlmZmVyZW5jZSBpcyBub3QgY29zbWV0aWM6XG4gKlxuICogIC0gTW9uZ29vc2UncyBkcml2ZXIgcmV0cmllcyBzZXJ2ZXIgc2VsZWN0aW9uIGludGVybmFsbHkgYW5kIGVtaXRzXG4gKiAgICBgY29ubmVjdGVkYCB3aGVuZXZlciBpdCBldmVudHVhbGx5IHN1Y2NlZWRzLCBzbyBcIndhaXQgZm9yIHRoZSBjb25uZWN0aW9uXCJcbiAqICAgIHdhcyBhIG1hdHRlciBvZiBzdWJzY3JpYmluZyB0byBhbiBldmVudC5cbiAqICAtIGBwb3N0Z3Jlcy5qc2AgaGFzIG5vIHN1Y2ggZXZlbnQuIGBjb25uZWN0UG9zdGdyZXMoKWAgaXNzdWVzIE9ORSBgc2VsZWN0IDFgXG4gKiAgICBhbmQgZWl0aGVyIHJlc29sdmVzIG9yIHRocm93cyDigJQgYSBzaW5nbGUgYXR0ZW1wdC4gT24gRUNTIHRoZSB0YXNrIGNhblxuICogICAgc3RhcnQgYmVmb3JlIFJEUyBmaW5pc2hlcyBhIGZhaWxvdmVyIG9yIGEgc2VjdXJpdHkgZ3JvdXAgc2V0dGxlcywgc28gYVxuICogICAgc2luZ2xlIGF0dGVtcHQgd291bGQgdHVybiBhIGZldyBzZWNvbmRzIG9mIHVuYXZhaWxhYmlsaXR5IGludG8gYSBjcmFzaFxuICogICAgbG9vcC5cbiAqXG4gKiB7QGxpbmsgd2FpdEZvckRhdGFiYXNlQ29ubmVjdGlvbn0gdGhlcmVmb3JlIFJFVFJJRVMgdW50aWwgdGhlIGRlYWRsaW5lLCB3aGljaFxuICogaXMgd2hhdCBwcmVzZXJ2ZXMgdGhlIG9sZCBiZWhhdmlvdXI6IGBzZXJ2ZXIudHNgIGRvZXMgbm90IGNhbGwgYGxpc3RlbmAgdW50aWxcbiAqIHRoZSBkYXRhYmFzZSBoYXMgYWN0dWFsbHkgYW5zd2VyZWQsIGFuZCBnaXZlcyB1cCB3aXRoIGEgdGhyb3duIGVycm9yIGFmdGVyXG4gKiB0aGUgdGltZW91dCBleGFjdGx5IGFzIHRoZSBNb25nbyB2ZXJzaW9uIGRpZC5cbiAqXG4gKiBUaGUgcHJvYmUgaXMgYSByZWFsIHJvdW5kIHRyaXAgaW4gYm90aCBmdW5jdGlvbnMgdGhhdCBjbGFpbSBsaXZlbmVzcy4gQSBwb29sXG4gKiBvYmplY3QgZXhpc3RpbmcgcHJvdmVzIG5vdGhpbmcg4oCUIHRoYXQgaXMgdGhlIGZhaWx1cmUgdGhlIGAvaGVhbHRoYCBlbmRwb2ludFxuICogdXNlZCB0byBoYXZlLCB3aGVyZSBgcmVhZHlTdGF0ZSA9PT0gMWAgcmVwb3J0ZWQgXCJjb25uZWN0ZWRcIiBhZ2FpbnN0IGEgc2VydmVyXG4gKiB0aGF0IHdhcyByZWZ1c2luZyB3b3JrLlxuICovXG5cbmltcG9ydCB7IGNoZWNrUG9zdGdyZXNIZWFsdGgsIGNvbm5lY3RQb3N0Z3JlcywgaXNQb3N0Z3Jlc0Nvbm5lY3RlZCB9IGZyb20gJy4uL2NvbmZpZy9wb3N0Z3Jlcyc7XG5pbXBvcnQgeyBsb2dnZXIgfSBmcm9tICcuL2xvZ2dlcic7XG5cbi8qKiBIb3cgbG9uZyB0byB3YWl0IGJldHdlZW4gY29ubmVjdGlvbiBhdHRlbXB0cyBpbnNpZGUgdGhlIGRlYWRsaW5lLiAqL1xuY29uc3QgUkVUUllfSU5URVJWQUxfTVMgPSAxXzAwMDtcblxuLyoqXG4gKiBXaGV0aGVyIGEgY29ubmVjdGlvbiBwb29sIGlzIG9wZW4uXG4gKlxuICogU1lOQ0hST05PVVMsIGFuZCB0aGVyZWZvcmUgTk9UIGEgbGl2ZW5lc3MgY2hlY2sg4oCUIGEgcG9vbCBjYW4gYmUgb3BlbiB3aGlsZVxuICogdGhlIHNlcnZlciBpcyB1bnJlYWNoYWJsZS4gSXQgYW5zd2VycyBcImhhcyBzdGFydHVwIHB1Ymxpc2hlZCBhIGhhbmRsZSB5ZXQ/XCIsXG4gKiB3aGljaCBpcyB0aGUgcXVlc3Rpb24gYSBiYWNrZ3JvdW5kIGpvYiBhc2tzIGJlZm9yZSBkZWNpZGluZyB3aGV0aGVyIGl0IGNhblxuICogaXNzdWUgYSBxdWVyeSBhdCBhbGwuIEFueXRoaW5nIHRoYXQgbXVzdCBrbm93IHRoZSBkYXRhYmFzZSBBTlNXRVJTIHVzZXNcbiAqIHtAbGluayBpc0RhdGFiYXNlUmVhY2hhYmxlfS5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIGlzRGF0YWJhc2VDb25uZWN0ZWQoKTogYm9vbGVhbiB7XG4gIHJldHVybiBpc1Bvc3RncmVzQ29ubmVjdGVkKCk7XG59XG5cbi8qKlxuICogV2hldGhlciB0aGUgZGF0YWJhc2UgYW5zd2VycyBhIHF1ZXJ5IFJJR0hUIE5PVy5cbiAqXG4gKiBSb3VuZC10cmlwcyBgc2VsZWN0IDFgIHRocm91Z2ggdGhlIGFwcGxpY2F0aW9uJ3Mgb3duIHBvb2wsIHNvIGl0IHJlcG9ydHMgb25cbiAqIHRoZSBzYW1lIGNvbm5lY3Rpb25zIHJlYWwgcmVxdWVzdHMgdXNlLiBOZXZlciB0aHJvd3Mg4oCUIGFuIHVucmVhY2hhYmxlXG4gKiBkYXRhYmFzZSBpcyB0aGlzIGZ1bmN0aW9uJ3MgUkVTVUxULCBub3QgYW4gZXhjZXB0aW9uIGZvciB0aGUgY2FsbGVyLlxuICovXG5leHBvcnQgZnVuY3Rpb24gaXNEYXRhYmFzZVJlYWNoYWJsZSgpOiBQcm9taXNlPGJvb2xlYW4+IHtcbiAgcmV0dXJuIGNoZWNrUG9zdGdyZXNIZWFsdGgoKTtcbn1cblxuLyoqXG4gKiBPcGVuIHRoZSBjb25uZWN0aW9uIHBvb2wsIHJldHJ5aW5nIHVudGlsIGl0IGFuc3dlcnMgb3IgYHRpbWVvdXRgIGVsYXBzZXMuXG4gKlxuICogSWRlbXBvdGVudCAoYGNvbm5lY3RQb3N0Z3Jlc2AgcmV0dXJucyB0aGUgZXhpc3RpbmcgaGFuZGxlKSwgc28gY2FsbGluZyBpdFxuICogd2hlbiBhbHJlYWR5IGNvbm5lY3RlZCBjb3N0cyBvbmUgYHNlbGVjdCAxYCBhdCBtb3N0LlxuICpcbiAqIEBwYXJhbSB0aW1lb3V0IC0gTWlsbGlzZWNvbmRzIHRvIGtlZXAgcmV0cnlpbmcgYmVmb3JlIGdpdmluZyB1cC5cbiAqIEB0aHJvd3MgVGhlIGxhc3QgY29ubmVjdGlvbiBlcnJvciBvbmNlIHRoZSBkZWFkbGluZSBwYXNzZXMg4oCUIHN0YXJ0dXAgbXVzdFxuICogICBmYWlsIGxvdWRseSByYXRoZXIgdGhhbiBzZXJ2ZSB0cmFmZmljIGFnYWluc3QgYSBkYXRhYmFzZSB0aGF0IG5ldmVyIGNhbWVcbiAqICAgdXAuXG4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiB3YWl0Rm9yRGF0YWJhc2VDb25uZWN0aW9uKHRpbWVvdXQgPSAzMF8wMDApOiBQcm9taXNlPHZvaWQ+IHtcbiAgY29uc3QgZGVhZGxpbmUgPSBEYXRlLm5vdygpICsgdGltZW91dDtcbiAgbGV0IGxhc3RFcnJvcjogdW5rbm93bjtcbiAgbGV0IGF0dGVtcHRzID0gMDtcblxuICB3aGlsZSAoRGF0ZS5ub3coKSA8IGRlYWRsaW5lKSB7XG4gICAgYXR0ZW1wdHMgKz0gMTtcbiAgICB0cnkge1xuICAgICAgYXdhaXQgY29ubmVjdFBvc3RncmVzKCk7XG4gICAgICBpZiAoYXR0ZW1wdHMgPiAxKSB7XG4gICAgICAgIGxvZ2dlci5pbmZvKCdQb3N0Z3JlU1FMIGNvbm5lY3Rpb24gZXN0YWJsaXNoZWQgYWZ0ZXIgcmV0cnlpbmcnLCB7IGF0dGVtcHRzIH0pO1xuICAgICAgfVxuICAgICAgcmV0dXJuO1xuICAgIH0gY2F0Y2ggKGVycm9yKSB7XG4gICAgICBsYXN0RXJyb3IgPSBlcnJvcjtcbiAgICAgIGxvZ2dlci53YXJuKCdQb3N0Z3JlU1FMIG5vdCByZWFkeSB5ZXQsIHJldHJ5aW5nJywge1xuICAgICAgICBhdHRlbXB0cyxcbiAgICAgICAgbXNSZW1haW5pbmc6IE1hdGgubWF4KDAsIGRlYWRsaW5lIC0gRGF0ZS5ub3coKSksXG4gICAgICAgIGVycm9yOiBlcnJvciBpbnN0YW5jZW9mIEVycm9yID8gZXJyb3IubWVzc2FnZSA6IFN0cmluZyhlcnJvciksXG4gICAgICB9KTtcbiAgICAgIGNvbnN0IG1zUmVtYWluaW5nID0gZGVhZGxpbmUgLSBEYXRlLm5vdygpO1xuICAgICAgaWYgKG1zUmVtYWluaW5nIDw9IDApIGJyZWFrO1xuICAgICAgYXdhaXQgbmV3IFByb21pc2UoKHJlc29sdmUpID0+IHNldFRpbWVvdXQocmVzb2x2ZSwgTWF0aC5taW4oUkVUUllfSU5URVJWQUxfTVMsIG1zUmVtYWluaW5nKSkpO1xuICAgIH1cbiAgfVxuXG4gIHRocm93IG5ldyBFcnJvcihcbiAgICBgUG9zdGdyZVNRTCBjb25uZWN0aW9uIHRpbWVvdXQgYWZ0ZXIgJHt0aW1lb3V0fW1zICgke2F0dGVtcHRzfSBhdHRlbXB0KHMpKTogYCArXG4gICAgKGxhc3RFcnJvciBpbnN0YW5jZW9mIEVycm9yID8gbGFzdEVycm9yLm1lc3NhZ2UgOiBTdHJpbmcobGFzdEVycm9yKSlcbiAgKTtcbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

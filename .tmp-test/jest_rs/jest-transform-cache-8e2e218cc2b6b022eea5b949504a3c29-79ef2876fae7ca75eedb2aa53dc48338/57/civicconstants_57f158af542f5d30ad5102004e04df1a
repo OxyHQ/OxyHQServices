@@ -1,0 +1,171 @@
+576920342f78ff0369b6943a7d08fdef
+"use strict";
+/**
+ * Civic / Commons constants (Fase 2 — anti-gaming layer; Fase 3 — personhood).
+ *
+ * SINGLE SOURCE OF TRUTH for the tunables of the real-life attestation flow,
+ * (Fase 2 Part B) the validator jury, and (Fase 3) the proof-of-personhood
+ * web-of-trust. Nothing in the civic services may hardcode these — import them
+ * here so the anti-sybil knobs stay in one auditable place.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CREDENTIAL_BASE_TYPE = exports.CREDENTIAL_COLLECTION = exports.PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS = exports.PERSONHOOD_AUDIT_BATCH = exports.PERSONHOOD_AUDIT_SAMPLE_RATE = exports.PERSONHOOD_AUDIT_ACTION = exports.SYBIL_VOUCHER_SCAN_CAP = exports.SYBIL_VOUCH_RING_WEIGHT = exports.SYBIL_SHARED_FINGERPRINT_WEIGHT = exports.SYBIL_PENALTY_CAP = exports.PERSONHOOD_BIOMETRIC_COMPONENT = exports.PERSONHOOD_REAL_LIFE_COMPONENT = exports.PERSONHOOD_VOUCH_COMPONENT = exports.PERSONHOOD_REAL_LIFE_TARGET = exports.PERSONHOOD_VOUCH_TARGET = exports.VOUCH_TIER_WEIGHT = exports.PERSONHOOD_VOUCH_MAX_STAKE = exports.PERSONHOOD_VOUCH_MIN_STAKE = exports.PERSONHOOD_VOUCH_DEFAULT_STAKE = exports.PERSONHOOD_VOUCH_EXCLUSION_HOPS = exports.MIN_VOUCHER_PERSONHOOD = exports.PERSONHOOD_THRESHOLD = exports.VALIDATION_SWEEP_INTERVAL_MS = exports.VALIDATOR_POOL_CAP = exports.AFFINITY_MAX_COVOTES = exports.VALIDATION_TTL_MS = exports.VALIDATION_EXCLUSION_HOPS = exports.VALIDATOR_SUPERMAJORITY = exports.VALIDATOR_QUORUM = exports.VALIDATOR_COUNT = exports.VALIDATOR_POOL_TIERS = exports.REAL_LIFE_EXCLUSION_HOPS = exports.REAL_LIFE_NONCE_MAX_AGE_MS = void 0;
+exports.vouchWeightForTier = vouchWeightForTier;
+/* -------------------------------------------------------------------------- */
+/*  Real-life counterparty attestation (Part A)                               */
+/* -------------------------------------------------------------------------- */
+/**
+ * Max age of a real-life attestation QR/nonce. A counterparty's signed
+ * submission is rejected once `record.exp` (epoch ms) is in the past; the QR's
+ * `exp` should be no further out than this from when it was shown.
+ */
+exports.REAL_LIFE_NONCE_MAX_AGE_MS = 10 * 60 * 1000; // 10 minutes
+/**
+ * Graph-exclusion hop radius for the real-life flow: the counterparty must not
+ * be within this many social-graph hops of the subject (1 = direct neighbour).
+ */
+exports.REAL_LIFE_EXCLUSION_HOPS = 1;
+/* -------------------------------------------------------------------------- */
+/*  Validator jury (Part B)                                                   */
+/* -------------------------------------------------------------------------- */
+/** Trust tiers eligible to serve on a validation jury (never `restricted`/`new`). */
+exports.VALIDATOR_POOL_TIERS = ['trusted', 'high_trust', 'verified'];
+/** Number of validators selected per request. */
+exports.VALIDATOR_COUNT = 5;
+/** Minimum votes before a request can be tallied (normal value). */
+exports.VALIDATOR_QUORUM = 3;
+/** Votes required on the winning side for a HIGH-VALUE request (supermajority). */
+exports.VALIDATOR_SUPERMAJORITY = 4;
+/** A juror must not be within this many social-graph hops of the subject. */
+exports.VALIDATION_EXCLUSION_HOPS = 2;
+/** How long a validation request stays open for votes before it expires. */
+exports.VALIDATION_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours
+/**
+ * Max prior co-votes a candidate juror may share with an already-selected juror
+ * before being skipped (collusion-cluster throttle).
+ */
+exports.AFFINITY_MAX_COVOTES = 3;
+/**
+ * Cap on the candidate pool scanned per selection — bounds the work and the
+ * `candidateSnapshot` size while staying far larger than `VALIDATOR_COUNT`.
+ */
+exports.VALIDATOR_POOL_CAP = 500;
+/** How often the background sweep re-tallies / expires stale validation requests. */
+exports.VALIDATION_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+/* -------------------------------------------------------------------------- */
+/*  Proof-of-personhood web-of-trust (Fase 3)                                 */
+/* -------------------------------------------------------------------------- */
+//
+// Personhood = "is this a real, unique human", derived from a web-of-trust of
+// SIGNED, staked vouches + real-life attestations + an on-device biometric
+// signal, MINUS sybil penalties. It is NEVER a single third-party KYC, and a
+// user NEVER self-awards: a voucher signs a `personhood_vouch` record and the
+// `personhood.service` decides the outcome. The derived score is computed by the
+// pure `personhoodDerive.personhoodScore` from these tunables.
+/**
+ * θ (theta) — the personhood SCORE threshold (0..1) at or above which a user is
+ * considered a real person (`isRealPerson`). Reaching it deliberately requires
+ * MORE than one signal class (e.g. vouches alone fall short of θ): see
+ * `personhoodDerive` for the worked combinations.
+ */
+exports.PERSONHOOD_THRESHOLD = 0.6;
+/**
+ * τ (tau) — the minimum personhood score a VOUCHER must themselves have before
+ * their vouch counts. A real person can only be vouched for by other (already)
+ * real people — the genesis of the network is the hand-picked seed verifiers
+ * (`User.isSeedVerifier`), who are treated as score = 1.
+ */
+exports.MIN_VOUCHER_PERSONHOOD = 0.6;
+/** Graph-exclusion hop radius for a vouch: the voucher must not be within this
+ * many social-graph hops of the subject (1 = direct neighbour) — a sock-puppet
+ * cannot vouch for the account it controls. */
+exports.PERSONHOOD_VOUCH_EXCLUSION_HOPS = 1;
+/** Default stake (in reputation points of skin-in-the-game) recorded for a vouch
+ * when the signed record does not specify one. */
+exports.PERSONHOOD_VOUCH_DEFAULT_STAKE = 10;
+/** Inclusive bounds for a caller-supplied vouch stake. */
+exports.PERSONHOOD_VOUCH_MIN_STAKE = 1;
+exports.PERSONHOOD_VOUCH_MAX_STAKE = 100;
+/**
+ * Per-trust-tier weight a single vouch contributes to the subject's weighted
+ * vouch sum. A higher-tier voucher's word is worth more; `restricted` is worth
+ * nothing (and is below τ anyway). These are summed across the subject's active
+ * vouches to form `weightedVouchScore`, the vouch axis of the personhood score.
+ */
+exports.VOUCH_TIER_WEIGHT = {
+    restricted: 0,
+    new: 0.25,
+    trusted: 0.45,
+    high_trust: 0.7,
+    verified: 1.0,
+};
+/** The weight a voucher contributes for a given trust tier (0 when unmapped). */
+function vouchWeightForTier(tier) {
+    if (tier && tier in exports.VOUCH_TIER_WEIGHT) {
+        return exports.VOUCH_TIER_WEIGHT[tier];
+    }
+    return 0;
+}
+/** The weighted-vouch sum that alone saturates the vouch signal to 1.0 (≈ three
+ * `verified` vouchers, or more lower-tier ones). */
+exports.PERSONHOOD_VOUCH_TARGET = 3.0;
+/** The count of real-life attestations that alone saturates the real-life
+ * signal to 1.0. */
+exports.PERSONHOOD_REAL_LIFE_TARGET = 2;
+// Component weights of the personhood evidence score. They sum to 1.0 so a user
+// with EVERY signal maxed reaches exactly 1.0 before the sybil penalty. No
+// single component reaches θ on its own — personhood requires a blend.
+/** Weight of the staked web-of-trust vouch signal. */
+exports.PERSONHOOD_VOUCH_COMPONENT = 0.5;
+/** Weight of the real-life counterparty-attestation signal. */
+exports.PERSONHOOD_REAL_LIFE_COMPONENT = 0.35;
+/** Weight of the on-device biometric-bound signal. */
+exports.PERSONHOOD_BIOMETRIC_COMPONENT = 0.15;
+/* -------------------------------------------------------------------------- */
+/*  Sybil heuristics (Fase 3)                                                 */
+/* -------------------------------------------------------------------------- */
+/** Hard ceiling on the computed sybil penalty (1.0 = the score is fully zeroed). */
+exports.SYBIL_PENALTY_CAP = 1.0;
+/** Weight of the shared-device/IP cluster signal in the sybil penalty: the
+ * fraction of a subject's vouchers that share a device fingerprint or IP with
+ * the subject or with one another. */
+exports.SYBIL_SHARED_FINGERPRINT_WEIGHT = 0.6;
+/** Weight of the vouch-ring density signal in the sybil penalty: reciprocal
+ * (A↔B) and short-cycle (A→B→C→A) vouch edges around the subject. */
+exports.SYBIL_VOUCH_RING_WEIGHT = 0.6;
+/** Cap on the number of a subject's active vouchers scanned by the sybil
+ * heuristics — bounds the pairwise/neighbourhood work. */
+exports.SYBIL_VOUCHER_SCAN_CAP = 50;
+/* -------------------------------------------------------------------------- */
+/*  Random personhood audits (Fase 3)                                         */
+/* -------------------------------------------------------------------------- */
+/**
+ * The `ValidationRequest.actionType` used for a random personhood audit. It
+ * REUSES the Fase 2 jury (`selectValidators`/`tallyAndResolve`); a juror votes
+ * `valid` (= confirmed real person) or `invalid` (= fake). It is NOT a
+ * reputation rule — nothing is ever awarded under this action key directly.
+ */
+exports.PERSONHOOD_AUDIT_ACTION = 'personhood_audit';
+/** Fraction of `isRealPerson` users sampled for audit on each sweep. */
+exports.PERSONHOOD_AUDIT_SAMPLE_RATE = 0.05;
+/** Max number of audits opened per sweep (bounds jury-selection work). */
+exports.PERSONHOOD_AUDIT_BATCH = 25;
+/** How often the background sweep opens new random personhood audits. */
+exports.PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+/* -------------------------------------------------------------------------- */
+/*  Verifiable Credentials (Fase 4)                                           */
+/* -------------------------------------------------------------------------- */
+/**
+ * AtProto-style collection (NSID) for verifiable credentials. The signed
+ * `credential` record carries this as its `collection`; the per-credential
+ * `rkey` (chosen by the issuer client) MUST be unique per credential so multiple
+ * credentials from the same issuer do not collide on the chain's monotonic /
+ * last-writer-wins key.
+ */
+exports.CREDENTIAL_COLLECTION = 'app.oxy.credential';
+/**
+ * The W3C base VC type that MUST be present in every credential's `types` array.
+ * At least one specific type (e.g. `EmploymentCredential`) is required alongside.
+ */
+exports.CREDENTIAL_BASE_TYPE = 'VerifiableCredential';
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvY2l2aWMuY29uc3RhbnRzLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7OztHQU9HOzs7QUFpSEgsZ0RBS0M7QUFsSEQsZ0ZBQWdGO0FBQ2hGLGdGQUFnRjtBQUNoRixnRkFBZ0Y7QUFFaEY7Ozs7R0FJRztBQUNVLFFBQUEsMEJBQTBCLEdBQUcsRUFBRSxHQUFHLEVBQUUsR0FBRyxJQUFJLENBQUMsQ0FBQyxhQUFhO0FBRXZFOzs7R0FHRztBQUNVLFFBQUEsd0JBQXdCLEdBQUcsQ0FBQyxDQUFDO0FBRTFDLGdGQUFnRjtBQUNoRixnRkFBZ0Y7QUFDaEYsZ0ZBQWdGO0FBRWhGLHFGQUFxRjtBQUN4RSxRQUFBLG9CQUFvQixHQUFHLENBQUMsU0FBUyxFQUFFLFlBQVksRUFBRSxVQUFVLENBQVUsQ0FBQztBQUVuRixpREFBaUQ7QUFDcEMsUUFBQSxlQUFlLEdBQUcsQ0FBQyxDQUFDO0FBRWpDLG9FQUFvRTtBQUN2RCxRQUFBLGdCQUFnQixHQUFHLENBQUMsQ0FBQztBQUVsQyxtRkFBbUY7QUFDdEUsUUFBQSx1QkFBdUIsR0FBRyxDQUFDLENBQUM7QUFFekMsNkVBQTZFO0FBQ2hFLFFBQUEseUJBQXlCLEdBQUcsQ0FBQyxDQUFDO0FBRTNDLDRFQUE0RTtBQUMvRCxRQUFBLGlCQUFpQixHQUFHLEVBQUUsR0FBRyxFQUFFLEdBQUcsRUFBRSxHQUFHLElBQUksQ0FBQyxDQUFDLFdBQVc7QUFFakU7OztHQUdHO0FBQ1UsUUFBQSxvQkFBb0IsR0FBRyxDQUFDLENBQUM7QUFFdEM7OztHQUdHO0FBQ1UsUUFBQSxrQkFBa0IsR0FBRyxHQUFHLENBQUM7QUFFdEMscUZBQXFGO0FBQ3hFLFFBQUEsNEJBQTRCLEdBQUcsQ0FBQyxHQUFHLEVBQUUsR0FBRyxJQUFJLENBQUMsQ0FBQyxZQUFZO0FBRXZFLGdGQUFnRjtBQUNoRixnRkFBZ0Y7QUFDaEYsZ0ZBQWdGO0FBQ2hGLEVBQUU7QUFDRiw4RUFBOEU7QUFDOUUsMkVBQTJFO0FBQzNFLDZFQUE2RTtBQUM3RSw4RUFBOEU7QUFDOUUsaUZBQWlGO0FBQ2pGLCtEQUErRDtBQUUvRDs7Ozs7R0FLRztBQUNVLFFBQUEsb0JBQW9CLEdBQUcsR0FBRyxDQUFDO0FBRXhDOzs7OztHQUtHO0FBQ1UsUUFBQSxzQkFBc0IsR0FBRyxHQUFHLENBQUM7QUFFMUM7OytDQUUrQztBQUNsQyxRQUFBLCtCQUErQixHQUFHLENBQUMsQ0FBQztBQUVqRDtrREFDa0Q7QUFDckMsUUFBQSw4QkFBOEIsR0FBRyxFQUFFLENBQUM7QUFFakQsMERBQTBEO0FBQzdDLFFBQUEsMEJBQTBCLEdBQUcsQ0FBQyxDQUFDO0FBQy9CLFFBQUEsMEJBQTBCLEdBQUcsR0FBRyxDQUFDO0FBRTlDOzs7OztHQUtHO0FBQ1UsUUFBQSxpQkFBaUIsR0FBd0M7SUFDcEUsVUFBVSxFQUFFLENBQUM7SUFDYixHQUFHLEVBQUUsSUFBSTtJQUNULE9BQU8sRUFBRSxJQUFJO0lBQ2IsVUFBVSxFQUFFLEdBQUc7SUFDZixRQUFRLEVBQUUsR0FBRztDQUNMLENBQUM7QUFFWCxpRkFBaUY7QUFDakYsU0FBZ0Isa0JBQWtCLENBQUMsSUFBb0M7SUFDckUsSUFBSSxJQUFJLElBQUksSUFBSSxJQUFJLHlCQUFpQixFQUFFLENBQUM7UUFDdEMsT0FBTyx5QkFBaUIsQ0FBQyxJQUFpQixDQUFDLENBQUM7SUFDOUMsQ0FBQztJQUNELE9BQU8sQ0FBQyxDQUFDO0FBQ1gsQ0FBQztBQUVEO29EQUNvRDtBQUN2QyxRQUFBLHVCQUF1QixHQUFHLEdBQUcsQ0FBQztBQUUzQztvQkFDb0I7QUFDUCxRQUFBLDJCQUEyQixHQUFHLENBQUMsQ0FBQztBQUU3QyxnRkFBZ0Y7QUFDaEYsMkVBQTJFO0FBQzNFLHVFQUF1RTtBQUN2RSxzREFBc0Q7QUFDekMsUUFBQSwwQkFBMEIsR0FBRyxHQUFHLENBQUM7QUFDOUMsK0RBQStEO0FBQ2xELFFBQUEsOEJBQThCLEdBQUcsSUFBSSxDQUFDO0FBQ25ELHNEQUFzRDtBQUN6QyxRQUFBLDhCQUE4QixHQUFHLElBQUksQ0FBQztBQUVuRCxnRkFBZ0Y7QUFDaEYsZ0ZBQWdGO0FBQ2hGLGdGQUFnRjtBQUVoRixvRkFBb0Y7QUFDdkUsUUFBQSxpQkFBaUIsR0FBRyxHQUFHLENBQUM7QUFFckM7O3NDQUVzQztBQUN6QixRQUFBLCtCQUErQixHQUFHLEdBQUcsQ0FBQztBQUVuRDtxRUFDcUU7QUFDeEQsUUFBQSx1QkFBdUIsR0FBRyxHQUFHLENBQUM7QUFFM0M7MERBQzBEO0FBQzdDLFFBQUEsc0JBQXNCLEdBQUcsRUFBRSxDQUFDO0FBRXpDLGdGQUFnRjtBQUNoRixnRkFBZ0Y7QUFDaEYsZ0ZBQWdGO0FBRWhGOzs7OztHQUtHO0FBQ1UsUUFBQSx1QkFBdUIsR0FBRyxrQkFBa0IsQ0FBQztBQUUxRCx3RUFBd0U7QUFDM0QsUUFBQSw0QkFBNEIsR0FBRyxJQUFJLENBQUM7QUFFakQsMEVBQTBFO0FBQzdELFFBQUEsc0JBQXNCLEdBQUcsRUFBRSxDQUFDO0FBRXpDLHlFQUF5RTtBQUM1RCxRQUFBLGtDQUFrQyxHQUFHLENBQUMsR0FBRyxFQUFFLEdBQUcsRUFBRSxHQUFHLElBQUksQ0FBQyxDQUFDLFVBQVU7QUFFaEYsZ0ZBQWdGO0FBQ2hGLGdGQUFnRjtBQUNoRixnRkFBZ0Y7QUFFaEY7Ozs7OztHQU1HO0FBQ1UsUUFBQSxxQkFBcUIsR0FBRyxvQkFBb0IsQ0FBQztBQUUxRDs7O0dBR0c7QUFDVSxRQUFBLG9CQUFvQixHQUFHLHNCQUFzQixDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3V0aWxzL2NpdmljLmNvbnN0YW50cy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIENpdmljIC8gQ29tbW9ucyBjb25zdGFudHMgKEZhc2UgMiDigJQgYW50aS1nYW1pbmcgbGF5ZXI7IEZhc2UgMyDigJQgcGVyc29uaG9vZCkuXG4gKlxuICogU0lOR0xFIFNPVVJDRSBPRiBUUlVUSCBmb3IgdGhlIHR1bmFibGVzIG9mIHRoZSByZWFsLWxpZmUgYXR0ZXN0YXRpb24gZmxvdyxcbiAqIChGYXNlIDIgUGFydCBCKSB0aGUgdmFsaWRhdG9yIGp1cnksIGFuZCAoRmFzZSAzKSB0aGUgcHJvb2Ytb2YtcGVyc29uaG9vZFxuICogd2ViLW9mLXRydXN0LiBOb3RoaW5nIGluIHRoZSBjaXZpYyBzZXJ2aWNlcyBtYXkgaGFyZGNvZGUgdGhlc2Ug4oCUIGltcG9ydCB0aGVtXG4gKiBoZXJlIHNvIHRoZSBhbnRpLXN5YmlsIGtub2JzIHN0YXkgaW4gb25lIGF1ZGl0YWJsZSBwbGFjZS5cbiAqL1xuXG5pbXBvcnQgdHlwZSB7IFRydXN0VGllciB9IGZyb20gJ0BveHlocS9jb250cmFjdHMnO1xuXG4vKiAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSAqL1xuLyogIFJlYWwtbGlmZSBjb3VudGVycGFydHkgYXR0ZXN0YXRpb24gKFBhcnQgQSkgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKi9cbi8qIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tICovXG5cbi8qKlxuICogTWF4IGFnZSBvZiBhIHJlYWwtbGlmZSBhdHRlc3RhdGlvbiBRUi9ub25jZS4gQSBjb3VudGVycGFydHkncyBzaWduZWRcbiAqIHN1Ym1pc3Npb24gaXMgcmVqZWN0ZWQgb25jZSBgcmVjb3JkLmV4cGAgKGVwb2NoIG1zKSBpcyBpbiB0aGUgcGFzdDsgdGhlIFFSJ3NcbiAqIGBleHBgIHNob3VsZCBiZSBubyBmdXJ0aGVyIG91dCB0aGFuIHRoaXMgZnJvbSB3aGVuIGl0IHdhcyBzaG93bi5cbiAqL1xuZXhwb3J0IGNvbnN0IFJFQUxfTElGRV9OT05DRV9NQVhfQUdFX01TID0gMTAgKiA2MCAqIDEwMDA7IC8vIDEwIG1pbnV0ZXNcblxuLyoqXG4gKiBHcmFwaC1leGNsdXNpb24gaG9wIHJhZGl1cyBmb3IgdGhlIHJlYWwtbGlmZSBmbG93OiB0aGUgY291bnRlcnBhcnR5IG11c3Qgbm90XG4gKiBiZSB3aXRoaW4gdGhpcyBtYW55IHNvY2lhbC1ncmFwaCBob3BzIG9mIHRoZSBzdWJqZWN0ICgxID0gZGlyZWN0IG5laWdoYm91cikuXG4gKi9cbmV4cG9ydCBjb25zdCBSRUFMX0xJRkVfRVhDTFVTSU9OX0hPUFMgPSAxO1xuXG4vKiAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSAqL1xuLyogIFZhbGlkYXRvciBqdXJ5IChQYXJ0IEIpICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgKi9cbi8qIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tICovXG5cbi8qKiBUcnVzdCB0aWVycyBlbGlnaWJsZSB0byBzZXJ2ZSBvbiBhIHZhbGlkYXRpb24ganVyeSAobmV2ZXIgYHJlc3RyaWN0ZWRgL2BuZXdgKS4gKi9cbmV4cG9ydCBjb25zdCBWQUxJREFUT1JfUE9PTF9USUVSUyA9IFsndHJ1c3RlZCcsICdoaWdoX3RydXN0JywgJ3ZlcmlmaWVkJ10gYXMgY29uc3Q7XG5cbi8qKiBOdW1iZXIgb2YgdmFsaWRhdG9ycyBzZWxlY3RlZCBwZXIgcmVxdWVzdC4gKi9cbmV4cG9ydCBjb25zdCBWQUxJREFUT1JfQ09VTlQgPSA1O1xuXG4vKiogTWluaW11bSB2b3RlcyBiZWZvcmUgYSByZXF1ZXN0IGNhbiBiZSB0YWxsaWVkIChub3JtYWwgdmFsdWUpLiAqL1xuZXhwb3J0IGNvbnN0IFZBTElEQVRPUl9RVU9SVU0gPSAzO1xuXG4vKiogVm90ZXMgcmVxdWlyZWQgb24gdGhlIHdpbm5pbmcgc2lkZSBmb3IgYSBISUdILVZBTFVFIHJlcXVlc3QgKHN1cGVybWFqb3JpdHkpLiAqL1xuZXhwb3J0IGNvbnN0IFZBTElEQVRPUl9TVVBFUk1BSk9SSVRZID0gNDtcblxuLyoqIEEganVyb3IgbXVzdCBub3QgYmUgd2l0aGluIHRoaXMgbWFueSBzb2NpYWwtZ3JhcGggaG9wcyBvZiB0aGUgc3ViamVjdC4gKi9cbmV4cG9ydCBjb25zdCBWQUxJREFUSU9OX0VYQ0xVU0lPTl9IT1BTID0gMjtcblxuLyoqIEhvdyBsb25nIGEgdmFsaWRhdGlvbiByZXF1ZXN0IHN0YXlzIG9wZW4gZm9yIHZvdGVzIGJlZm9yZSBpdCBleHBpcmVzLiAqL1xuZXhwb3J0IGNvbnN0IFZBTElEQVRJT05fVFRMX01TID0gNDggKiA2MCAqIDYwICogMTAwMDsgLy8gNDggaG91cnNcblxuLyoqXG4gKiBNYXggcHJpb3IgY28tdm90ZXMgYSBjYW5kaWRhdGUganVyb3IgbWF5IHNoYXJlIHdpdGggYW4gYWxyZWFkeS1zZWxlY3RlZCBqdXJvclxuICogYmVmb3JlIGJlaW5nIHNraXBwZWQgKGNvbGx1c2lvbi1jbHVzdGVyIHRocm90dGxlKS5cbiAqL1xuZXhwb3J0IGNvbnN0IEFGRklOSVRZX01BWF9DT1ZPVEVTID0gMztcblxuLyoqXG4gKiBDYXAgb24gdGhlIGNhbmRpZGF0ZSBwb29sIHNjYW5uZWQgcGVyIHNlbGVjdGlvbiDigJQgYm91bmRzIHRoZSB3b3JrIGFuZCB0aGVcbiAqIGBjYW5kaWRhdGVTbmFwc2hvdGAgc2l6ZSB3aGlsZSBzdGF5aW5nIGZhciBsYXJnZXIgdGhhbiBgVkFMSURBVE9SX0NPVU5UYC5cbiAqL1xuZXhwb3J0IGNvbnN0IFZBTElEQVRPUl9QT09MX0NBUCA9IDUwMDtcblxuLyoqIEhvdyBvZnRlbiB0aGUgYmFja2dyb3VuZCBzd2VlcCByZS10YWxsaWVzIC8gZXhwaXJlcyBzdGFsZSB2YWxpZGF0aW9uIHJlcXVlc3RzLiAqL1xuZXhwb3J0IGNvbnN0IFZBTElEQVRJT05fU1dFRVBfSU5URVJWQUxfTVMgPSA1ICogNjAgKiAxMDAwOyAvLyA1IG1pbnV0ZXNcblxuLyogLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gKi9cbi8qICBQcm9vZi1vZi1wZXJzb25ob29kIHdlYi1vZi10cnVzdCAoRmFzZSAzKSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICovXG4vKiAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSAqL1xuLy9cbi8vIFBlcnNvbmhvb2QgPSBcImlzIHRoaXMgYSByZWFsLCB1bmlxdWUgaHVtYW5cIiwgZGVyaXZlZCBmcm9tIGEgd2ViLW9mLXRydXN0IG9mXG4vLyBTSUdORUQsIHN0YWtlZCB2b3VjaGVzICsgcmVhbC1saWZlIGF0dGVzdGF0aW9ucyArIGFuIG9uLWRldmljZSBiaW9tZXRyaWNcbi8vIHNpZ25hbCwgTUlOVVMgc3liaWwgcGVuYWx0aWVzLiBJdCBpcyBORVZFUiBhIHNpbmdsZSB0aGlyZC1wYXJ0eSBLWUMsIGFuZCBhXG4vLyB1c2VyIE5FVkVSIHNlbGYtYXdhcmRzOiBhIHZvdWNoZXIgc2lnbnMgYSBgcGVyc29uaG9vZF92b3VjaGAgcmVjb3JkIGFuZCB0aGVcbi8vIGBwZXJzb25ob29kLnNlcnZpY2VgIGRlY2lkZXMgdGhlIG91dGNvbWUuIFRoZSBkZXJpdmVkIHNjb3JlIGlzIGNvbXB1dGVkIGJ5IHRoZVxuLy8gcHVyZSBgcGVyc29uaG9vZERlcml2ZS5wZXJzb25ob29kU2NvcmVgIGZyb20gdGhlc2UgdHVuYWJsZXMuXG5cbi8qKlxuICogzrggKHRoZXRhKSDigJQgdGhlIHBlcnNvbmhvb2QgU0NPUkUgdGhyZXNob2xkICgwLi4xKSBhdCBvciBhYm92ZSB3aGljaCBhIHVzZXIgaXNcbiAqIGNvbnNpZGVyZWQgYSByZWFsIHBlcnNvbiAoYGlzUmVhbFBlcnNvbmApLiBSZWFjaGluZyBpdCBkZWxpYmVyYXRlbHkgcmVxdWlyZXNcbiAqIE1PUkUgdGhhbiBvbmUgc2lnbmFsIGNsYXNzIChlLmcuIHZvdWNoZXMgYWxvbmUgZmFsbCBzaG9ydCBvZiDOuCk6IHNlZVxuICogYHBlcnNvbmhvb2REZXJpdmVgIGZvciB0aGUgd29ya2VkIGNvbWJpbmF0aW9ucy5cbiAqL1xuZXhwb3J0IGNvbnN0IFBFUlNPTkhPT0RfVEhSRVNIT0xEID0gMC42O1xuXG4vKipcbiAqIM+EICh0YXUpIOKAlCB0aGUgbWluaW11bSBwZXJzb25ob29kIHNjb3JlIGEgVk9VQ0hFUiBtdXN0IHRoZW1zZWx2ZXMgaGF2ZSBiZWZvcmVcbiAqIHRoZWlyIHZvdWNoIGNvdW50cy4gQSByZWFsIHBlcnNvbiBjYW4gb25seSBiZSB2b3VjaGVkIGZvciBieSBvdGhlciAoYWxyZWFkeSlcbiAqIHJlYWwgcGVvcGxlIOKAlCB0aGUgZ2VuZXNpcyBvZiB0aGUgbmV0d29yayBpcyB0aGUgaGFuZC1waWNrZWQgc2VlZCB2ZXJpZmllcnNcbiAqIChgVXNlci5pc1NlZWRWZXJpZmllcmApLCB3aG8gYXJlIHRyZWF0ZWQgYXMgc2NvcmUgPSAxLlxuICovXG5leHBvcnQgY29uc3QgTUlOX1ZPVUNIRVJfUEVSU09OSE9PRCA9IDAuNjtcblxuLyoqIEdyYXBoLWV4Y2x1c2lvbiBob3AgcmFkaXVzIGZvciBhIHZvdWNoOiB0aGUgdm91Y2hlciBtdXN0IG5vdCBiZSB3aXRoaW4gdGhpc1xuICogbWFueSBzb2NpYWwtZ3JhcGggaG9wcyBvZiB0aGUgc3ViamVjdCAoMSA9IGRpcmVjdCBuZWlnaGJvdXIpIOKAlCBhIHNvY2stcHVwcGV0XG4gKiBjYW5ub3Qgdm91Y2ggZm9yIHRoZSBhY2NvdW50IGl0IGNvbnRyb2xzLiAqL1xuZXhwb3J0IGNvbnN0IFBFUlNPTkhPT0RfVk9VQ0hfRVhDTFVTSU9OX0hPUFMgPSAxO1xuXG4vKiogRGVmYXVsdCBzdGFrZSAoaW4gcmVwdXRhdGlvbiBwb2ludHMgb2Ygc2tpbi1pbi10aGUtZ2FtZSkgcmVjb3JkZWQgZm9yIGEgdm91Y2hcbiAqIHdoZW4gdGhlIHNpZ25lZCByZWNvcmQgZG9lcyBub3Qgc3BlY2lmeSBvbmUuICovXG5leHBvcnQgY29uc3QgUEVSU09OSE9PRF9WT1VDSF9ERUZBVUxUX1NUQUtFID0gMTA7XG5cbi8qKiBJbmNsdXNpdmUgYm91bmRzIGZvciBhIGNhbGxlci1zdXBwbGllZCB2b3VjaCBzdGFrZS4gKi9cbmV4cG9ydCBjb25zdCBQRVJTT05IT09EX1ZPVUNIX01JTl9TVEFLRSA9IDE7XG5leHBvcnQgY29uc3QgUEVSU09OSE9PRF9WT1VDSF9NQVhfU1RBS0UgPSAxMDA7XG5cbi8qKlxuICogUGVyLXRydXN0LXRpZXIgd2VpZ2h0IGEgc2luZ2xlIHZvdWNoIGNvbnRyaWJ1dGVzIHRvIHRoZSBzdWJqZWN0J3Mgd2VpZ2h0ZWRcbiAqIHZvdWNoIHN1bS4gQSBoaWdoZXItdGllciB2b3VjaGVyJ3Mgd29yZCBpcyB3b3J0aCBtb3JlOyBgcmVzdHJpY3RlZGAgaXMgd29ydGhcbiAqIG5vdGhpbmcgKGFuZCBpcyBiZWxvdyDPhCBhbnl3YXkpLiBUaGVzZSBhcmUgc3VtbWVkIGFjcm9zcyB0aGUgc3ViamVjdCdzIGFjdGl2ZVxuICogdm91Y2hlcyB0byBmb3JtIGB3ZWlnaHRlZFZvdWNoU2NvcmVgLCB0aGUgdm91Y2ggYXhpcyBvZiB0aGUgcGVyc29uaG9vZCBzY29yZS5cbiAqL1xuZXhwb3J0IGNvbnN0IFZPVUNIX1RJRVJfV0VJR0hUOiBSZWFkb25seTxSZWNvcmQ8VHJ1c3RUaWVyLCBudW1iZXI+PiA9IHtcbiAgcmVzdHJpY3RlZDogMCxcbiAgbmV3OiAwLjI1LFxuICB0cnVzdGVkOiAwLjQ1LFxuICBoaWdoX3RydXN0OiAwLjcsXG4gIHZlcmlmaWVkOiAxLjAsXG59IGFzIGNvbnN0O1xuXG4vKiogVGhlIHdlaWdodCBhIHZvdWNoZXIgY29udHJpYnV0ZXMgZm9yIGEgZ2l2ZW4gdHJ1c3QgdGllciAoMCB3aGVuIHVubWFwcGVkKS4gKi9cbmV4cG9ydCBmdW5jdGlvbiB2b3VjaFdlaWdodEZvclRpZXIodGllcjogVHJ1c3RUaWVyIHwgc3RyaW5nIHwgdW5kZWZpbmVkKTogbnVtYmVyIHtcbiAgaWYgKHRpZXIgJiYgdGllciBpbiBWT1VDSF9USUVSX1dFSUdIVCkge1xuICAgIHJldHVybiBWT1VDSF9USUVSX1dFSUdIVFt0aWVyIGFzIFRydXN0VGllcl07XG4gIH1cbiAgcmV0dXJuIDA7XG59XG5cbi8qKiBUaGUgd2VpZ2h0ZWQtdm91Y2ggc3VtIHRoYXQgYWxvbmUgc2F0dXJhdGVzIHRoZSB2b3VjaCBzaWduYWwgdG8gMS4wICjiiYggdGhyZWVcbiAqIGB2ZXJpZmllZGAgdm91Y2hlcnMsIG9yIG1vcmUgbG93ZXItdGllciBvbmVzKS4gKi9cbmV4cG9ydCBjb25zdCBQRVJTT05IT09EX1ZPVUNIX1RBUkdFVCA9IDMuMDtcblxuLyoqIFRoZSBjb3VudCBvZiByZWFsLWxpZmUgYXR0ZXN0YXRpb25zIHRoYXQgYWxvbmUgc2F0dXJhdGVzIHRoZSByZWFsLWxpZmVcbiAqIHNpZ25hbCB0byAxLjAuICovXG5leHBvcnQgY29uc3QgUEVSU09OSE9PRF9SRUFMX0xJRkVfVEFSR0VUID0gMjtcblxuLy8gQ29tcG9uZW50IHdlaWdodHMgb2YgdGhlIHBlcnNvbmhvb2QgZXZpZGVuY2Ugc2NvcmUuIFRoZXkgc3VtIHRvIDEuMCBzbyBhIHVzZXJcbi8vIHdpdGggRVZFUlkgc2lnbmFsIG1heGVkIHJlYWNoZXMgZXhhY3RseSAxLjAgYmVmb3JlIHRoZSBzeWJpbCBwZW5hbHR5LiBOb1xuLy8gc2luZ2xlIGNvbXBvbmVudCByZWFjaGVzIM64IG9uIGl0cyBvd24g4oCUIHBlcnNvbmhvb2QgcmVxdWlyZXMgYSBibGVuZC5cbi8qKiBXZWlnaHQgb2YgdGhlIHN0YWtlZCB3ZWItb2YtdHJ1c3Qgdm91Y2ggc2lnbmFsLiAqL1xuZXhwb3J0IGNvbnN0IFBFUlNPTkhPT0RfVk9VQ0hfQ09NUE9ORU5UID0gMC41O1xuLyoqIFdlaWdodCBvZiB0aGUgcmVhbC1saWZlIGNvdW50ZXJwYXJ0eS1hdHRlc3RhdGlvbiBzaWduYWwuICovXG5leHBvcnQgY29uc3QgUEVSU09OSE9PRF9SRUFMX0xJRkVfQ09NUE9ORU5UID0gMC4zNTtcbi8qKiBXZWlnaHQgb2YgdGhlIG9uLWRldmljZSBiaW9tZXRyaWMtYm91bmQgc2lnbmFsLiAqL1xuZXhwb3J0IGNvbnN0IFBFUlNPTkhPT0RfQklPTUVUUklDX0NPTVBPTkVOVCA9IDAuMTU7XG5cbi8qIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tICovXG4vKiAgU3liaWwgaGV1cmlzdGljcyAoRmFzZSAzKSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAqL1xuLyogLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gKi9cblxuLyoqIEhhcmQgY2VpbGluZyBvbiB0aGUgY29tcHV0ZWQgc3liaWwgcGVuYWx0eSAoMS4wID0gdGhlIHNjb3JlIGlzIGZ1bGx5IHplcm9lZCkuICovXG5leHBvcnQgY29uc3QgU1lCSUxfUEVOQUxUWV9DQVAgPSAxLjA7XG5cbi8qKiBXZWlnaHQgb2YgdGhlIHNoYXJlZC1kZXZpY2UvSVAgY2x1c3RlciBzaWduYWwgaW4gdGhlIHN5YmlsIHBlbmFsdHk6IHRoZVxuICogZnJhY3Rpb24gb2YgYSBzdWJqZWN0J3Mgdm91Y2hlcnMgdGhhdCBzaGFyZSBhIGRldmljZSBmaW5nZXJwcmludCBvciBJUCB3aXRoXG4gKiB0aGUgc3ViamVjdCBvciB3aXRoIG9uZSBhbm90aGVyLiAqL1xuZXhwb3J0IGNvbnN0IFNZQklMX1NIQVJFRF9GSU5HRVJQUklOVF9XRUlHSFQgPSAwLjY7XG5cbi8qKiBXZWlnaHQgb2YgdGhlIHZvdWNoLXJpbmcgZGVuc2l0eSBzaWduYWwgaW4gdGhlIHN5YmlsIHBlbmFsdHk6IHJlY2lwcm9jYWxcbiAqIChB4oaUQikgYW5kIHNob3J0LWN5Y2xlIChB4oaSQuKGkkPihpJBKSB2b3VjaCBlZGdlcyBhcm91bmQgdGhlIHN1YmplY3QuICovXG5leHBvcnQgY29uc3QgU1lCSUxfVk9VQ0hfUklOR19XRUlHSFQgPSAwLjY7XG5cbi8qKiBDYXAgb24gdGhlIG51bWJlciBvZiBhIHN1YmplY3QncyBhY3RpdmUgdm91Y2hlcnMgc2Nhbm5lZCBieSB0aGUgc3liaWxcbiAqIGhldXJpc3RpY3Mg4oCUIGJvdW5kcyB0aGUgcGFpcndpc2UvbmVpZ2hib3VyaG9vZCB3b3JrLiAqL1xuZXhwb3J0IGNvbnN0IFNZQklMX1ZPVUNIRVJfU0NBTl9DQVAgPSA1MDtcblxuLyogLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gKi9cbi8qICBSYW5kb20gcGVyc29uaG9vZCBhdWRpdHMgKEZhc2UgMykgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICovXG4vKiAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSAqL1xuXG4vKipcbiAqIFRoZSBgVmFsaWRhdGlvblJlcXVlc3QuYWN0aW9uVHlwZWAgdXNlZCBmb3IgYSByYW5kb20gcGVyc29uaG9vZCBhdWRpdC4gSXRcbiAqIFJFVVNFUyB0aGUgRmFzZSAyIGp1cnkgKGBzZWxlY3RWYWxpZGF0b3JzYC9gdGFsbHlBbmRSZXNvbHZlYCk7IGEganVyb3Igdm90ZXNcbiAqIGB2YWxpZGAgKD0gY29uZmlybWVkIHJlYWwgcGVyc29uKSBvciBgaW52YWxpZGAgKD0gZmFrZSkuIEl0IGlzIE5PVCBhXG4gKiByZXB1dGF0aW9uIHJ1bGUg4oCUIG5vdGhpbmcgaXMgZXZlciBhd2FyZGVkIHVuZGVyIHRoaXMgYWN0aW9uIGtleSBkaXJlY3RseS5cbiAqL1xuZXhwb3J0IGNvbnN0IFBFUlNPTkhPT0RfQVVESVRfQUNUSU9OID0gJ3BlcnNvbmhvb2RfYXVkaXQnO1xuXG4vKiogRnJhY3Rpb24gb2YgYGlzUmVhbFBlcnNvbmAgdXNlcnMgc2FtcGxlZCBmb3IgYXVkaXQgb24gZWFjaCBzd2VlcC4gKi9cbmV4cG9ydCBjb25zdCBQRVJTT05IT09EX0FVRElUX1NBTVBMRV9SQVRFID0gMC4wNTtcblxuLyoqIE1heCBudW1iZXIgb2YgYXVkaXRzIG9wZW5lZCBwZXIgc3dlZXAgKGJvdW5kcyBqdXJ5LXNlbGVjdGlvbiB3b3JrKS4gKi9cbmV4cG9ydCBjb25zdCBQRVJTT05IT09EX0FVRElUX0JBVENIID0gMjU7XG5cbi8qKiBIb3cgb2Z0ZW4gdGhlIGJhY2tncm91bmQgc3dlZXAgb3BlbnMgbmV3IHJhbmRvbSBwZXJzb25ob29kIGF1ZGl0cy4gKi9cbmV4cG9ydCBjb25zdCBQRVJTT05IT09EX0FVRElUX1NXRUVQX0lOVEVSVkFMX01TID0gNiAqIDYwICogNjAgKiAxMDAwOyAvLyA2IGhvdXJzXG5cbi8qIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tICovXG4vKiAgVmVyaWZpYWJsZSBDcmVkZW50aWFscyAoRmFzZSA0KSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAqL1xuLyogLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gKi9cblxuLyoqXG4gKiBBdFByb3RvLXN0eWxlIGNvbGxlY3Rpb24gKE5TSUQpIGZvciB2ZXJpZmlhYmxlIGNyZWRlbnRpYWxzLiBUaGUgc2lnbmVkXG4gKiBgY3JlZGVudGlhbGAgcmVjb3JkIGNhcnJpZXMgdGhpcyBhcyBpdHMgYGNvbGxlY3Rpb25gOyB0aGUgcGVyLWNyZWRlbnRpYWxcbiAqIGBya2V5YCAoY2hvc2VuIGJ5IHRoZSBpc3N1ZXIgY2xpZW50KSBNVVNUIGJlIHVuaXF1ZSBwZXIgY3JlZGVudGlhbCBzbyBtdWx0aXBsZVxuICogY3JlZGVudGlhbHMgZnJvbSB0aGUgc2FtZSBpc3N1ZXIgZG8gbm90IGNvbGxpZGUgb24gdGhlIGNoYWluJ3MgbW9ub3RvbmljIC9cbiAqIGxhc3Qtd3JpdGVyLXdpbnMga2V5LlxuICovXG5leHBvcnQgY29uc3QgQ1JFREVOVElBTF9DT0xMRUNUSU9OID0gJ2FwcC5veHkuY3JlZGVudGlhbCc7XG5cbi8qKlxuICogVGhlIFczQyBiYXNlIFZDIHR5cGUgdGhhdCBNVVNUIGJlIHByZXNlbnQgaW4gZXZlcnkgY3JlZGVudGlhbCdzIGB0eXBlc2AgYXJyYXkuXG4gKiBBdCBsZWFzdCBvbmUgc3BlY2lmaWMgdHlwZSAoZS5nLiBgRW1wbG95bWVudENyZWRlbnRpYWxgKSBpcyByZXF1aXJlZCBhbG9uZ3NpZGUuXG4gKi9cbmV4cG9ydCBjb25zdCBDUkVERU5USUFMX0JBU0VfVFlQRSA9ICdWZXJpZmlhYmxlQ3JlZGVudGlhbCc7XG4iXSwidmVyc2lvbiI6M30=

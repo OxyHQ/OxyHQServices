@@ -1,0 +1,118 @@
+a1e82fb3ce9b896e0af52055d1b4de66
+"use strict";
+/**
+ * Asset CDN configuration and key-placement rules.
+ *
+ * Hard contract: NO raw AWS S3 (`*.amazonaws.com`) URL may ever reach a client.
+ * Public media is served through Oxy's own CloudFront CDN (`cloud.oxy.so`);
+ * private/access-controlled media is streamed through our own origin
+ * (`api.oxy.so`). This module owns the single source of truth for:
+ *
+ *  1. The CDN base URL (`ASSET_CDN_URL`, default `https://cloud.oxy.so`).
+ *  2. The S3 key prefix that decides whether an object is reachable by the CDN.
+ *  3. The mapping between an S3 storage key and the CDN-relative path.
+ *
+ * CloudFront wiring (managed in `oxy-infra/terraform-uswest2`): the
+ * `cloud.oxy.so` distribution points at the media bucket with
+ * `origin_path = /public`. CloudFront PREPENDS that origin path to every
+ * request, so a request for `cloud.oxy.so/content/..` fetches the S3 object
+ * `public/content/..`. Therefore:
+ *
+ *   stored S3 key  =  public/content/{y}/{m}/..       (objects under the prefix)
+ *   CDN URL path   =  content/{y}/{m}/..              (prefix stripped)
+ *   CDN URL        =  https://cloud.oxy.so/content/{y}/{m}/..
+ *
+ * Only objects physically stored under `PUBLIC_KEY_PREFIX` are reachable via the
+ * CDN. Public-visibility assets are written there; private/unlisted assets are
+ * NOT, so they can never leak through the public CDN.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CDN_REDIRECT_MAX_AGE_SECONDS = exports.PUBLIC_KEY_PREFIX = exports.DEFAULT_ASSET_CDN_URL = void 0;
+exports.getAssetCdnUrl = getAssetCdnUrl;
+exports.isPublicKey = isPublicKey;
+exports.applyPublicPrefix = applyPublicPrefix;
+exports.stripPublicPrefix = stripPublicPrefix;
+exports.storageKeyForVisibility = storageKeyForVisibility;
+exports.buildCdnUrl = buildCdnUrl;
+exports.cdnUrlForStorageKey = cdnUrlForStorageKey;
+const env_1 = require("./env");
+/**
+ * Default CDN origin. Overridable via the `ASSET_CDN_URL` env var (set on the
+ * ECS task from SSM). Never hardcode this elsewhere — read it through
+ * {@link getAssetCdnUrl} / {@link buildCdnUrl}.
+ */
+exports.DEFAULT_ASSET_CDN_URL = 'https://cloud.oxy.so';
+/**
+ * S3 key prefix under which all CDN-reachable (public) objects live. Must match
+ * the CloudFront distribution's `origin_path` (without the leading slash). The
+ * trailing slash makes prefix tests and stripping unambiguous.
+ */
+exports.PUBLIC_KEY_PREFIX = 'public/';
+/**
+ * Cache lifetime (seconds) for a public-asset CDN redirect (the `302` emitted by
+ * `GET /assets/:id/stream` and `GET /cdn/:id`). The redirect TARGET is
+ * content-addressed and stable, so clients/edge caches may safely reuse the 302
+ * rather than re-running the S3 existence probe on every request.
+ */
+exports.CDN_REDIRECT_MAX_AGE_SECONDS = 3600;
+/**
+ * Resolve the configured CDN base URL with no trailing slash.
+ *
+ * Read at call time (not module-load) so tests and one-shot scripts that set
+ * `process.env.ASSET_CDN_URL` after import still observe the override.
+ */
+function getAssetCdnUrl() {
+    const raw = (0, env_1.getEnvVar)('ASSET_CDN_URL', exports.DEFAULT_ASSET_CDN_URL).trim() || exports.DEFAULT_ASSET_CDN_URL;
+    return raw.replace(/\/+$/, '');
+}
+/**
+ * Whether a stored S3 key lives under the public (CDN-reachable) prefix.
+ */
+function isPublicKey(storageKey) {
+    return storageKey.startsWith(exports.PUBLIC_KEY_PREFIX);
+}
+/**
+ * Prepend the public prefix to a content-addressed key, idempotently. Used at
+ * write time when an asset's visibility is known to be `public`.
+ */
+function applyPublicPrefix(storageKey) {
+    return isPublicKey(storageKey) ? storageKey : `${exports.PUBLIC_KEY_PREFIX}${storageKey}`;
+}
+/**
+ * Remove the public prefix from a stored key, yielding the CDN-relative path
+ * (the path component CloudFront expects, since `origin_path` re-adds the
+ * prefix). Idempotent for keys that are not prefixed.
+ */
+function stripPublicPrefix(storageKey) {
+    return isPublicKey(storageKey) ? storageKey.slice(exports.PUBLIC_KEY_PREFIX.length) : storageKey;
+}
+/**
+ * Decide the storage-key prefix for a NEW object from its visibility. Public
+ * objects are placed under {@link PUBLIC_KEY_PREFIX} so CloudFront can serve
+ * them; everything else stays private to S3 and is only reachable through the
+ * access-gated origin stream route.
+ *
+ * This is the single, explicit public-vs-private placement decision. Do not
+ * scatter prefix concatenation elsewhere — call this when generating keys.
+ */
+function storageKeyForVisibility(baseKey, visibility) {
+    return visibility === 'public' ? applyPublicPrefix(baseKey) : baseKey;
+}
+/**
+ * Build a fully-qualified CDN URL from a CDN-relative key (a key with the
+ * public prefix already stripped). Tolerates leading slashes on the input and
+ * never produces double slashes.
+ */
+function buildCdnUrl(cdnRelativeKey) {
+    const normalizedKey = cdnRelativeKey.replace(/^\/+/, '');
+    return `${getAssetCdnUrl()}/${normalizedKey}`;
+}
+/**
+ * Build the CDN URL for an object given its raw stored S3 key. The key MUST be
+ * under the public prefix (callers verify the object's visibility/placement
+ * first); the prefix is stripped to form the CloudFront path.
+ */
+function cdnUrlForStorageKey(storageKey) {
+    return buildCdnUrl(stripPublicPrefix(storageKey));
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY29uZmlnL2Nkbi50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0F5Qkc7OztBQWlDSCx3Q0FHQztBQUtELGtDQUVDO0FBTUQsOENBRUM7QUFPRCw4Q0FFQztBQVdELDBEQUVDO0FBT0Qsa0NBR0M7QUFPRCxrREFFQztBQTFGRCwrQkFBa0M7QUFHbEM7Ozs7R0FJRztBQUNVLFFBQUEscUJBQXFCLEdBQUcsc0JBQXNCLENBQUM7QUFFNUQ7Ozs7R0FJRztBQUNVLFFBQUEsaUJBQWlCLEdBQUcsU0FBUyxDQUFDO0FBRTNDOzs7OztHQUtHO0FBQ1UsUUFBQSw0QkFBNEIsR0FBRyxJQUFJLENBQUM7QUFFakQ7Ozs7O0dBS0c7QUFDSCxTQUFnQixjQUFjO0lBQzVCLE1BQU0sR0FBRyxHQUFHLElBQUEsZUFBUyxFQUFDLGVBQWUsRUFBRSw2QkFBcUIsQ0FBQyxDQUFDLElBQUksRUFBRSxJQUFJLDZCQUFxQixDQUFDO0lBQzlGLE9BQU8sR0FBRyxDQUFDLE9BQU8sQ0FBQyxNQUFNLEVBQUUsRUFBRSxDQUFDLENBQUM7QUFDakMsQ0FBQztBQUVEOztHQUVHO0FBQ0gsU0FBZ0IsV0FBVyxDQUFDLFVBQWtCO0lBQzVDLE9BQU8sVUFBVSxDQUFDLFVBQVUsQ0FBQyx5QkFBaUIsQ0FBQyxDQUFDO0FBQ2xELENBQUM7QUFFRDs7O0dBR0c7QUFDSCxTQUFnQixpQkFBaUIsQ0FBQyxVQUFrQjtJQUNsRCxPQUFPLFdBQVcsQ0FBQyxVQUFVLENBQUMsQ0FBQyxDQUFDLENBQUMsVUFBVSxDQUFDLENBQUMsQ0FBQyxHQUFHLHlCQUFpQixHQUFHLFVBQVUsRUFBRSxDQUFDO0FBQ3BGLENBQUM7QUFFRDs7OztHQUlHO0FBQ0gsU0FBZ0IsaUJBQWlCLENBQUMsVUFBa0I7SUFDbEQsT0FBTyxXQUFXLENBQUMsVUFBVSxDQUFDLENBQUMsQ0FBQyxDQUFDLFVBQVUsQ0FBQyxLQUFLLENBQUMseUJBQWlCLENBQUMsTUFBTSxDQUFDLENBQUMsQ0FBQyxDQUFDLFVBQVUsQ0FBQztBQUMzRixDQUFDO0FBRUQ7Ozs7Ozs7O0dBUUc7QUFDSCxTQUFnQix1QkFBdUIsQ0FBQyxPQUFlLEVBQUUsVUFBMEI7SUFDakYsT0FBTyxVQUFVLEtBQUssUUFBUSxDQUFDLENBQUMsQ0FBQyxpQkFBaUIsQ0FBQyxPQUFPLENBQUMsQ0FBQyxDQUFDLENBQUMsT0FBTyxDQUFDO0FBQ3hFLENBQUM7QUFFRDs7OztHQUlHO0FBQ0gsU0FBZ0IsV0FBVyxDQUFDLGNBQXNCO0lBQ2hELE1BQU0sYUFBYSxHQUFHLGNBQWMsQ0FBQyxPQUFPLENBQUMsTUFBTSxFQUFFLEVBQUUsQ0FBQyxDQUFDO0lBQ3pELE9BQU8sR0FBRyxjQUFjLEVBQUUsSUFBSSxhQUFhLEVBQUUsQ0FBQztBQUNoRCxDQUFDO0FBRUQ7Ozs7R0FJRztBQUNILFNBQWdCLG1CQUFtQixDQUFDLFVBQWtCO0lBQ3BELE9BQU8sV0FBVyxDQUFDLGlCQUFpQixDQUFDLFVBQVUsQ0FBQyxDQUFDLENBQUM7QUFDcEQsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9jb25maWcvY2RuLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogQXNzZXQgQ0ROIGNvbmZpZ3VyYXRpb24gYW5kIGtleS1wbGFjZW1lbnQgcnVsZXMuXG4gKlxuICogSGFyZCBjb250cmFjdDogTk8gcmF3IEFXUyBTMyAoYCouYW1hem9uYXdzLmNvbWApIFVSTCBtYXkgZXZlciByZWFjaCBhIGNsaWVudC5cbiAqIFB1YmxpYyBtZWRpYSBpcyBzZXJ2ZWQgdGhyb3VnaCBPeHkncyBvd24gQ2xvdWRGcm9udCBDRE4gKGBjbG91ZC5veHkuc29gKTtcbiAqIHByaXZhdGUvYWNjZXNzLWNvbnRyb2xsZWQgbWVkaWEgaXMgc3RyZWFtZWQgdGhyb3VnaCBvdXIgb3duIG9yaWdpblxuICogKGBhcGkub3h5LnNvYCkuIFRoaXMgbW9kdWxlIG93bnMgdGhlIHNpbmdsZSBzb3VyY2Ugb2YgdHJ1dGggZm9yOlxuICpcbiAqICAxLiBUaGUgQ0ROIGJhc2UgVVJMIChgQVNTRVRfQ0ROX1VSTGAsIGRlZmF1bHQgYGh0dHBzOi8vY2xvdWQub3h5LnNvYCkuXG4gKiAgMi4gVGhlIFMzIGtleSBwcmVmaXggdGhhdCBkZWNpZGVzIHdoZXRoZXIgYW4gb2JqZWN0IGlzIHJlYWNoYWJsZSBieSB0aGUgQ0ROLlxuICogIDMuIFRoZSBtYXBwaW5nIGJldHdlZW4gYW4gUzMgc3RvcmFnZSBrZXkgYW5kIHRoZSBDRE4tcmVsYXRpdmUgcGF0aC5cbiAqXG4gKiBDbG91ZEZyb250IHdpcmluZyAobWFuYWdlZCBpbiBgb3h5LWluZnJhL3RlcnJhZm9ybS11c3dlc3QyYCk6IHRoZVxuICogYGNsb3VkLm94eS5zb2AgZGlzdHJpYnV0aW9uIHBvaW50cyBhdCB0aGUgbWVkaWEgYnVja2V0IHdpdGhcbiAqIGBvcmlnaW5fcGF0aCA9IC9wdWJsaWNgLiBDbG91ZEZyb250IFBSRVBFTkRTIHRoYXQgb3JpZ2luIHBhdGggdG8gZXZlcnlcbiAqIHJlcXVlc3QsIHNvIGEgcmVxdWVzdCBmb3IgYGNsb3VkLm94eS5zby9jb250ZW50Ly4uYCBmZXRjaGVzIHRoZSBTMyBvYmplY3RcbiAqIGBwdWJsaWMvY29udGVudC8uLmAuIFRoZXJlZm9yZTpcbiAqXG4gKiAgIHN0b3JlZCBTMyBrZXkgID0gIHB1YmxpYy9jb250ZW50L3t5fS97bX0vLi4gICAgICAgKG9iamVjdHMgdW5kZXIgdGhlIHByZWZpeClcbiAqICAgQ0ROIFVSTCBwYXRoICAgPSAgY29udGVudC97eX0ve219Ly4uICAgICAgICAgICAgICAocHJlZml4IHN0cmlwcGVkKVxuICogICBDRE4gVVJMICAgICAgICA9ICBodHRwczovL2Nsb3VkLm94eS5zby9jb250ZW50L3t5fS97bX0vLi5cbiAqXG4gKiBPbmx5IG9iamVjdHMgcGh5c2ljYWxseSBzdG9yZWQgdW5kZXIgYFBVQkxJQ19LRVlfUFJFRklYYCBhcmUgcmVhY2hhYmxlIHZpYSB0aGVcbiAqIENETi4gUHVibGljLXZpc2liaWxpdHkgYXNzZXRzIGFyZSB3cml0dGVuIHRoZXJlOyBwcml2YXRlL3VubGlzdGVkIGFzc2V0cyBhcmVcbiAqIE5PVCwgc28gdGhleSBjYW4gbmV2ZXIgbGVhayB0aHJvdWdoIHRoZSBwdWJsaWMgQ0ROLlxuICovXG5cbmltcG9ydCB7IGdldEVudlZhciB9IGZyb20gJy4vZW52JztcbmltcG9ydCB0eXBlIHsgRmlsZVZpc2liaWxpdHkgfSBmcm9tICcuLi9kYi9zY2hlbWEvZmlsZXMnO1xuXG4vKipcbiAqIERlZmF1bHQgQ0ROIG9yaWdpbi4gT3ZlcnJpZGFibGUgdmlhIHRoZSBgQVNTRVRfQ0ROX1VSTGAgZW52IHZhciAoc2V0IG9uIHRoZVxuICogRUNTIHRhc2sgZnJvbSBTU00pLiBOZXZlciBoYXJkY29kZSB0aGlzIGVsc2V3aGVyZSDigJQgcmVhZCBpdCB0aHJvdWdoXG4gKiB7QGxpbmsgZ2V0QXNzZXRDZG5Vcmx9IC8ge0BsaW5rIGJ1aWxkQ2RuVXJsfS5cbiAqL1xuZXhwb3J0IGNvbnN0IERFRkFVTFRfQVNTRVRfQ0ROX1VSTCA9ICdodHRwczovL2Nsb3VkLm94eS5zbyc7XG5cbi8qKlxuICogUzMga2V5IHByZWZpeCB1bmRlciB3aGljaCBhbGwgQ0ROLXJlYWNoYWJsZSAocHVibGljKSBvYmplY3RzIGxpdmUuIE11c3QgbWF0Y2hcbiAqIHRoZSBDbG91ZEZyb250IGRpc3RyaWJ1dGlvbidzIGBvcmlnaW5fcGF0aGAgKHdpdGhvdXQgdGhlIGxlYWRpbmcgc2xhc2gpLiBUaGVcbiAqIHRyYWlsaW5nIHNsYXNoIG1ha2VzIHByZWZpeCB0ZXN0cyBhbmQgc3RyaXBwaW5nIHVuYW1iaWd1b3VzLlxuICovXG5leHBvcnQgY29uc3QgUFVCTElDX0tFWV9QUkVGSVggPSAncHVibGljLyc7XG5cbi8qKlxuICogQ2FjaGUgbGlmZXRpbWUgKHNlY29uZHMpIGZvciBhIHB1YmxpYy1hc3NldCBDRE4gcmVkaXJlY3QgKHRoZSBgMzAyYCBlbWl0dGVkIGJ5XG4gKiBgR0VUIC9hc3NldHMvOmlkL3N0cmVhbWAgYW5kIGBHRVQgL2Nkbi86aWRgKS4gVGhlIHJlZGlyZWN0IFRBUkdFVCBpc1xuICogY29udGVudC1hZGRyZXNzZWQgYW5kIHN0YWJsZSwgc28gY2xpZW50cy9lZGdlIGNhY2hlcyBtYXkgc2FmZWx5IHJldXNlIHRoZSAzMDJcbiAqIHJhdGhlciB0aGFuIHJlLXJ1bm5pbmcgdGhlIFMzIGV4aXN0ZW5jZSBwcm9iZSBvbiBldmVyeSByZXF1ZXN0LlxuICovXG5leHBvcnQgY29uc3QgQ0ROX1JFRElSRUNUX01BWF9BR0VfU0VDT05EUyA9IDM2MDA7XG5cbi8qKlxuICogUmVzb2x2ZSB0aGUgY29uZmlndXJlZCBDRE4gYmFzZSBVUkwgd2l0aCBubyB0cmFpbGluZyBzbGFzaC5cbiAqXG4gKiBSZWFkIGF0IGNhbGwgdGltZSAobm90IG1vZHVsZS1sb2FkKSBzbyB0ZXN0cyBhbmQgb25lLXNob3Qgc2NyaXB0cyB0aGF0IHNldFxuICogYHByb2Nlc3MuZW52LkFTU0VUX0NETl9VUkxgIGFmdGVyIGltcG9ydCBzdGlsbCBvYnNlcnZlIHRoZSBvdmVycmlkZS5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIGdldEFzc2V0Q2RuVXJsKCk6IHN0cmluZyB7XG4gIGNvbnN0IHJhdyA9IGdldEVudlZhcignQVNTRVRfQ0ROX1VSTCcsIERFRkFVTFRfQVNTRVRfQ0ROX1VSTCkudHJpbSgpIHx8IERFRkFVTFRfQVNTRVRfQ0ROX1VSTDtcbiAgcmV0dXJuIHJhdy5yZXBsYWNlKC9cXC8rJC8sICcnKTtcbn1cblxuLyoqXG4gKiBXaGV0aGVyIGEgc3RvcmVkIFMzIGtleSBsaXZlcyB1bmRlciB0aGUgcHVibGljIChDRE4tcmVhY2hhYmxlKSBwcmVmaXguXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBpc1B1YmxpY0tleShzdG9yYWdlS2V5OiBzdHJpbmcpOiBib29sZWFuIHtcbiAgcmV0dXJuIHN0b3JhZ2VLZXkuc3RhcnRzV2l0aChQVUJMSUNfS0VZX1BSRUZJWCk7XG59XG5cbi8qKlxuICogUHJlcGVuZCB0aGUgcHVibGljIHByZWZpeCB0byBhIGNvbnRlbnQtYWRkcmVzc2VkIGtleSwgaWRlbXBvdGVudGx5LiBVc2VkIGF0XG4gKiB3cml0ZSB0aW1lIHdoZW4gYW4gYXNzZXQncyB2aXNpYmlsaXR5IGlzIGtub3duIHRvIGJlIGBwdWJsaWNgLlxuICovXG5leHBvcnQgZnVuY3Rpb24gYXBwbHlQdWJsaWNQcmVmaXgoc3RvcmFnZUtleTogc3RyaW5nKTogc3RyaW5nIHtcbiAgcmV0dXJuIGlzUHVibGljS2V5KHN0b3JhZ2VLZXkpID8gc3RvcmFnZUtleSA6IGAke1BVQkxJQ19LRVlfUFJFRklYfSR7c3RvcmFnZUtleX1gO1xufVxuXG4vKipcbiAqIFJlbW92ZSB0aGUgcHVibGljIHByZWZpeCBmcm9tIGEgc3RvcmVkIGtleSwgeWllbGRpbmcgdGhlIENETi1yZWxhdGl2ZSBwYXRoXG4gKiAodGhlIHBhdGggY29tcG9uZW50IENsb3VkRnJvbnQgZXhwZWN0cywgc2luY2UgYG9yaWdpbl9wYXRoYCByZS1hZGRzIHRoZVxuICogcHJlZml4KS4gSWRlbXBvdGVudCBmb3Iga2V5cyB0aGF0IGFyZSBub3QgcHJlZml4ZWQuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBzdHJpcFB1YmxpY1ByZWZpeChzdG9yYWdlS2V5OiBzdHJpbmcpOiBzdHJpbmcge1xuICByZXR1cm4gaXNQdWJsaWNLZXkoc3RvcmFnZUtleSkgPyBzdG9yYWdlS2V5LnNsaWNlKFBVQkxJQ19LRVlfUFJFRklYLmxlbmd0aCkgOiBzdG9yYWdlS2V5O1xufVxuXG4vKipcbiAqIERlY2lkZSB0aGUgc3RvcmFnZS1rZXkgcHJlZml4IGZvciBhIE5FVyBvYmplY3QgZnJvbSBpdHMgdmlzaWJpbGl0eS4gUHVibGljXG4gKiBvYmplY3RzIGFyZSBwbGFjZWQgdW5kZXIge0BsaW5rIFBVQkxJQ19LRVlfUFJFRklYfSBzbyBDbG91ZEZyb250IGNhbiBzZXJ2ZVxuICogdGhlbTsgZXZlcnl0aGluZyBlbHNlIHN0YXlzIHByaXZhdGUgdG8gUzMgYW5kIGlzIG9ubHkgcmVhY2hhYmxlIHRocm91Z2ggdGhlXG4gKiBhY2Nlc3MtZ2F0ZWQgb3JpZ2luIHN0cmVhbSByb3V0ZS5cbiAqXG4gKiBUaGlzIGlzIHRoZSBzaW5nbGUsIGV4cGxpY2l0IHB1YmxpYy12cy1wcml2YXRlIHBsYWNlbWVudCBkZWNpc2lvbi4gRG8gbm90XG4gKiBzY2F0dGVyIHByZWZpeCBjb25jYXRlbmF0aW9uIGVsc2V3aGVyZSDigJQgY2FsbCB0aGlzIHdoZW4gZ2VuZXJhdGluZyBrZXlzLlxuICovXG5leHBvcnQgZnVuY3Rpb24gc3RvcmFnZUtleUZvclZpc2liaWxpdHkoYmFzZUtleTogc3RyaW5nLCB2aXNpYmlsaXR5OiBGaWxlVmlzaWJpbGl0eSk6IHN0cmluZyB7XG4gIHJldHVybiB2aXNpYmlsaXR5ID09PSAncHVibGljJyA/IGFwcGx5UHVibGljUHJlZml4KGJhc2VLZXkpIDogYmFzZUtleTtcbn1cblxuLyoqXG4gKiBCdWlsZCBhIGZ1bGx5LXF1YWxpZmllZCBDRE4gVVJMIGZyb20gYSBDRE4tcmVsYXRpdmUga2V5IChhIGtleSB3aXRoIHRoZVxuICogcHVibGljIHByZWZpeCBhbHJlYWR5IHN0cmlwcGVkKS4gVG9sZXJhdGVzIGxlYWRpbmcgc2xhc2hlcyBvbiB0aGUgaW5wdXQgYW5kXG4gKiBuZXZlciBwcm9kdWNlcyBkb3VibGUgc2xhc2hlcy5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIGJ1aWxkQ2RuVXJsKGNkblJlbGF0aXZlS2V5OiBzdHJpbmcpOiBzdHJpbmcge1xuICBjb25zdCBub3JtYWxpemVkS2V5ID0gY2RuUmVsYXRpdmVLZXkucmVwbGFjZSgvXlxcLysvLCAnJyk7XG4gIHJldHVybiBgJHtnZXRBc3NldENkblVybCgpfS8ke25vcm1hbGl6ZWRLZXl9YDtcbn1cblxuLyoqXG4gKiBCdWlsZCB0aGUgQ0ROIFVSTCBmb3IgYW4gb2JqZWN0IGdpdmVuIGl0cyByYXcgc3RvcmVkIFMzIGtleS4gVGhlIGtleSBNVVNUIGJlXG4gKiB1bmRlciB0aGUgcHVibGljIHByZWZpeCAoY2FsbGVycyB2ZXJpZnkgdGhlIG9iamVjdCdzIHZpc2liaWxpdHkvcGxhY2VtZW50XG4gKiBmaXJzdCk7IHRoZSBwcmVmaXggaXMgc3RyaXBwZWQgdG8gZm9ybSB0aGUgQ2xvdWRGcm9udCBwYXRoLlxuICovXG5leHBvcnQgZnVuY3Rpb24gY2RuVXJsRm9yU3RvcmFnZUtleShzdG9yYWdlS2V5OiBzdHJpbmcpOiBzdHJpbmcge1xuICByZXR1cm4gYnVpbGRDZG5Vcmwoc3RyaXBQdWJsaWNQcmVmaXgoc3RvcmFnZUtleSkpO1xufVxuIl0sInZlcnNpb24iOjN9

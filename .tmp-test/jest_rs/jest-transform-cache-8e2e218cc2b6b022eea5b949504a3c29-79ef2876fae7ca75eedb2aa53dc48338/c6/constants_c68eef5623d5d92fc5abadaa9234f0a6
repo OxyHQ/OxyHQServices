@@ -1,0 +1,87 @@
+6fe37fb4e1b74de7af18239fb071598e
+"use strict";
+/**
+ * Node-protocol shape constants — the wire-level contract of an Oxy-protocol
+ * data node, shared by the generic node app factory ({@link ./nodeApp}), the
+ * HTTP {@link ./nodeClient.NodeClient}, and any app's node deployment
+ * (`@oxyhq/node`, a future `mention-node`).
+ *
+ * These were previously hardcoded inside `@oxyhq/node`; they live here so the
+ * SAME values drive a server and a client without either side re-declaring (and
+ * drifting) the contract. Deployment-specific knobs (owner key, port, data dir)
+ * are still resolved per-deployment from the environment — only the protocol's
+ * own shape constants live here.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_DID_DOC_MAX_BYTES = exports.DEFAULT_WRITE_RESPONSE_MAX_BYTES = exports.DEFAULT_LOG_MAX_BYTES = exports.DEFAULT_HEAD_MAX_BYTES = exports.DEFAULT_CLIENT_MAX_REDIRECTS = exports.DEFAULT_CLIENT_TIMEOUT_MS = exports.NODE_BLOBS_PATH = exports.NODE_SYNC_PUSH_PATH = exports.NODE_RECORDS_PATH = exports.NODE_LOG_PATH = exports.NODE_HEAD_PATH = exports.SHA256_HEX = exports.OWNER_ACTION_BLOB_PIN = exports.NODE_MODES = exports.OWNER_AUTH_MAX_AGE_MS = exports.OWNER_AUTH_HEADERS = exports.JSON_BODY_LIMIT = exports.MAX_SYNC_BATCH = exports.DEFAULT_MAX_BLOB_BYTES = exports.MAX_LOG_LIMIT = exports.DEFAULT_LOG_LIMIT = exports.DEFAULT_PORT = exports.DEFAULT_APP_NAMESPACE = exports.DEFAULT_SERVICE_TYPE = exports.DEFAULT_WELL_KNOWN_PATH = exports.PROTOCOL_VERSION = void 0;
+/**
+ * The node-protocol version advertised at the well-known manifest. Bumped only
+ * on a breaking change to the wire shape of the log / head / record APIs. This
+ * is the DEFAULT `protocolId` a deployment advertises (overridable per app).
+ */
+exports.PROTOCOL_VERSION = 'oxy-node/1';
+/** Default well-known manifest path (the existing `@oxyhq/node` value). */
+exports.DEFAULT_WELL_KNOWN_PATH = '/.well-known/oxy-node.json';
+/** Default DID-document service-type label advertised by a node deployment. */
+exports.DEFAULT_SERVICE_TYPE = 'OxyPersonalDataNode';
+/**
+ * Default application namespace a node deployment serves. The records a node
+ * stores all live under this namespace (e.g. `app.oxy.*`); a `collections`
+ * allowlist (when set) MUST be within it.
+ */
+exports.DEFAULT_APP_NAMESPACE = 'app.oxy';
+/** Default HTTP port when the port env var is unset (always overridable). */
+exports.DEFAULT_PORT = 4000;
+/** Default and maximum number of log entries returned by `GET /oxy/log`. */
+exports.DEFAULT_LOG_LIMIT = 100;
+exports.MAX_LOG_LIMIT = 500;
+/** Default upper bound on a single pinned blob's size when unset (25 MiB). */
+exports.DEFAULT_MAX_BLOB_BYTES = 25 * 1024 * 1024;
+/** Maximum number of envelopes accepted in one `POST /sync/push` batch. */
+exports.MAX_SYNC_BATCH = 200;
+/** Body-size ceiling for JSON request bodies (`/records`, `/sync/push`). */
+exports.JSON_BODY_LIMIT = '5mb';
+/** HTTP headers carrying an owner-signed action authorization (blob pins). */
+exports.OWNER_AUTH_HEADERS = {
+    publicKey: 'x-oxy-node-public-key',
+    signature: 'x-oxy-node-signature',
+    timestamp: 'x-oxy-node-timestamp',
+};
+/**
+ * Freshness window for an owner-signed action (e.g. a blob pin). A signed
+ * authorization header older/newer than this (accounting for clock skew) is
+ * rejected, bounding replay of a captured pin authorization.
+ */
+exports.OWNER_AUTH_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
+/** Operating modes a node can advertise. */
+exports.NODE_MODES = ['self-hosted', 'managed'];
+/** The node operation an owner can authorize with a signed header. */
+exports.OWNER_ACTION_BLOB_PIN = 'blob-pin';
+/** A 32-byte (64 hex char) lowercase SHA-256 digest, used as the blob address. */
+exports.SHA256_HEX = /^[0-9a-f]{64}$/;
+/* -------------------------------------------------------------------------- */
+/*  HTTP NodeClient — the node-facing routes a client drives                  */
+/* -------------------------------------------------------------------------- */
+/** Chain head endpoint (`GET`). */
+exports.NODE_HEAD_PATH = '/oxy/head';
+/** Ordered log endpoint (`GET ?since=&limit=`). */
+exports.NODE_LOG_PATH = '/oxy/log';
+/** Single-record write endpoint (`POST`, owner-signed envelope). */
+exports.NODE_RECORDS_PATH = '/records';
+/** Batch push endpoint (`POST`, owner-signed envelopes). */
+exports.NODE_SYNC_PUSH_PATH = '/sync/push';
+/** Content-addressed blob endpoint prefix (`GET|PUT /blobs/:hash`). */
+exports.NODE_BLOBS_PATH = '/blobs';
+/** Default time-to-first-byte deadline for a NodeClient request (ms). */
+exports.DEFAULT_CLIENT_TIMEOUT_MS = 8000;
+/** Default redirect budget for a NodeClient request (each re-validated upstream). */
+exports.DEFAULT_CLIENT_MAX_REDIRECTS = 1;
+/** Default bounded read for a `/oxy/head` response (tiny JSON). */
+exports.DEFAULT_HEAD_MAX_BYTES = 64 * 1024;
+/** Default bounded read for a `/oxy/log` page response. */
+exports.DEFAULT_LOG_MAX_BYTES = 2 * 1024 * 1024;
+/** Default bounded read for a small JSON write response (`/records`, blob pin). */
+exports.DEFAULT_WRITE_RESPONSE_MAX_BYTES = 64 * 1024;
+/** Default bounded read for a fetched `<did>.json` document. */
+exports.DEFAULT_DID_DOC_MAX_BYTES = 256 * 1024;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL3Byb3RvY29sL3NyYy9ub2RlL2NvbnN0YW50cy50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7O0dBV0c7OztBQUVIOzs7O0dBSUc7QUFDVSxRQUFBLGdCQUFnQixHQUFHLFlBQXFCLENBQUM7QUFFdEQsMkVBQTJFO0FBQzlELFFBQUEsdUJBQXVCLEdBQUcsNEJBQTRCLENBQUM7QUFFcEUsK0VBQStFO0FBQ2xFLFFBQUEsb0JBQW9CLEdBQUcscUJBQXFCLENBQUM7QUFFMUQ7Ozs7R0FJRztBQUNVLFFBQUEscUJBQXFCLEdBQUcsU0FBUyxDQUFDO0FBRS9DLDZFQUE2RTtBQUNoRSxRQUFBLFlBQVksR0FBRyxJQUFJLENBQUM7QUFFakMsNEVBQTRFO0FBQy9ELFFBQUEsaUJBQWlCLEdBQUcsR0FBRyxDQUFDO0FBQ3hCLFFBQUEsYUFBYSxHQUFHLEdBQUcsQ0FBQztBQUVqQyw4RUFBOEU7QUFDakUsUUFBQSxzQkFBc0IsR0FBRyxFQUFFLEdBQUcsSUFBSSxHQUFHLElBQUksQ0FBQztBQUV2RCwyRUFBMkU7QUFDOUQsUUFBQSxjQUFjLEdBQUcsR0FBRyxDQUFDO0FBRWxDLDRFQUE0RTtBQUMvRCxRQUFBLGVBQWUsR0FBRyxLQUFLLENBQUM7QUFFckMsOEVBQThFO0FBQ2pFLFFBQUEsa0JBQWtCLEdBQUc7SUFDaEMsU0FBUyxFQUFFLHVCQUF1QjtJQUNsQyxTQUFTLEVBQUUsc0JBQXNCO0lBQ2pDLFNBQVMsRUFBRSxzQkFBc0I7Q0FDekIsQ0FBQztBQUVYOzs7O0dBSUc7QUFDVSxRQUFBLHFCQUFxQixHQUFHLENBQUMsR0FBRyxFQUFFLEdBQUcsSUFBSSxDQUFDLENBQUMsWUFBWTtBQUVoRSw0Q0FBNEM7QUFDL0IsUUFBQSxVQUFVLEdBQUcsQ0FBQyxhQUFhLEVBQUUsU0FBUyxDQUFVLENBQUM7QUFHOUQsc0VBQXNFO0FBQ3pELFFBQUEscUJBQXFCLEdBQUcsVUFBbUIsQ0FBQztBQUV6RCxrRkFBa0Y7QUFDckUsUUFBQSxVQUFVLEdBQUcsZ0JBQWdCLENBQUM7QUFFM0MsZ0ZBQWdGO0FBQ2hGLGdGQUFnRjtBQUNoRixnRkFBZ0Y7QUFFaEYsbUNBQW1DO0FBQ3RCLFFBQUEsY0FBYyxHQUFHLFdBQVcsQ0FBQztBQUMxQyxtREFBbUQ7QUFDdEMsUUFBQSxhQUFhLEdBQUcsVUFBVSxDQUFDO0FBQ3hDLG9FQUFvRTtBQUN2RCxRQUFBLGlCQUFpQixHQUFHLFVBQVUsQ0FBQztBQUM1Qyw0REFBNEQ7QUFDL0MsUUFBQSxtQkFBbUIsR0FBRyxZQUFZLENBQUM7QUFDaEQsdUVBQXVFO0FBQzFELFFBQUEsZUFBZSxHQUFHLFFBQVEsQ0FBQztBQUV4Qyx5RUFBeUU7QUFDNUQsUUFBQSx5QkFBeUIsR0FBRyxJQUFLLENBQUM7QUFFL0MscUZBQXFGO0FBQ3hFLFFBQUEsNEJBQTRCLEdBQUcsQ0FBQyxDQUFDO0FBRTlDLG1FQUFtRTtBQUN0RCxRQUFBLHNCQUFzQixHQUFHLEVBQUUsR0FBRyxJQUFJLENBQUM7QUFFaEQsMkRBQTJEO0FBQzlDLFFBQUEscUJBQXFCLEdBQUcsQ0FBQyxHQUFHLElBQUksR0FBRyxJQUFJLENBQUM7QUFFckQsbUZBQW1GO0FBQ3RFLFFBQUEsZ0NBQWdDLEdBQUcsRUFBRSxHQUFHLElBQUksQ0FBQztBQUUxRCxnRUFBZ0U7QUFDbkQsUUFBQSx5QkFBeUIsR0FBRyxHQUFHLEdBQUcsSUFBSSxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9wcm90b2NvbC9zcmMvbm9kZS9jb25zdGFudHMudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBOb2RlLXByb3RvY29sIHNoYXBlIGNvbnN0YW50cyDigJQgdGhlIHdpcmUtbGV2ZWwgY29udHJhY3Qgb2YgYW4gT3h5LXByb3RvY29sXG4gKiBkYXRhIG5vZGUsIHNoYXJlZCBieSB0aGUgZ2VuZXJpYyBub2RlIGFwcCBmYWN0b3J5ICh7QGxpbmsgLi9ub2RlQXBwfSksIHRoZVxuICogSFRUUCB7QGxpbmsgLi9ub2RlQ2xpZW50Lk5vZGVDbGllbnR9LCBhbmQgYW55IGFwcCdzIG5vZGUgZGVwbG95bWVudFxuICogKGBAb3h5aHEvbm9kZWAsIGEgZnV0dXJlIGBtZW50aW9uLW5vZGVgKS5cbiAqXG4gKiBUaGVzZSB3ZXJlIHByZXZpb3VzbHkgaGFyZGNvZGVkIGluc2lkZSBgQG94eWhxL25vZGVgOyB0aGV5IGxpdmUgaGVyZSBzbyB0aGVcbiAqIFNBTUUgdmFsdWVzIGRyaXZlIGEgc2VydmVyIGFuZCBhIGNsaWVudCB3aXRob3V0IGVpdGhlciBzaWRlIHJlLWRlY2xhcmluZyAoYW5kXG4gKiBkcmlmdGluZykgdGhlIGNvbnRyYWN0LiBEZXBsb3ltZW50LXNwZWNpZmljIGtub2JzIChvd25lciBrZXksIHBvcnQsIGRhdGEgZGlyKVxuICogYXJlIHN0aWxsIHJlc29sdmVkIHBlci1kZXBsb3ltZW50IGZyb20gdGhlIGVudmlyb25tZW50IOKAlCBvbmx5IHRoZSBwcm90b2NvbCdzXG4gKiBvd24gc2hhcGUgY29uc3RhbnRzIGxpdmUgaGVyZS5cbiAqL1xuXG4vKipcbiAqIFRoZSBub2RlLXByb3RvY29sIHZlcnNpb24gYWR2ZXJ0aXNlZCBhdCB0aGUgd2VsbC1rbm93biBtYW5pZmVzdC4gQnVtcGVkIG9ubHlcbiAqIG9uIGEgYnJlYWtpbmcgY2hhbmdlIHRvIHRoZSB3aXJlIHNoYXBlIG9mIHRoZSBsb2cgLyBoZWFkIC8gcmVjb3JkIEFQSXMuIFRoaXNcbiAqIGlzIHRoZSBERUZBVUxUIGBwcm90b2NvbElkYCBhIGRlcGxveW1lbnQgYWR2ZXJ0aXNlcyAob3ZlcnJpZGFibGUgcGVyIGFwcCkuXG4gKi9cbmV4cG9ydCBjb25zdCBQUk9UT0NPTF9WRVJTSU9OID0gJ294eS1ub2RlLzEnIGFzIGNvbnN0O1xuXG4vKiogRGVmYXVsdCB3ZWxsLWtub3duIG1hbmlmZXN0IHBhdGggKHRoZSBleGlzdGluZyBgQG94eWhxL25vZGVgIHZhbHVlKS4gKi9cbmV4cG9ydCBjb25zdCBERUZBVUxUX1dFTExfS05PV05fUEFUSCA9ICcvLndlbGwta25vd24vb3h5LW5vZGUuanNvbic7XG5cbi8qKiBEZWZhdWx0IERJRC1kb2N1bWVudCBzZXJ2aWNlLXR5cGUgbGFiZWwgYWR2ZXJ0aXNlZCBieSBhIG5vZGUgZGVwbG95bWVudC4gKi9cbmV4cG9ydCBjb25zdCBERUZBVUxUX1NFUlZJQ0VfVFlQRSA9ICdPeHlQZXJzb25hbERhdGFOb2RlJztcblxuLyoqXG4gKiBEZWZhdWx0IGFwcGxpY2F0aW9uIG5hbWVzcGFjZSBhIG5vZGUgZGVwbG95bWVudCBzZXJ2ZXMuIFRoZSByZWNvcmRzIGEgbm9kZVxuICogc3RvcmVzIGFsbCBsaXZlIHVuZGVyIHRoaXMgbmFtZXNwYWNlIChlLmcuIGBhcHAub3h5LipgKTsgYSBgY29sbGVjdGlvbnNgXG4gKiBhbGxvd2xpc3QgKHdoZW4gc2V0KSBNVVNUIGJlIHdpdGhpbiBpdC5cbiAqL1xuZXhwb3J0IGNvbnN0IERFRkFVTFRfQVBQX05BTUVTUEFDRSA9ICdhcHAub3h5JztcblxuLyoqIERlZmF1bHQgSFRUUCBwb3J0IHdoZW4gdGhlIHBvcnQgZW52IHZhciBpcyB1bnNldCAoYWx3YXlzIG92ZXJyaWRhYmxlKS4gKi9cbmV4cG9ydCBjb25zdCBERUZBVUxUX1BPUlQgPSA0MDAwO1xuXG4vKiogRGVmYXVsdCBhbmQgbWF4aW11bSBudW1iZXIgb2YgbG9nIGVudHJpZXMgcmV0dXJuZWQgYnkgYEdFVCAvb3h5L2xvZ2AuICovXG5leHBvcnQgY29uc3QgREVGQVVMVF9MT0dfTElNSVQgPSAxMDA7XG5leHBvcnQgY29uc3QgTUFYX0xPR19MSU1JVCA9IDUwMDtcblxuLyoqIERlZmF1bHQgdXBwZXIgYm91bmQgb24gYSBzaW5nbGUgcGlubmVkIGJsb2IncyBzaXplIHdoZW4gdW5zZXQgKDI1IE1pQikuICovXG5leHBvcnQgY29uc3QgREVGQVVMVF9NQVhfQkxPQl9CWVRFUyA9IDI1ICogMTAyNCAqIDEwMjQ7XG5cbi8qKiBNYXhpbXVtIG51bWJlciBvZiBlbnZlbG9wZXMgYWNjZXB0ZWQgaW4gb25lIGBQT1NUIC9zeW5jL3B1c2hgIGJhdGNoLiAqL1xuZXhwb3J0IGNvbnN0IE1BWF9TWU5DX0JBVENIID0gMjAwO1xuXG4vKiogQm9keS1zaXplIGNlaWxpbmcgZm9yIEpTT04gcmVxdWVzdCBib2RpZXMgKGAvcmVjb3Jkc2AsIGAvc3luYy9wdXNoYCkuICovXG5leHBvcnQgY29uc3QgSlNPTl9CT0RZX0xJTUlUID0gJzVtYic7XG5cbi8qKiBIVFRQIGhlYWRlcnMgY2FycnlpbmcgYW4gb3duZXItc2lnbmVkIGFjdGlvbiBhdXRob3JpemF0aW9uIChibG9iIHBpbnMpLiAqL1xuZXhwb3J0IGNvbnN0IE9XTkVSX0FVVEhfSEVBREVSUyA9IHtcbiAgcHVibGljS2V5OiAneC1veHktbm9kZS1wdWJsaWMta2V5JyxcbiAgc2lnbmF0dXJlOiAneC1veHktbm9kZS1zaWduYXR1cmUnLFxuICB0aW1lc3RhbXA6ICd4LW94eS1ub2RlLXRpbWVzdGFtcCcsXG59IGFzIGNvbnN0O1xuXG4vKipcbiAqIEZyZXNobmVzcyB3aW5kb3cgZm9yIGFuIG93bmVyLXNpZ25lZCBhY3Rpb24gKGUuZy4gYSBibG9iIHBpbikuIEEgc2lnbmVkXG4gKiBhdXRob3JpemF0aW9uIGhlYWRlciBvbGRlci9uZXdlciB0aGFuIHRoaXMgKGFjY291bnRpbmcgZm9yIGNsb2NrIHNrZXcpIGlzXG4gKiByZWplY3RlZCwgYm91bmRpbmcgcmVwbGF5IG9mIGEgY2FwdHVyZWQgcGluIGF1dGhvcml6YXRpb24uXG4gKi9cbmV4cG9ydCBjb25zdCBPV05FUl9BVVRIX01BWF9BR0VfTVMgPSA1ICogNjAgKiAxMDAwOyAvLyA1IG1pbnV0ZXNcblxuLyoqIE9wZXJhdGluZyBtb2RlcyBhIG5vZGUgY2FuIGFkdmVydGlzZS4gKi9cbmV4cG9ydCBjb25zdCBOT0RFX01PREVTID0gWydzZWxmLWhvc3RlZCcsICdtYW5hZ2VkJ10gYXMgY29uc3Q7XG5leHBvcnQgdHlwZSBOb2RlTW9kZSA9ICh0eXBlb2YgTk9ERV9NT0RFUylbbnVtYmVyXTtcblxuLyoqIFRoZSBub2RlIG9wZXJhdGlvbiBhbiBvd25lciBjYW4gYXV0aG9yaXplIHdpdGggYSBzaWduZWQgaGVhZGVyLiAqL1xuZXhwb3J0IGNvbnN0IE9XTkVSX0FDVElPTl9CTE9CX1BJTiA9ICdibG9iLXBpbicgYXMgY29uc3Q7XG5cbi8qKiBBIDMyLWJ5dGUgKDY0IGhleCBjaGFyKSBsb3dlcmNhc2UgU0hBLTI1NiBkaWdlc3QsIHVzZWQgYXMgdGhlIGJsb2IgYWRkcmVzcy4gKi9cbmV4cG9ydCBjb25zdCBTSEEyNTZfSEVYID0gL15bMC05YS1mXXs2NH0kLztcblxuLyogLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gKi9cbi8qICBIVFRQIE5vZGVDbGllbnQg4oCUIHRoZSBub2RlLWZhY2luZyByb3V0ZXMgYSBjbGllbnQgZHJpdmVzICAgICAgICAgICAgICAgICAgKi9cbi8qIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tICovXG5cbi8qKiBDaGFpbiBoZWFkIGVuZHBvaW50IChgR0VUYCkuICovXG5leHBvcnQgY29uc3QgTk9ERV9IRUFEX1BBVEggPSAnL294eS9oZWFkJztcbi8qKiBPcmRlcmVkIGxvZyBlbmRwb2ludCAoYEdFVCA/c2luY2U9JmxpbWl0PWApLiAqL1xuZXhwb3J0IGNvbnN0IE5PREVfTE9HX1BBVEggPSAnL294eS9sb2cnO1xuLyoqIFNpbmdsZS1yZWNvcmQgd3JpdGUgZW5kcG9pbnQgKGBQT1NUYCwgb3duZXItc2lnbmVkIGVudmVsb3BlKS4gKi9cbmV4cG9ydCBjb25zdCBOT0RFX1JFQ09SRFNfUEFUSCA9ICcvcmVjb3Jkcyc7XG4vKiogQmF0Y2ggcHVzaCBlbmRwb2ludCAoYFBPU1RgLCBvd25lci1zaWduZWQgZW52ZWxvcGVzKS4gKi9cbmV4cG9ydCBjb25zdCBOT0RFX1NZTkNfUFVTSF9QQVRIID0gJy9zeW5jL3B1c2gnO1xuLyoqIENvbnRlbnQtYWRkcmVzc2VkIGJsb2IgZW5kcG9pbnQgcHJlZml4IChgR0VUfFBVVCAvYmxvYnMvOmhhc2hgKS4gKi9cbmV4cG9ydCBjb25zdCBOT0RFX0JMT0JTX1BBVEggPSAnL2Jsb2JzJztcblxuLyoqIERlZmF1bHQgdGltZS10by1maXJzdC1ieXRlIGRlYWRsaW5lIGZvciBhIE5vZGVDbGllbnQgcmVxdWVzdCAobXMpLiAqL1xuZXhwb3J0IGNvbnN0IERFRkFVTFRfQ0xJRU5UX1RJTUVPVVRfTVMgPSA4XzAwMDtcblxuLyoqIERlZmF1bHQgcmVkaXJlY3QgYnVkZ2V0IGZvciBhIE5vZGVDbGllbnQgcmVxdWVzdCAoZWFjaCByZS12YWxpZGF0ZWQgdXBzdHJlYW0pLiAqL1xuZXhwb3J0IGNvbnN0IERFRkFVTFRfQ0xJRU5UX01BWF9SRURJUkVDVFMgPSAxO1xuXG4vKiogRGVmYXVsdCBib3VuZGVkIHJlYWQgZm9yIGEgYC9veHkvaGVhZGAgcmVzcG9uc2UgKHRpbnkgSlNPTikuICovXG5leHBvcnQgY29uc3QgREVGQVVMVF9IRUFEX01BWF9CWVRFUyA9IDY0ICogMTAyNDtcblxuLyoqIERlZmF1bHQgYm91bmRlZCByZWFkIGZvciBhIGAvb3h5L2xvZ2AgcGFnZSByZXNwb25zZS4gKi9cbmV4cG9ydCBjb25zdCBERUZBVUxUX0xPR19NQVhfQllURVMgPSAyICogMTAyNCAqIDEwMjQ7XG5cbi8qKiBEZWZhdWx0IGJvdW5kZWQgcmVhZCBmb3IgYSBzbWFsbCBKU09OIHdyaXRlIHJlc3BvbnNlIChgL3JlY29yZHNgLCBibG9iIHBpbikuICovXG5leHBvcnQgY29uc3QgREVGQVVMVF9XUklURV9SRVNQT05TRV9NQVhfQllURVMgPSA2NCAqIDEwMjQ7XG5cbi8qKiBEZWZhdWx0IGJvdW5kZWQgcmVhZCBmb3IgYSBmZXRjaGVkIGA8ZGlkPi5qc29uYCBkb2N1bWVudC4gKi9cbmV4cG9ydCBjb25zdCBERUZBVUxUX0RJRF9ET0NfTUFYX0JZVEVTID0gMjU2ICogMTAyNDtcbiJdLCJ2ZXJzaW9uIjozfQ==

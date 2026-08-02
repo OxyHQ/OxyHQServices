@@ -1,0 +1,115 @@
+8063927628189fbea7480853fd3cac99
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.normaliseOrigin = normaliseOrigin;
+exports.isLoopbackOrigin = isLoopbackOrigin;
+exports.isBrowserClient = isBrowserClient;
+exports.isOxyApexOrigin = isOxyApexOrigin;
+/**
+ * Canonical origin-normalisation helper shared across the CORS/CSRF origin
+ * guard, the dynamic origin registry, and the auth surface (`auth.ts`).
+ *
+ * Normalises an origin string for equality / allow-list comparisons:
+ *  - lowercases the scheme and the host;
+ *  - preserves an explicit port (e.g. `:3000`), drops an implicit/default one;
+ *  - drops any path, query, fragment, userinfo and trailing slash — only the
+ *    `scheme://host[:port]` triple is reconstructed.
+ *
+ * Fails closed: returns `null` (never throws) when `value` is not a parseable
+ * absolute origin (empty string, relative path, or otherwise invalid URL). The
+ * caller decides how to treat the `null` — reject, skip, or substitute.
+ *
+ * @example
+ *   normaliseOrigin('HTTPS://Example.com/path?q=1') // 'https://example.com'
+ *   normaliseOrigin('https://example.com:3000/')     // 'https://example.com:3000'
+ *   normaliseOrigin('not a url')                      // null
+ */
+function normaliseOrigin(value) {
+    try {
+        const url = new URL(value);
+        const port = url.port ? `:${url.port}` : '';
+        return `${url.protocol.toLowerCase()}//${url.hostname.toLowerCase()}${port}`;
+    }
+    catch (_a) {
+        return null;
+    }
+}
+/**
+ * Loopback (local development) origin predicate. Matches `http://localhost`,
+ * `http://127.0.0.1`, and `http://[::1]` with an OPTIONAL `:<port>` (any 1–5
+ * digit port). HTTP only — loopback dev servers are served over http, so an
+ * `https://localhost` origin is deliberately NOT a loopback match.
+ *
+ * The input is normalised first (via {@link normaliseOrigin}), so scheme/host
+ * casing and trailing paths/queries never defeat the check, and only the
+ * `scheme://host[:port]` triple is tested. Fails closed: returns `false` for any
+ * unparseable input.
+ *
+ * @example
+ *   isLoopbackOrigin('http://localhost:8081')  // true
+ *   isLoopbackOrigin('http://127.0.0.1')       // true
+ *   isLoopbackOrigin('http://[::1]:19006')     // true
+ *   isLoopbackOrigin('https://localhost:8081') // false (https)
+ *   isLoopbackOrigin('http://localhost.evil.com') // false
+ */
+const LOOPBACK_ORIGIN_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/;
+function isLoopbackOrigin(origin) {
+    const normalised = normaliseOrigin(origin);
+    if (normalised === null) {
+        return false;
+    }
+    return LOOPBACK_ORIGIN_PATTERN.test(normalised);
+}
+/**
+ * True when `origin` belongs to the Oxy apex ecosystem — the `oxy.so` registrable
+ * domain (`oxy.so` itself or any `*.oxy.so` subdomain over any scheme/port) OR a
+ * loopback dev origin (see {@link isLoopbackOrigin}). This is the WebAuthn
+ * `expectedOrigin` allow-set: a passkey minted with `WEBAUTHN_RP_ID=oxy.so` may be
+ * used from any first-party Oxy web origin, and a `localhost` dev server may
+ * exercise the ceremony locally. Fails closed: any unparseable origin, or a host
+ * merely ending in the literal `oxy.so` without the dot boundary
+ * (`notoxy.so`, `evil-oxy.so`), returns `false`.
+ *
+ * @example
+ *   isOxyApexOrigin('https://accounts.oxy.so') // true
+ *   isOxyApexOrigin('https://oxy.so')          // true
+ *   isOxyApexOrigin('http://localhost:8081')   // true
+ *   isOxyApexOrigin('https://evil-oxy.so')     // false
+ *   isOxyApexOrigin('https://oxy.so.evil.com') // false
+ */
+/**
+ * True when the request carries browser context signals (`Origin` or
+ * `Sec-Fetch-Site`). Native HTTP clients (OkHttp, URLSession, curl) send
+ * neither; credentialed `fetch` in a browser always sends at least one.
+ *
+ * Used to refuse endpoints that must be native-only (e.g. background-credential
+ * provisioning) without relying on client-side platform gates alone.
+ */
+function isBrowserClient(headers) {
+    const origin = Array.isArray(headers.origin) ? headers.origin[0] : headers.origin;
+    if (origin !== undefined) {
+        return true;
+    }
+    const secFetchSite = Array.isArray(headers['sec-fetch-site'])
+        ? headers['sec-fetch-site'][0]
+        : headers['sec-fetch-site'];
+    return secFetchSite !== undefined;
+}
+function isOxyApexOrigin(origin) {
+    if (isLoopbackOrigin(origin)) {
+        return true;
+    }
+    const normalised = normaliseOrigin(origin);
+    if (normalised === null) {
+        return false;
+    }
+    let hostname;
+    try {
+        hostname = new URL(normalised).hostname.toLowerCase();
+    }
+    catch (_a) {
+        return false;
+    }
+    return hostname === 'oxy.so' || hostname.endsWith('.oxy.so');
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvb3JpZ2luLnRzIiwibWFwcGluZ3MiOiI7O0FBbUJBLDBDQVFDO0FBc0JELDRDQU1DO0FBMkJELDBDQVdDO0FBRUQsMENBZUM7QUE5R0Q7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQWtCRztBQUNILFNBQWdCLGVBQWUsQ0FBQyxLQUFhO0lBQzNDLElBQUksQ0FBQztRQUNILE1BQU0sR0FBRyxHQUFHLElBQUksR0FBRyxDQUFDLEtBQUssQ0FBQyxDQUFDO1FBQzNCLE1BQU0sSUFBSSxHQUFHLEdBQUcsQ0FBQyxJQUFJLENBQUMsQ0FBQyxDQUFDLElBQUksR0FBRyxDQUFDLElBQUksRUFBRSxDQUFDLENBQUMsQ0FBQyxFQUFFLENBQUM7UUFDNUMsT0FBTyxHQUFHLEdBQUcsQ0FBQyxRQUFRLENBQUMsV0FBVyxFQUFFLEtBQUssR0FBRyxDQUFDLFFBQVEsQ0FBQyxXQUFXLEVBQUUsR0FBRyxJQUFJLEVBQUUsQ0FBQztJQUMvRSxDQUFDO0lBQUMsV0FBTSxDQUFDO1FBQ1AsT0FBTyxJQUFJLENBQUM7SUFDZCxDQUFDO0FBQ0gsQ0FBQztBQUVEOzs7Ozs7Ozs7Ozs7Ozs7OztHQWlCRztBQUNILE1BQU0sdUJBQXVCLEdBQUcsNERBQTRELENBQUM7QUFFN0YsU0FBZ0IsZ0JBQWdCLENBQUMsTUFBYztJQUM3QyxNQUFNLFVBQVUsR0FBRyxlQUFlLENBQUMsTUFBTSxDQUFDLENBQUM7SUFDM0MsSUFBSSxVQUFVLEtBQUssSUFBSSxFQUFFLENBQUM7UUFDeEIsT0FBTyxLQUFLLENBQUM7SUFDZixDQUFDO0lBQ0QsT0FBTyx1QkFBdUIsQ0FBQyxJQUFJLENBQUMsVUFBVSxDQUFDLENBQUM7QUFDbEQsQ0FBQztBQUVEOzs7Ozs7Ozs7Ozs7Ozs7O0dBZ0JHO0FBQ0g7Ozs7Ozs7R0FPRztBQUNILFNBQWdCLGVBQWUsQ0FDN0IsT0FBNkU7SUFFN0UsTUFBTSxNQUFNLEdBQUcsS0FBSyxDQUFDLE9BQU8sQ0FBQyxPQUFPLENBQUMsTUFBTSxDQUFDLENBQUMsQ0FBQyxDQUFDLE9BQU8sQ0FBQyxNQUFNLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLE9BQU8sQ0FBQyxNQUFNLENBQUM7SUFDbEYsSUFBSSxNQUFNLEtBQUssU0FBUyxFQUFFLENBQUM7UUFDekIsT0FBTyxJQUFJLENBQUM7SUFDZCxDQUFDO0lBQ0QsTUFBTSxZQUFZLEdBQUcsS0FBSyxDQUFDLE9BQU8sQ0FBQyxPQUFPLENBQUMsZ0JBQWdCLENBQUMsQ0FBQztRQUMzRCxDQUFDLENBQUMsT0FBTyxDQUFDLGdCQUFnQixDQUFDLENBQUMsQ0FBQyxDQUFDO1FBQzlCLENBQUMsQ0FBQyxPQUFPLENBQUMsZ0JBQWdCLENBQUMsQ0FBQztJQUM5QixPQUFPLFlBQVksS0FBSyxTQUFTLENBQUM7QUFDcEMsQ0FBQztBQUVELFNBQWdCLGVBQWUsQ0FBQyxNQUFjO0lBQzVDLElBQUksZ0JBQWdCLENBQUMsTUFBTSxDQUFDLEVBQUUsQ0FBQztRQUM3QixPQUFPLElBQUksQ0FBQztJQUNkLENBQUM7SUFDRCxNQUFNLFVBQVUsR0FBRyxlQUFlLENBQUMsTUFBTSxDQUFDLENBQUM7SUFDM0MsSUFBSSxVQUFVLEtBQUssSUFBSSxFQUFFLENBQUM7UUFDeEIsT0FBTyxLQUFLLENBQUM7SUFDZixDQUFDO0lBQ0QsSUFBSSxRQUFnQixDQUFDO0lBQ3JCLElBQUksQ0FBQztRQUNILFFBQVEsR0FBRyxJQUFJLEdBQUcsQ0FBQyxVQUFVLENBQUMsQ0FBQyxRQUFRLENBQUMsV0FBVyxFQUFFLENBQUM7SUFDeEQsQ0FBQztJQUFDLFdBQU0sQ0FBQztRQUNQLE9BQU8sS0FBSyxDQUFDO0lBQ2YsQ0FBQztJQUNELE9BQU8sUUFBUSxLQUFLLFFBQVEsSUFBSSxRQUFRLENBQUMsUUFBUSxDQUFDLFNBQVMsQ0FBQyxDQUFDO0FBQy9ELENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvb3JpZ2luLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogQ2Fub25pY2FsIG9yaWdpbi1ub3JtYWxpc2F0aW9uIGhlbHBlciBzaGFyZWQgYWNyb3NzIHRoZSBDT1JTL0NTUkYgb3JpZ2luXG4gKiBndWFyZCwgdGhlIGR5bmFtaWMgb3JpZ2luIHJlZ2lzdHJ5LCBhbmQgdGhlIGF1dGggc3VyZmFjZSAoYGF1dGgudHNgKS5cbiAqXG4gKiBOb3JtYWxpc2VzIGFuIG9yaWdpbiBzdHJpbmcgZm9yIGVxdWFsaXR5IC8gYWxsb3ctbGlzdCBjb21wYXJpc29uczpcbiAqICAtIGxvd2VyY2FzZXMgdGhlIHNjaGVtZSBhbmQgdGhlIGhvc3Q7XG4gKiAgLSBwcmVzZXJ2ZXMgYW4gZXhwbGljaXQgcG9ydCAoZS5nLiBgOjMwMDBgKSwgZHJvcHMgYW4gaW1wbGljaXQvZGVmYXVsdCBvbmU7XG4gKiAgLSBkcm9wcyBhbnkgcGF0aCwgcXVlcnksIGZyYWdtZW50LCB1c2VyaW5mbyBhbmQgdHJhaWxpbmcgc2xhc2gg4oCUIG9ubHkgdGhlXG4gKiAgICBgc2NoZW1lOi8vaG9zdFs6cG9ydF1gIHRyaXBsZSBpcyByZWNvbnN0cnVjdGVkLlxuICpcbiAqIEZhaWxzIGNsb3NlZDogcmV0dXJucyBgbnVsbGAgKG5ldmVyIHRocm93cykgd2hlbiBgdmFsdWVgIGlzIG5vdCBhIHBhcnNlYWJsZVxuICogYWJzb2x1dGUgb3JpZ2luIChlbXB0eSBzdHJpbmcsIHJlbGF0aXZlIHBhdGgsIG9yIG90aGVyd2lzZSBpbnZhbGlkIFVSTCkuIFRoZVxuICogY2FsbGVyIGRlY2lkZXMgaG93IHRvIHRyZWF0IHRoZSBgbnVsbGAg4oCUIHJlamVjdCwgc2tpcCwgb3Igc3Vic3RpdHV0ZS5cbiAqXG4gKiBAZXhhbXBsZVxuICogICBub3JtYWxpc2VPcmlnaW4oJ0hUVFBTOi8vRXhhbXBsZS5jb20vcGF0aD9xPTEnKSAvLyAnaHR0cHM6Ly9leGFtcGxlLmNvbSdcbiAqICAgbm9ybWFsaXNlT3JpZ2luKCdodHRwczovL2V4YW1wbGUuY29tOjMwMDAvJykgICAgIC8vICdodHRwczovL2V4YW1wbGUuY29tOjMwMDAnXG4gKiAgIG5vcm1hbGlzZU9yaWdpbignbm90IGEgdXJsJykgICAgICAgICAgICAgICAgICAgICAgLy8gbnVsbFxuICovXG5leHBvcnQgZnVuY3Rpb24gbm9ybWFsaXNlT3JpZ2luKHZhbHVlOiBzdHJpbmcpOiBzdHJpbmcgfCBudWxsIHtcbiAgdHJ5IHtcbiAgICBjb25zdCB1cmwgPSBuZXcgVVJMKHZhbHVlKTtcbiAgICBjb25zdCBwb3J0ID0gdXJsLnBvcnQgPyBgOiR7dXJsLnBvcnR9YCA6ICcnO1xuICAgIHJldHVybiBgJHt1cmwucHJvdG9jb2wudG9Mb3dlckNhc2UoKX0vLyR7dXJsLmhvc3RuYW1lLnRvTG93ZXJDYXNlKCl9JHtwb3J0fWA7XG4gIH0gY2F0Y2gge1xuICAgIHJldHVybiBudWxsO1xuICB9XG59XG5cbi8qKlxuICogTG9vcGJhY2sgKGxvY2FsIGRldmVsb3BtZW50KSBvcmlnaW4gcHJlZGljYXRlLiBNYXRjaGVzIGBodHRwOi8vbG9jYWxob3N0YCxcbiAqIGBodHRwOi8vMTI3LjAuMC4xYCwgYW5kIGBodHRwOi8vWzo6MV1gIHdpdGggYW4gT1BUSU9OQUwgYDo8cG9ydD5gIChhbnkgMeKAkzVcbiAqIGRpZ2l0IHBvcnQpLiBIVFRQIG9ubHkg4oCUIGxvb3BiYWNrIGRldiBzZXJ2ZXJzIGFyZSBzZXJ2ZWQgb3ZlciBodHRwLCBzbyBhblxuICogYGh0dHBzOi8vbG9jYWxob3N0YCBvcmlnaW4gaXMgZGVsaWJlcmF0ZWx5IE5PVCBhIGxvb3BiYWNrIG1hdGNoLlxuICpcbiAqIFRoZSBpbnB1dCBpcyBub3JtYWxpc2VkIGZpcnN0ICh2aWEge0BsaW5rIG5vcm1hbGlzZU9yaWdpbn0pLCBzbyBzY2hlbWUvaG9zdFxuICogY2FzaW5nIGFuZCB0cmFpbGluZyBwYXRocy9xdWVyaWVzIG5ldmVyIGRlZmVhdCB0aGUgY2hlY2ssIGFuZCBvbmx5IHRoZVxuICogYHNjaGVtZTovL2hvc3RbOnBvcnRdYCB0cmlwbGUgaXMgdGVzdGVkLiBGYWlscyBjbG9zZWQ6IHJldHVybnMgYGZhbHNlYCBmb3IgYW55XG4gKiB1bnBhcnNlYWJsZSBpbnB1dC5cbiAqXG4gKiBAZXhhbXBsZVxuICogICBpc0xvb3BiYWNrT3JpZ2luKCdodHRwOi8vbG9jYWxob3N0OjgwODEnKSAgLy8gdHJ1ZVxuICogICBpc0xvb3BiYWNrT3JpZ2luKCdodHRwOi8vMTI3LjAuMC4xJykgICAgICAgLy8gdHJ1ZVxuICogICBpc0xvb3BiYWNrT3JpZ2luKCdodHRwOi8vWzo6MV06MTkwMDYnKSAgICAgLy8gdHJ1ZVxuICogICBpc0xvb3BiYWNrT3JpZ2luKCdodHRwczovL2xvY2FsaG9zdDo4MDgxJykgLy8gZmFsc2UgKGh0dHBzKVxuICogICBpc0xvb3BiYWNrT3JpZ2luKCdodHRwOi8vbG9jYWxob3N0LmV2aWwuY29tJykgLy8gZmFsc2VcbiAqL1xuY29uc3QgTE9PUEJBQ0tfT1JJR0lOX1BBVFRFUk4gPSAvXmh0dHA6XFwvXFwvKD86bG9jYWxob3N0fDEyN1xcLjBcXC4wXFwuMXxcXFs6OjFcXF0pKD86OlxcZHsxLDV9KT8kLztcblxuZXhwb3J0IGZ1bmN0aW9uIGlzTG9vcGJhY2tPcmlnaW4ob3JpZ2luOiBzdHJpbmcpOiBib29sZWFuIHtcbiAgY29uc3Qgbm9ybWFsaXNlZCA9IG5vcm1hbGlzZU9yaWdpbihvcmlnaW4pO1xuICBpZiAobm9ybWFsaXNlZCA9PT0gbnVsbCkge1xuICAgIHJldHVybiBmYWxzZTtcbiAgfVxuICByZXR1cm4gTE9PUEJBQ0tfT1JJR0lOX1BBVFRFUk4udGVzdChub3JtYWxpc2VkKTtcbn1cblxuLyoqXG4gKiBUcnVlIHdoZW4gYG9yaWdpbmAgYmVsb25ncyB0byB0aGUgT3h5IGFwZXggZWNvc3lzdGVtIOKAlCB0aGUgYG94eS5zb2AgcmVnaXN0cmFibGVcbiAqIGRvbWFpbiAoYG94eS5zb2AgaXRzZWxmIG9yIGFueSBgKi5veHkuc29gIHN1YmRvbWFpbiBvdmVyIGFueSBzY2hlbWUvcG9ydCkgT1IgYVxuICogbG9vcGJhY2sgZGV2IG9yaWdpbiAoc2VlIHtAbGluayBpc0xvb3BiYWNrT3JpZ2lufSkuIFRoaXMgaXMgdGhlIFdlYkF1dGhuXG4gKiBgZXhwZWN0ZWRPcmlnaW5gIGFsbG93LXNldDogYSBwYXNza2V5IG1pbnRlZCB3aXRoIGBXRUJBVVRITl9SUF9JRD1veHkuc29gIG1heSBiZVxuICogdXNlZCBmcm9tIGFueSBmaXJzdC1wYXJ0eSBPeHkgd2ViIG9yaWdpbiwgYW5kIGEgYGxvY2FsaG9zdGAgZGV2IHNlcnZlciBtYXlcbiAqIGV4ZXJjaXNlIHRoZSBjZXJlbW9ueSBsb2NhbGx5LiBGYWlscyBjbG9zZWQ6IGFueSB1bnBhcnNlYWJsZSBvcmlnaW4sIG9yIGEgaG9zdFxuICogbWVyZWx5IGVuZGluZyBpbiB0aGUgbGl0ZXJhbCBgb3h5LnNvYCB3aXRob3V0IHRoZSBkb3QgYm91bmRhcnlcbiAqIChgbm90b3h5LnNvYCwgYGV2aWwtb3h5LnNvYCksIHJldHVybnMgYGZhbHNlYC5cbiAqXG4gKiBAZXhhbXBsZVxuICogICBpc094eUFwZXhPcmlnaW4oJ2h0dHBzOi8vYWNjb3VudHMub3h5LnNvJykgLy8gdHJ1ZVxuICogICBpc094eUFwZXhPcmlnaW4oJ2h0dHBzOi8vb3h5LnNvJykgICAgICAgICAgLy8gdHJ1ZVxuICogICBpc094eUFwZXhPcmlnaW4oJ2h0dHA6Ly9sb2NhbGhvc3Q6ODA4MScpICAgLy8gdHJ1ZVxuICogICBpc094eUFwZXhPcmlnaW4oJ2h0dHBzOi8vZXZpbC1veHkuc28nKSAgICAgLy8gZmFsc2VcbiAqICAgaXNPeHlBcGV4T3JpZ2luKCdodHRwczovL294eS5zby5ldmlsLmNvbScpIC8vIGZhbHNlXG4gKi9cbi8qKlxuICogVHJ1ZSB3aGVuIHRoZSByZXF1ZXN0IGNhcnJpZXMgYnJvd3NlciBjb250ZXh0IHNpZ25hbHMgKGBPcmlnaW5gIG9yXG4gKiBgU2VjLUZldGNoLVNpdGVgKS4gTmF0aXZlIEhUVFAgY2xpZW50cyAoT2tIdHRwLCBVUkxTZXNzaW9uLCBjdXJsKSBzZW5kXG4gKiBuZWl0aGVyOyBjcmVkZW50aWFsZWQgYGZldGNoYCBpbiBhIGJyb3dzZXIgYWx3YXlzIHNlbmRzIGF0IGxlYXN0IG9uZS5cbiAqXG4gKiBVc2VkIHRvIHJlZnVzZSBlbmRwb2ludHMgdGhhdCBtdXN0IGJlIG5hdGl2ZS1vbmx5IChlLmcuIGJhY2tncm91bmQtY3JlZGVudGlhbFxuICogcHJvdmlzaW9uaW5nKSB3aXRob3V0IHJlbHlpbmcgb24gY2xpZW50LXNpZGUgcGxhdGZvcm0gZ2F0ZXMgYWxvbmUuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBpc0Jyb3dzZXJDbGllbnQoXG4gIGhlYWRlcnM6IHsgb3JpZ2luPzogc3RyaW5nIHwgc3RyaW5nW107ICdzZWMtZmV0Y2gtc2l0ZSc/OiBzdHJpbmcgfCBzdHJpbmdbXSB9LFxuKTogYm9vbGVhbiB7XG4gIGNvbnN0IG9yaWdpbiA9IEFycmF5LmlzQXJyYXkoaGVhZGVycy5vcmlnaW4pID8gaGVhZGVycy5vcmlnaW5bMF0gOiBoZWFkZXJzLm9yaWdpbjtcbiAgaWYgKG9yaWdpbiAhPT0gdW5kZWZpbmVkKSB7XG4gICAgcmV0dXJuIHRydWU7XG4gIH1cbiAgY29uc3Qgc2VjRmV0Y2hTaXRlID0gQXJyYXkuaXNBcnJheShoZWFkZXJzWydzZWMtZmV0Y2gtc2l0ZSddKVxuICAgID8gaGVhZGVyc1snc2VjLWZldGNoLXNpdGUnXVswXVxuICAgIDogaGVhZGVyc1snc2VjLWZldGNoLXNpdGUnXTtcbiAgcmV0dXJuIHNlY0ZldGNoU2l0ZSAhPT0gdW5kZWZpbmVkO1xufVxuXG5leHBvcnQgZnVuY3Rpb24gaXNPeHlBcGV4T3JpZ2luKG9yaWdpbjogc3RyaW5nKTogYm9vbGVhbiB7XG4gIGlmIChpc0xvb3BiYWNrT3JpZ2luKG9yaWdpbikpIHtcbiAgICByZXR1cm4gdHJ1ZTtcbiAgfVxuICBjb25zdCBub3JtYWxpc2VkID0gbm9ybWFsaXNlT3JpZ2luKG9yaWdpbik7XG4gIGlmIChub3JtYWxpc2VkID09PSBudWxsKSB7XG4gICAgcmV0dXJuIGZhbHNlO1xuICB9XG4gIGxldCBob3N0bmFtZTogc3RyaW5nO1xuICB0cnkge1xuICAgIGhvc3RuYW1lID0gbmV3IFVSTChub3JtYWxpc2VkKS5ob3N0bmFtZS50b0xvd2VyQ2FzZSgpO1xuICB9IGNhdGNoIHtcbiAgICByZXR1cm4gZmFsc2U7XG4gIH1cbiAgcmV0dXJuIGhvc3RuYW1lID09PSAnb3h5LnNvJyB8fCBob3N0bmFtZS5lbmRzV2l0aCgnLm94eS5zbycpO1xufVxuIl0sInZlcnNpb24iOjN9

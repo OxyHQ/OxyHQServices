@@ -1,0 +1,36 @@
+d50e0d29c2a9a1c4922472b78c80347c
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UPDATE_ASSET_KEY_PREFIX = void 0;
+exports.updateAssetS3Key = updateAssetS3Key;
+exports.updateAssetCdnUrl = updateAssetCdnUrl;
+exports.sha256HexToBase64Url = sha256HexToBase64Url;
+const cdn_1 = require("../../config/cdn");
+/**
+ * Content-addressed storage layout for Oxy Update assets. Both the publish
+ * service (which writes the objects) and the manifest service (which serves
+ * their URLs) derive these purely from an asset's SHA-256, so an asset URL is a
+ * deterministic function of its content and never needs a DB lookup on the hot
+ * manifest path.
+ *
+ * Objects live under the media bucket's `public/` prefix so the existing
+ * `cloud.oxy.so` CloudFront distribution serves them with no infra change.
+ */
+exports.UPDATE_ASSET_KEY_PREFIX = 'public/updates/assets/';
+/** S3 object key for an asset: `public/updates/assets/<sha256-hex>`. */
+function updateAssetS3Key(sha256) {
+    return `${exports.UPDATE_ASSET_KEY_PREFIX}${sha256}`;
+}
+/** Public CDN URL for an asset: `https://cloud.oxy.so/updates/assets/<sha256-hex>`. */
+function updateAssetCdnUrl(sha256) {
+    return (0, cdn_1.buildCdnUrl)(`updates/assets/${sha256}`);
+}
+/** Base64URL-encode the RAW bytes of a hex SHA-256 (the manifest `hash` field). */
+function sha256HexToBase64Url(sha256Hex) {
+    return Buffer.from(sha256Hex, 'hex')
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2VydmljZXMvdXBkYXRlcy9hc3NldEtleXMudHMiLCJtYXBwaW5ncyI6Ijs7O0FBZUEsNENBRUM7QUFHRCw4Q0FFQztBQUdELG9EQU1DO0FBL0JELDBDQUErQztBQUUvQzs7Ozs7Ozs7O0dBU0c7QUFDVSxRQUFBLHVCQUF1QixHQUFHLHdCQUF3QixDQUFDO0FBRWhFLHdFQUF3RTtBQUN4RSxTQUFnQixnQkFBZ0IsQ0FBQyxNQUFjO0lBQzdDLE9BQU8sR0FBRywrQkFBdUIsR0FBRyxNQUFNLEVBQUUsQ0FBQztBQUMvQyxDQUFDO0FBRUQsdUZBQXVGO0FBQ3ZGLFNBQWdCLGlCQUFpQixDQUFDLE1BQWM7SUFDOUMsT0FBTyxJQUFBLGlCQUFXLEVBQUMsa0JBQWtCLE1BQU0sRUFBRSxDQUFDLENBQUM7QUFDakQsQ0FBQztBQUVELG1GQUFtRjtBQUNuRixTQUFnQixvQkFBb0IsQ0FBQyxTQUFpQjtJQUNwRCxPQUFPLE1BQU0sQ0FBQyxJQUFJLENBQUMsU0FBUyxFQUFFLEtBQUssQ0FBQztTQUNqQyxRQUFRLENBQUMsUUFBUSxDQUFDO1NBQ2xCLE9BQU8sQ0FBQyxLQUFLLEVBQUUsR0FBRyxDQUFDO1NBQ25CLE9BQU8sQ0FBQyxLQUFLLEVBQUUsR0FBRyxDQUFDO1NBQ25CLE9BQU8sQ0FBQyxLQUFLLEVBQUUsRUFBRSxDQUFDLENBQUM7QUFDeEIsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9zZXJ2aWNlcy91cGRhdGVzL2Fzc2V0S2V5cy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyBidWlsZENkblVybCB9IGZyb20gJy4uLy4uL2NvbmZpZy9jZG4nO1xuXG4vKipcbiAqIENvbnRlbnQtYWRkcmVzc2VkIHN0b3JhZ2UgbGF5b3V0IGZvciBPeHkgVXBkYXRlIGFzc2V0cy4gQm90aCB0aGUgcHVibGlzaFxuICogc2VydmljZSAod2hpY2ggd3JpdGVzIHRoZSBvYmplY3RzKSBhbmQgdGhlIG1hbmlmZXN0IHNlcnZpY2UgKHdoaWNoIHNlcnZlc1xuICogdGhlaXIgVVJMcykgZGVyaXZlIHRoZXNlIHB1cmVseSBmcm9tIGFuIGFzc2V0J3MgU0hBLTI1Niwgc28gYW4gYXNzZXQgVVJMIGlzIGFcbiAqIGRldGVybWluaXN0aWMgZnVuY3Rpb24gb2YgaXRzIGNvbnRlbnQgYW5kIG5ldmVyIG5lZWRzIGEgREIgbG9va3VwIG9uIHRoZSBob3RcbiAqIG1hbmlmZXN0IHBhdGguXG4gKlxuICogT2JqZWN0cyBsaXZlIHVuZGVyIHRoZSBtZWRpYSBidWNrZXQncyBgcHVibGljL2AgcHJlZml4IHNvIHRoZSBleGlzdGluZ1xuICogYGNsb3VkLm94eS5zb2AgQ2xvdWRGcm9udCBkaXN0cmlidXRpb24gc2VydmVzIHRoZW0gd2l0aCBubyBpbmZyYSBjaGFuZ2UuXG4gKi9cbmV4cG9ydCBjb25zdCBVUERBVEVfQVNTRVRfS0VZX1BSRUZJWCA9ICdwdWJsaWMvdXBkYXRlcy9hc3NldHMvJztcblxuLyoqIFMzIG9iamVjdCBrZXkgZm9yIGFuIGFzc2V0OiBgcHVibGljL3VwZGF0ZXMvYXNzZXRzLzxzaGEyNTYtaGV4PmAuICovXG5leHBvcnQgZnVuY3Rpb24gdXBkYXRlQXNzZXRTM0tleShzaGEyNTY6IHN0cmluZyk6IHN0cmluZyB7XG4gIHJldHVybiBgJHtVUERBVEVfQVNTRVRfS0VZX1BSRUZJWH0ke3NoYTI1Nn1gO1xufVxuXG4vKiogUHVibGljIENETiBVUkwgZm9yIGFuIGFzc2V0OiBgaHR0cHM6Ly9jbG91ZC5veHkuc28vdXBkYXRlcy9hc3NldHMvPHNoYTI1Ni1oZXg+YC4gKi9cbmV4cG9ydCBmdW5jdGlvbiB1cGRhdGVBc3NldENkblVybChzaGEyNTY6IHN0cmluZyk6IHN0cmluZyB7XG4gIHJldHVybiBidWlsZENkblVybChgdXBkYXRlcy9hc3NldHMvJHtzaGEyNTZ9YCk7XG59XG5cbi8qKiBCYXNlNjRVUkwtZW5jb2RlIHRoZSBSQVcgYnl0ZXMgb2YgYSBoZXggU0hBLTI1NiAodGhlIG1hbmlmZXN0IGBoYXNoYCBmaWVsZCkuICovXG5leHBvcnQgZnVuY3Rpb24gc2hhMjU2SGV4VG9CYXNlNjRVcmwoc2hhMjU2SGV4OiBzdHJpbmcpOiBzdHJpbmcge1xuICByZXR1cm4gQnVmZmVyLmZyb20oc2hhMjU2SGV4LCAnaGV4JylcbiAgICAudG9TdHJpbmcoJ2Jhc2U2NCcpXG4gICAgLnJlcGxhY2UoL1xcKy9nLCAnLScpXG4gICAgLnJlcGxhY2UoL1xcLy9nLCAnXycpXG4gICAgLnJlcGxhY2UoLz0rJC8sICcnKTtcbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

@@ -1,0 +1,235 @@
+1c7dea40c242d21e61221dc594a3bc46
+"use strict";
+/**
+ * Idempotent admin script: bootstrap the proof-of-personhood web-of-trust
+ * genesis root (civic / Commons — Fase 3).
+ *
+ * Marks a small, hand-picked set of accounts (given by USERNAME) as
+ * `User.isSeedVerifier = true`. A seed verifier is the trust root: personhood
+ * treats them as score = 1 (a known real, unique human) without needing
+ * vouches, so they can bootstrap the network by vouching for others.
+ *
+ * For each resolved username:
+ *   - already `isSeedVerifier` → skipped (no write; idempotent).
+ *   - otherwise → `User.isSeedVerifier = true` (explicit single-field `$set`),
+ *     then `recomputePersonhood(userId)` runs (which short-circuits on the seed
+ *     flag to score 1 / isRealPerson true, mirrors `User.verified`, recalculates
+ *     the reputation balance, and invalidates userCache).
+ *
+ * A username that does not resolve to a user is warned and SKIPPED — the batch
+ * continues. If ANY username failed to resolve, the process exits non-zero
+ * AFTER processing every resolvable one.
+ *
+ * Safety:
+ *   - No deletes, no drops.
+ *   - Explicit single field only (never spreads request/body data).
+ *   - Re-running performs 0 writes once every named account is seeded.
+ *   - DRY_RUN reports exactly what WOULD change and writes NOTHING.
+ *   - Bounded to exactly the named usernames.
+ *
+ * Run (inside the oxy-api image, working dir /app):
+ *   SEED_VERIFIER_USERNAMES=oxy,nate bun run packages/api/src/scripts/set-seed-verifiers.ts
+ * Or, against the compiled output:
+ *   SEED_VERIFIER_USERNAMES=oxy,nate node packages/api/dist/scripts/set-seed-verifiers.js
+ *
+ * Env:
+ *   SEED_VERIFIER_USERNAMES   required — comma-separated usernames (e.g. `oxy,nate`)
+ *   MONGODB_URI               required (injected by ECS from SSM)
+ *   NODE_ENV                  selects the DB name via getDbName() (e.g. oxy-prod)
+ *   DRY_RUN=true|1            plan only, no writes
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.seedVerifierByUsername = seedVerifierByUsername;
+const mongoose_1 = __importDefault(require("mongoose"));
+const dotenv_1 = __importDefault(require("dotenv"));
+const User_js_1 = require("../models/User.js");
+const PersonhoodStatus_js_1 = __importDefault(require("../models/PersonhoodStatus.js"));
+const personhood_service_js_1 = require("../services/civic/personhood.service.js");
+const db_js_1 = require("../config/db.js");
+const redis_js_1 = require("../config/redis.js");
+const logger_js_1 = require("../utils/logger.js");
+dotenv_1.default.config();
+/**
+ * Resolve a single username to a user and either report (dry-run) or apply the
+ * seed-verifier flag + recompute personhood (real run). Returns a structured
+ * result; never throws for a missing user (returns `resolved: false`).
+ */
+function seedVerifierByUsername(username, dryRun) {
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c;
+        // Query without `.lean()` so the `name.displayName` virtual getter is available.
+        const user = yield User_js_1.User.findOne({ username })
+            .select('_id username verified isSeedVerifier name')
+            .exec();
+        if (!user) {
+            return { username, resolved: false };
+        }
+        const userId = user._id.toString();
+        const displayName = (_a = user.name) === null || _a === void 0 ? void 0 : _a.displayName;
+        const currentlySeeded = user.isSeedVerifier === true;
+        if (dryRun) {
+            // Read CURRENT personhood WITHOUT writing (never call recomputePersonhood).
+            const status = yield PersonhoodStatus_js_1.default.findOne({ userId })
+                .select('score isRealPerson')
+                .lean();
+            return {
+                username,
+                resolved: true,
+                userId,
+                displayName,
+                alreadySeeded: currentlySeeded,
+                seeded: false,
+                score: (_b = status === null || status === void 0 ? void 0 : status.score) !== null && _b !== void 0 ? _b : 0,
+                isRealPerson: (_c = status === null || status === void 0 ? void 0 : status.isRealPerson) !== null && _c !== void 0 ? _c : false,
+                verified: user.verified === true,
+            };
+        }
+        if (currentlySeeded) {
+            // Idempotent: already a seed verifier — no write, no recompute.
+            return {
+                username,
+                resolved: true,
+                userId,
+                displayName,
+                alreadySeeded: true,
+                seeded: false,
+                verified: user.verified === true,
+            };
+        }
+        // Explicit single field — never spread request/body data.
+        yield User_js_1.User.updateOne({ _id: user._id }, { $set: { isSeedVerifier: true } });
+        const status = yield (0, personhood_service_js_1.recomputePersonhood)(userId);
+        // Re-read `verified` so we log the final, post-recompute value.
+        const after = yield User_js_1.User.findById(userId).select('verified').lean();
+        return {
+            username,
+            resolved: true,
+            userId,
+            displayName,
+            alreadySeeded: false,
+            seeded: true,
+            score: status.score,
+            isRealPerson: status.isRealPerson,
+            verified: (after === null || after === void 0 ? void 0 : after.verified) === true,
+        };
+    });
+}
+function run(usernames, dryRun) {
+    return __awaiter(this, void 0, void 0, function* () {
+        let anyUnresolved = false;
+        for (const username of usernames) {
+            const result = yield seedVerifierByUsername(username, dryRun);
+            if (!result.resolved) {
+                anyUnresolved = true;
+                logger_js_1.logger.warn('username did not resolve', { username });
+                continue;
+            }
+            if (dryRun) {
+                logger_js_1.logger.info('DRY RUN — would seed verifier', {
+                    username: result.username,
+                    userId: result.userId,
+                    displayName: result.displayName,
+                    currentIsSeedVerifier: result.alreadySeeded === true,
+                    wouldChange: result.alreadySeeded !== true,
+                    currentScore: result.score,
+                    currentIsRealPerson: result.isRealPerson,
+                    currentVerified: result.verified,
+                });
+                continue;
+            }
+            if (result.alreadySeeded) {
+                logger_js_1.logger.info('already seeded, skipping', {
+                    username: result.username,
+                    userId: result.userId,
+                    displayName: result.displayName,
+                });
+                continue;
+            }
+            logger_js_1.logger.info('seed verifier applied', {
+                username: result.username,
+                userId: result.userId,
+                displayName: result.displayName,
+                isSeedVerifierBefore: false,
+                isSeedVerifierAfter: true,
+                personhoodScore: result.score,
+                personhoodIsRealPerson: result.isRealPerson,
+                verifiedAfter: result.verified,
+            });
+        }
+        logger_js_1.logger.info('Seed verifier summary', {
+            dryRun,
+            requested: usernames.length,
+            unresolved: anyUnresolved,
+        });
+        return anyUnresolved;
+    });
+}
+function main() {
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a;
+        const dryRun = process.env.DRY_RUN === 'true' || process.env.DRY_RUN === '1';
+        const raw = (_a = process.env.SEED_VERIFIER_USERNAMES) !== null && _a !== void 0 ? _a : '';
+        const usernames = Array.from(new Set(raw
+            .split(',')
+            .map((u) => u.trim())
+            .filter((u) => u.length > 0)));
+        if (usernames.length === 0) {
+            logger_js_1.logger.error('SEED_VERIFIER_USERNAMES is required (comma-separated usernames, e.g. ' +
+                '`oxy,nate`). No accounts were modified.\n' +
+                'Usage:\n' +
+                '  SEED_VERIFIER_USERNAMES=oxy,nate [DRY_RUN=true] ' +
+                'bun run packages/api/src/scripts/set-seed-verifiers.ts');
+            process.exit(1);
+        }
+        const uri = process.env.MONGODB_URI;
+        if (!uri) {
+            logger_js_1.logger.error('MONGODB_URI is required');
+            process.exit(1);
+        }
+        if (dryRun) {
+            logger_js_1.logger.info('DRY RUN — no writes will be performed');
+        }
+        const dbName = (0, db_js_1.getDbName)();
+        yield mongoose_1.default.connect(uri, { dbName });
+        logger_js_1.logger.info('Connected to MongoDB', { dbName });
+        let anyUnresolved = false;
+        try {
+            anyUnresolved = yield run(usernames, dryRun);
+        }
+        finally {
+            yield mongoose_1.default.connection.close();
+            logger_js_1.logger.info('MongoDB connection closed');
+            // personhood.service reaches the shared Redis client, whose live socket is
+            // a ref'd handle that would keep this one-shot task RUNNING forever after
+            // the work is done. No-op when REDIS_URL is unset.
+            yield (0, redis_js_1.closeRedis)();
+            logger_js_1.logger.info('Redis client closed');
+        }
+        if (anyUnresolved) {
+            // Non-zero exit AFTER processing every resolvable username.
+            process.exit(1);
+        }
+    });
+}
+// Only auto-run when invoked directly as a script (bun run … / node dist/…),
+// NOT when imported (e.g. by the unit test, which drives `seedVerifierByUsername`
+// in isolation). Mirrors the `require.main === module` guard in `server.ts`.
+if (require.main === module) {
+    main().catch((error) => {
+        logger_js_1.logger.error('Set seed verifiers failed', error instanceof Error ? error : new Error(String(error)), { component: 'set-seed-verifiers', method: 'main' });
+        process.exit(1);
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2NyaXB0cy9zZXQtc2VlZC12ZXJpZmllcnMudHMiLCJtYXBwaW5ncyI6IjtBQUNBOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBcUNHOzs7Ozs7Ozs7Ozs7OztBQXFDSCx3REFtRUM7QUF0R0Qsd0RBQWdDO0FBQ2hDLG9EQUE0QjtBQUM1QiwrQ0FBeUM7QUFDekMsd0ZBQTZEO0FBQzdELG1GQUE4RTtBQUM5RSwyQ0FBNEM7QUFDNUMsaURBQWdEO0FBQ2hELGtEQUE0QztBQUU1QyxnQkFBTSxDQUFDLE1BQU0sRUFBRSxDQUFDO0FBcUJoQjs7OztHQUlHO0FBQ0gsU0FBc0Isc0JBQXNCLENBQzFDLFFBQWdCLEVBQ2hCLE1BQWU7OztRQUVmLGlGQUFpRjtRQUNqRixNQUFNLElBQUksR0FBRyxNQUFNLGNBQUksQ0FBQyxPQUFPLENBQUMsRUFBRSxRQUFRLEVBQUUsQ0FBQzthQUMxQyxNQUFNLENBQUMsMkNBQTJDLENBQUM7YUFDbkQsSUFBSSxFQUFFLENBQUM7UUFFVixJQUFJLENBQUMsSUFBSSxFQUFFLENBQUM7WUFDVixPQUFPLEVBQUUsUUFBUSxFQUFFLFFBQVEsRUFBRSxLQUFLLEVBQUUsQ0FBQztRQUN2QyxDQUFDO1FBRUQsTUFBTSxNQUFNLEdBQUcsSUFBSSxDQUFDLEdBQUcsQ0FBQyxRQUFRLEVBQUUsQ0FBQztRQUNuQyxNQUFNLFdBQVcsR0FBRyxNQUFBLElBQUksQ0FBQyxJQUFJLDBDQUFFLFdBQVcsQ0FBQztRQUMzQyxNQUFNLGVBQWUsR0FBRyxJQUFJLENBQUMsY0FBYyxLQUFLLElBQUksQ0FBQztRQUVyRCxJQUFJLE1BQU0sRUFBRSxDQUFDO1lBQ1gsNEVBQTRFO1lBQzVFLE1BQU0sTUFBTSxHQUFHLE1BQU0sNkJBQWdCLENBQUMsT0FBTyxDQUFDLEVBQUUsTUFBTSxFQUFFLENBQUM7aUJBQ3RELE1BQU0sQ0FBQyxvQkFBb0IsQ0FBQztpQkFD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QyxTQUFTLEVBQUUsTUFBTSxDQUFDLENBQUM7UUFDL0MsQ0FBQztnQkFBUyxDQUFDO1lBQ1QsTUFBTSxrQkFBUSxDQUFDLFVBQVUsQ0FBQyxLQUFLLEVBQUUsQ0FBQztZQUNsQyxrQkFBTSxDQUFDLElBQUksQ0FBQywyQkFBMkIsQ0FBQyxDQUFDO1lBQ3pDLDJFQUEyRTtZQUMzRSwwRUFBMEU7WUFDMUUsbURBQW1EO1lBQ25ELE1BQU0sSUFBQSxxQkFBVSxHQUFFLENBQUM7WUFDbkIsa0JBQU0sQ0FBQyxJQUFJLENBQUMscUJBQXFCLENBQUMsQ0FBQztRQUNyQyxDQUFDO1FBRUQsSUFBSSxhQUFhLEVBQUUsQ0FBQztZQUNsQiw0REFBNEQ7WUFDNUQsT0FBTyxDQUFDLElBQUksQ0FBQyxDQUFDLENBQUMsQ0FBQztRQUNsQixDQUFDO0lBQ0gsQ0FBQztDQUFBO0FBRUQsNkVBQTZFO0FBQzdFLGtGQUFrRjtBQUNsRiw2RUFBNkU7QUFDN0UsSUFBSSxPQUFPLENBQUMsSUFBSSxLQUFLLE1BQU0sRUFBRSxDQUFDO0lBQzVCLElBQUksRUFBRSxDQUFDLEtBQUssQ0FBQyxDQUFDLEtBQUssRUFBRSxFQUFFO1FBQ3JCLGtCQUFNLENBQUMsS0FBSyxDQUNWLDJCQUEyQixFQUMzQixLQUFLLFlBQVksS0FBSyxDQUFDLENBQUMsQ0FBQyxLQUFLLENBQUMsQ0FBQyxDQUFDLElBQUksS0FBSyxDQUFDLE1BQU0sQ0FBQyxLQUFLLENBQUMsQ0FBQyxFQUN6RCxFQUFFLFNBQVMsRUFBRSxvQkFBb0IsRUFBRSxNQUFNLEVBQUUsTUFBTSxFQUFFLENBQ3BELENBQUM7UUFDRixPQUFPLENBQUMsSUFBSSxDQUFDLENBQUMsQ0FBQyxDQUFDO0lBQ2xCLENBQUMsQ0FBQyxDQUFDO0FBQ0wsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9zY3JpcHRzL3NldC1zZWVkLXZlcmlmaWVycy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJcbi8qKlxuICogSWRlbXBvdGVudCBhZG1pbiBzY3JpcHQ6IGJvb3RzdHJhcCB0aGUgcHJvb2Ytb2YtcGVyc29uaG9vZCB3ZWItb2YtdHJ1c3RcbiAqIGdlbmVzaXMgcm9vdCAoY2l2aWMgLyBDb21tb25zIOKAlCBGYXNlIDMpLlxuICpcbiAqIE1hcmtzIGEgc21hbGwsIGhhbmQtcGlja2VkIHNldCBvZiBhY2NvdW50cyAoZ2l2ZW4gYnkgVVNFUk5BTUUpIGFzXG4gKiBgVXNlci5pc1NlZWRWZXJpZmllciA9IHRydWVgLiBBIHNlZWQgdmVyaWZpZXIgaXMgdGhlIHRydXN0IHJvb3Q6IHBlcnNvbmhvb2RcbiAqIHRyZWF0cyB0aGVtIGFzIHNjb3JlID0gMSAoYSBrbm93biByZWFsLCB1bmlxdWUgaHVtYW4pIHdpdGhvdXQgbmVlZGluZ1xuICogdm91Y2hlcywgc28gdGhleSBjYW4gYm9vdHN0cmFwIHRoZSBuZXR3b3JrIGJ5IHZvdWNoaW5nIGZvciBvdGhlcnMuXG4gKlxuICogRm9yIGVhY2ggcmVzb2x2ZWQgdXNlcm5hbWU6XG4gKiAgIC0gYWxyZWFkeSBgaXNTZWVkVmVyaWZpZXJgIOKGkiBza2lwcGVkIChubyB3cml0ZTsgaWRlbXBvdGVudCkuXG4gKiAgIC0gb3RoZXJ3aXNlIOKGkiBgVXNlci5pc1NlZWRWZXJpZmllciA9IHRydWVgIChleHBsaWNpdCBzaW5nbGUtZmllbGQgYCRzZXRgKSxcbiAqICAgICB0aGVuIGByZWNvbXB1dGVQZXJzb25ob29kKHVzZXJJZClgIHJ1bnMgKHdoaWNoIHNob3J0LWNpcmN1aXRzIG9uIHRoZSBzZWVkXG4gKiAgICAgZmxhZyB0byBzY29yZSAxIC8gaXNSZWFsUGVyc29uIHRydWUsIG1pcnJvcnMgYFVzZXIudmVyaWZpZWRgLCByZWNhbGN1bGF0ZXNcbiAqICAgICB0aGUgcmVwdXRhdGlvbiBiYWxhbmNlLCBhbmQgaW52YWxpZGF0ZXMgdXNlckNhY2hlKS5cbiAqXG4gKiBBIHVzZXJuYW1lIHRoYXQgZG9lcyBub3QgcmVzb2x2ZSB0byBhIHVzZXIgaXMgd2FybmVkIGFuZCBTS0lQUEVEIOKAlCB0aGUgYmF0Y2hcbiAqIGNvbnRpbnVlcy4gSWYgQU5ZIHVzZXJuYW1lIGZhaWxlZCB0byByZXNvbHZlLCB0aGUgcHJvY2VzcyBleGl0cyBub24temVyb1xuICogQUZURVIgcHJvY2Vzc2luZyBldmVyeSByZXNvbHZhYmxlIG9uZS5cbiAqXG4gKiBTYWZldHk6XG4gKiAgIC0gTm8gZGVsZXRlcywgbm8gZHJvcHMuXG4gKiAgIC0gRXhwbGljaXQgc2luZ2xlIGZpZWxkIG9ubHkgKG5ldmVyIHNwcmVhZHMgcmVxdWVzdC9ib2R5IGRhdGEpLlxuICogICAtIFJlLXJ1bm5pbmcgcGVyZm9ybXMgMCB3cml0ZXMgb25jZSBldmVyeSBuYW1lZCBhY2NvdW50IGlzIHNlZWRlZC5cbiAqICAgLSBEUllfUlVOIHJlcG9ydHMgZXhhY3RseSB3aGF0IFdPVUxEIGNoYW5nZSBhbmQgd3JpdGVzIE5PVEhJTkcuXG4gKiAgIC0gQm91bmRlZCB0byBleGFjdGx5IHRoZSBuYW1lZCB1c2VybmFtZXMuXG4gKlxuICogUnVuIChpbnNpZGUgdGhlIG94eS1hcGkgaW1hZ2UsIHdvcmtpbmcgZGlyIC9hcHApOlxuICogICBTRUVEX1ZFUklGSUVSX1VTRVJOQU1FUz1veHksbmF0ZSBidW4gcnVuIHBhY2thZ2VzL2FwaS9zcmMvc2NyaXB0cy9zZXQtc2VlZC12ZXJpZmllcnMudHNcbiAqIE9yLCBhZ2FpbnN0IHRoZSBjb21waWxlZCBvdXRwdXQ6XG4gKiAgIFNFRURfVkVSSUZJRVJfVVNFUk5BTUVTPW94eSxuYXRlIG5vZGUgcGFja2FnZXMvYXBpL2Rpc3Qvc2NyaXB0cy9zZXQtc2VlZC12ZXJpZmllcnMuanNcbiAqXG4gKiBFbnY6XG4gKiAgIFNFRURfVkVSSUZJRVJfVVNFUk5BTUVTICAgcmVxdWlyZWQg4oCUIGNvbW1hLXNlcGFyYXRlZCB1c2VybmFtZXMgKGUuZy4gYG94eSxuYXRlYClcbiAqICAgTU9OR09EQl9VUkkgICAgICAgICAgICAgICByZXF1aXJlZCAoaW5qZWN0ZWQgYnkgRUNTIGZyb20gU1NNKVxuICogICBOT0RFX0VOViAgICAgICAgICAgICAgICAgIHNlbGVjdHMgdGhlIERCIG5hbWUgdmlhIGdldERiTmFtZSgpIChlLmcuIG94eS1wcm9kKVxuICogICBEUllfUlVOPXRydWV8MSAgICAgICAgICAgIHBsYW4gb25seSwgbm8gd3JpdGVzXG4gKi9cblxuaW1wb3J0IG1vbmdvb3NlIGZyb20gJ21vbmdvb3NlJztcbmltcG9ydCBkb3RlbnYgZnJvbSAnZG90ZW52JztcbmltcG9ydCB7IFVzZXIgfSBmcm9tICcuLi9tb2RlbHMvVXNlci5qcyc7XG5pbXBvcnQgUGVyc29uaG9vZFN0YXR1cyBmcm9tICcuLi9tb2RlbHMvUGVyc29uaG9vZFN0YXR1cy5qcyc7XG5pbXBvcnQgeyByZWNvbXB1dGVQZXJzb25ob29kIH0gZnJvbSAnLi4vc2VydmljZXMvY2l2aWMvcGVyc29uaG9vZC5zZXJ2aWNlLmpzJztcbmltcG9ydCB7IGdldERiTmFtZSB9IGZyb20gJy4uL2NvbmZpZy9kYi5qcyc7XG5pbXBvcnQgeyBjbG9zZVJlZGlzIH0gZnJvbSAnLi4vY29uZmlnL3JlZGlzLmpzJztcbmltcG9ydCB7IGxvZ2dlciB9IGZyb20gJy4uL3V0aWxzL2xvZ2dlci5qcyc7XG5cbmRvdGVudi5jb25maWcoKTtcblxuLyoqIFN0cnVjdHVyZWQgb3V0Y29tZSBvZiBzZWVkaW5nIGEgc2luZ2xlIHVzZXJuYW1lIChkcml2ZXMgbG9nZ2luZyArIGV4aXQgY29kZSkuICovXG5leHBvcnQgaW50ZXJmYWNlIFNlZWRSZXN1bHQge1xuICB1c2VybmFtZTogc3RyaW5nO1xuICAvKiogV2hldGhlciB0aGUgdXNlcm5hbWUgcmVzb2x2ZWQgdG8gYW4gZXhpc3RpbmcgdXNlci4gKi9cbiAgcmVzb2x2ZWQ6IGJvb2xlYW47XG4gIHVzZXJJZD86IHN0cmluZztcbiAgZGlzcGxheU5hbWU/OiBzdHJpbmc7XG4gIC8qKiBUcnVlIHdoZW4gdGhlIHVzZXIgd2FzIGFscmVhZHkgYSBzZWVkIHZlcmlmaWVyIChubyB3cml0ZSBwZXJmb3JtZWQpLiAqL1xuICBhbHJlYWR5U2VlZGVkPzogYm9vbGVhbjtcbiAgLyoqIFRydWUgd2hlbiB0aGlzIHJ1biBmbGlwcGVkIGBpc1NlZWRWZXJpZmllcmAgdG8gdHJ1ZS4gKi9cbiAgc2VlZGVkPzogYm9vbGVhbjtcbiAgLyoqIFBlcnNvbmhvb2Qgc2NvcmUgKGN1cnJlbnQsIGluIGRyeS1ydW47IHBvc3QtcmVjb21wdXRlLCBvbiBhIHJlYWwgc2VlZCkuICovXG4gIHNjb3JlPzogbnVtYmVyO1xuICAvKiogUGVyc29uaG9vZCBgaXNSZWFsUGVyc29uYCB2ZXJkaWN0IChjdXJyZW50IGluIGRyeS1ydW47IHBvc3QtcmVjb21wdXRlIG90aGVyd2lzZSkuICovXG4gIGlzUmVhbFBlcnNvbj86IGJvb2xlYW47XG4gIC8qKiBgVXNlci52ZXJpZmllZGAgYWZ0ZXIgdGhlIHdyaXRlIChyZWFsIHJ1biBvbmx5KS4gKi9cbiAgdmVyaWZpZWQ/OiBib29sZWFuO1xufVxuXG4vKipcbiAqIFJlc29sdmUgYSBzaW5nbGUgdXNlcm5hbWUgdG8gYSB1c2VyIGFuZCBlaXRoZXIgcmVwb3J0IChkcnktcnVuKSBvciBhcHBseSB0aGVcbiAqIHNlZWQtdmVyaWZpZXIgZmxhZyArIHJlY29tcHV0ZSBwZXJzb25ob29kIChyZWFsIHJ1bikuIFJldHVybnMgYSBzdHJ1Y3R1cmVkXG4gKiByZXN1bHQ7IG5ldmVyIHRocm93cyBmb3IgYSBtaXNzaW5nIHVzZXIgKHJldHVybnMgYHJlc29sdmVkOiBmYWxzZWApLlxuICovXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gc2VlZFZlcmlmaWVyQnlVc2VybmFtZShcbiAgdXNlcm5hbWU6IHN0cmluZyxcbiAgZHJ5UnVuOiBib29sZWFuLFxuKTogUHJvbWlzZTxTZWVkUmVzdWx0PiB7XG4gIC8vIFF1ZXJ5IHdpdGhvdXQgYC5sZWFuKClgIHNvIHRoZSBgbmFtZS5kaXNwbGF5TmFtZWAgdmlydHVhbCBnZXR0ZXIgaXMgYXZhaWxhYmxlLlxuICBjb25zdCB1c2VyID0gYXdhaXQgVXNlci5maW5kT25lKHsgdXNlcm5hbWUgfSlcbiAgICAuc2VsZWN0KCdfaWQgdXNlcm5hbWUgdmVyaWZpZWQgaXNTZWVkVmVyaWZpZXIgbmFtZScpXG4gICAgLmV4ZWMoKTtcblxuICBpZiAoIXVzZXIpIHtcbiAgICByZXR1cm4geyB1c2VybmFtZSwgcmVzb2x2ZWQ6IGZhbHNlIH07XG4gIH1cblxuICBjb25zdCB1c2VySWQgPSB1c2VyLl9pZC50b1N0cmluZygpO1xuICBjb25zdCBkaXNwbGF5TmFtZSA9IHVzZXIubmFtZT8uZGlzcGxheU5hbWU7XG4gIGNvbnN0IGN1cnJlbnRseVNlZWRlZCA9IHVzZXIuaXNTZWVkVmVyaWZpZXIgPT09IHRydWU7XG5cbiAgaWYgKGRyeVJ1bikge1xuICAgIC8vIFJlYWQgQ1VSUkVOVCBwZXJzb25ob29kIFdJVEhPVVQgd3JpdGluZyAobmV2ZXIgY2FsbCByZWNvbXB1dGVQZXJzb25ob29kKS5cbiAgICBjb25zdCBzdGF0dXMgPSBhd2FpdCBQZXJzb25ob29kU3RhdHVzLmZpbmRPbmUoeyB1c2VySWQgfSlcbiAgICAgIC5zZWxlY3QoJ3Njb3JlIGlzUmVhbFBlcnNvbicpXG4gICAgICAubGVhbjx7IHNjb3JlPzogbnVtYmVyOyBpc1JlYWxQZXJzb24/OiBib29sZWFuIH0gfCBudWxsPigpO1xuICAgIHJldHVybiB7XG4gICAgICB1c2VybmFtZSxcbiAgICAgIHJlc29sdmVkOiB0cnVlLFxuICAgICAgdXNlcklkLFxuICAgICAgZGlzcGxheU5hbWUsXG4gICAgICBhbHJlYWR5U2VlZGVkOiBjdXJyZW50bHlTZWVkZWQsXG4gICAgICBzZWVkZWQ6IGZhbHNlLFxuICAgICAgc2NvcmU6IHN0YXR1cz8uc2NvcmUgPz8gMCxcbiAgICAgIGlzUmVhbFBlcnNvbjogc3RhdHVzPy5pc1JlYWxQZXJzb24gPz8gZmFsc2UsXG4gICAgICB2ZXJpZmllZDogdXNlci52ZXJpZmllZCA9PT0gdHJ1ZSxcbiAgICB9O1xuICB9XG5cbiAgaWYgKGN1cnJlbnRseVNlZWRlZCkge1xuICAgIC8vIElkZW1wb3RlbnQ6IGFscmVhZHkgYSBzZWVkIHZlcmlmaWVyIOKAlCBubyB3cml0ZSwgbm8gcmVjb21wdXRlLlxuICAgIHJldHVybiB7XG4gICAgICB1c2VybmFtZSxcbiAgICAgIHJlc29sdmVkOiB0cnVlLFxuICAgICAgdXNlcklkLFxuICAgICAgZGlzcGxheU5hbWUsXG4gICAgICBhbHJlYWR5U2VlZGVkOiB0cnVlLFxuICAgICAgc2VlZGVkOiBmYWxzZSxcbiAgICAgIHZlcmlmaWVkOiB1c2VyLnZlcmlmaWVkID09PSB0cnVlLFxuICAgIH07XG4gIH1cblxuICAvLyBFeHBsaWNpdCBzaW5nbGUgZmllbGQg4oCUIG5ldmVyIHNwcmVhZCByZXF1ZXN0L2JvZHkgZGF0YS5cbiAgYXdhaXQgVXNlci51cGRhdGVPbmUoeyBfaWQ6IHVzZXIuX2lkIH0sIHsgJHNldDogeyBpc1NlZWRWZXJpZmllcjogdHJ1ZSB9IH0pO1xuXG4gIGNvbnN0IHN0YXR1cyA9IGF3YWl0IHJlY29tcHV0ZVBlcnNvbmhvb2QodXNlcklkKTtcblxuICAvLyBSZS1yZWFkIGB2ZXJpZmllZGAgc28gd2UgbG9nIHRoZSBmaW5hbCwgcG9zdC1yZWNvbXB1dGUgdmFsdWUuXG4gIGNvbnN0IGFmdGVyID0gYXdhaXQgVXNlci5maW5kQnlJZCh1c2VySWQpLnNlbGVjdCgndmVyaWZpZWQnKS5sZWFuPHsgdmVyaWZpZWQ/OiBib29sZWFuIH0gfCBudWxsPigpO1xuXG4gIHJldHVybiB7XG4gICAgdXNlcm5hbWUsXG4gICAgcmVzb2x2ZWQ6IHRydWUsXG4gICAgdXNlcklkLFxuICAgIGRpc3BsYXlOYW1lLFxuICAgIGFscmVhZHlTZWVkZWQ6IGZhbHNlLFxuICAgIHNlZWRlZDogdHJ1ZSxcbiAgICBzY29yZTogc3RhdHVzLnNjb3JlLFxuICAgIGlzUmVhbFBlcnNvbjogc3RhdHVzLmlzUmVhbFBlcnNvbixcbiAgICB2ZXJpZmllZDogYWZ0ZXI/LnZlcmlmaWVkID09PSB0cnVlLFxuICB9O1xufVxuXG5hc3luYyBmdW5jdGlvbiBydW4odXNlcm5hbWVzOiBzdHJpbmdbXSwgZHJ5UnVuOiBib29sZWFuKTogUHJvbWlzZTxib29sZWFuPiB7XG4gIGxldCBhbnlVbnJlc29sdmVkID0gZmFsc2U7XG5cbiAgZm9yIChjb25zdCB1c2VybmFtZSBvZiB1c2VybmFtZXMpIHtcbiAgICBjb25zdCByZXN1bHQgPSBhd2FpdCBzZWVkVmVyaWZpZXJCeVVzZXJuYW1lKHVzZXJuYW1lLCBkcnlSdW4pO1xuXG4gICAgaWYgKCFyZXN1bHQucmVzb2x2ZWQpIHtcbiAgICAgIGFueVVucmVzb2x2ZWQgPSB0cnVlO1xuICAgICAgbG9nZ2VyLndhcm4oJ3VzZXJuYW1lIGRpZCBub3QgcmVzb2x2ZScsIHsgdXNlcm5hbWUgfSk7XG4gICAgICBjb250aW51ZTtcbiAgICB9XG5cbiAgICBpZiAoZHJ5UnVuKSB7XG4gICAgICBsb2dnZXIuaW5mbygnRFJZIFJVTiDigJQgd291bGQgc2VlZCB2ZXJpZmllcicsIHtcbiAgICAgICAgdXNlcm5hbWU6IHJlc3VsdC51c2VybmFtZSxcbiAgICAgICAgdXNlcklkOiByZXN1bHQudXNlcklkLFxuICAgICAgICBkaXNwbGF5TmFtZTogcmVzdWx0LmRpc3BsYXlOYW1lLFxuICAgICAgICBjdXJyZW50SXNTZWVkVmVyaWZpZXI6IHJlc3VsdC5hbHJlYWR5U2VlZGVkID09PSB0cnVlLFxuICAgICAgICB3b3VsZENoYW5nZTogcmVzdWx0LmFscmVhZHlTZWVkZWQgIT09IHRydWUsXG4gICAgICAgIGN1cnJlbnRTY29yZTogcmVzdWx0LnNjb3JlLFxuICAgICAgICBjdXJyZW50SXNSZWFsUGVyc29uOiByZXN1bHQuaXNSZWFsUGVyc29uLFxuICAgICAgICBjdXJyZW50VmVyaWZpZWQ6IHJlc3VsdC52ZXJpZmllZCxcbiAgICAgIH0pO1xuICAgICAgY29udGludWU7XG4gICAgfVxuXG4gICAgaWYgKHJlc3VsdC5hbHJlYWR5U2VlZGVkKSB7XG4gICAgICBsb2dnZXIuaW5mbygnYWxyZWFkeSBzZWVkZWQsIHNraXBwaW5nJywge1xuICAgICAgICB1c2VybmFtZTogcmVzdWx0LnVzZXJuYW1lLFxuICAgICAgICB1c2VySWQ6IHJlc3VsdC51c2VySWQsXG4gICAgICAgIGRpc3BsYXlOYW1lOiByZXN1bHQuZGlzcGxheU5hbWUsXG4gICAgICB9KTtcbiAgICAgIGNvbnRpbnVlO1xuICAgIH1cblxuICAgIGxvZ2dlci5pbmZvKCdzZWVkIHZlcmlmaWVyIGFwcGxpZWQnLCB7XG4gICAgICB1c2VybmFtZTogcmVzdWx0LnVzZXJuYW1lLFxuICAgICAgdXNlcklkOiByZXN1bHQudXNlcklkLFxuICAgICAgZGlzcGxheU5hbWU6IHJlc3VsdC5kaXNwbGF5TmFtZSxcbiAgICAgIGlzU2VlZFZlcmlmaWVyQmVmb3JlOiBmYWxzZSxcbiAgICAgIGlzU2VlZFZlcmlmaWVyQWZ0ZXI6IHRydWUsXG4gICAgICBwZXJzb25ob29kU2NvcmU6IHJlc3VsdC5zY29yZSxcbiAgICAgIHBlcnNvbmhvb2RJc1JlYWxQZXJzb246IHJlc3VsdC5pc1JlYWxQZXJzb24sXG4gICAgICB2ZXJpZmllZEFmdGVyOiByZXN1bHQudmVyaWZpZWQsXG4gICAgfSk7XG4gIH1cblxuICBsb2dnZXIuaW5mbygnU2VlZCB2ZXJpZmllciBzdW1tYXJ5Jywge1xuICAgIGRyeVJ1bixcbiAgICByZXF1ZXN0ZWQ6IHVzZXJuYW1lcy5sZW5ndGgsXG4gICAgdW5yZXNvbHZlZDogYW55VW5yZXNvbHZlZCxcbiAgfSk7XG5cbiAgcmV0dXJuIGFueVVucmVzb2x2ZWQ7XG59XG5cbmFzeW5jIGZ1bmN0aW9uIG1haW4oKTogUHJvbWlzZTx2b2lkPiB7XG4gIGNvbnN0IGRyeVJ1biA9IHByb2Nlc3MuZW52LkRSWV9SVU4gPT09ICd0cnVlJyB8fCBwcm9jZXNzLmVudi5EUllfUlVOID09PSAnMSc7XG5cbiAgY29uc3QgcmF3ID0gcHJvY2Vzcy5lbnYuU0VFRF9WRVJJRklFUl9VU0VSTkFNRVMgPz8gJyc7XG4gIGNvbnN0IHVzZXJuYW1lcyA9IEFycmF5LmZyb20oXG4gICAgbmV3IFNldChcbiAgICAgIHJhd1xuICAgICAgICAuc3BsaXQoJywnKVxuICAgICAgICAubWFwKCh1KSA9PiB1LnRyaW0oKSlcbiAgICAgICAgLmZpbHRlcigodSkgPT4gdS5sZW5ndGggPiAwKSxcbiAgICApLFxuICApO1xuXG4gIGlmICh1c2VybmFtZXMubGVuZ3RoID09PSAwKSB7XG4gICAgbG9nZ2VyLmVycm9yKFxuICAgICAgJ1NFRURfVkVSSUZJRVJfVVNFUk5BTUVTIGlzIHJlcXVpcmVkIChjb21tYS1zZXBhcmF0ZWQgdXNlcm5hbWVzLCBlLmcuICcgK1xuICAgICAgICAnYG94eSxuYXRlYCkuIE5vIGFjY291bnRzIHdlcmUgbW9kaWZpZWQuXFxuJyArXG4gICAgICAgICdVc2FnZTpcXG4nICtcbiAgICAgICAgJyAgU0VFRF9WRVJJRklFUl9VU0VSTkFNRVM9b3h5LG5hdGUgW0RSWV9SVU49dHJ1ZV0gJyArXG4gICAgICAgICdidW4gcnVuIHBhY2thZ2VzL2FwaS9zcmMvc2NyaXB0cy9zZXQtc2VlZC12ZXJpZmllcnMudHMnLFxuICAgICk7XG4gICAgcHJvY2Vzcy5leGl0KDEpO1xuICB9XG5cbiAgY29uc3QgdXJpID0gcHJvY2Vzcy5lbnYuTU9OR09EQl9VUkk7XG4gIGlmICghdXJpKSB7XG4gICAgbG9nZ2VyLmVycm9yKCdNT05HT0RCX1VSSSBpcyByZXF1aXJlZCcpO1xuICAgIHByb2Nlc3MuZXhpdCgxKTtcbiAgfVxuXG4gIGlmIChkcnlSdW4pIHtcbiAgICBsb2dnZXIuaW5mbygnRFJZIFJVTiDigJQgbm8gd3JpdGVzIHdpbGwgYmUgcGVyZm9ybWVkJyk7XG4gIH1cblxuICBjb25zdCBkYk5hbWUgPSBnZXREYk5hbWUoKTtcbiAgYXdhaXQgbW9uZ29vc2UuY29ubmVjdCh1cmksIHsgZGJOYW1lIH0pO1xuICBsb2dnZXIuaW5mbygnQ29ubmVjdGVkIHRvIE1vbmdvREInLCB7IGRiTmFtZSB9KTtcblxuICBsZXQgYW55VW5yZXNvbHZlZCA9IGZhbHNlO1xuICB0cnkge1xuICAgIGFueVVucmVzb2x2ZWQgPSBhd2FpdCBydW4odXNlcm5hbWVzLCBkcnlSdW4pO1xuICB9IGZpbmFsbHkge1xuICAgIGF3YWl0IG1vbmdvb3NlLmNvbm5lY3Rpb24uY2xvc2UoKTtcbiAgICBsb2dnZXIuaW5mbygnTW9uZ29EQiBjb25uZWN0aW9uIGNsb3NlZCcpO1xuICAgIC8vIHBlcnNvbmhvb2Quc2VydmljZSByZWFjaGVzIHRoZSBzaGFyZWQgUmVkaXMgY2xpZW50LCB3aG9zZSBsaXZlIHNvY2tldCBpc1xuICAgIC8vIGEgcmVmJ2QgaGFuZGxlIHRoYXQgd291bGQga2VlcCB0aGlzIG9uZS1zaG90IHRhc2sgUlVOTklORyBmb3JldmVyIGFmdGVyXG4gICAgLy8gdGhlIHdvcmsgaXMgZG9uZS4gTm8tb3Agd2hlbiBSRURJU19VUkwgaXMgdW5zZXQuXG4gICAgYXdhaXQgY2xvc2VSZWRpcygpO1xuICAgIGxvZ2dlci5pbmZvKCdSZWRpcyBjbGllbnQgY2xvc2VkJyk7XG4gIH1cblxuICBpZiAoYW55VW5yZXNvbHZlZCkge1xuICAgIC8vIE5vbi16ZXJvIGV4aXQgQUZURVIgcHJvY2Vzc2luZyBldmVyeSByZXNvbHZhYmxlIHVzZXJuYW1lLlxuICAgIHByb2Nlc3MuZXhpdCgxKTtcbiAgfVxufVxuXG4vLyBPbmx5IGF1dG8tcnVuIHdoZW4gaW52b2tlZCBkaXJlY3RseSBhcyBhIHNjcmlwdCAoYnVuIHJ1biDigKYgLyBub2RlIGRpc3Qv4oCmKSxcbi8vIE5PVCB3aGVuIGltcG9ydGVkIChlLmcuIGJ5IHRoZSB1bml0IHRlc3QsIHdoaWNoIGRyaXZlcyBgc2VlZFZlcmlmaWVyQnlVc2VybmFtZWBcbi8vIGluIGlzb2xhdGlvbikuIE1pcnJvcnMgdGhlIGByZXF1aXJlLm1haW4gPT09IG1vZHVsZWAgZ3VhcmQgaW4gYHNlcnZlci50c2AuXG5pZiAocmVxdWlyZS5tYWluID09PSBtb2R1bGUpIHtcbiAgbWFpbigpLmNhdGNoKChlcnJvcikgPT4ge1xuICAgIGxvZ2dlci5lcnJvcihcbiAgICAgICdTZXQgc2VlZCB2ZXJpZmllcnMgZmFpbGVkJyxcbiAgICAgIGVycm9yIGluc3RhbmNlb2YgRXJyb3IgPyBlcnJvciA6IG5ldyBFcnJvcihTdHJpbmcoZXJyb3IpKSxcbiAgICAgIHsgY29tcG9uZW50OiAnc2V0LXNlZWQtdmVyaWZpZXJzJywgbWV0aG9kOiAnbWFpbicgfSxcbiAgICApO1xuICAgIHByb2Nlc3MuZXhpdCgxKTtcbiAgfSk7XG59XG4iXSwidmVyc2lvbiI6M30=

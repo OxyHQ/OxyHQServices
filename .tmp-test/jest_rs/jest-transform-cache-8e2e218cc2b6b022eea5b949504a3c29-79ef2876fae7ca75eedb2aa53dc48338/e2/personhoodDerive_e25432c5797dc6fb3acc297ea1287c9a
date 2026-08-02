@@ -1,0 +1,86 @@
+dc710d221566226dcba0afdc82374381
+"use strict";
+/**
+ * Pure derivation of the proof-of-personhood score (Fase 3).
+ *
+ * DB-free and side-effect-free — `personhood.service.recomputePersonhood`
+ * aggregates the raw inputs (the weighted vouch sum, real-life count, biometric
+ * flag, sybil penalty) and feeds them here; the returned snapshot is persisted
+ * on `PersonhoodStatus`. Mirrors the structure of `reputationDerive.ts`.
+ *
+ * ## Formula
+ *
+ * Personhood is the answer to "is this a real, unique human", and it is NEVER a
+ * single third-party signal — it is a multiplicative blend of independent
+ * evidence axes, minus sybil risk:
+ *
+ *   1. SEED short-circuit — a hand-picked seed verifier (`User.isSeedVerifier`)
+ *      is the genesis of the trust network and is assigned `score = 1`,
+ *      `isRealPerson = true` outright.
+ *
+ *   2. Otherwise the three evidence signals are each saturated into [0,1]:
+ *        vouchSignal     = clamp(weightedVouchScore / PERSONHOOD_VOUCH_TARGET, 0, 1)
+ *        realLifeSignal  = clamp(realLifeCount     / PERSONHOOD_REAL_LIFE_TARGET, 0, 1)
+ *        biometricSignal = biometricBound ? 1 : 0
+ *
+ *      `weightedVouchScore` is the sum of each active voucher's tier weight
+ *      (`VOUCH_TIER_WEIGHT`), so a `verified` voucher is worth more than a
+ *      `trusted` one; ~3 verified vouches saturate the axis.
+ *
+ *   3. They combine with component weights that SUM TO 1 (so a fully-evidenced
+ *      user reaches exactly 1.0 before the penalty), and NO single component can
+ *      reach θ alone — personhood requires a blend:
+ *        evidence = 0.50·vouchSignal + 0.35·realLifeSignal + 0.15·biometricSignal
+ *
+ *   4. The sybil penalty (shared-device clusters + vouch-ring density, [0,1])
+ *      attenuates the evidence MULTIPLICATIVELY — a fully-sybil cluster zeroes
+ *      the score regardless of how many vouches it manufactured:
+ *        score = clamp(evidence · (1 − clamp(sybilPenalty, 0, 1)), 0, 1)
+ *
+ *   5. isRealPerson = score >= PERSONHOOD_THRESHOLD (θ).
+ *
+ * Worked points (θ = 0.6): full vouch (0.5) alone < θ; full vouch + biometric
+ * (0.65) ≥ θ; full vouch + full real-life (0.85) ≥ θ; full real-life + biometric
+ * (0.5) < θ. Reaching personhood therefore needs at least two independent signal
+ * classes — exactly the anti-single-point-of-trust property.
+ *
+ * Every constant lives in `civic.constants.ts` — nothing here is hardcoded.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.personhoodScore = personhoodScore;
+const reputation_constants_1 = require("./reputation.constants");
+const civic_constants_1 = require("./civic.constants");
+/**
+ * Derive the personhood score, verdict, and signal breakdown from the raw
+ * inputs. Pure: identical inputs always yield an identical snapshot.
+ */
+function personhoodScore(inputs) {
+    if (inputs.isSeedVerifier) {
+        return {
+            score: 1,
+            isRealPerson: true,
+            breakdown: {
+                vouchSignal: 1,
+                realLifeSignal: 1,
+                biometricSignal: 1,
+                evidence: 1,
+                sybilPenalty: 0,
+                seed: true,
+            },
+        };
+    }
+    const vouchSignal = (0, reputation_constants_1.clamp)(inputs.weightedVouchScore / civic_constants_1.PERSONHOOD_VOUCH_TARGET, 0, 1);
+    const realLifeSignal = (0, reputation_constants_1.clamp)(inputs.realLifeCount / civic_constants_1.PERSONHOOD_REAL_LIFE_TARGET, 0, 1);
+    const biometricSignal = inputs.biometricBound ? 1 : 0;
+    const evidence = civic_constants_1.PERSONHOOD_VOUCH_COMPONENT * vouchSignal +
+        civic_constants_1.PERSONHOOD_REAL_LIFE_COMPONENT * realLifeSignal +
+        civic_constants_1.PERSONHOOD_BIOMETRIC_COMPONENT * biometricSignal;
+    const sybilPenalty = (0, reputation_constants_1.clamp)(inputs.sybilPenalty, 0, 1);
+    const score = (0, reputation_constants_1.clamp)(evidence * (1 - sybilPenalty), 0, 1);
+    return {
+        score,
+        isRealPerson: score >= civic_constants_1.PERSONHOOD_THRESHOLD,
+        breakdown: { vouchSignal, realLifeSignal, biometricSignal, evidence, sybilPenalty, seed: false },
+    };
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvcGVyc29uaG9vZERlcml2ZS50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQTZDRzs7QUFxQ0gsMENBaUNDO0FBcEVELGlFQUErQztBQUMvQyx1REFPMkI7QUF1QjNCOzs7R0FHRztBQUNILFNBQWdCLGVBQWUsQ0FBQyxNQUF3QjtJQUN0RCxJQUFJLE1BQU0sQ0FBQyxjQUFjLEVBQUUsQ0FBQztRQUMxQixPQUFPO1lBQ0wsS0FBSyxFQUFFLENBQUM7WUFDUixZQUFZLEVBQUUsSUFBSTtZQUNsQixTQUFTLEVBQUU7Z0JBQ1QsV0FBVyxFQUFFLENBQUM7Z0JBQ2QsY0FBYyxFQUFFLENBQUM7Z0JBQ2pCLGVBQWUsRUFBRSxDQUFDO2dCQUNsQixRQUFRLEVBQUUsQ0FBQztnQkFDWCxZQUFZLEVBQUUsQ0FBQztnQkFDZixJQUFJLEVBQUUsSUFBSTthQUNYO1NBQ0YsQ0FBQztJQUNKLENBQUM7SUFFRCxNQUFNLFdBQVcsR0FBRyxJQUFBLDRCQUFLLEVBQUMsTUFBTSxDQUFDLGtCQUFrQixHQUFHLHlDQUF1QixFQUFFLENBQUMsRUFBRSxDQUFDLENBQUMsQ0FBQztJQUNyRixNQUFNLGNBQWMsR0FBRyxJQUFBLDRCQUFLLEVBQUMsTUFBTSxDQUFDLGFBQWEsR0FBRyw2Q0FBMkIsRUFBRSxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUM7SUFDdkYsTUFBTSxlQUFlLEdBQUcsTUFBTSxDQUFDLGNBQWMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUM7SUFFdEQsTUFBTSxRQUFRLEdBQ1osNENBQTBCLEdBQUcsV0FBVztRQUN4QyxnREFBOEIsR0FBRyxjQUFjO1FBQy9DLGdEQUE4QixHQUFHLGVBQWUsQ0FBQztJQUVuRCxNQUFNLFlBQVksR0FBRyxJQUFBLDRCQUFLLEVBQUMsTUFBTSxDQUFDLFlBQVksRUFBRSxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUM7SUFDdEQsTUFBTSxLQUFLLEdBQUcsSUFBQSw0QkFBSyxFQUFDLFFBQVEsR0FBRyxDQUFDLENBQUMsR0FBRyxZQUFZLENBQUMsRUFBRSxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUM7SUFFekQsT0FBTztRQUNMLEtBQUs7UUFDTCxZQUFZLEVBQUUsS0FBSyxJQUFJLHNDQUFvQjtRQUMzQyxTQUFTLEVBQUUsRUFBRSxXQUFXLEVBQUUsY0FBYyxFQUFFLGVBQWUsRUFBRSxRQUFRLEVBQUUsWUFBWSxFQUFFLElBQUksRUFBRSxLQUFLLEVBQUU7S0FDakcsQ0FBQztBQUNKLENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvcGVyc29uaG9vZERlcml2ZS50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIFB1cmUgZGVyaXZhdGlvbiBvZiB0aGUgcHJvb2Ytb2YtcGVyc29uaG9vZCBzY29yZSAoRmFzZSAzKS5cbiAqXG4gKiBEQi1mcmVlIGFuZCBzaWRlLWVmZmVjdC1mcmVlIOKAlCBgcGVyc29uaG9vZC5zZXJ2aWNlLnJlY29tcHV0ZVBlcnNvbmhvb2RgXG4gKiBhZ2dyZWdhdGVzIHRoZSByYXcgaW5wdXRzICh0aGUgd2VpZ2h0ZWQgdm91Y2ggc3VtLCByZWFsLWxpZmUgY291bnQsIGJpb21ldHJpY1xuICogZmxhZywgc3liaWwgcGVuYWx0eSkgYW5kIGZlZWRzIHRoZW0gaGVyZTsgdGhlIHJldHVybmVkIHNuYXBzaG90IGlzIHBlcnNpc3RlZFxuICogb24gYFBlcnNvbmhvb2RTdGF0dXNgLiBNaXJyb3JzIHRoZSBzdHJ1Y3R1cmUgb2YgYHJlcHV0YXRpb25EZXJpdmUudHNgLlxuICpcbiAqICMjIEZvcm11bGFcbiAqXG4gKiBQZXJzb25ob29kIGlzIHRoZSBhbnN3ZXIgdG8gXCJpcyB0aGlzIGEgcmVhbCwgdW5pcXVlIGh1bWFuXCIsIGFuZCBpdCBpcyBORVZFUiBhXG4gKiBzaW5nbGUgdGhpcmQtcGFydHkgc2lnbmFsIOKAlCBpdCBpcyBhIG11bHRpcGxpY2F0aXZlIGJsZW5kIG9mIGluZGVwZW5kZW50XG4gKiBldmlkZW5jZSBheGVzLCBtaW51cyBzeWJpbCByaXNrOlxuICpcbiAqICAgMS4gU0VFRCBzaG9ydC1jaXJjdWl0IOKAlCBhIGhhbmQtcGlja2VkIHNlZWQgdmVyaWZpZXIgKGBVc2VyLmlzU2VlZFZlcmlmaWVyYClcbiAqICAgICAgaXMgdGhlIGdlbmVzaXMgb2YgdGhlIHRydXN0IG5ldHdvcmsgYW5kIGlzIGFzc2lnbmVkIGBzY29yZSA9IDFgLFxuICogICAgICBgaXNSZWFsUGVyc29uID0gdHJ1ZWAgb3V0cmlnaHQuXG4gKlxuICogICAyLiBPdGhlcndpc2UgdGhlIHRocmVlIGV2aWRlbmNlIHNpZ25hbHMgYXJlIGVhY2ggc2F0dXJhdGVkIGludG8gWzAsMV06XG4gKiAgICAgICAgdm91Y2hTaWduYWwgICAgID0gY2xhbXAod2VpZ2h0ZWRWb3VjaFNjb3JlIC8gUEVSU09OSE9PRF9WT1VDSF9UQVJHRVQsIDAsIDEpXG4gKiAgICAgICAgcmVhbExpZmVTaWduYWwgID0gY2xhbXAocmVhbExpZmVDb3VudCAgICAgLyBQRVJTT05IT09EX1JFQUxfTElGRV9UQVJHRVQsIDAsIDEpXG4gKiAgICAgICAgYmlvbWV0cmljU2lnbmFsID0gYmlvbWV0cmljQm91bmQgPyAxIDogMFxuICpcbiAqICAgICAgYHdlaWdodGVkVm91Y2hTY29yZWAgaXMgdGhlIHN1bSBvZiBlYWNoIGFjdGl2ZSB2b3VjaGVyJ3MgdGllciB3ZWlnaHRcbiAqICAgICAgKGBWT1VDSF9USUVSX1dFSUdIVGApLCBzbyBhIGB2ZXJpZmllZGAgdm91Y2hlciBpcyB3b3J0aCBtb3JlIHRoYW4gYVxuICogICAgICBgdHJ1c3RlZGAgb25lOyB+MyB2ZXJpZmllZCB2b3VjaGVzIHNhdHVyYXRlIHRoZSBheGlzLlxuICpcbiAqICAgMy4gVGhleSBjb21iaW5lIHdpdGggY29tcG9uZW50IHdlaWdodHMgdGhhdCBTVU0gVE8gMSAoc28gYSBmdWxseS1ldmlkZW5jZWRcbiAqICAgICAgdXNlciByZWFjaGVzIGV4YWN0bHkgMS4wIGJlZm9yZSB0aGUgcGVuYWx0eSksIGFuZCBOTyBzaW5nbGUgY29tcG9uZW50IGNhblxuICogICAgICByZWFjaCDOuCBhbG9uZSDigJQgcGVyc29uaG9vZCByZXF1aXJlcyBhIGJsZW5kOlxuICogICAgICAgIGV2aWRlbmNlID0gMC41MMK3dm91Y2hTaWduYWwgKyAwLjM1wrdyZWFsTGlmZVNpZ25hbCArIDAuMTXCt2Jpb21ldHJpY1NpZ25hbFxuICpcbiAqICAgNC4gVGhlIHN5YmlsIHBlbmFsdHkgKHNoYXJlZC1kZXZpY2UgY2x1c3RlcnMgKyB2b3VjaC1yaW5nIGRlbnNpdHksIFswLDFdKVxuICogICAgICBhdHRlbnVhdGVzIHRoZSBldmlkZW5jZSBNVUxUSVBMSUNBVElWRUxZIOKAlCBhIGZ1bGx5LXN5YmlsIGNsdXN0ZXIgemVyb2VzXG4gKiAgICAgIHRoZSBzY29yZSByZWdhcmRsZXNzIG9mIGhvdyBtYW55IHZvdWNoZXMgaXQgbWFudWZhY3R1cmVkOlxuICogICAgICAgIHNjb3JlID0gY2xhbXAoZXZpZGVuY2UgwrcgKDEg4oiSIGNsYW1wKHN5YmlsUGVuYWx0eSwgMCwgMSkpLCAwLCAxKVxuICpcbiAqICAgNS4gaXNSZWFsUGVyc29uID0gc2NvcmUgPj0gUEVSU09OSE9PRF9USFJFU0hPTEQgKM64KS5cbiAqXG4gKiBXb3JrZWQgcG9pbnRzICjOuCA9IDAuNik6IGZ1bGwgdm91Y2ggKDAuNSkgYWxvbmUgPCDOuDsgZnVsbCB2b3VjaCArIGJpb21ldHJpY1xuICogKDAuNjUpIOKJpSDOuDsgZnVsbCB2b3VjaCArIGZ1bGwgcmVhbC1saWZlICgwLjg1KSDiiaUgzrg7IGZ1bGwgcmVhbC1saWZlICsgYmlvbWV0cmljXG4gKiAoMC41KSA8IM64LiBSZWFjaGluZyBwZXJzb25ob29kIHRoZXJlZm9yZSBuZWVkcyBhdCBsZWFzdCB0d28gaW5kZXBlbmRlbnQgc2lnbmFsXG4gKiBjbGFzc2VzIOKAlCBleGFjdGx5IHRoZSBhbnRpLXNpbmdsZS1wb2ludC1vZi10cnVzdCBwcm9wZXJ0eS5cbiAqXG4gKiBFdmVyeSBjb25zdGFudCBsaXZlcyBpbiBgY2l2aWMuY29uc3RhbnRzLnRzYCDigJQgbm90aGluZyBoZXJlIGlzIGhhcmRjb2RlZC5cbiAqL1xuXG5pbXBvcnQgeyBjbGFtcCB9IGZyb20gJy4vcmVwdXRhdGlvbi5jb25zdGFudHMnO1xuaW1wb3J0IHtcbiAgUEVSU09OSE9PRF9USFJFU0hPTEQsXG4gIFBFUlNPTkhPT0RfVk9VQ0hfVEFSR0VULFxuICBQRVJTT05IT09EX1JFQUxfTElGRV9UQVJHRVQsXG4gIFBFUlNPTkhPT0RfVk9VQ0hfQ09NUE9ORU5ULFxuICBQRVJTT05IT09EX1JFQUxfTElGRV9DT01QT05FTlQsXG4gIFBFUlNPTkhPT0RfQklPTUVUUklDX0NPTVBPTkVOVCxcbn0gZnJvbSAnLi9jaXZpYy5jb25zdGFudHMnO1xuaW1wb3J0IHR5cGUgeyBQZXJzb25ob29kQnJlYWtkb3duIH0gZnJvbSAnLi4vZGIvc2NoZW1hL3BlcnNvbmhvb2RTdGF0dXNlcyc7XG5cbi8qKiBSYXcsIGFnZ3JlZ2F0ZWQgcGVyc29uaG9vZCBpbnB1dHMgZm9yIGEgc2luZ2xlIHVzZXIuICovXG5leHBvcnQgaW50ZXJmYWNlIFBlcnNvbmhvb2RJbnB1dHMge1xuICAvKiogU3VtIG9mIGFjdGl2ZSB2b3VjaGVycycgdGllciB3ZWlnaHRzIChgVk9VQ0hfVElFUl9XRUlHSFRgKS4gKi9cbiAgd2VpZ2h0ZWRWb3VjaFNjb3JlOiBudW1iZXI7XG4gIC8qKiBDb3VudCBvZiB0aGUgdXNlcidzIHJlYWwtbGlmZSBjb3VudGVycGFydHkgYXR0ZXN0YXRpb25zLiAqL1xuICByZWFsTGlmZUNvdW50OiBudW1iZXI7XG4gIC8qKiBXaGV0aGVyIGFuIG9uLWRldmljZSBiaW9tZXRyaWMgZ2F0ZSBpcyBib3VuZCB0byB0aGUgYWNjb3VudC4gKi9cbiAgYmlvbWV0cmljQm91bmQ6IGJvb2xlYW47XG4gIC8qKiBUaGUgWzAsMV0gc3liaWwgcGVuYWx0eSAoaGV1cmlzdGljIGNsdXN0ZXJpbmcgKyByaW5nIGRlbnNpdHkpLiAqL1xuICBzeWJpbFBlbmFsdHk6IG51bWJlcjtcbiAgLyoqIEhhbmQtcGlja2VkIGdlbmVzaXMgdmVyaWZpZXIg4oCUIHNob3J0LWNpcmN1aXRzIHRvIHNjb3JlIDEuICovXG4gIGlzU2VlZFZlcmlmaWVyOiBib29sZWFuO1xufVxuXG5leHBvcnQgaW50ZXJmYWNlIFBlcnNvbmhvb2RTY29yZSB7XG4gIHNjb3JlOiBudW1iZXI7XG4gIGlzUmVhbFBlcnNvbjogYm9vbGVhbjtcbiAgYnJlYWtkb3duOiBQZXJzb25ob29kQnJlYWtkb3duO1xufVxuXG4vKipcbiAqIERlcml2ZSB0aGUgcGVyc29uaG9vZCBzY29yZSwgdmVyZGljdCwgYW5kIHNpZ25hbCBicmVha2Rvd24gZnJvbSB0aGUgcmF3XG4gKiBpbnB1dHMuIFB1cmU6IGlkZW50aWNhbCBpbnB1dHMgYWx3YXlzIHlpZWxkIGFuIGlkZW50aWNhbCBzbmFwc2hvdC5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIHBlcnNvbmhvb2RTY29yZShpbnB1dHM6IFBlcnNvbmhvb2RJbnB1dHMpOiBQZXJzb25ob29kU2NvcmUge1xuICBpZiAoaW5wdXRzLmlzU2VlZFZlcmlmaWVyKSB7XG4gICAgcmV0dXJuIHtcbiAgICAgIHNjb3JlOiAxLFxuICAgICAgaXNSZWFsUGVyc29uOiB0cnVlLFxuICAgICAgYnJlYWtkb3duOiB7XG4gICAgICAgIHZvdWNoU2lnbmFsOiAxLFxuICAgICAgICByZWFsTGlmZVNpZ25hbDogMSxcbiAgICAgICAgYmlvbWV0cmljU2lnbmFsOiAxLFxuICAgICAgICBldmlkZW5jZTogMSxcbiAgICAgICAgc3liaWxQZW5hbHR5OiAwLFxuICAgICAgICBzZWVkOiB0cnVlLFxuICAgICAgfSxcbiAgICB9O1xuICB9XG5cbiAgY29uc3Qgdm91Y2hTaWduYWwgPSBjbGFtcChpbnB1dHMud2VpZ2h0ZWRWb3VjaFNjb3JlIC8gUEVSU09OSE9PRF9WT1VDSF9UQVJHRVQsIDAsIDEpO1xuICBjb25zdCByZWFsTGlmZVNpZ25hbCA9IGNsYW1wKGlucHV0cy5yZWFsTGlmZUNvdW50IC8gUEVSU09OSE9PRF9SRUFMX0xJRkVfVEFSR0VULCAwLCAxKTtcbiAgY29uc3QgYmlvbWV0cmljU2lnbmFsID0gaW5wdXRzLmJpb21ldHJpY0JvdW5kID8gMSA6IDA7XG5cbiAgY29uc3QgZXZpZGVuY2UgPVxuICAgIFBFUlNPTkhPT0RfVk9VQ0hfQ09NUE9ORU5UICogdm91Y2hTaWduYWwgK1xuICAgIFBFUlNPTkhPT0RfUkVBTF9MSUZFX0NPTVBPTkVOVCAqIHJlYWxMaWZlU2lnbmFsICtcbiAgICBQRVJTT05IT09EX0JJT01FVFJJQ19DT01QT05FTlQgKiBiaW9tZXRyaWNTaWduYWw7XG5cbiAgY29uc3Qgc3liaWxQZW5hbHR5ID0gY2xhbXAoaW5wdXRzLnN5YmlsUGVuYWx0eSwgMCwgMSk7XG4gIGNvbnN0IHNjb3JlID0gY2xhbXAoZXZpZGVuY2UgKiAoMSAtIHN5YmlsUGVuYWx0eSksIDAsIDEpO1xuXG4gIHJldHVybiB7XG4gICAgc2NvcmUsXG4gICAgaXNSZWFsUGVyc29uOiBzY29yZSA+PSBQRVJTT05IT09EX1RIUkVTSE9MRCxcbiAgICBicmVha2Rvd246IHsgdm91Y2hTaWduYWwsIHJlYWxMaWZlU2lnbmFsLCBiaW9tZXRyaWNTaWduYWwsIGV2aWRlbmNlLCBzeWJpbFBlbmFsdHksIHNlZWQ6IGZhbHNlIH0sXG4gIH07XG59XG4iXSwidmVyc2lvbiI6M30=

@@ -1,0 +1,190 @@
+e575519c342184f809f2943b5f0ab2c4
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.setCsrfToken = setCsrfToken;
+exports.verifyCsrfToken = verifyCsrfToken;
+exports.csrfProtection = csrfProtection;
+exports.getCsrfToken = getCsrfToken;
+const crypto_1 = __importDefault(require("crypto"));
+const logger_1 = require("../utils/logger");
+/**
+ * CSRF Protection Middleware
+ * Implements double-submit cookie pattern
+ *
+ * How it works:
+ * 1. Server generates a random CSRF token and sends it in a cookie
+ * 2. Client must include this token in a custom header (X-CSRF-Token) for state-changing requests
+ * 3. Server verifies that cookie value matches header value
+ *
+ * This is stateless and doesn't require server-side session storage
+ */
+const CSRF_COOKIE_NAME = 'csrf_token';
+const CSRF_HEADER_NAME = 'x-csrf-token';
+const NATIVE_APP_HEADER = 'x-native-app';
+const TOKEN_LENGTH = 32;
+// Methods that don't require CSRF protection (safe methods per RFC 7231)
+const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
+/**
+ * Generate a cryptographically secure CSRF token
+ */
+function generateToken() {
+    return crypto_1.default.randomBytes(TOKEN_LENGTH).toString('base64url');
+}
+/**
+ * Middleware to set CSRF token cookie
+ * Call this on routes where you want to issue a CSRF token
+ */
+function setCsrfToken(req, res, next) {
+    var _a;
+    // Check if CSRF cookie already exists
+    let csrfToken = (_a = req.cookies) === null || _a === void 0 ? void 0 : _a[CSRF_COOKIE_NAME];
+    // Generate new token if none exists
+    if (!csrfToken) {
+        csrfToken = generateToken();
+        res.cookie(CSRF_COOKIE_NAME, csrfToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' required for cross-origin requests
+            maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        });
+    }
+    // Make token available to client via response header (for client to read and include in requests)
+    res.setHeader('X-CSRF-Token', csrfToken);
+    next();
+}
+/**
+ * Middleware to verify CSRF token
+ * Use this on state-changing routes (POST, PUT, DELETE, PATCH)
+ *
+ * Supports two modes:
+ * 1. Browser mode (double-submit cookie): Requires both cookie and header, must match
+ * 2. Native app mode (header-only): When X-Native-App header is present, only validates header token
+ *    This is necessary because React Native's fetch doesn't persist cookies like browsers do.
+ *    Native apps already use JWT authentication which provides strong request authentication.
+ */
+function verifyCsrfToken(req, res, next) {
+    var _a;
+    // Skip verification for safe methods
+    if (SAFE_METHODS.includes(req.method)) {
+        return next();
+    }
+    // Skip CSRF for Bearer-authenticated requests. CSRF protects ambient cookie
+    // auth; Authorization is an explicit header that browsers do not attach
+    // cross-site on behalf of an attacker. Auth middleware still validates the
+    // token and rejects invalid or expired user/service tokens.
+    const authHeader = req.headers.authorization;
+    if (authHeader === null || authHeader === void 0 ? void 0 : authHeader.startsWith('Bearer ')) {
+        return next();
+    }
+    // Get token from header
+    const headerToken = req.headers[CSRF_HEADER_NAME];
+    // Check if this is a native app request (React Native, mobile apps)
+    // Native apps send X-Native-App: true because they can't persist cookies
+    const isNativeApp = req.headers[NATIVE_APP_HEADER] === 'true';
+    if (isNativeApp) {
+        // Native app mode: Only require header token (no cookie matching)
+        // Require a Bearer token to prevent browser-based attackers from
+        // bypassing CSRF by simply setting X-Native-App: true.
+        const authHeader = req.headers.authorization;
+        if (!(authHeader === null || authHeader === void 0 ? void 0 : authHeader.startsWith('Bearer '))) {
+            logger_1.logger.warn('Native app CSRF bypass without auth', {
+                method: req.method,
+                path: req.path,
+            });
+            return res.status(403).json({
+                message: 'Native app CSRF bypass requires authentication',
+                code: 'CSRF_AUTH_REQUIRED',
+            });
+        }
+        if (!headerToken) {
+            logger_1.logger.warn('CSRF token missing (native app)', {
+                method: req.method,
+                path: req.path,
+            });
+            return res.status(403).json({
+                message: 'CSRF token missing',
+                code: 'CSRF_TOKEN_MISSING',
+            });
+        }
+        // Validate token format (must be a valid base64url token of expected length)
+        // This prevents empty or malformed tokens
+        if (headerToken.length < 20) {
+            logger_1.logger.warn('CSRF token invalid format (native app)', {
+                method: req.method,
+                path: req.path,
+            });
+            return res.status(403).json({
+                message: 'Invalid CSRF token',
+                code: 'CSRF_TOKEN_INVALID',
+            });
+        }
+        // Token is valid for native app, proceed
+        return next();
+    }
+    // Browser mode: Double-submit cookie pattern
+    // Get token from cookie
+    const cookieToken = (_a = req.cookies) === null || _a === void 0 ? void 0 : _a[CSRF_COOKIE_NAME];
+    // Both must be present
+    if (!cookieToken || !headerToken) {
+        logger_1.logger.warn('CSRF token missing', {
+            method: req.method,
+            path: req.path,
+            hasCookie: !!cookieToken,
+            hasHeader: !!headerToken,
+        });
+        return res.status(403).json({
+            message: 'CSRF token missing',
+            code: 'CSRF_TOKEN_MISSING',
+        });
+    }
+    // Tokens must match (timing-safe comparison). Length must match first —
+    // timingSafeEqual throws RangeError on mismatched buffer lengths.
+    if (cookieToken.length !== headerToken.length ||
+        !crypto_1.default.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken))) {
+        logger_1.logger.warn('CSRF token mismatch', {
+            method: req.method,
+            path: req.path,
+        });
+        return res.status(403).json({
+            message: 'Invalid CSRF token',
+            code: 'CSRF_TOKEN_INVALID',
+        });
+    }
+    // Token is valid, proceed
+    next();
+}
+/**
+ * Combined middleware that sets and verifies CSRF token
+ * Use this as a general-purpose CSRF protection middleware
+ */
+function csrfProtection(req, res, next) {
+    // First set the token (if not exists)
+    setCsrfToken(req, res, () => {
+        // Then verify it for non-safe methods
+        verifyCsrfToken(req, res, next);
+    });
+}
+/**
+ * Endpoint to get CSRF token
+ * Useful for single-page applications that need to fetch the token
+ */
+function getCsrfToken(req, res) {
+    var _a;
+    let csrfToken = (_a = req.cookies) === null || _a === void 0 ? void 0 : _a[CSRF_COOKIE_NAME];
+    if (!csrfToken) {
+        csrfToken = generateToken();
+        res.cookie(CSRF_COOKIE_NAME, csrfToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' required for cross-origin requests
+            maxAge: 24 * 60 * 60 * 1000,
+        });
+    }
+    res.json({
+        csrfToken,
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvbWlkZGxld2FyZS9jc3JmLnRzIiwibWFwcGluZ3MiOiI7Ozs7O0FBbUNBLG9DQW9CQztBQVlELDBDQTJHQztBQU1ELHdDQU1DO0FBTUQsb0NBaUJDO0FBaE5ELG9EQUE0QjtBQUM1Qiw0Q0FBeUM7QUFFekM7Ozs7Ozs7Ozs7R0FVRztBQUVILE1BQU0sZ0JBQWdCLEdBQUcsWUFBWSxDQUFDO0FBQ3RDLE1BQU0sZ0JBQWdCLEdBQUcsY0FBYyxDQUFDO0FBQ3hDLE1BQU0saUJBQWlCLEdBQUcsY0FBYyxDQUFDO0FBQ3pDLE1BQU0sWUFBWSxHQUFHLEVBQUUsQ0FBQztBQUV4Qix5RUFBeUU7QUFDekUsTUFBTSxZQUFZLEdBQUcsQ0FBQyxLQUFLLEVBQUUsTUFBTSxFQUFFLFNBQVMsQ0FBQyxDQUFDO0FBRWhEOztHQUVHO0FBQ0gsU0FBUyxhQUFhO0lBQ3BCLE9BQU8sZ0JBQU0sQ0FBQyxXQUFXLENBQUMsWUFBWSxDQUFDLENBQUMsUUFBUSxDQUFDLFdBQVcsQ0FBQyxDQUFDO0FBQ2hFLENBQUM7QUFFRDs7O0dBR0c7QUFDSCxTQUFnQixZQUFZLENBQUMsR0FBWSxFQUFFLEdBQWEsRUFBRSxJQUFrQjs7SUFDMUUsc0NBQXNDO0lBQ3RDLElBQUksU0FBUyxHQUFHLE1BQUEsR0FBRyxDQUFDLE9BQU8sMENBQUcsZ0JBQWdCLENBQUMsQ0FBQztJQUVoRCxvQ0FBb0M7SUFDcEMsSUFBSSxDQUFDLFNBQVMsRUFBRSxDQUFDO1FBQ2YsU0FBUyxHQUFHLGFBQWEsRUFBRSxDQUFDO1FBRTVCLEdBQUcsQ0FBQyxNQUFNLENBQUMsZ0JBQWdCLEVBQUUsU0FBUyxFQUFFO1lBQ3RDLFFBQVEsRUFBRSxJQUFJO1lBQ2QsTUFBTSxFQUFFLE9BQU8sQ0FBQyxHQUFHLENBQUMsUUFBUSxLQUFLLFlBQVksRUFBRSwyQkFBMkI7WUFDMUUsUUFBUSxFQUFFLE9BQU8sQ0FBQyxHQUFHLENBQUMsUUFBUSxLQUFL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eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9taWRkbGV3YXJlL2NzcmYudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHR5cGUgeyBSZXF1ZXN0LCBSZXNwb25zZSwgTmV4dEZ1bmN0aW9uIH0gZnJvbSAnZXhwcmVzcyc7XG5pbXBvcnQgY3J5cHRvIGZyb20gJ2NyeXB0byc7XG5pbXBvcnQgeyBsb2dnZXIgfSBmcm9tICcuLi91dGlscy9sb2dnZXInO1xuXG4vKipcbiAqIENTUkYgUHJvdGVjdGlvbiBNaWRkbGV3YXJlXG4gKiBJbXBsZW1lbnRzIGRvdWJsZS1zdWJtaXQgY29va2llIHBhdHRlcm5cbiAqXG4gKiBIb3cgaXQgd29ya3M6XG4gKiAxLiBTZXJ2ZXIgZ2VuZXJhdGVzIGEgcmFuZG9tIENTUkYgdG9rZW4gYW5kIHNlbmRzIGl0IGluIGEgY29va2llXG4gKiAyLiBDbGllbnQgbXVzdCBpbmNsdWRlIHRoaXMgdG9rZW4gaW4gYSBjdXN0b20gaGVhZGVyIChYLUNTUkYtVG9rZW4pIGZvciBzdGF0ZS1jaGFuZ2luZyByZXF1ZXN0c1xuICogMy4gU2VydmVyIHZlcmlmaWVzIHRoYXQgY29va2llIHZhbHVlIG1hdGNoZXMgaGVhZGVyIHZhbHVlXG4gKlxuICogVGhpcyBpcyBzdGF0ZWxlc3MgYW5kIGRvZXNuJ3QgcmVxdWlyZSBzZXJ2ZXItc2lkZSBzZXNzaW9uIHN0b3JhZ2VcbiAqL1xuXG5jb25zdCBDU1JGX0NPT0tJRV9OQU1FID0gJ2NzcmZfdG9rZW4nO1xuY29uc3QgQ1NSRl9IRUFERVJfTkFNRSA9ICd4LWNzcmYtdG9rZW4nO1xuY29uc3QgTkFUSVZFX0FQUF9IRUFERVIgPSAneC1uYXRpdmUtYXBwJztcbmNvbnN0IFRPS0VOX0xFTkdUSCA9IDMyO1xuXG4vLyBNZXRob2RzIHRoYXQgZG9uJ3QgcmVxdWlyZSBDU1JGIHByb3RlY3Rpb24gKHNhZmUgbWV0aG9kcyBwZXIgUkZDIDcyMzEpXG5jb25zdCBTQUZFX01FVEhPRFMgPSBbJ0dFVCcsICdIRUFEJywgJ09QVElPTlMnXTtcblxuLyoqXG4gKiBHZW5lcmF0ZSBhIGNyeXB0b2dyYXBoaWNhbGx5IHNlY3VyZSBDU1JGIHRva2VuXG4gKi9cbmZ1bmN0aW9uIGdlbmVyYXRlVG9rZW4oKTogc3RyaW5nIHtcbiAgcmV0dXJuIGNyeXB0by5yYW5kb21CeXRlcyhUT0tFTl9MRU5HVEgpLnRvU3RyaW5nKCdiYXNlNjR1cmwnKTtcbn1cblxuLyoqXG4gKiBNaWRkbGV3YXJlIHRvIHNldCBDU1JGIHRva2VuIGNvb2tpZVxuICogQ2FsbCB0aGlzIG9uIHJvdXRlcyB3aGVyZSB5b3Ugd2FudCB0byBpc3N1ZSBhIENTUkYgdG9rZW5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIHNldENzcmZUb2tlbihyZXE6IFJlcXVlc3QsIHJlczogUmVzcG9uc2UsIG5leHQ6IE5leHRGdW5jdGlvbikge1xuICAvLyBDaGVjayBpZiBDU1JGIGNvb2tpZSBhbHJlYWR5IGV4aXN0c1xuICBsZXQgY3NyZlRva2VuID0gcmVxLmNvb2tpZXM/LltDU1JGX0NPT0tJRV9OQU1FXTtcblxuICAvLyBHZW5lcmF0ZSBuZXcgdG9rZW4gaWYgbm9uZSBleGlzdHNcbiAgaWYgKCFjc3JmVG9rZW4pIHtcbiAgICBjc3JmVG9rZW4gPSBnZW5lcmF0ZVRva2VuKCk7XG5cbiAgICByZXMuY29va2llKENTUkZfQ09PS0lFX05BTUUsIGNzcmZUb2tlbiwge1xuICAgICAgaHR0cE9ubHk6IHRydWUsXG4gICAgICBzZWN1cmU6IHByb2Nlc3MuZW52Lk5PREVfRU5WID09PSAncHJvZHVjdGlvbicsIC8vIEhUVFBTIG9ubHkgaW4gcHJvZHVjdGlvblxuICAgICAgc2FtZVNpdGU6IHByb2Nlc3MuZW52Lk5PREVfRU5WID09PSAncHJvZHVjdGlvbicgPyAnbm9uZScgOiAnbGF4JywgLy8gJ25vbmUnIHJlcXVpcmVkIGZvciBjcm9zcy1vcmlnaW4gcmVxdWVzdHNcbiAgICAgIG1heEFnZTogMjQgKiA2MCAqIDYwICogMTAwMCwgLy8gMjQgaG91cnNcbiAgICB9KTtcbiAgfVxuXG4gIC8vIE1ha2UgdG9rZW4gYXZhaWxhYmxlIHRvIGNsaWVudCB2aWEgcmVzcG9uc2UgaGVhZGVyIChmb3IgY2xpZW50IHRvIHJlYWQgYW5kIGluY2x1ZGUgaW4gcmVxdWVzdHMpXG4gIHJlcy5zZXRIZWFkZXIoJ1gtQ1NSRi1Ub2tlbicsIGNzcmZUb2tlbik7XG5cbiAgbmV4dCgpO1xufVxuXG4vKipcbiAqIE1pZGRsZXdhcmUgdG8gdmVyaWZ5IENTUkYgdG9rZW5cbiAqIFVzZSB0aGlzIG9uIHN0YXRlLWNoYW5naW5nIHJvdXRlcyAoUE9TVCwgUFVULCBERUxFVEUsIFBBVENIKVxuICpcbiAqIFN1cHBvcnRzIHR3byBtb2RlczpcbiAqIDEuIEJyb3dzZXIgbW9kZSAoZG91YmxlLXN1Ym1pdCBjb29raWUpOiBSZXF1aXJlcyBib3RoIGNvb2tpZSBhbmQgaGVhZGVyLCBtdXN0IG1hdGNoXG4gKiAyLiBOYXRpdmUgYXBwIG1vZGUgKGhlYWRlci1vbmx5KTogV2hlbiBYLU5hdGl2ZS1BcHAgaGVhZGVyIGlzIHByZXNlbnQsIG9ubHkgdmFsaWRhdGVzIGhlYWRlciB0b2tlblxuICogICAgVGhpcyBpcyBuZWNlc3NhcnkgYmVjYXVzZSBSZWFjdCBOYXRpdmUncyBmZXRjaCBkb2Vzbid0IHBlcnNpc3QgY29va2llcyBsaWtlIGJyb3dzZXJzIGRvLlxuICogICAgTmF0aXZlIGFwcHMgYWxyZWFkeSB1c2UgSldUIGF1dGhlbnRpY2F0aW9uIHdoaWNoIHByb3ZpZGVzIHN0cm9uZyByZXF1ZXN0IGF1dGhlbnRpY2F0aW9uLlxuICovXG5leHBvcnQgZnVuY3Rpb24gdmVyaWZ5Q3NyZlRva2VuKHJlcTogUmVxdWVzdCwgcmVzOiBSZXNwb25zZSwgbmV4dDogTmV4dEZ1bmN0aW9uKSB7XG4gIC8vIFNraXAgdmVyaWZpY2F0aW9uIGZvciBzYWZlIG1ldGhvZHNcbiAgaWYgKFNBRkVfTUVUSE9EUy5pbmNsdWRlcyhyZXEubWV0aG9kKSkge1xuICAgIHJldHVybiBuZXh0KCk7XG4gIH1cblxuICAvLyBTa2lwIENTUkYgZm9yIEJlYXJlci1hdXRoZW50aWNhdGVkIHJlcXVlc3RzLiBDU1JGIHByb3RlY3RzIGFtYmllbnQgY29va2llXG4gIC8vIGF1dGg7IEF1dGhvcml6YXRpb24gaXMgYW4gZXhwbGljaXQgaGVhZGVyIHRoYXQgYnJvd3NlcnMgZG8gbm90IGF0dGFjaFxuICAvLyBjcm9zcy1zaXRlIG9uIGJlaGFsZiBvZiBhbiBhdHRhY2tlci4gQXV0aCBtaWRkbGV3YXJlIHN0aWxsIHZhbGlkYXRlcyB0aGVcbiAgLy8gdG9rZW4gYW5kIHJlamVjdHMgaW52YWxpZCBvciBleHBpcmVkIHVzZXIvc2VydmljZSB0b2tlbnMuXG4gIGNvbnN0IGF1dGhIZWFkZXIgPSByZXEuaGVhZGVycy5hdXRob3JpemF0aW9uO1xuICBpZiAoYXV0aEhlYWRlcj8uc3RhcnRzV2l0aCgnQmVhcmVyICcpKSB7XG4gICAgcmV0dXJuIG5leHQoKTtcbiAgfVxuXG4gIC8vIEdldCB0b2tlbiBmcm9tIGhlYWRlclxuICBjb25zdCBoZWFkZXJUb2tlbiA9IHJlcS5oZWFkZXJzW0NTUkZfSEVBREVSX05BTUVdIGFzIHN0cmluZztcblxuICAvLyBDaGVjayBpZiB0aGlzIGlzIGEgbmF0aXZlIGFwcCByZXF1ZXN0IChSZWFjdCBOYXRpdmUsIG1vYmlsZSBhcHBzKVxuICAvLyBOYXRpdmUgYXBwcyBzZW5kIFgtTmF0aXZlLUFwcDogdHJ1ZSBiZWNhdXNlIHRoZXkgY2FuJ3QgcGVyc2lzdCBjb29raWVzXG4gIGNvbnN0IGlzTmF0aXZlQXBwID0gcmVxLmhlYWRlcnNbTkFUSVZFX0FQUF9IRUFERVJdID09PSAndHJ1ZSc7XG5cbiAgaWYgKGlzTmF0aXZlQXBwKSB7XG4gICAgLy8gTmF0aXZlIGFwcCBtb2RlOiBPbmx5IHJlcXVpcmUgaGVhZGVyIHRva2VuIChubyBjb29raWUgbWF0Y2hpbmcpXG4gICAgLy8gUmVxdWlyZSBhIEJlYXJlciB0b2tlbiB0byBwcmV2ZW50IGJyb3dzZXItYmFzZWQgYXR0YWNrZXJzIGZyb21cbiAgICAvLyBieXBhc3NpbmcgQ1NSRiBieSBzaW1wbHkgc2V0dGluZyBYLU5hdGl2ZS1BcHA6IHRydWUuXG4gICAgY29uc3QgYXV0aEhlYWRlciA9IHJlcS5oZWFkZXJzLmF1dGhvcml6YXRpb247XG4gICAgaWYgKCFhdXRoSGVhZGVyPy5zdGFydHNXaXRoKCdCZWFyZXIgJykpIHtcbiAgICAgIGxvZ2dlci53YXJuKCdOYXRpdmUgYXBwIENTUkYgYnlwYXNzIHdpdGhvdXQgYXV0aCcsIHtcbiAgICAgICAgbWV0aG9kOiByZXEubWV0aG9kLFxuICAgICAgICBwYXRoOiByZXEucGF0aCxcbiAgICAgIH0pO1xuXG4gICAgICByZXR1cm4gcmVzLnN0YXR1cyg0MDMpLmpzb24oe1xuICAgICAgICBtZXNzYWdlOiAnTmF0aXZlIGFwcCBDU1JGIGJ5cGFzcyByZXF1aXJlcyBhdXRoZW50aWNhdGlvbicsXG4gICAgICAgIGNvZGU6ICdDU1JGX0FVVEhfUkVRVUlSRUQnLFxuICAgICAgfSk7XG4gICAgfVxuXG4gICAgaWYgKCFoZWFkZXJUb2tlbikge1xuICAgICAgbG9nZ2VyLndhcm4oJ0NTUkYgdG9rZW4gbWlzc2luZyAobmF0aXZlIGFwcCknLCB7XG4gICAgICAgIG1ldGhvZDogcmVxLm1ldGhvZCxcbiAgICAgICAgcGF0aDogcmVxLnBhdGgsXG4gICAgICB9KTtcblxuICAgICAgcmV0dXJuIHJlcy5zdGF0dXMoNDAzKS5qc29uKHtcbiAgICAgICAgbWVzc2FnZTogJ0NTUkYgdG9rZW4gbWlzc2luZycsXG4gICAgICAgIGNvZGU6ICdDU1JGX1RPS0VOX01JU1NJTkcnLFxuICAgICAgfSk7XG4gICAgfVxuXG4gICAgLy8gVmFsaWRhdGUgdG9rZW4gZm9ybWF0IChtdXN0IGJlIGEgdmFsaWQgYmFzZTY0dXJsIHRva2VuIG9mIGV4cGVjdGVkIGxlbmd0aClcbiAgICAvLyBUaGlzIHByZXZlbnRzIGVtcHR5IG9yIG1hbGZvcm1lZCB0b2tlbnNcbiAgICBpZiAoaGVhZGVyVG9rZW4ubGVuZ3RoIDwgMjApIHtcbiAgICAgIGxvZ2dlci53YXJuKCdDU1JGIHRva2VuIGludmFsaWQgZm9ybWF0IChuYXRpdmUgYXBwKScsIHtcbiAgICAgICAgbWV0aG9kOiByZXEubWV0aG9kLFxuICAgICAgICBwYXRoOiByZXEucGF0aCxcbiAgICAgIH0pO1xuXG4gICAgICByZXR1cm4gcmVzLnN0YXR1cyg0MDMpLmpzb24oe1xuICAgICAgICBtZXNzYWdlOiAnSW52YWxpZCBDU1JGIHRva2VuJyxcbiAgICAgICAgY29kZTogJ0NTUkZfVE9LRU5fSU5WQUxJRCcsXG4gICAgICB9KTtcbiAgICB9XG5cbiAgICAvLyBUb2tlbiBpcyB2YWxpZCBmb3IgbmF0aXZlIGFwcCwgcHJvY2VlZFxuICAgIHJldHVybiBuZXh0KCk7XG4gIH1cblxuICAvLyBCcm93c2VyIG1vZGU6IERvdWJsZS1zdWJtaXQgY29va2llIHBhdHRlcm5cbiAgLy8gR2V0IHRva2VuIGZyb20gY29va2llXG4gIGNvbnN0IGNvb2tpZVRva2VuID0gcmVxLmNvb2tpZXM/LltDU1JGX0NPT0tJRV9OQU1FXTtcblxuICAvLyBCb3RoIG11c3QgYmUgcHJlc2VudFxuICBpZiAoIWNvb2tpZVRva2VuIHx8ICFoZWFkZXJUb2tlbikge1xuICAgIGxvZ2dlci53YXJuKCdDU1JGIHRva2VuIG1pc3NpbmcnLCB7XG4gICAgICBtZXRob2Q6IHJlcS5tZXRob2QsXG4gICAgICBwYXRoOiByZXEucGF0aCxcbiAgICAgIGhhc0Nvb2tpZTogISFjb29raWVUb2tlbixcbiAgICAgIGhhc0hlYWRlcjogISFoZWFkZXJUb2tlbixcbiAgICB9KTtcblxuICAgIHJldHVybiByZXMuc3RhdHVzKDQwMykuanNvbih7XG4gICAgICBtZXNzYWdlOiAnQ1NSRiB0b2tlbiBtaXNzaW5nJyxcbiAgICAgIGNvZGU6ICdDU1JGX1RPS0VOX01JU1NJTkcnLFxuICAgIH0pO1xuICB9XG5cbiAgLy8gVG9rZW5zIG11c3QgbWF0Y2ggKHRpbWluZy1zYWZlIGNvbXBhcmlzb24pLiBMZW5ndGggbXVzdCBtYXRjaCBmaXJzdCDigJRcbiAgLy8gdGltaW5nU2FmZUVxdWFsIHRocm93cyBSYW5nZUVycm9yIG9uIG1pc21hdGNoZWQgYnVmZmVyIGxlbmd0aHMuXG4gIGlmIChcbiAgICBjb29raWVUb2tlbi5sZW5ndGggIT09IGhlYWRlclRva2VuLmxlbmd0aCB8fFxuICAgICFjcnlwdG8udGltaW5nU2FmZUVxdWFsKEJ1ZmZlci5mcm9tKGNvb2tpZVRva2VuKSwgQnVmZmVyLmZyb20oaGVhZGVyVG9rZW4pKVxuICApIHtcbiAgICBsb2dnZXIud2FybignQ1NSRiB0b2tlbiBtaXNtYXRjaCcsIHtcbiAgICAgIG1ldGhvZDogcmVxLm1ldGhvZCxcbiAgICAgIHBhdGg6IHJlcS5wYXRoLFxuICAgIH0pO1xuXG4gICAgcmV0dXJuIHJlcy5zdGF0dXMoNDAzKS5qc29uKHtcbiAgICAgIG1lc3NhZ2U6ICdJbnZhbGlkIENTUkYgdG9rZW4nLFxuICAgICAgY29kZTogJ0NTUkZfVE9LRU5fSU5WQUxJRCcsXG4gICAgfSk7XG4gIH1cblxuICAvLyBUb2tlbiBpcyB2YWxpZCwgcHJvY2VlZFxuICBuZXh0KCk7XG59XG5cbi8qKlxuICogQ29tYmluZWQgbWlkZGxld2FyZSB0aGF0IHNldHMgYW5kIHZlcmlmaWVzIENTUkYgdG9rZW5cbiAqIFVzZSB0aGlzIGFzIGEgZ2VuZXJhbC1wdXJwb3NlIENTUkYgcHJvdGVjdGlvbiBtaWRkbGV3YXJlXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBjc3JmUHJvdGVjdGlvbihyZXE6IFJlcXVlc3QsIHJlczogUmVzcG9uc2UsIG5leHQ6IE5leHRGdW5jdGlvbikge1xuICAvLyBGaXJzdCBzZXQgdGhlIHRva2VuIChpZiBub3QgZXhpc3RzKVxuICBzZXRDc3JmVG9rZW4ocmVxLCByZXMsICgpID0+IHtcbiAgICAvLyBUaGVuIHZlcmlmeSBpdCBmb3Igbm9uLXNhZmUgbWV0aG9kc1xuICAgIHZlcmlmeUNzcmZUb2tlbihyZXEsIHJlcywgbmV4dCk7XG4gIH0pO1xufVxuXG4vKipcbiAqIEVuZHBvaW50IHRvIGdldCBDU1JGIHRva2VuXG4gKiBVc2VmdWwgZm9yIHNpbmdsZS1wYWdlIGFwcGxpY2F0aW9ucyB0aGF0IG5lZWQgdG8gZmV0Y2ggdGhlIHRva2VuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBnZXRDc3JmVG9rZW4ocmVxOiBSZXF1ZXN0LCByZXM6IFJlc3BvbnNlKSB7XG4gIGxldCBjc3JmVG9rZW4gPSByZXEuY29va2llcz8uW0NTUkZfQ09PS0lFX05BTUVdO1xuXG4gIGlmICghY3NyZlRva2VuKSB7XG4gICAgY3NyZlRva2VuID0gZ2VuZXJhdGVUb2tlbigpO1xuXG4gICAgcmVzLmNvb2tpZShDU1JGX0NPT0tJRV9OQU1FLCBjc3JmVG9rZW4sIHtcbiAgICAgIGh0dHBPbmx5OiB0cnVlLFxuICAgICAgc2VjdXJlOiBwcm9jZXNzLmVudi5OT0RFX0VOViA9PT0gJ3Byb2R1Y3Rpb24nLFxuICAgICAgc2FtZVNpdGU6IHByb2Nlc3MuZW52Lk5PREVfRU5WID09PSAncHJvZHVjdGlvbicgPyAnbm9uZScgOiAnbGF4JywgLy8gJ25vbmUnIHJlcXVpcmVkIGZvciBjcm9zcy1vcmlnaW4gcmVxdWVzdHNcbiAgICAgIG1heEFnZTogMjQgKiA2MCAqIDYwICogMTAwMCxcbiAgICB9KTtcbiAgfVxuXG4gIHJlcy5qc29uKHtcbiAgICBjc3JmVG9rZW4sXG4gIH0pO1xufVxuIl0sInZlcnNpb24iOjN9

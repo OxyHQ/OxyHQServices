@@ -1,0 +1,36 @@
+f3d69da6576e73e3dc8991aa0358f8e3
+"use strict";
+/**
+ * Global Error Handler Middleware
+ *
+ * Catches all errors and returns a consistent JSON response
+ * using the ApiError format: { error, message, details? }
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.errorHandler = errorHandler;
+const error_1 = require("../utils/error");
+const logger_1 = require("../utils/logger");
+/**
+ * Express error-handling middleware (must have 4 parameters).
+ *
+ * - ApiError instances are serialised directly via `toJSON()`.
+ * - Unknown errors are wrapped in InternalServerError; the raw message
+ *   is only exposed outside production.
+ */
+function errorHandler(err, _req, res, _next) {
+    if (err instanceof error_1.ApiError) {
+        logger_1.logger.error(`ApiError [${err.statusCode}] ${err.code}: ${err.message}`);
+        res.status(err.statusCode).json(err.toJSON());
+        return;
+    }
+    // Wrap unknown errors
+    const message = process.env.NODE_ENV === 'production'
+        ? 'An unexpected error occurred'
+        : err instanceof Error
+            ? err.message
+            : String(err);
+    logger_1.logger.error('Unhandled error:', err);
+    const wrapped = new error_1.InternalServerError(message);
+    res.status(wrapped.statusCode).json(wrapped.toJSON());
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvbWlkZGxld2FyZS9lcnJvckhhbmRsZXIudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7OztHQUtHOztBQWFILG9DQXdCQztBQWxDRCwwQ0FBK0Q7QUFDL0QsNENBQXlDO0FBRXpDOzs7Ozs7R0FNRztBQUNILFNBQWdCLFlBQVksQ0FDMUIsR0FBWSxFQUNaLElBQWEsRUFDYixHQUFhLEVBQ2IsS0FBbUI7SUFFbkIsSUFBSSxHQUFHLFlBQVksZ0JBQVEsRUFBRSxDQUFDO1FBQzVCLGVBQU0sQ0FBQyxLQUFLLENBQUMsYUFBYSxHQUFHLENBQUMsVUFBVSxLQUFLLEdBQUcsQ0FBQyxJQUFJLEtBQUssR0FBRyxDQUFDLE9BQU8sRUFBRSxDQUFDLENBQUM7UUFDekUsR0FBRyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsVUFBVSxDQUFDLENBQUMsSUFBSSxDQUFDLEdBQUcsQ0FBQyxNQUFNLEVBQUUsQ0FBQyxDQUFDO1FBQzlDLE9BQU87SUFDVCxDQUFDO0lBRUQsc0JBQXNCO0lBQ3RCLE1BQU0sT0FBTyxHQUNYLE9BQU8sQ0FBQyxHQUFHLENBQUMsUUFBUSxLQUFLLFlBQVk7UUFDbkMsQ0FBQyxDQUFDLDhCQUE4QjtRQUNoQyxDQUFDLENBQUMsR0FBRyxZQUFZLEtBQUs7WUFDcEIsQ0FBQyxDQUFDLEdBQUcsQ0FBQyxPQUFPO1lBQ2IsQ0FBQyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQztJQUVwQixlQUFNLENBQUMsS0FBSyxDQUFDLGtCQUFrQixFQUFFLEdBQUcsQ0FBQyxDQUFDO0lBRXRDLE1BQU0sT0FBTyxHQUFHLElBQUksMkJBQW1CLENBQUMsT0FBTyxDQUFDLENBQUM7SUFDakQsR0FBRyxDQUFDLE1BQU0sQ0FBQyxPQUFPLENBQUMsVUFBVSxDQUFDLENBQUMsSUFBSSxDQUFDLE9BQU8sQ0FBQyxNQUFNLEVBQUUsQ0FBQyxDQUFDO0FBQ3hELENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvbWlkZGxld2FyZS9lcnJvckhhbmRsZXIudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBHbG9iYWwgRXJyb3IgSGFuZGxlciBNaWRkbGV3YXJlXG4gKlxuICogQ2F0Y2hlcyBhbGwgZXJyb3JzIGFuZCByZXR1cm5zIGEgY29uc2lzdGVudCBKU09OIHJlc3BvbnNlXG4gKiB1c2luZyB0aGUgQXBpRXJyb3IgZm9ybWF0OiB7IGVycm9yLCBtZXNzYWdlLCBkZXRhaWxzPyB9XG4gKi9cblxuaW1wb3J0IHR5cGUgeyBSZXF1ZXN0LCBSZXNwb25zZSwgTmV4dEZ1bmN0aW9uIH0gZnJvbSAnZXhwcmVzcyc7XG5pbXBvcnQgeyBBcGlFcnJvciwgSW50ZXJuYWxTZXJ2ZXJFcnJvciB9IGZyb20gJy4uL3V0aWxzL2Vycm9yJztcbmltcG9ydCB7IGxvZ2dlciB9IGZyb20gJy4uL3V0aWxzL2xvZ2dlcic7XG5cbi8qKlxuICogRXhwcmVzcyBlcnJvci1oYW5kbGluZyBtaWRkbGV3YXJlIChtdXN0IGhhdmUgNCBwYXJhbWV0ZXJzKS5cbiAqXG4gKiAtIEFwaUVycm9yIGluc3RhbmNlcyBhcmUgc2VyaWFsaXNlZCBkaXJlY3RseSB2aWEgYHRvSlNPTigpYC5cbiAqIC0gVW5rbm93biBlcnJvcnMgYXJlIHdyYXBwZWQgaW4gSW50ZXJuYWxTZXJ2ZXJFcnJvcjsgdGhlIHJhdyBtZXNzYWdlXG4gKiAgIGlzIG9ubHkgZXhwb3NlZCBvdXRzaWRlIHByb2R1Y3Rpb24uXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBlcnJvckhhbmRsZXIoXG4gIGVycjogdW5rbm93bixcbiAgX3JlcTogUmVxdWVzdCxcbiAgcmVzOiBSZXNwb25zZSxcbiAgX25leHQ6IE5leHRGdW5jdGlvbixcbik6IHZvaWQge1xuICBpZiAoZXJyIGluc3RhbmNlb2YgQXBpRXJyb3IpIHtcbiAgICBsb2dnZXIuZXJyb3IoYEFwaUVycm9yIFske2Vyci5zdGF0dXNDb2RlfV0gJHtlcnIuY29kZX06ICR7ZXJyLm1lc3NhZ2V9YCk7XG4gICAgcmVzLnN0YXR1cyhlcnIuc3RhdHVzQ29kZSkuanNvbihlcnIudG9KU09OKCkpO1xuICAgIHJldHVybjtcbiAgfVxuXG4gIC8vIFdyYXAgdW5rbm93biBlcnJvcnNcbiAgY29uc3QgbWVzc2FnZSA9XG4gICAgcHJvY2Vzcy5lbnYuTk9ERV9FTlYgPT09ICdwcm9kdWN0aW9uJ1xuICAgICAgPyAnQW4gdW5leHBlY3RlZCBlcnJvciBvY2N1cnJlZCdcbiAgICAgIDogZXJyIGluc3RhbmNlb2YgRXJyb3JcbiAgICAgICAgPyBlcnIubWVzc2FnZVxuICAgICAgICA6IFN0cmluZyhlcnIpO1xuXG4gIGxvZ2dlci5lcnJvcignVW5oYW5kbGVkIGVycm9yOicsIGVycik7XG5cbiAgY29uc3Qgd3JhcHBlZCA9IG5ldyBJbnRlcm5hbFNlcnZlckVycm9yKG1lc3NhZ2UpO1xuICByZXMuc3RhdHVzKHdyYXBwZWQuc3RhdHVzQ29kZSkuanNvbih3cmFwcGVkLnRvSlNPTigpKTtcbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

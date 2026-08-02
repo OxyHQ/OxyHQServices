@@ -1,0 +1,162 @@
+bb813abe0d280c948465049c4c0c5b6b
+"use strict";
+/**
+ * Signed Record Service — the thin Oxy ADAPTER over the @oxyhq/protocol chain
+ * engine (self-sovereign identity layer — B5; F0.2 hash chain).
+ *
+ * The verification + continuity + append state machine now lives, app-agnostic,
+ * in `@oxyhq/protocol` (`verifyAndAppend`). This module is only the Oxy-specific
+ * glue around it:
+ *
+ *  - the {@link oxyRecordStore} (the protocol `RecordStore` over the
+ *    `signed_records`/`repo_heads` tables) and {@link oxyVerificationResolver}
+ *    (the Oxy authorization policy: current VMs + the `OXY_DID` custodial
+ *    issuer) are injected into the engine;
+ *  - the `subject_mismatch` binding (the caller may only write to their OWN
+ *    chain), the Oxy STORE strictness gate (only the closed
+ *    `oxySignedRecordTypeSchema` set may land on the Oxy chain) and the CHAIN
+ *    gate (only the two v1 legacy singletons may arrive unchained) are applied
+ *    here, around the engine, because they are Oxy policy, not protocol grammar.
+ *
+ * The protocol engine guarantees the same ordered checks (signature, issuer
+ * authorization, freshness, monotonicity, chain continuity) and the same
+ * rejection-reason strings the API returned before the extraction, so responses
+ * are unchanged.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.signRecordEnvelope = signRecordEnvelope;
+exports.verifyEnvelope = verifyEnvelope;
+exports.verifyAndStoreRecord = verifyAndStoreRecord;
+exports.getLatestRecord = getLatestRecord;
+const protocol_1 = require("@oxyhq/protocol");
+const protocol_2 = require("@oxyhq/protocol");
+const contracts_1 = require("@oxyhq/contracts");
+const signature_service_1 = __importDefault(require("./signature.service"));
+const did_service_1 = require("./did.service");
+const oxyRecordStore_1 = require("./oxyRecordStore");
+const oxyVerificationResolver_1 = require("./oxyVerificationResolver");
+/**
+ * Build and sign a record envelope with a secp256k1 private key. Used to forge a
+ * valid client signature in tests and (server-side) for custodial provenance
+ * attestations. The returned envelope verifies against the protocol signature
+ * check. (Signing — not an engine internal — stays in the Oxy service.)
+ */
+function signRecordEnvelope(fields, privateKeyHex) {
+    const signature = signature_service_1.default.signMessage((0, protocol_1.signedRecordSigningInput)(fields), privateKeyHex);
+    return Object.assign(Object.assign({}, fields), { signature });
+}
+/**
+ * The record categories a v1 (UNCHAINED) envelope may still carry.
+ *
+ * v1 predates the hash chain and only ever carried these two, both already in
+ * production — see `@oxyhq/contracts`'s `oxyRecordTypes.ts`, which states it as
+ * history rather than as a rule anything enforced. It is a rule now; see
+ * {@link oxyStorePolicy}'s third policy for why.
+ */
+const V1_LEGACY_RECORD_TYPES = new Set(['identity', 'profile']);
+/**
+ * The three Oxy policies that wrap the protocol engine, applied before any
+ * verification:
+ *  1. `subject_mismatch` — the envelope's `subject` MUST be `subjectUserId`'s DID
+ *     (a caller may only publish records about their own account / chain).
+ *  2. the STORE strictness gate — the base envelope `type` is an OPEN string so
+ *     any Oxy app can sign on the shared grammar, but the Oxy identity/civic/node
+ *     store accepts ONLY the closed `oxySignedRecordTypeSchema` set; a non-Oxy
+ *     `type` (e.g. an app's `app_record`) is rejected as `invalid_envelope`.
+ *  3. the CHAIN gate — every Oxy type except the two v1 legacy singletons MUST
+ *     arrive as a v2 (chained) envelope.
+ *
+ * ## Why (3) exists — the `recordId ?? ''` root cause
+ *
+ * `verifyAndStoreRecord` hands back the engine-computed content address for
+ * EVERY successful append, but `oxyRecordStore.append`'s v1 path stores no
+ * `record_id` at all (the schema's `signed_records_chain_completeness_check`
+ * forbids a half-chained row, so a v1 row cannot carry one). Five civic call
+ * sites then wrote that address into a projection —
+ * `personhood_vouches.record_id`, `validation_votes.record_id`,
+ * `verifiable_credentials.record_id` — as a reference to the proof. On a v1
+ * envelope those references named a row that does not exist: Mongo accepted a
+ * dangling reference silently, and the `?? ''` those call sites carried was a
+ * vestigial guard from an older, optional `recordId` shape that could no longer
+ * fire and hid the real defect. The version is entirely CLIENT-chosen, so any
+ * client signing `{version: 1, type: 'personhood_vouch'}` produced one.
+ *
+ * The fix belongs here rather than at the five call sites: this is the one
+ * chokepoint every projected record passes through, so a type added later
+ * inherits the guarantee instead of re-acquiring the bug. With it, a content
+ * address returned for a projected type always names a stored row, which is
+ * exactly what the foreign keys now require.
+ *
+ * Returns the rejection reason when a policy fails, or `null` when all pass.
+ */
+function oxyStorePolicy(env, subjectUserId) {
+    // Account-based, not DID-string-based: the SDK signs subjects at the canonical
+    // identity apex while `DID_WEB_DOMAIN` may re-anchor server-emitted DIDs, so
+    // the binding resolves the subject DID back to the account id and compares ids.
+    if ((0, did_service_1.parseUserDid)(env.subject) !== subjectUserId) {
+        return 'subject_mismatch';
+    }
+    const oxyType = contracts_1.oxySignedRecordTypeSchema.safeParse(env.type);
+    if (!oxyType.success) {
+        return 'invalid_envelope';
+    }
+    if (env.version !== 2 && !V1_LEGACY_RECORD_TYPES.has(oxyType.data)) {
+        return 'invalid_envelope';
+    }
+    return null;
+}
+/**
+ * Verify an envelope for a subject WITHOUT persisting it (the Oxy store policy +
+ * the protocol verification state machine with the Oxy store + resolver
+ * injected). Powers the public re-verify endpoint.
+ */
+function verifyEnvelope(env, subjectUserId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const policyReason = oxyStorePolicy(env, subjectUserId);
+        if (policyReason) {
+            return { ok: false, reason: policyReason };
+        }
+        return (0, protocol_2.verifyEnvelope)(oxyRecordStore_1.oxyRecordStore, oxyVerificationResolver_1.oxyVerificationResolver, env);
+    });
+}
+/**
+ * Verify an envelope and append it to the subject's chain as `verified: true`,
+ * via the protocol engine with the Oxy store + resolver injected (wrapped by the
+ * {@link oxyStorePolicy}). Returns the verdict (so the route maps a rejection to
+ * a 4xx) rather than throwing on a bad envelope.
+ */
+function verifyAndStoreRecord(env, subjectUserId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const policyReason = oxyStorePolicy(env, subjectUserId);
+        if (policyReason) {
+            return { ok: false, reason: policyReason };
+        }
+        const outcome = yield (0, protocol_2.verifyAndAppend)(oxyRecordStore_1.oxyRecordStore, oxyVerificationResolver_1.oxyVerificationResolver, env);
+        if (!outcome.ok) {
+            return outcome;
+        }
+        return {
+            ok: true,
+            record: { recordId: outcome.recordId, seq: outcome.seq, envelope: env, verified: true },
+        };
+    });
+}
+/** Latest stored record of `type` for a user, or null. */
+function getLatestRecord(userId, type) {
+    return __awaiter(this, void 0, void 0, function* () {
+        return oxyRecordStore_1.oxyRecordStore.latestRecordOfType(userId, type);
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2VydmljZXMvc2lnbmVkUmVjb3JkLnNlcnZpY2UudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBc0JHOzs7Ozs7Ozs7Ozs7OztBQWlDSCxnREFNQztBQXFFRCx3Q0FTQztBQVFELG9EQWlCQztBQUdELDBDQUtDO0FBcEpELDhDQUEyRDtBQUMzRCw4Q0FBc0k7QUFDdEksZ0RBQWtIO0FBQ2xILDRFQUFtRDtBQUNuRCwrQ0FBNkM7QUFDN0MscURBQWtEO0FBQ2xELHVFQUFvRTtBQW1CcEU7Ozs7O0dBS0c7QUFDSCxTQUFnQixrQkFBa0IsQ0FDaEMsTUFBK0MsRUFDL0MsYUFBcUI7SUFFckIsTUFBTSxTQUFTLEdBQUcsMkJBQWdCLENBQUMsV0FBVyxDQUFDLElBQUEsbUNBQXdCLEVBQUMsTUFBTSxDQUFDLEVBQUUsYUFBYSxDQUFDLENBQUM7SUFDaEcsdUNBQVksTUFBTSxLQUFFLFNBQVMsSUFBRztBQUNsQyxDQUFDO0FBRUQ7Ozs7Ozs7R0FPRztBQUNILE1BQU0sc0JBQXNCLEdBQXFDLElBQUksR0FBRyxDQUFDLENBQUMsVUFBVSxFQUFFLFNBQVMsQ0FBQyxDQUFDLENBQUM7QUFFbEc7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0FrQ0c7QUFDSCxTQUFTLGNBQWMsQ0FBQyxHQUF5QixFQUFFLGFBQXFCO0lBQ3RFLCtFQUErRTtJQUMvRSw2RUFBNkU7SUFDN0UsZ0ZBQWdGO0lBQ2hGLElBQUksSUFBQSwwQkFBWSxFQUFDLEdBQUcsQ0FBQyxPQUFPLENBQUMsS0FBSyxhQUFhLEVBQUUsQ0FBQztRQUNoRCxPQUFPLGtCQUFrQixDQUFDO0lBQzVCLENBQUM7SUFDRCxNQUFNLE9BQU8sR0FBRyxxQ0FBeUIsQ0FBQyxTQUFTLENBQUMsR0FBRyxDQUFDLElBQUksQ0FBQyxDQUFDO0lBQzlELElBQUksQ0FBQyxPQUFPLENBQUMsT0FBTyxFQUFFLENBQUM7UUFDckIsT0FBTyxrQkFBa0IsQ0FBQztJQUM1QixDQUFDO0lBQ0QsSUFBSSxHQUFHLENBQUMsT0FBTyxLQUFLLENBQUMsSUFBSSxDQUFDLHNCQUFzQixDQUFDLEdBQUcsQ0FBQyxPQUFPLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQztRQUNuRSxPQUFPLGtCQUFrQixDQUFDO0lBQzVCLENBQUM7SUFDRCxPQUFPLElBQUksQ0FBQztBQUNkLENBQUM7QUFFRDs7OztHQUlHO0FBQ0gsU0FBc0IsY0FBYyxDQUNsQyxHQUF5QixFQUN6QixhQUFxQjs7UUFFckIsTUFBTSxZQUFZLEdBQUcsY0FBYyxDQUFDLEdBQUcsRUFBRSxhQUFhLENBQUMsQ0FBQztRQUN4RCxJQUFJLFlBQVksRUFBRSxDQUFDO1lBQ2pCLE9BQU8sRUFBRSxFQUFFLEVBQUUsS0FBSyxFQUFFLE1BQU0sRUFBRSxZQUFZLEVBQUUsQ0FBQztRQUM3QyxDQUFDO1FBQ0QsT0FBTyxJQUFBLHlCQUFzQixFQUFDLCtCQUFjLEVBQUUsaURBQXVCLEVBQUUsR0FBRyxDQUFDLENBQUM7SUFDOUUsQ0FBQztDQUFBO0FBRUQ7Ozs7O0dBS0c7QUFDSCxTQUFzQixvQkFBb0IsQ0FDeEMsR0FBeUIsRUFDekIsYUFBcUI7O1FBRXJCLE1BQU0sWUFBWSxHQUFHLGNBQWMsQ0FBQyxHQUFHLEVBQUUsYUFBYSxDQUFDLENBQUM7UUFDeEQsSUFBSSxZQUFZLEVBQUUsQ0FBQztZQUNqQixPQUFPLEVBQUUsRUFBRSxFQUFFLEtBQUssRUFBRSxNQUFNLEVBQUUsWUFBWSxFQUFFLENBQUM7UUFDN0MsQ0FBQztRQUVELE1BQU0sT0FBTyxHQUFHLE1BQU0sSUFBQSwwQkFBZSxFQUFDLCtCQUFjLEVBQUUsaURBQXVCLEVBQUUsR0FBRyxDQUFDLENBQUM7UUFDcEYsSUFBSSxDQUFDLE9BQU8sQ0FBQyxFQUFFLEVBQUUsQ0FBQztZQUNoQixPQUFPLE9BQU8sQ0FBQztRQUNqQixDQUFDO1FBQ0QsT0FBTztZQUNMLEVBQUUsRUFBRSxJQUFJO1lBQ1IsTUFBTSxFQUFFLEVBQUUsUUFBUSxFQUFFLE9BQU8sQ0FBQyxRQUFRLEVBQUUsR0FBRyxFQUFFLE9BQU8sQ0FBQyxHQUFHLEVBQUUsUUFBUSxFQUFFLEdBQUcsRUFBRSxRQUFRLEVBQUUsSUFBSSxFQUFFO1NBQ3hGLENBQUM7SUFDSixDQUFDO0NBQUE7QUFFRCwwREFBMEQ7QUFDMUQsU0FBc0IsZUFBZSxDQUNuQyxNQUFjLEVBQ2QsSUFBNEI7O1FBRTVCLE9BQU8sK0JBQWMsQ0FBQyxrQkFBa0IsQ0FBQyxNQUFNLEVBQUUsSUFBSSxDQUFDLENBQUM7SUFDekQsQ0FBQztDQUFBIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3NlcnZpY2VzL3NpZ25lZFJlY29yZC5zZXJ2aWNlLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogU2lnbmVkIFJlY29yZCBTZXJ2aWNlIOKAlCB0aGUgdGhpbiBPeHkgQURBUFRFUiBvdmVyIHRoZSBAb3h5aHEvcHJvdG9jb2wgY2hhaW5cbiAqIGVuZ2luZSAoc2VsZi1zb3ZlcmVpZ24gaWRlbnRpdHkgbGF5ZXIg4oCUIEI1OyBGMC4yIGhhc2ggY2hhaW4pLlxuICpcbiAqIFRoZSB2ZXJpZmljYXRpb24gKyBjb250aW51aXR5ICsgYXBwZW5kIHN0YXRlIG1hY2hpbmUgbm93IGxpdmVzLCBhcHAtYWdub3N0aWMsXG4gKiBpbiBgQG94eWhxL3Byb3RvY29sYCAoYHZlcmlmeUFuZEFwcGVuZGApLiBUaGlzIG1vZHVsZSBpcyBvbmx5IHRoZSBPeHktc3BlY2lmaWNcbiAqIGdsdWUgYXJvdW5kIGl0OlxuICpcbiAqICAtIHRoZSB7QGxpbmsgb3h5UmVjb3JkU3RvcmV9ICh0aGUgcHJvdG9jb2wgYFJlY29yZFN0b3JlYCBvdmVyIHRoZVxuICogICAgYHNpZ25lZF9yZWNvcmRzYC9gcmVwb19oZWFkc2AgdGFibGVzKSBhbmQge0BsaW5rIG94eVZlcmlmaWNhdGlvblJlc29sdmVyfVxuICogICAgKHRoZSBPeHkgYXV0aG9yaXphdGlvbiBwb2xpY3k6IGN1cnJlbnQgVk1zICsgdGhlIGBPWFlfRElEYCBjdXN0b2RpYWxcbiAqICAgIGlzc3VlcikgYXJlIGluamVjdGVkIGludG8gdGhlIGVuZ2luZTtcbiAqICAtIHRoZSBgc3ViamVjdF9taXNtYXRjaGAgYmluZGluZyAodGhlIGNhbGxlciBtYXkgb25seSB3cml0ZSB0byB0aGVpciBPV05cbiAqICAgIGNoYWluKSwgdGhlIE94eSBTVE9SRSBzdHJpY3RuZXNzIGdhdGUgKG9ubHkgdGhlIGNsb3NlZFxuICogICAgYG94eVNpZ25lZFJlY29yZFR5cGVTY2hlbWFgIHNldCBtYXkgbGFuZCBvbiB0aGUgT3h5IGNoYWluKSBhbmQgdGhlIENIQUlOXG4gKiAgICBnYXRlIChvbmx5IHRoZSB0d28gdjEgbGVnYWN5IHNpbmdsZXRvbnMgbWF5IGFycml2ZSB1bmNoYWluZWQpIGFyZSBhcHBsaWVkXG4gKiAgICBoZXJlLCBhcm91bmQgdGhlIGVuZ2luZSwgYmVjYXVzZSB0aGV5IGFyZSBPeHkgcG9saWN5LCBub3QgcHJvdG9jb2wgZ3JhbW1hci5cbiAqXG4gKiBUaGUgcHJvdG9jb2wgZW5naW5lIGd1YXJhbnRlZXMgdGhlIHNhbWUgb3JkZXJlZCBjaGVja3MgKHNpZ25hdHVyZSwgaXNzdWVyXG4gKiBhdXRob3JpemF0aW9uLCBmcmVzaG5lc3MsIG1vbm90b25pY2l0eSwgY2hhaW4gY29udGludWl0eSkgYW5kIHRoZSBzYW1lXG4gKiByZWplY3Rpb24tcmVhc29uIHN0cmluZ3MgdGhlIEFQSSByZXR1cm5lZCBiZWZvcmUgdGhlIGV4dHJhY3Rpb24sIHNvIHJlc3BvbnNlc1xuICogYXJlIHVuY2hhbmdlZC5cbiAqL1xuXG5pbXBvcnQgeyBzaWduZWRSZWNvcmRTaWduaW5nSW5wdXQgfSBmcm9tICdAb3h5aHEvcHJvdG9jb2wnO1xuaW1wb3J0IHsgdmVyaWZ5QW5kQXBwZW5kLCB2ZXJpZnlFbnZlbG9wZSBhcyBwcm90b2NvbFZlcmlmeUVudmVsb3BlLCB0eXBlIFJlamVjdGlvblJlYXNvbiwgdHlwZSBWZXJpZnlPdXRjb21lIH0gZnJvbSAnQG94eWhxL3Byb3RvY29sJztcbmltcG9ydCB7IG94eVNpZ25lZFJlY29yZFR5cGVTY2hlbWEsIHR5cGUgT3h5U2lnbmVkUmVjb3JkVHlwZSwgdHlwZSBTaWduZWRSZWNvcmRFbnZlbG9wZSB9IGZyb20gJ0BveHlocS9jb250cmFjdHMnO1xuaW1wb3J0IFNpZ25hdHVyZVNlcnZpY2UgZnJvbSAnLi9zaWduYXR1cmUuc2VydmljZSc7XG5pbXBvcnQgeyBwYXJzZVVzZXJEaWQgfSBmcm9tICcuL2RpZC5zZXJ2aWNlJztcbmltcG9ydCB7IG94eVJlY29yZFN0b3JlIH0gZnJvbSAnLi9veHlSZWNvcmRTdG9yZSc7XG5pbXBvcnQgeyBveHlWZXJpZmljYXRpb25SZXNvbHZlciB9IGZyb20gJy4vb3h5VmVyaWZpY2F0aW9uUmVzb2x2ZXInO1xuXG4vKipcbiAqIFRoZSByZWZlcmVuY2UgdG8gYSBzdG9yZWQgcmVjb3JkIHJldHVybmVkIG9uIGEgc3VjY2Vzc2Z1bCBhcHBlbmQuIENhcnJpZXMgdGhlXG4gKiBjb250ZW50IGFkZHJlc3MgKyBjaGFpbiBgc2VxYCBmcm9tIHRoZSBlbmdpbmUgcGx1cyB0aGUgc3RvcmVkIGVudmVsb3BlIGFuZCBpdHNcbiAqIGB2ZXJpZmllZGAgZmxhZyDigJQgZW5vdWdoIGZvciBldmVyeSBjYWxsZXIgKHRoZSByb3V0ZSBlY2hvZXMgdGhlIGVudmVsb3BlOyB0aGVcbiAqIGNpdmljL25vZGUgc2VydmljZXMgcmVhZCB0aGUgYHJlY29yZElkYC9gc2VxYCkuXG4gKi9cbmV4cG9ydCBpbnRlcmZhY2UgU3RvcmVkUmVjb3JkUmVmIHtcbiAgcmVjb3JkSWQ6IHN0cmluZztcbiAgc2VxOiBudW1iZXI7XG4gIGVudmVsb3BlOiBTaWduZWRSZWNvcmRFbnZlbG9wZTtcbiAgdmVyaWZpZWQ6IGJvb2xlYW47XG59XG5cbmV4cG9ydCB0eXBlIFZlcmlmeUFuZFN0b3JlUmVzdWx0ID1cbiAgfCB7IG9rOiB0cnVlOyByZWNvcmQ6IFN0b3JlZFJlY29yZFJlZiB9XG4gIHwgeyBvazogZmFsc2U7IHJlYXNvbjogUmVqZWN0aW9uUmVhc29uIH07XG5cbi8qKlxuICogQnVpbGQgYW5kIHNpZ24gYSByZWNvcmQgZW52ZWxvcGUgd2l0aCBhIHNlY3AyNTZrMSBwcml2YXRlIGtleS4gVXNlZCB0byBmb3JnZSBhXG4gKiB2YWxpZCBjbGllbnQgc2lnbmF0dXJlIGluIHRlc3RzIGFuZCAoc2VydmVyLXNpZGUpIGZvciBjdXN0b2RpYWwgcHJvdmVuYW5jZVxuICogYXR0ZXN0YXRpb25zLiBUaGUgcmV0dXJuZWQgZW52ZWxvcGUgdmVyaWZpZXMgYWdhaW5zdCB0aGUgcHJvdG9jb2wgc2lnbmF0dXJlXG4gKiBjaGVjay4gKFNpZ25pbmcg4oCUIG5vdCBhbiBlbmdpbmUgaW50ZXJuYWwg4oCUIHN0YXlzIGluIHRoZSBPeHkgc2VydmljZS4pXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBzaWduUmVjb3JkRW52ZWxvcGUoXG4gIGZpZWxkczogT21pdDxTaWduZWRSZWNvcmRFbnZlbG9wZSwgJ3NpZ25hdHVyZSc+LFxuICBwcml2YXRlS2V5SGV4OiBzdHJpbmcsXG4pOiBTaWduZWRSZWNvcmRFbnZlbG9wZSB7XG4gIGNvbnN0IHNpZ25hdHVyZSA9IFNpZ25hdHVyZVNlcnZpY2Uuc2lnbk1lc3NhZ2Uoc2lnbmVkUmVjb3JkU2lnbmluZ0lucHV0KGZpZWxkcyksIHByaXZhdGVLZXlIZXgpO1xuICByZXR1cm4geyAuLi5maWVsZHMsIHNpZ25hdHVyZSB9O1xufVxuXG4vKipcbiAqIFRoZSByZWNvcmQgY2F0ZWdvcmllcyBhIHYxIChVTkNIQUlORUQpIGVudmVsb3BlIG1heSBzdGlsbCBjYXJyeS5cbiAqXG4gKiB2MSBwcmVkYXRlcyB0aGUgaGFzaCBjaGFpbiBhbmQgb25seSBldmVyIGNhcnJpZWQgdGhlc2UgdHdvLCBib3RoIGFscmVhZHkgaW5cbiAqIHByb2R1Y3Rpb24g4oCUIHNlZSBgQG94eWhxL2NvbnRyYWN0c2AncyBgb3h5UmVjb3JkVHlwZXMudHNgLCB3aGljaCBzdGF0ZXMgaXQgYXNcbiAqIGhpc3RvcnkgcmF0aGVyIHRoYW4gYXMgYSBydWxlIGFueXRoaW5nIGVuZm9yY2VkLiBJdCBpcyBhIHJ1bGUgbm93OyBzZWVcbiAqIHtAbGluayBveHlTdG9yZVBvbGljeX0ncyB0aGlyZCBwb2xpY3kgZm9yIHdoeS5cbiAqL1xuY29uc3QgVjFfTEVHQUNZX1JFQ09SRF9UWVBFUzogUmVhZG9ubHlTZXQ8T3h5U2lnbmVkUmVjb3JkVHlwZT4gPSBuZXcgU2V0KFsnaWRlbnRpdHknLCAncHJvZmlsZSddKTtcblxuLyoqXG4gKiBUaGUgdGhyZWUgT3h5IHBvbGljaWVzIHRoYXQgd3JhcCB0aGUgcHJvdG9jb2wgZW5naW5lLCBhcHBsaWVkIGJlZm9yZSBhbnlcbiAqIHZlcmlmaWNhdGlvbjpcbiAqICAxLiBgc3ViamVjdF9taXNtYXRjaGAg4oCUIHRoZSBlbnZlbG9wZSdzIGBzdWJqZWN0YCBNVVNUIGJlIGBzdWJqZWN0VXNlcklkYCdzIERJRFxuICogICAgIChhIGNhbGxlciBtYXkgb25seSBwdWJsaXNoIHJlY29yZHMgYWJvdXQgdGhlaXIgb3duIGFjY291bnQgLyBjaGFpbikuXG4gKiAgMi4gdGhlIFNUT1JFIHN0cmljdG5lc3MgZ2F0ZSDigJQgdGhlIGJhc2UgZW52ZWxvcGUgYHR5cGVgIGlzIGFuIE9QRU4gc3RyaW5nIHNvXG4gKiAgICAgYW55IE94eSBhcHAgY2FuIHNpZ24gb24gdGhlIHNoYXJlZCBncmFtbWFyLCBidXQgdGhlIE94eSBpZGVudGl0eS9jaXZpYy9ub2RlXG4gKiAgICAgc3RvcmUgYWNjZXB0cyBPTkxZIHRoZSBjbG9zZWQgYG94eVNpZ25lZFJlY29yZFR5cGVTY2hlbWFgIHNldDsgYSBub24tT3h5XG4gKiAgICAgYHR5cGVgIChlLmcuIGFuIGFwcCdzIGBhcHBfcmVjb3JkYCkgaXMgcmVqZWN0ZWQgYXMgYGludmFsaWRfZW52ZWxvcGVgLlxuICogIDMuIHRoZSBDSEFJTiBnYXRlIOKAlCBldmVyeSBPeHkgdHlwZSBleGNlcHQgdGhlIHR3byB2MSBsZWdhY3kgc2luZ2xldG9ucyBNVVNUXG4gKiAgICAgYXJyaXZlIGFzIGEgdjIgKGNoYWluZWQpIGVudmVsb3BlLlxuICpcbiAqICMjIFdoeSAoMykgZXhpc3RzIOKAlCB0aGUgYHJlY29yZElkID8/ICcnYCByb290IGNhdXNlXG4gKlxuICogYHZlcmlmeUFuZFN0b3JlUmVjb3JkYCBoYW5kcyBiYWNrIHRoZSBlbmdpbmUtY29tcHV0ZWQgY29udGVudCBhZGRyZXNzIGZvclxuICogRVZFUlkgc3VjY2Vzc2Z1bCBhcHBlbmQsIGJ1dCBgb3h5UmVjb3JkU3RvcmUuYXBwZW5kYCdzIHYxIHBhdGggc3RvcmVzIG5vXG4gKiBgcmVjb3JkX2lkYCBhdCBhbGwgKHRoZSBzY2hlbWEncyBgc2lnbmVkX3JlY29yZHNfY2hhaW5fY29tcGxldGVuZXNzX2NoZWNrYFxuICogZm9yYmlkcyBhIGhhbGYtY2hhaW5lZCByb3csIHNvIGEgdjEgcm93IGNhbm5vdCBjYXJyeSBvbmUpLiBGaXZlIGNpdmljIGNhbGxcbiAqIHNpdGVzIHRoZW4gd3JvdGUgdGhhdCBhZGRyZXNzIGludG8gYSBwcm9qZWN0aW9uIOKAlFxuICogYHBlcnNvbmhvb2Rfdm91Y2hlcy5yZWNvcmRfaWRgLCBgdmFsaWRhdGlvbl92b3Rlcy5yZWNvcmRfaWRgLFxuICogYHZlcmlmaWFibGVfY3JlZGVudGlhbHMucmVjb3JkX2lkYCDigJQgYXMgYSByZWZlcmVuY2UgdG8gdGhlIHByb29mLiBPbiBhIHYxXG4gKiBlbnZlbG9wZSB0aG9zZSByZWZlcmVuY2VzIG5hbWVkIGEgcm93IHRoYXQgZG9lcyBub3QgZXhpc3Q6IE1vbmdvIGFjY2VwdGVkIGFcbiAqIGRhbmdsaW5nIHJlZmVyZW5jZSBzaWxlbnRseSwgYW5kIHRoZSBgPz8gJydgIHRob3NlIGNhbGwgc2l0ZXMgY2FycmllZCB3YXMgYVxuICogdmVzdGlnaWFsIGd1YXJkIGZyb20gYW4gb2xkZXIsIG9wdGlvbmFsIGByZWNvcmRJZGAgc2hhcGUgdGhhdCBjb3VsZCBubyBsb25nZXJcbiAqIGZpcmUgYW5kIGhpZCB0aGUgcmVhbCBkZWZlY3QuIFRoZSB2ZXJzaW9uIGlzIGVudGlyZWx5IENMSUVOVC1jaG9zZW4sIHNvIGFueVxuICogY2xpZW50IHNpZ25pbmcgYHt2ZXJzaW9uOiAxLCB0eXBlOiAncGVyc29uaG9vZF92b3VjaCd9YCBwcm9kdWNlZCBvbmUuXG4gKlxuICogVGhlIGZpeCBiZWxvbmdzIGhlcmUgcmF0aGVyIHRoYW4gYXQgdGhlIGZpdmUgY2FsbCBzaXRlczogdGhpcyBpcyB0aGUgb25lXG4gKiBjaG9rZXBvaW50IGV2ZXJ5IHByb2plY3RlZCByZWNvcmQgcGFzc2VzIHRocm91Z2gsIHNvIGEgdHlwZSBhZGRlZCBsYXRlclxuICogaW5oZXJpdHMgdGhlIGd1YXJhbnRlZSBpbnN0ZWFkIG9mIHJlLWFjcXVpcmluZyB0aGUgYnVnLiBXaXRoIGl0LCBhIGNvbnRlbnRcbiAqIGFkZHJlc3MgcmV0dXJuZWQgZm9yIGEgcHJvamVjdGVkIHR5cGUgYWx3YXlzIG5hbWVzIGEgc3RvcmVkIHJvdywgd2hpY2ggaXNcbiAqIGV4YWN0bHkgd2hhdCB0aGUgZm9yZWlnbiBrZXlzIG5vdyByZXF1aXJlLlxuICpcbiAqIFJldHVybnMgdGhlIHJlamVjdGlvbiByZWFzb24gd2hlbiBhIHBvbGljeSBmYWlscywgb3IgYG51bGxgIHdoZW4gYWxsIHBhc3MuXG4gKi9cbmZ1bmN0aW9uIG94eVN0b3JlUG9saWN5KGVudjogU2lnbmVkUmVjb3JkRW52ZWxvcGUsIHN1YmplY3RVc2VySWQ6IHN0cmluZyk6IFJlamVjdGlvblJlYXNvbiB8IG51bGwge1xuICAvLyBBY2NvdW50LWJhc2VkLCBub3QgRElELXN0cmluZy1iYXNlZDogdGhlIFNESyBzaWducyBzdWJqZWN0cyBhdCB0aGUgY2Fub25pY2FsXG4gIC8vIGlkZW50aXR5IGFwZXggd2hpbGUgYERJRF9XRUJfRE9NQUlOYCBtYXkgcmUtYW5jaG9yIHNlcnZlci1lbWl0dGVkIERJRHMsIHNvXG4gIC8vIHRoZSBiaW5kaW5nIHJlc29sdmVzIHRoZSBzdWJqZWN0IERJRCBiYWNrIHRvIHRoZSBhY2NvdW50IGlkIGFuZCBjb21wYXJlcyBpZHMuXG4gIGlmIChwYXJzZVVzZXJEaWQoZW52LnN1YmplY3QpICE9PSBzdWJqZWN0VXNlcklkKSB7XG4gICAgcmV0dXJuICdzdWJqZWN0X21pc21hdGNoJztcbiAgfVxuICBjb25zdCBveHlUeXBlID0gb3h5U2lnbmVkUmVjb3JkVHlwZVNjaGVtYS5zYWZlUGFyc2UoZW52LnR5cGUpO1xuICBpZiAoIW94eVR5cGUuc3VjY2Vzcykge1xuICAgIHJldHVybiAnaW52YWxpZF9lbnZlbG9wZSc7XG4gIH1cbiAgaWYgKGVudi52ZXJzaW9uICE9PSAyICYmICFWMV9MRUdBQ1lfUkVDT1JEX1RZUEVTLmhhcyhveHlUeXBlLmRhdGEpKSB7XG4gICAgcmV0dXJuICdpbnZhbGlkX2VudmVsb3BlJztcbiAgfVxuICByZXR1cm4gbnVsbDtcbn1cblxuLyoqXG4gKiBWZXJpZnkgYW4gZW52ZWxvcGUgZm9yIGEgc3ViamVjdCBXSVRIT1VUIHBlcnNpc3RpbmcgaXQgKHRoZSBPeHkgc3RvcmUgcG9saWN5ICtcbiAqIHRoZSBwcm90b2NvbCB2ZXJpZmljYXRpb24gc3RhdGUgbWFjaGluZSB3aXRoIHRoZSBPeHkgc3RvcmUgKyByZXNvbHZlclxuICogaW5qZWN0ZWQpLiBQb3dlcnMgdGhlIHB1YmxpYyByZS12ZXJpZnkgZW5kcG9pbnQuXG4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiB2ZXJpZnlFbnZlbG9wZShcbiAgZW52OiBTaWduZWRSZWNvcmRFbnZlbG9wZSxcbiAgc3ViamVjdFVzZXJJZDogc3RyaW5nLFxuKTogUHJvbWlzZTxWZXJpZnlPdXRjb21lPiB7XG4gIGNvbnN0IHBvbGljeVJlYXNvbiA9IG94eVN0b3JlUG9saWN5KGVudiwgc3ViamVjdFVzZXJJZCk7XG4gIGlmIChwb2xpY3lSZWFzb24pIHtcbiAgICByZXR1cm4geyBvazogZmFsc2UsIHJlYXNvbjogcG9saWN5UmVhc29uIH07XG4gIH1cbiAgcmV0dXJuIHByb3RvY29sVmVyaWZ5RW52ZWxvcGUob3h5UmVjb3JkU3RvcmUsIG94eVZlcmlmaWNhdGlvblJlc29sdmVyLCBlbnYpO1xufVxuXG4vKipcbiAqIFZlcmlmeSBhbiBlbnZlbG9wZSBhbmQgYXBwZW5kIGl0IHRvIHRoZSBzdWJqZWN0J3MgY2hhaW4gYXMgYHZlcmlmaWVkOiB0cnVlYCxcbiAqIHZpYSB0aGUgcHJvdG9jb2wgZW5naW5lIHdpdGggdGhlIE94eSBzdG9yZSArIHJlc29sdmVyIGluamVjdGVkICh3cmFwcGVkIGJ5IHRoZVxuICoge0BsaW5rIG94eVN0b3JlUG9saWN5fSkuIFJldHVybnMgdGhlIHZlcmRpY3QgKHNvIHRoZSByb3V0ZSBtYXBzIGEgcmVqZWN0aW9uIHRvXG4gKiBhIDR4eCkgcmF0aGVyIHRoYW4gdGhyb3dpbmcgb24gYSBiYWQgZW52ZWxvcGUuXG4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiB2ZXJpZnlBbmRTdG9yZVJlY29yZChcbiAgZW52OiBTaWduZWRSZWNvcmRFbnZlbG9wZSxcbiAgc3ViamVjdFVzZXJJZDogc3RyaW5nLFxuKTogUHJvbWlzZTxWZXJpZnlBbmRTdG9yZVJlc3VsdD4ge1xuICBjb25zdCBwb2xpY3lSZWFzb24gPSBveHlTdG9yZVBvbGljeShlbnYsIHN1YmplY3RVc2VySWQpO1xuICBpZiAocG9saWN5UmVhc29uKSB7XG4gICAgcmV0dXJuIHsgb2s6IGZhbHNlLCByZWFzb246IHBvbGljeVJlYXNvbiB9O1xuICB9XG5cbiAgY29uc3Qgb3V0Y29tZSA9IGF3YWl0IHZlcmlmeUFuZEFwcGVuZChveHlSZWNvcmRTdG9yZSwgb3h5VmVyaWZpY2F0aW9uUmVzb2x2ZXIsIGVudik7XG4gIGlmICghb3V0Y29tZS5vaykge1xuICAgIHJldHVybiBvdXRjb21lO1xuICB9XG4gIHJldHVybiB7XG4gICAgb2s6IHRydWUsXG4gICAgcmVjb3JkOiB7IHJlY29yZElkOiBvdXRjb21lLnJlY29yZElkLCBzZXE6IG91dGNvbWUuc2VxLCBlbnZlbG9wZTogZW52LCB2ZXJpZmllZDogdHJ1ZSB9LFxuICB9O1xufVxuXG4vKiogTGF0ZXN0IHN0b3JlZCByZWNvcmQgb2YgYHR5cGVgIGZvciBhIHVzZXIsIG9yIG51bGwuICovXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gZ2V0TGF0ZXN0UmVjb3JkKFxuICB1c2VySWQ6IHN0cmluZyxcbiAgdHlwZTogJ2lkZW50aXR5JyB8ICdwcm9maWxlJyxcbik6IFByb21pc2U8eyBlbnZlbG9wZTogU2lnbmVkUmVjb3JkRW52ZWxvcGUgfSB8IG51bGw+IHtcbiAgcmV0dXJuIG94eVJlY29yZFN0b3JlLmxhdGVzdFJlY29yZE9mVHlwZSh1c2VySWQsIHR5cGUpO1xufVxuIl0sInZlcnNpb24iOjN9

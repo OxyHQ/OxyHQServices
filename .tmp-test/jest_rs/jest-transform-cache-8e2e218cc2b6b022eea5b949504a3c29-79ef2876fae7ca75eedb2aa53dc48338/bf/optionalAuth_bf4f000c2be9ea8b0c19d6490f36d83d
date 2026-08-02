@@ -1,0 +1,234 @@
+16d6d9a06f8cee71ef423c418139dbe0
+"use strict";
+/**
+ * Optional Authentication Middleware
+ *
+ * Similar to authMiddleware but doesn't reject requests without authentication.
+ * Sets req.user if a valid token is present, otherwise leaves it undefined.
+ * This allows routes to serve public content while still identifying authenticated users.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.optionalAuthMiddleware = optionalAuthMiddleware;
+exports.getUserId = getUserId;
+exports.getMediaViewerUserId = getMediaViewerUserId;
+exports.optionalUserOrServiceAuth = optionalUserOrServiceAuth;
+exports.resolveViewerId = resolveViewerId;
+const logger_1 = require("../utils/logger");
+const validation_1 = require("../utils/validation");
+const authUtils_1 = require("./authUtils");
+const serviceToken_1 = require("./serviceToken");
+const mediaToken_1 = require("../utils/mediaToken");
+/**
+ * Optional authentication middleware
+ * Attempts to authenticate but doesn't block if authentication fails
+ * Uses session-based tokens only
+ */
+function optionalAuthMiddleware(req, res, next) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const { user, source } = yield (0, authUtils_1.authenticateRequestNonBlocking)(req, false);
+            if (user) {
+                req.user = user;
+                logger_1.logger.debug('Optional auth: User authenticated', {
+                    userId: user._id,
+                    source: source || 'unknown'
+                });
+            }
+            next();
+        }
+        catch (error) {
+            logger_1.logger.error('Optional auth middleware error:', error);
+            // Even on error, continue without blocking the request
+            next();
+        }
+    });
+}
+/**
+ * Extract user ID from request (works with both auth and optional auth)
+ */
+function getUserId(req) {
+    var _a;
+    return (_a = req.user) === null || _a === void 0 ? void 0 : _a._id;
+}
+/**
+ * Resolve the viewer user id for a MEDIA stream/download request.
+ *
+ * A browser `<img src>` / `<a download>` cannot send an `Authorization` header,
+ * and the zero-cookie session transport gives it no ambient credential either.
+ * Private assets therefore carry a SCOPED MEDIA TOKEN in `?mt=`, minted by
+ * `GET /assets/:id/url`, `GET /assets/:id/download`, and `POST
+ * /assets/batch-access` only after the caller's access was verified. This
+ * resolves that token to the viewer it was minted for.
+ *
+ * Important properties:
+ * - The media token authorizes exactly ONE asset. It is accepted only when its
+ *   `fid` claim equals `req.params.id` — the file id THIS request is asking
+ *   for — so a token minted for asset A cannot open asset B. Binding to the
+ *   route param (rather than a fileId variable a caller passes in) keeps the
+ *   check tied to the id that actually selects the bytes.
+ * - It is signed with a key derived from `ACCESS_TOKEN_SECRET`, disjoint from
+ *   the access/service-token key. A session or service token presented in `?mt=`
+ *   does not verify, and a media token does not authenticate any other surface.
+ * - It expires in ~15 minutes; the short TTL is the revocation story.
+ * - Header/session auth always wins; the media token is only a fallback when no
+ *   authenticated user is present on the request.
+ *
+ * Resolving a viewer here NEVER grants access on its own — every caller still
+ * runs `assetService.canUserAccessFile` on the resolved viewer.
+ *
+ * Scope it to media stream/download routes only — never wire it into a global
+ * auth middleware (a token-in-URL must not authenticate arbitrary endpoints).
+ */
+function getMediaViewerUserId(req) {
+    var _a, _b;
+    const sessionUserId = getUserId(req);
+    if (sessionUserId) {
+        return sessionUserId;
+    }
+    const rawToken = (_a = req.query) === null || _a === void 0 ? void 0 : _a[mediaToken_1.MEDIA_TOKEN_QUERY_PARAM];
+    if (typeof rawToken !== 'string' || rawToken.length === 0) {
+        return undefined;
+    }
+    const requestedFileId = (_b = req.params) === null || _b === void 0 ? void 0 : _b.id;
+    if (typeof requestedFileId !== 'string' || requestedFileId.length === 0) {
+        return undefined;
+    }
+    return (0, mediaToken_1.verifyMediaToken)(rawToken, requestedFileId);
+}
+/**
+ * The HTTP header a calling SERVICE sets to name the end-user (viewer) it is
+ * acting on behalf of for personalization. Mirrors the platform convention used
+ * by `@oxyhq/core` `makeServiceRequest(..., userId)` and `@oxyhq/core/server`.
+ */
+const OXY_USER_ID_HEADER = 'x-oxy-user-id';
+/**
+ * Scope a service credential must hold to supply a personalization viewer via
+ * `X-Oxy-User-Id`. `user:read` is the minimal existing scope every first-party
+ * consumer (e.g. Mention) already holds; it authorises reading public user data
+ * — which is exactly what a personalized (re-ordered public profiles) ranking
+ * is. It does NOT grant acting-as-user mutation authority.
+ */
+const VIEWER_DELEGATION_SCOPE = 'user:read';
+/**
+ * Optional DUAL authentication for read surfaces that personalize for a viewer.
+ *
+ * Resolution order, all NON-BLOCKING (an unauthenticated/invalid caller is
+ * simply treated as anonymous — the request is never rejected here):
+ *  1. If the bearer token is a VALID service token, attach `req.serviceApp`.
+ *     The viewer is resolved later from `X-Oxy-User-Id` (see {@link resolveViewerId})
+ *     only when the credential holds the delegation scope.
+ *  2. Otherwise fall back to the existing optional user-session auth, attaching
+ *     `req.user` when a valid session token is present.
+ *
+ * An INVALID/expired token attaches neither principal → anonymous. A user-token
+ * caller never gets `req.serviceApp`, so `X-Oxy-User-Id` is ignored for it
+ * (anti-impersonation — see {@link resolveViewerId}).
+ */
+function optionalUserOrServiceAuth(req, res, next) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const token = (0, authUtils_1.extractTokenFromRequest)(req);
+            if (token) {
+                const verification = (0, serviceToken_1.verifyServiceToken)(token);
+                if (verification.ok) {
+                    // Valid service token → service principal. Do NOT also attempt user
+                    // session auth (a service token has no session).
+                    req.serviceApp = verification.payload;
+                    logger_1.logger.debug('Optional dual auth: service principal', {
+                        appId: verification.payload.appId,
+                    });
+                    next();
+                    return;
+                }
+                // `not_service` means a verified user/session token (or a token missing
+                // service claims). `expired`/`invalid` means it does not verify at all.
+                // In both cases fall through to the optional user-session path, which
+                // safely yields anonymous when the token is not a valid session token.
+            }
+            const { user, source } = yield (0, authUtils_1.authenticateRequestNonBlocking)(req, false);
+            if (user) {
+                req.user = user;
+                logger_1.logger.debug('Optional dual auth: user authenticated', {
+                    userId: user._id,
+                    source: source || 'unknown',
+                });
+            }
+            next();
+        }
+        catch (error) {
+            logger_1.logger.error('Optional dual auth middleware error:', error);
+            // Never block — degrade to anonymous.
+            next();
+        }
+    });
+}
+/**
+ * Resolve the personalization viewer id for a dual-auth request.
+ *
+ * - USER token: the viewer is the session's own user (`req.user._id`). Any
+ *   `X-Oxy-User-Id` header is IGNORED so a user cannot impersonate another.
+ * - SERVICE token: the viewer is the `X-Oxy-User-Id` header — but ONLY when the
+ *   credential holds {@link VIEWER_DELEGATION_SCOPE} and the header has the
+ *   shape of an account id. A service with no/invalid header (or lacking the
+ *   scope) resolves to `undefined` → the caller is treated as anonymous/public.
+ * - No principal: `undefined` (anonymous).
+ *
+ * ## Why a shape check SURVIVES the Postgres port here, when its siblings did not
+ *
+ * The `Types.ObjectId.isValid` guard this replaces rejected the **uuid v7 every
+ * account created after the cutover carries** (`schema/columns.ts`
+ * `generatedId()`), so a post-cutover viewer id arriving in this header resolved
+ * to `undefined` and the request SILENTLY DEGRADED TO ANONYMOUS — viewer-scoped
+ * visibility filtering (blocks, restricts, private accounts, follow-gated
+ * fields) simply stopped applying for the delegating caller. That is a privacy
+ * consequence, not an error, which is precisely why nothing surfaced it.
+ *
+ * It is replaced rather than deleted, unlike the guards in
+ * `securityActivityService` and `identityBinding.service`. Those two existed
+ * only to stop a malformed string reaching Mongoose as a `CastError`, and a
+ * `text` id that matches no row now produces the same "no such user" outcome a
+ * malformed one always did. This one is different in kind: it is not a driver
+ * artifact but the documented input contract of a CROSS-PRINCIPAL delegation
+ * header — one principal asserting an identity ABOUT ANOTHER — whose documented
+ * outcome for a value it does not accept is a defined fallback (anonymous),
+ * never an error. Keeping the check bounds an arbitrary caller-supplied string
+ * before it becomes a viewer identity across every route listed above.
+ *
+ * {@link isAccountIdFormat} accepts BOTH live id shapes — the pre-cutover
+ * 24-char ObjectId hex preserved verbatim and the uuid v7 — so the contract is
+ * kept while the bug is not. Do NOT narrow it back to a 24-hex test.
+ */
+function resolveViewerId(req) {
+    var _a;
+    // A user session always derives the viewer from its own token. Ignore any
+    // X-Oxy-User-Id on a user request to prevent impersonation.
+    if ((_a = req.user) === null || _a === void 0 ? void 0 : _a._id) {
+        return req.user._id;
+    }
+    const serviceApp = req.serviceApp;
+    if (!serviceApp) {
+        return undefined;
+    }
+    if (!serviceApp.scopes.includes(VIEWER_DELEGATION_SCOPE)) {
+        logger_1.logger.debug('resolveViewerId: service lacks viewer-delegation scope', {
+            appId: serviceApp.appId,
+        });
+        return undefined;
+    }
+    const raw = req.headers[OXY_USER_ID_HEADER];
+    const viewerId = typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+    if (!viewerId || !(0, validation_1.isAccountIdFormat)(viewerId)) {
+        return undefined;
+    }
+    return viewerId;
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvbWlkZGxld2FyZS9vcHRpb25hbEF1dGgudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7R0FNRzs7Ozs7Ozs7Ozs7QUFjSCx3REFzQkM7QUFLRCw4QkFFQztBQStCRCxvREFpQkM7QUEyQ0QsOERBd0NDO0FBc0NELDBDQXlCQztBQTFPRCw0Q0FBeUM7QUFDekMsb0RBQXdEO0FBQ3hELDJDQUFpSDtBQUNqSCxpREFBOEU7QUFDOUUsb0RBQWdGO0FBRWhGOzs7O0dBSUc7QUFDSCxTQUFzQixzQkFBc0IsQ0FDMUMsR0FBeUIsRUFDekIsR0FBYSxFQUNiLElBQWtCOztRQUVsQixJQUFJLENBQUM7WUFDSCxNQUFNLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxHQUFHLE1BQU0sSUFBQSwwQ0FBOEIsRUFBQyxHQUFHLEVBQUUsS0FBSyxDQUFDLENBQUM7WUFFMUUsSUFBSSxJQUFJLEVBQUUsQ0FBQztnQkFDVCxHQUFHLENBQUMsSUFBSSxHQUFHLElBQUksQ0FBQztnQkFDaEIsZUFBTSxDQUFDLEtBQUssQ0FBQyxtQ0FBbUMsRUFBRTtvQkFDaEQsTUFBTSxFQUFFLElBQUksQ0FBQyxHQUFHO29CQUNoQixNQUFNLEVBQUUsTUFBTSxJQUFJLFNBQVM7aUJBQzVCLENBQUMsQ0FBQztZQUNMLENBQUM7WUFFRCxJQUFJLEVBQUUsQ0FBQztRQUNULENBQUM7UUFBQyxPQUFPLEtBQUssRUFBRSxDQUFDO1lBQ2YsZUFBTSxDQUFDLEtBQUssQ0FBQyxpQ0FBaUMsRUFBRSxLQUFLLENBQUMsQ0FBQztZQUN2RCx1REFBdUQ7WUFDdkQsSUFBSSxFQUFFLENBQUM7UUFDVCxDQUFDO0lBQ0gsQ0FBQztDQUFBO0FBRUQ7O0dBRUc7QUFDSCxTQUFnQixTQUFTLENBQUMsR0FBeUI7O0lBQ2pELE9BQU8sTUFBQSxHQUFHLENBQUMsSUFBSSwwQ0FBRSxHQUFHLENBQUM7QUFDdkIsQ0FBQztBQUVEOzs7Ozs7Ozs7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SUFBSSxDQUFDLEdBQUcsQ0FBQztJQUN0QixDQUFDO0lBRUQsTUFBTSxVQUFVLEdBQUcsR0FBRyxDQUFDLFVBQVUsQ0FBQztJQUNsQyxJQUFJLENBQUMsVUFBVSxFQUFFLENBQUM7UUFDaEIsT0FBTyxTQUFTLENBQUM7SUFDbkIsQ0FBQztJQUVELElBQUksQ0FBQyxVQUFVLENBQUMsTUFBTSxDQUFDLFFBQVEsQ0FBQyx1QkFBdUIsQ0FBQyxFQUFFLENBQUM7UUFDekQsZUFBTSxDQUFDLEtBQUssQ0FBQyx3REFBd0QsRUFBRTtZQUNyRSxLQUFLLEVBQUUsVUFBVSxDQUFDLEtBQUs7U0FDeEIsQ0FBQyxDQUFDO1FBQ0gsT0FBTyxTQUFTLENBQUM7SUFDbkIsQ0FBQztJQUVELE1BQU0sR0FBRyxHQUFHLEdBQUcsQ0FBQyxPQUFPLENBQUMsa0JBQWtCLENBQUMsQ0FBQztJQUM1QyxNQUFNLFFBQVEsR0FBRyxPQUFPLEdBQUcsS0FBSyxRQUFRLElBQUksR0FBRyxDQUFDLE1BQU0sR0FBRyxDQUFDLENBQUMsQ0FBQyxDQUFDLEdBQUcsQ0FBQyxDQUFDLENBQUMsU0FBUyxDQUFDO0lBQzdFLElBQUksQ0FBQyxRQUFRLElBQUksQ0FBQyxJQUFBLDhCQUFpQixFQUFDLFFBQVEsQ0FBQyxFQUFFLENBQUM7UUFDOUMsT0FBTyxTQUFTLENBQUM7SUFDbkIsQ0FBQztJQUNELE9BQU8sUUFBUSxDQUFDO0FBQ2xCLENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvbWlkZGxld2FyZS9vcHRpb25hbEF1dGgudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBPcHRpb25hbCBBdXRoZW50aWNhdGlvbiBNaWRkbGV3YXJlXG4gKiBcbiAqIFNpbWlsYXIgdG8gYXV0aE1pZGRsZXdhcmUgYnV0IGRvZXNuJ3QgcmVqZWN0IHJlcXVlc3RzIHdpdGhvdXQgYXV0aGVudGljYXRpb24uXG4gKiBTZXRzIHJlcS51c2VyIGlmIGEgdmFsaWQgdG9rZW4gaXMgcHJlc2VudCwgb3RoZXJ3aXNlIGxlYXZlcyBpdCB1bmRlZmluZWQuXG4gKiBUaGlzIGFsbG93cyByb3V0ZXMgdG8gc2VydmUgcHVibGljIGNvbnRlbnQgd2hpbGUgc3RpbGwgaWRlbnRpZnlpbmcgYXV0aGVudGljYXRlZCB1c2Vycy5cbiAqL1xuXG5pbXBvcnQgdHlwZSB7IFJlc3BvbnNlLCBOZXh0RnVuY3Rpb24gfSBmcm9tICdleHByZXNzJztcbmltcG9ydCB7IGxvZ2dlciB9IGZyb20gJy4uL3V0aWxzL2xvZ2dlcic7XG5pbXBvcnQgeyBpc0FjY291bnRJZEZvcm1hdCB9IGZyb20gJy4uL3V0aWxzL3ZhbGlkYXRpb24nO1xuaW1wb3J0IHsgYXV0aGVudGljYXRlUmVxdWVzdE5vbkJsb2NraW5nLCB0eXBlIEF1dGhlbnRpY2F0ZWRSZXF1ZXN0LCBleHRyYWN0VG9rZW5Gcm9tUmVxdWVzdCB9IGZyb20gJy4vYXV0aFV0aWxzJztcbmltcG9ydCB7IHZlcmlmeVNlcnZpY2VUb2tlbiwgdHlwZSBTZXJ2aWNlVG9rZW5QYXlsb2FkIH0gZnJvbSAnLi9zZXJ2aWNlVG9rZW4nO1xuaW1wb3J0IHsgTUVESUFfVE9LRU5fUVVFUllfUEFSQU0sIHZlcmlmeU1lZGlhVG9rZW4gfSBmcm9tICcuLi91dGlscy9tZWRpYVRva2VuJztcblxuLyoqXG4gKiBPcHRpb25hbCBhdXRoZW50aWNhdGlvbiBtaWRkbGV3YXJlXG4gKiBBdHRlbXB0cyB0byBhdXRoZW50aWNhdGUgYnV0IGRvZXNuJ3QgYmxvY2sgaWYgYXV0aGVudGljYXRpb24gZmFpbHNcbiAqIFVzZXMgc2Vzc2lvbi1iYXNlZCB0b2tlbnMgb25seVxuICovXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gb3B0aW9uYWxBdXRoTWlkZGxld2FyZShcbiAgcmVxOiBBdXRoZW50aWNhdGVkUmVxdWVzdCxcbiAgcmVzOiBSZXNwb25zZSxcbiAgbmV4dDogTmV4dEZ1bmN0aW9uXG4pOiBQcm9taXNlPHZvaWQ+IHtcbiAgdHJ5IHtcbiAgICBjb25zdCB7IHVzZXIsIHNvdXJjZSB9ID0gYXdhaXQgYXV0aGVudGljYXRlUmVxdWVzdE5vbkJsb2NraW5nKHJlcSwgZmFsc2UpO1xuICAgIFxuICAgIGlmICh1c2VyKSB7XG4gICAgICByZXEudXNlciA9IHVzZXI7XG4gICAgICBsb2dnZXIuZGVidWcoJ09wdGlvbmFsIGF1dGg6IFVzZXIgYXV0aGVudGljYXRlZCcsIHsgXG4gICAgICAgIHVzZXJJZDogdXNlci5faWQsIFxuICAgICAgICBzb3VyY2U6IHNvdXJjZSB8fCAndW5rbm93bidcbiAgICAgIH0pO1xuICAgIH1cbiAgICBcbiAgICBuZXh0KCk7XG4gIH0gY2F0Y2ggKGVycm9yKSB7XG4gICAgbG9nZ2VyLmVycm9yKCdPcHRpb25hbCBhdXRoIG1pZGRsZXdhcmUgZXJyb3I6JywgZXJyb3IpO1xuICAgIC8vIEV2ZW4gb24gZXJyb3IsIGNvbnRpbnVlIHdpdGhvdXQgYmxvY2tpbmcgdGhlIHJlcXVlc3RcbiAgICBuZXh0KCk7XG4gIH1cbn1cblxuLyoqXG4gKiBFeHRyYWN0IHVzZXIgSUQgZnJvbSByZXF1ZXN0ICh3b3JrcyB3aXRoIGJvdGggYXV0aCBhbmQgb3B0aW9uYWwgYXV0aClcbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIGdldFVzZXJJZChyZXE6IEF1dGhlbnRpY2F0ZWRSZXF1ZXN0KTogc3RyaW5nIHwgdW5kZWZpbmVkIHtcbiAgcmV0dXJuIHJlcS51c2VyPy5faWQ7XG59XG5cbi8qKlxuICogUmVzb2x2ZSB0aGUgdmlld2VyIHVzZXIgaWQgZm9yIGEgTUVESUEgc3RyZWFtL2Rvd25sb2FkIHJlcXVlc3QuXG4gKlxuICogQSBicm93c2VyIGA8aW1nIHNyYz5gIC8gYDxhIGRvd25sb2FkPmAgY2Fubm90IHNlbmQgYW4gYEF1dGhvcml6YXRpb25gIGhlYWRlcixcbiAqIGFuZCB0aGUgemVyby1jb29raWUgc2Vzc2lvbiB0cmFuc3BvcnQgZ2l2ZXMgaXQgbm8gYW1iaWVudCBjcmVkZW50aWFsIGVpdGhlci5cbiAqIFByaXZhdGUgYXNzZXRzIHRoZXJlZm9yZSBjYXJyeSBhIFNDT1BFRCBNRURJQSBUT0tFTiBpbiBgP210PWAsIG1pbnRlZCBieVxuICogYEdFVCAvYXNzZXRzLzppZC91cmxgLCBgR0VUIC9hc3NldHMvOmlkL2Rvd25sb2FkYCwgYW5kIGBQT1NUXG4gKiAvYXNzZXRzL2JhdGNoLWFjY2Vzc2Agb25seSBhZnRlciB0aGUgY2FsbGVyJ3MgYWNjZXNzIHdhcyB2ZXJpZmllZC4gVGhpc1xuICogcmVzb2x2ZXMgdGhhdCB0b2tlbiB0byB0aGUgdmlld2VyIGl0IHdhcyBtaW50ZWQgZm9yLlxuICpcbiAqIEltcG9ydGFudCBwcm9wZXJ0aWVzOlxuICogLSBUaGUgbWVkaWEgdG9rZW4gYXV0aG9yaXplcyBleGFjdGx5IE9ORSBhc3NldC4gSXQgaXMgYWNjZXB0ZWQgb25seSB3aGVuIGl0c1xuICogICBgZmlkYCBjbGFpbSBlcXVhbHMgYHJlcS5wYXJhbXMuaWRgIOKAlCB0aGUgZmlsZSBpZCBUSElTIHJlcXVlc3QgaXMgYXNraW5nXG4gKiAgIGZvciDigJQgc28gYSB0b2tlbiBtaW50ZWQgZm9yIGFzc2V0IEEgY2Fubm90IG9wZW4gYXNzZXQgQi4gQmluZGluZyB0byB0aGVcbiAqICAgcm91dGUgcGFyYW0gKHJhdGhlciB0aGFuIGEgZmlsZUlkIHZhcmlhYmxlIGEgY2FsbGVyIHBhc3NlcyBpbikga2VlcHMgdGhlXG4gKiAgIGNoZWNrIHRpZWQgdG8gdGhlIGlkIHRoYXQgYWN0dWFsbHkgc2VsZWN0cyB0aGUgYnl0ZXMuXG4gKiAtIEl0IGlzIHNpZ25lZCB3aXRoIGEga2V5IGRlcml2ZWQgZnJvbSBgQUNDRVNTX1RPS0VOX1NFQ1JFVGAsIGRpc2pvaW50IGZyb21cbiAqICAgdGhlIGFjY2Vzcy9zZXJ2aWNlLXRva2VuIGtleS4gQSBzZXNzaW9uIG9yIHNlcnZpY2UgdG9rZW4gcHJlc2VudGVkIGluIGA/bXQ9YFxuICogICBkb2VzIG5vdCB2ZXJpZnksIGFuZCBhIG1lZGlhIHRva2VuIGRvZXMgbm90IGF1dGhlbnRpY2F0ZSBhbnkgb3RoZXIgc3VyZmFjZS5cbiAqIC0gSXQgZXhwaXJlcyBpbiB+MTUgbWludXRlczsgdGhlIHNob3J0IFRUTCBpcyB0aGUgcmV2b2NhdGlvbiBzdG9yeS5cbiAqIC0gSGVhZGVyL3Nlc3Npb24gYXV0aCBhbHdheXMgd2luczsgdGhlIG1lZGlhIHRva2VuIGlzIG9ubHkgYSBmYWxsYmFjayB3aGVuIG5vXG4gKiAgIGF1dGhlbnRpY2F0ZWQgdXNlciBpcyBwcmVzZW50IG9uIHRoZSByZXF1ZXN0LlxuICpcbiAqIFJlc29sdmluZyBhIHZpZXdlciBoZXJlIE5FVkVSIGdyYW50cyBhY2Nlc3Mgb24gaXRzIG93biDigJQgZXZlcnkgY2FsbGVyIHN0aWxsXG4gKiBydW5zIGBhc3NldFNlcnZpY2UuY2FuVXNlckFjY2Vzc0ZpbGVgIG9uIHRoZSByZXNvbHZlZCB2aWV3ZXIuXG4gKlxuICogU2NvcGUgaXQgdG8gbWVkaWEgc3RyZWFtL2Rvd25sb2FkIHJvdXRlcyBvbmx5IOKAlCBuZXZlciB3aXJlIGl0IGludG8gYSBnbG9iYWxcbiAqIGF1dGggbWlkZGxld2FyZSAoYSB0b2tlbi1pbi1VUkwgbXVzdCBub3QgYXV0aGVudGljYXRlIGFyYml0cmFyeSBlbmRwb2ludHMpLlxuICovXG5leHBvcnQgZnVuY3Rpb24gZ2V0TWVkaWFWaWV3ZXJVc2VySWQocmVxOiBBdXRoZW50aWNhdGVkUmVxdWVzdCk6IHN0cmluZyB8IHVuZGVmaW5lZCB7XG4gIGNvbnN0IHNlc3Npb25Vc2VySWQgPSBnZXRVc2VySWQocmVxKTtcbiAgaWYgKHNlc3Npb25Vc2VySWQpIHtcbiAgICByZXR1cm4gc2Vzc2lvblVzZXJJZDtcbiAgfVxuXG4gIGNvbnN0IHJhd1Rva2VuID0gcmVxLnF1ZXJ5Py5bTUVESUFfVE9LRU5fUVVFUllfUEFSQU1dO1xuICBpZiAodHlwZW9mIHJhd1Rva2VuICE9PSAnc3RyaW5nJyB8fCByYXdUb2tlbi5sZW5ndGggPT09IDApIHtcbiAgICByZXR1cm4gdW5kZWZpbmVkO1xuICB9XG5cbiAgY29uc3QgcmVxdWVzdGVkRmlsZUlkID0gcmVxLnBhcmFtcz8uaWQ7XG4gIGlmICh0eXBlb2YgcmVxdWVzdGVkRmlsZUlkICE9PSAnc3RyaW5nJyB8fCByZXF1ZXN0ZWRGaWxlSWQubGVuZ3RoID09PSAwKSB7XG4gICAgcmV0dXJuIHVuZGVmaW5lZDtcbiAgfVxuXG4gIHJldHVybiB2ZXJpZnlNZWRpYVRva2VuKHJhd1Rva2VuLCByZXF1ZXN0ZWRGaWxlSWQpO1xufVxuXG4vKipcbiAqIFRoZSBIVFRQIGhlYWRlciBhIGNhbGxpbmcgU0VSVklDRSBzZXRzIHRvIG5hbWUgdGhlIGVuZC11c2VyICh2aWV3ZXIpIGl0IGlzXG4gKiBhY3Rpbmcgb24gYmVoYWxmIG9mIGZvciBwZXJzb25hbGl6YXRpb24uIE1pcnJvcnMgdGhlIHBsYXRmb3JtIGNvbnZlbnRpb24gdXNlZFxuICogYnkgYEBveHlocS9jb3JlYCBgbWFrZVNlcnZpY2VSZXF1ZXN0KC4uLiwgdXNlcklkKWAgYW5kIGBAb3h5aHEvY29yZS9zZXJ2ZXJgLlxuICovXG5jb25zdCBPWFlfVVNFUl9JRF9IRUFERVIgPSAneC1veHktdXNlci1pZCc7XG5cbi8qKlxuICogU2NvcGUgYSBzZXJ2aWNlIGNyZWRlbnRpYWwgbXVzdCBob2xkIHRvIHN1cHBseSBhIHBlcnNvbmFsaXphdGlvbiB2aWV3ZXIgdmlhXG4gKiBgWC1PeHktVXNlci1JZGAuIGB1c2VyOnJlYWRgIGlzIHRoZSBtaW5pbWFsIGV4aXN0aW5nIHNjb3BlIGV2ZXJ5IGZpcnN0LXBhcnR5XG4gKiBjb25zdW1lciAoZS5nLiBNZW50aW9uKSBhbHJlYWR5IGhvbGRzOyBpdCBhdXRob3Jpc2VzIHJlYWRpbmcgcHVibGljIHVzZXIgZGF0YVxuICog4oCUIHdoaWNoIGlzIGV4YWN0bHkgd2hhdCBhIHBlcnNvbmFsaXplZCAocmUtb3JkZXJlZCBwdWJsaWMgcHJvZmlsZXMpIHJhbmtpbmdcbiAqIGlzLiBJdCBkb2VzIE5PVCBncmFudCBhY3RpbmctYXMtdXNlciBtdXRhdGlvbiBhdXRob3JpdHkuXG4gKi9cbmNvbnN0IFZJRVdFUl9ERUxFR0FUSU9OX1NDT1BFID0gJ3VzZXI6cmVhZCc7XG5cbi8qKlxuICogQSByZXF1ZXN0IHRoYXQgbWF5IGNhcnJ5IEVJVEhFUiBhbiBvcHRpb25hbCBhdXRoZW50aWNhdGVkIHVzZXIgKGByZXEudXNlcmAsXG4gKiBmcm9tIGEgc2Vzc2lvbiBiZWFyZXIgdG9rZW4pIE9SIGEgdmVyaWZpZWQgc2VydmljZSBwcmluY2lwYWwgKGByZXEuc2VydmljZUFwcGAsXG4gKiBmcm9tIGEgc2VydmljZSB0b2tlbikuIFVzZWQgYnkgZHVhbC1hdXRoIG9wdGlvbmFsIHN1cmZhY2VzIHN1Y2ggYXMgdGhlXG4gKiByZWNvbW1lbmRhdGlvbiBlbmRwb2ludHMuXG4gKi9cbmV4cG9ydCBpbnRlcmZhY2UgT3B0aW9uYWxVc2VyT3JTZXJ2aWNlUmVxdWVzdCBleHRlbmRzIEF1dGhlbnRpY2F0ZWRSZXF1ZXN0IHtcbiAgc2VydmljZUFwcD86IFNlcnZpY2VUb2tlblBheWxvYWQ7XG59XG5cbi8qKlxuICogT3B0aW9uYWwgRFVBTCBhdXRoZW50aWNhdGlvbiBmb3IgcmVhZCBzdXJmYWNlcyB0aGF0IHBlcnNvbmFsaXplIGZvciBhIHZpZXdlci5cbiAqXG4gKiBSZXNvbHV0aW9uIG9yZGVyLCBhbGwgTk9OLUJMT0NLSU5HIChhbiB1bmF1dGhlbnRpY2F0ZWQvaW52YWxpZCBjYWxsZXIgaXNcbiAqIHNpbXBseSB0cmVhdGVkIGFzIGFub255bW91cyDigJQgdGhlIHJlcXVlc3QgaXMgbmV2ZXIgcmVqZWN0ZWQgaGVyZSk6XG4gKiAgMS4gSWYgdGhlIGJlYXJlciB0b2tlbiBpcyBhIFZBTElEIHNlcnZpY2UgdG9rZW4sIGF0dGFjaCBgcmVxLnNlcnZpY2VBcHBgLlxuICogICAgIFRoZSB2aWV3ZXIgaXMgcmVzb2x2ZWQgbGF0ZXIgZnJvbSBgWC1PeHktVXNlci1JZGAgKHNlZSB7QGxpbmsgcmVzb2x2ZVZpZXdlcklkfSlcbiAqICAgICBvbmx5IHdoZW4gdGhlIGNyZWRlbnRpYWwgaG9sZHMgdGhlIGRlbGVnYXRpb24gc2NvcGUuXG4gKiAgMi4gT3RoZXJ3aXNlIGZhbGwgYmFjayB0byB0aGUgZXhpc3Rpbmcgb3B0aW9uYWwgdXNlci1zZXNzaW9uIGF1dGgsIGF0dGFjaGluZ1xuICogICAgIGByZXEudXNlcmAgd2hlbiBhIHZhbGlkIHNlc3Npb24gdG9rZW4gaXMgcHJlc2VudC5cbiAqXG4gKiBBbiBJTlZBTElEL2V4cGlyZWQgdG9rZW4gYXR0YWNoZXMgbmVpdGhlciBwcmluY2lwYWwg4oaSIGFub255bW91cy4gQSB1c2VyLXRva2VuXG4gKiBjYWxsZXIgbmV2ZXIgZ2V0cyBgcmVxLnNlcnZpY2VBcHBgLCBzbyBgWC1PeHktVXNlci1JZGAgaXMgaWdub3JlZCBmb3IgaXRcbiAqIChhbnRpLWltcGVyc29uYXRpb24g4oCUIHNlZSB7QGxpbmsgcmVzb2x2ZVZpZXdlcklkfSkuXG4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiBvcHRpb25hbFVzZXJPclNlcnZpY2VBdXRoKFxuICByZXE6IE9wdGlvbmFsVXNlck9yU2VydmljZVJlcXVlc3QsXG4gIHJlczogUmVzcG9uc2UsXG4gIG5leHQ6IE5leHRGdW5jdGlvblxuKTogUHJvbWlzZTx2b2lkPiB7XG4gIHRyeSB7XG4gICAgY29uc3QgdG9rZW4gPSBleHRyYWN0VG9rZW5Gcm9tUmVxdWVzdChyZXEpO1xuXG4gICAgaWYgKHRva2VuKSB7XG4gICAgICBjb25zdCB2ZXJpZmljYXRpb24gPSB2ZXJpZnlTZXJ2aWNlVG9rZW4odG9rZW4pO1xuICAgICAgaWYgKHZlcmlmaWNhdGlvbi5vaykge1xuICAgICAgICAvLyBWYWxpZCBzZXJ2aWNlIHRva2VuIOKGkiBzZXJ2aWNlIHByaW5jaXBhbC4gRG8gTk9UIGFsc28gYXR0ZW1wdCB1c2VyXG4gICAgICAgIC8vIHNlc3Npb24gYXV0aCAoYSBzZXJ2aWNlIHRva2VuIGhhcyBubyBzZXNzaW9uKS5cbiAgICAgICAgcmVxLnNlcnZpY2VBcHAgPSB2ZXJpZmljYXRpb24ucGF5bG9hZDtcbiAgICAgICAgbG9nZ2VyLmRlYnVnKCdPcHRpb25hbCBkdWFsIGF1dGg6IHNlcnZpY2UgcHJpbmNpcGFsJywge1xuICAgICAgICAgIGFwcElkOiB2ZXJpZmljYXRpb24ucGF5bG9hZC5hcHBJZCxcbiAgICAgICAgfSk7XG4gICAgICAgIG5leHQoKTtcbiAgICAgICAgcmV0dXJuO1xuICAgICAgfVxuICAgICAgLy8gYG5vdF9zZXJ2aWNlYCBtZWFucyBhIHZlcmlmaWVkIHVzZXIvc2Vzc2lvbiB0b2tlbiAob3IgYSB0b2tlbiBtaXNzaW5nXG4gICAgICAvLyBzZXJ2aWNlIGNsYWltcykuIGBleHBpcmVkYC9gaW52YWxpZGAgbWVhbnMgaXQgZG9lcyBub3QgdmVyaWZ5IGF0IGFsbC5cbiAgICAgIC8vIEluIGJvdGggY2FzZXMgZmFsbCB0aHJvdWdoIHRvIHRoZSBvcHRpb25hbCB1c2VyLXNlc3Npb24gcGF0aCwgd2hpY2hcbiAgICAgIC8vIHNhZmVseSB5aWVsZHMgYW5vbnltb3VzIHdoZW4gdGhlIHRva2VuIGlzIG5vdCBhIHZhbGlkIHNlc3Npb24gdG9rZW4uXG4gICAgfVxuXG4gICAgY29uc3QgeyB1c2VyLCBzb3VyY2UgfSA9IGF3YWl0IGF1dGhlbnRpY2F0ZVJlcXVlc3ROb25CbG9ja2luZyhyZXEsIGZhbHNlKTtcbiAgICBpZiAodXNlcikge1xuICAgICAgcmVxLnVzZXIgPSB1c2VyO1xuICAgICAgbG9nZ2VyLmRlYnVnKCdPcHRpb25hbCBkdWFsIGF1dGg6IHVzZXIgYXV0aGVudGljYXRlZCcsIHtcbiAgICAgICAgdXNlcklkOiB1c2VyLl9pZCxcbiAgICAgICAgc291cmNlOiBzb3VyY2UgfHwgJ3Vua25vd24nLFxuICAgICAgfSk7XG4gICAgfVxuICAgIG5leHQoKTtcbiAgfSBjYXRjaCAoZXJyb3IpIHtcbiAgICBsb2dnZXIuZXJyb3IoJ09wdGlvbmFsIGR1YWwgYXV0aCBtaWRkbGV3YXJlIGVycm9yOicsIGVycm9yKTtcbiAgICAvLyBOZXZlciBibG9jayDigJQgZGVncmFkZSB0byBhbm9ueW1vdXMuXG4gICAgbmV4dCgpO1xuICB9XG59XG5cbi8qKlxuICogUmVzb2x2ZSB0aGUgcGVyc29uYWxpemF0aW9uIHZpZXdlciBpZCBmb3IgYSBkdWFsLWF1dGggcmVxdWVzdC5cbiAqXG4gKiAtIFVTRVIgdG9rZW46IHRoZSB2aWV3ZXIgaXMgdGhlIHNlc3Npb24ncyBvd24gdXNlciAoYHJlcS51c2VyLl9pZGApLiBBbnlcbiAqICAgYFgtT3h5LVVzZXItSWRgIGhlYWRlciBpcyBJR05PUkVEIHNvIGEgdXNlciBjYW5ub3QgaW1wZXJzb25hdGUgYW5vdGhlci5cbiAqIC0gU0VSVklDRSB0b2tlbjogdGhlIHZpZXdlciBpcyB0aGUgYFgtT3h5LVVzZXItSWRgIGhlYWRlciDigJQgYnV0IE9OTFkgd2hlbiB0aGVcbiAqICAgY3JlZGVudGlhbCBob2xkcyB7QGxpbmsgVklFV0VSX0RFTEVHQVRJT05fU0NPUEV9IGFuZCB0aGUgaGVhZGVyIGhhcyB0aGVcbiAqICAgc2hhcGUgb2YgYW4gYWNjb3VudCBpZC4gQSBzZXJ2aWNlIHdpdGggbm8vaW52YWxpZCBoZWFkZXIgKG9yIGxhY2tpbmcgdGhlXG4gKiAgIHNjb3BlKSByZXNvbHZlcyB0byBgdW5kZWZpbmVkYCDihpIgdGhlIGNhbGxlciBpcyB0cmVhdGVkIGFzIGFub255bW91cy9wdWJsaWMuXG4gKiAtIE5vIHByaW5jaXBhbDogYHVuZGVmaW5lZGAgKGFub255bW91cykuXG4gKlxuICogIyMgV2h5IGEgc2hhcGUgY2hlY2sgU1VSVklWRVMgdGhlIFBvc3RncmVzIHBvcnQgaGVyZSwgd2hlbiBpdHMgc2libGluZ3MgZGlkIG5vdFxuICpcbiAqIFRoZSBgVHlwZXMuT2JqZWN0SWQuaXNWYWxpZGAgZ3VhcmQgdGhpcyByZXBsYWNlcyByZWplY3RlZCB0aGUgKip1dWlkIHY3IGV2ZXJ5XG4gKiBhY2NvdW50IGNyZWF0ZWQgYWZ0ZXIgdGhlIGN1dG92ZXIgY2FycmllcyoqIChgc2NoZW1hL2NvbHVtbnMudHNgXG4gKiBgZ2VuZXJhdGVkSWQoKWApLCBzbyBhIHBvc3QtY3V0b3ZlciB2aWV3ZXIgaWQgYXJyaXZpbmcgaW4gdGhpcyBoZWFkZXIgcmVzb2x2ZWRcbiAqIHRvIGB1bmRlZmluZWRgIGFuZCB0aGUgcmVxdWVzdCBTSUxFTlRMWSBERUdSQURFRCBUTyBBTk9OWU1PVVMg4oCUIHZpZXdlci1zY29wZWRcbiAqIHZpc2liaWxpdHkgZmlsdGVyaW5nIChibG9ja3MsIHJlc3RyaWN0cywgcHJpdmF0ZSBhY2NvdW50cywgZm9sbG93LWdhdGVkXG4gKiBmaWVsZHMpIHNpbXBseSBzdG9wcGVkIGFwcGx5aW5nIGZvciB0aGUgZGVsZWdhdGluZyBjYWxsZXIuIFRoYXQgaXMgYSBwcml2YWN5XG4gKiBjb25zZXF1ZW5jZSwgbm90IGFuIGVycm9yLCB3aGljaCBpcyBwcmVjaXNlbHkgd2h5IG5vdGhpbmcgc3VyZmFjZWQgaXQuXG4gKlxuICogSXQgaXMgcmVwbGFjZWQgcmF0aGVyIHRoYW4gZGVsZXRlZCwgdW5saWtlIHRoZSBndWFyZHMgaW5cbiAqIGBzZWN1cml0eUFjdGl2aXR5U2VydmljZWAgYW5kIGBpZGVudGl0eUJpbmRpbmcuc2VydmljZWAuIFRob3NlIHR3byBleGlzdGVkXG4gKiBvbmx5IHRvIHN0b3AgYSBtYWxmb3JtZWQgc3RyaW5nIHJlYWNoaW5nIE1vbmdvb3NlIGFzIGEgYENhc3RFcnJvcmAsIGFuZCBhXG4gKiBgdGV4dGAgaWQgdGhhdCBtYXRjaGVzIG5vIHJvdyBub3cgcHJvZHVjZXMgdGhlIHNhbWUgXCJubyBzdWNoIHVzZXJcIiBvdXRjb21lIGFcbiAqIG1hbGZvcm1lZCBvbmUgYWx3YXlzIGRpZC4gVGhpcyBvbmUgaXMgZGlmZmVyZW50IGluIGtpbmQ6IGl0IGlzIG5vdCBhIGRyaXZlclxuICogYXJ0aWZhY3QgYnV0IHRoZSBkb2N1bWVudGVkIGlucHV0IGNvbnRyYWN0IG9mIGEgQ1JPU1MtUFJJTkNJUEFMIGRlbGVnYXRpb25cbiAqIGhlYWRlciDigJQgb25lIHByaW5jaXBhbCBhc3NlcnRpbmcgYW4gaWRlbnRpdHkgQUJPVVQgQU5PVEhFUiDigJQgd2hvc2UgZG9jdW1lbnRlZFxuICogb3V0Y29tZSBmb3IgYSB2YWx1ZSBpdCBkb2VzIG5vdCBhY2NlcHQgaXMgYSBkZWZpbmVkIGZhbGxiYWNrIChhbm9ueW1vdXMpLFxuICogbmV2ZXIgYW4gZXJyb3IuIEtlZXBpbmcgdGhlIGNoZWNrIGJvdW5kcyBhbiBhcmJpdHJhcnkgY2FsbGVyLXN1cHBsaWVkIHN0cmluZ1xuICogYmVmb3JlIGl0IGJlY29tZXMgYSB2aWV3ZXIgaWRlbnRpdHkgYWNyb3NzIGV2ZXJ5IHJvdXRlIGxpc3RlZCBhYm92ZS5cbiAqXG4gKiB7QGxpbmsgaXNBY2NvdW50SWRGb3JtYXR9IGFjY2VwdHMgQk9USCBsaXZlIGlkIHNoYXBlcyDigJQgdGhlIHByZS1jdXRvdmVyXG4gKiAyNC1jaGFyIE9iamVjdElkIGhleCBwcmVzZXJ2ZWQgdmVyYmF0aW0gYW5kIHRoZSB1dWlkIHY3IOKAlCBzbyB0aGUgY29udHJhY3QgaXNcbiAqIGtlcHQgd2hpbGUgdGhlIGJ1ZyBpcyBub3QuIERvIE5PVCBuYXJyb3cgaXQgYmFjayB0byBhIDI0LWhleCB0ZXN0LlxuICovXG5leHBvcnQgZnVuY3Rpb24gcmVzb2x2ZVZpZXdlcklkKHJlcTogT3B0aW9uYWxVc2VyT3JTZXJ2aWNlUmVxdWVzdCk6IHN0cmluZyB8IHVuZGVmaW5lZCB7XG4gIC8vIEEgdXNlciBzZXNzaW9uIGFsd2F5cyBkZXJpdmVzIHRoZSB2aWV3ZXIgZnJvbSBpdHMgb3duIHRva2VuLiBJZ25vcmUgYW55XG4gIC8vIFgtT3h5LVVzZXItSWQgb24gYSB1c2VyIHJlcXVlc3QgdG8gcHJldmVudCBpbXBlcnNvbmF0aW9uLlxuICBpZiAocmVxLnVzZXI/Ll9pZCkge1xuICAgIHJldHVybiByZXEudXNlci5faWQ7XG4gIH1cblxuICBjb25zdCBzZXJ2aWNlQXBwID0gcmVxLnNlcnZpY2VBcHA7XG4gIGlmICghc2VydmljZUFwcCkge1xuICAgIHJldHVybiB1bmRlZmluZWQ7XG4gIH1cblxuICBpZiAoIXNlcnZpY2VBcHAuc2NvcGVzLmluY2x1ZGVzKFZJRVdFUl9ERUxFR0FUSU9OX1NDT1BFKSkge1xuICAgIGxvZ2dlci5kZWJ1ZygncmVzb2x2ZVZpZXdlcklkOiBzZXJ2aWNlIGxhY2tzIHZpZXdlci1kZWxlZ2F0aW9uIHNjb3BlJywge1xuICAgICAgYXBwSWQ6IHNlcnZpY2VBcHAuYXBwSWQsXG4gICAgfSk7XG4gICAgcmV0dXJuIHVuZGVmaW5lZDtcbiAgfVxuXG4gIGNvbnN0IHJhdyA9IHJlcS5oZWFkZXJzW09YWV9VU0VSX0lEX0hFQURFUl07XG4gIGNvbnN0IHZpZXdlcklkID0gdHlwZW9mIHJhdyA9PT0gJ3N0cmluZycgJiYgcmF3Lmxlbmd0aCA+IDAgPyByYXcgOiB1bmRlZmluZWQ7XG4gIGlmICghdmlld2VySWQgfHwgIWlzQWNjb3VudElkRm9ybWF0KHZpZXdlcklkKSkge1xuICAgIHJldHVybiB1bmRlZmluZWQ7XG4gIH1cbiAgcmV0dXJuIHZpZXdlcklkO1xufVxuIl0sInZlcnNpb24iOjN9

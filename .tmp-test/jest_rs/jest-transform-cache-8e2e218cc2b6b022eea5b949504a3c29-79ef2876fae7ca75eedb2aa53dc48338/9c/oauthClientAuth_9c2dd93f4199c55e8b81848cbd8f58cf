@@ -1,0 +1,100 @@
+c40f744e899b3fc2d273a2399ec12e9d
+"use strict";
+/**
+ * RFC 6749 §2.3 client authentication for the token endpoint.
+ *
+ * Two methods are supported, and exactly one may be used per request:
+ *
+ *   - `client_secret_basic` — HTTP Basic (§2.3.1). This is the method RFC 6749
+ *     says confidential clients SHOULD use, and the one standard OAuth
+ *     libraries reach for by default.
+ *   - `client_secret_post` — `client_id` / `client_secret` in the form body.
+ *
+ * Public clients (PKCE) authenticate with neither; they send `client_id` in the
+ * body and prove possession with `code_verifier`.
+ *
+ * Resolution is deliberately kept free of database access so the parsing rules
+ * — which decide WHICH credential the caller claims — are unit-testable on
+ * their own, separately from whether that credential is valid.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveClientAuthentication = resolveClientAuthentication;
+const oauthResponse_1 = require("./oauthResponse");
+const BASIC_SCHEME = 'basic';
+/**
+ * Decode one half of a Basic credential.
+ *
+ * RFC 6749 §2.3.1 requires the client id and secret to be
+ * `application/x-www-form-urlencoded`-encoded BEFORE base64, so they must be
+ * decoded here — including `+` as a space, which is what that encoding means.
+ * Oxy client ids (`oxy_dk_<hex>`) and secrets (hex) contain only unreserved
+ * characters, so for real credentials this is the identity transform; it exists
+ * so a spec-conforming client with any other credential shape still works.
+ *
+ * Throws `URIError` on a malformed percent-escape; the caller maps that to
+ * `invalid_client` since no Oxy credential can produce one.
+ */
+function formUrlDecode(value) {
+    return decodeURIComponent(value.replace(/\+/g, '%20'));
+}
+/**
+ * Split an `Authorization: Basic` header into its two halves.
+ *
+ * RFC 7617 §2 splits on the FIRST colon: the user-id may not contain one, the
+ * password may.
+ */
+function decodeBasicCredentials(encoded) {
+    const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+    const separatorIndex = decoded.indexOf(':');
+    if (separatorIndex < 0) {
+        throw oauthResponse_1.OAuthError.invalidClient('Malformed Basic authorization header.');
+    }
+    try {
+        return {
+            clientId: formUrlDecode(decoded.slice(0, separatorIndex)),
+            clientSecret: formUrlDecode(decoded.slice(separatorIndex + 1)),
+        };
+    }
+    catch (_a) {
+        throw oauthResponse_1.OAuthError.invalidClient('Malformed Basic authorization header.');
+    }
+}
+/**
+ * Resolve which client the request claims to be, and with what secret.
+ *
+ * Rejects:
+ *   - an `Authorization` header in any scheme other than `Basic`
+ *     (`invalid_client` — the client tried to authenticate and we cannot),
+ *   - combining Basic with a body `client_secret`, which RFC 6749 §2.3 forbids
+ *     ("MUST NOT use more than one authentication method in each request"),
+ *   - a body `client_id` that contradicts the one in the Basic header.
+ *
+ * The last two are `invalid_request`, not `invalid_client`: the request is
+ * self-contradictory, so there is no single credential to even test.
+ */
+function resolveClientAuthentication(params) {
+    const { authorizationHeader, bodyClientId, bodyClientSecret } = params;
+    if (!authorizationHeader) {
+        return { clientId: bodyClientId, clientSecret: bodyClientSecret };
+    }
+    const separatorIndex = authorizationHeader.indexOf(' ');
+    const scheme = separatorIndex < 0 ? authorizationHeader : authorizationHeader.slice(0, separatorIndex);
+    if (scheme.toLowerCase() !== BASIC_SCHEME) {
+        throw oauthResponse_1.OAuthError.invalidClient('Unsupported client authentication method.');
+    }
+    const credentials = decodeBasicCredentials(separatorIndex < 0 ? '' : authorizationHeader.slice(separatorIndex + 1).trim());
+    if (bodyClientSecret) {
+        throw oauthResponse_1.OAuthError.invalidRequest('Use either the Authorization header or client_secret in the body, not both.');
+    }
+    if (bodyClientId && bodyClientId !== credentials.clientId) {
+        throw oauthResponse_1.OAuthError.invalidRequest('client_id in the body does not match the Authorization header.');
+    }
+    // An empty half (`Basic base64("id:")`) carries no credential — normalise it
+    // to `undefined` so downstream presence checks are uniform across both
+    // authentication methods.
+    return {
+        clientId: credentials.clientId || undefined,
+        clientSecret: credentials.clientSecret || undefined,
+    };
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvb2F1dGhDbGllbnRBdXRoLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7OztHQWdCRzs7QUFxRUgsa0VBdUNDO0FBMUdELG1EQUE2QztBQVk3QyxNQUFNLFlBQVksR0FBRyxPQUFPLENBQUM7QUFFN0I7Ozs7Ozs7Ozs7OztHQVlHO0FBQ0gsU0FBUyxhQUFhLENBQUMsS0FBYTtJQUNsQyxPQUFPLGtCQUFrQixDQUFDLEtBQUssQ0FBQyxPQUFPLENBQUMsS0FBSyxFQUFFLEtBQUssQ0FBQyxDQUFDLENBQUM7QUFDekQsQ0FBQztBQUVEOzs7OztHQUtHO0FBQ0gsU0FBUyxzQkFBc0IsQ0FBQyxPQUFlO0lBQzdDLE1BQU0sT0FBTyxHQUFHLE1BQU0sQ0FBQyxJQUFJLENBQUMsT0FBTyxFQUFFLFFBQVEsQ0FBQyxDQUFDLFFBQVEsQ0FBQyxNQUFNLENBQUMsQ0FBQztJQUNoRSxNQUFNLGNBQWMsR0FBRyxPQUFPLENBQUMsT0FBTyxDQUFDLEdBQUcsQ0FBQyxDQUFDO0lBQzVDLElBQUksY0FBYyxHQUFHLENBQUMsRUFBRSxDQUFDO1FBQ3ZCLE1BQU0sMEJBQVUsQ0FBQyxhQUFhLENBQUMsdUNBQXVDLENBQUMsQ0FBQztJQUMxRSxDQUFDO0lBRUQsSUFBSSxDQUFDO1FBQ0gsT0FBTztZQUNMLFFBQVEsRUFBRSxhQUFhLENBQUMsT0FBTyxDQUFDLEtBQUssQ0FBQyxDQUFDLEVBQUUsY0FBYyxDQUFDLENBQUM7WUFDekQsWUFBWSxFQUFFLGFBQWEsQ0FBQyxPQUFPLENBQUMsS0FBSyxDQUFDLGNBQWMsR0FBRyxDQUFDLENBQUMsQ0FBQztTQUMvRCxDQUFDO0lBQ0osQ0FBQztJQUFDLFdBQU0sQ0FBQztRQUNQLE1BQU0sMEJBQVUsQ0FBQyxhQUFhLENBQUMsdUNBQXVDLENBQUMsQ0FBQztJQUMxRSxDQUFDO0FBQ0gsQ0FBQztBQUVEOzs7Ozs7Ozs7Ozs7R0FZRztBQUNILFNBQWdCLDJCQUEyQixDQUFDLE1BSTNDO0lBQ0MsTUFBTSxFQUFFLG1CQUFtQixFQUFFLFlBQVksRUFBRSxnQkFBZ0IsRUFBRSxHQUFHLE1BQU0sQ0FBQztJQUV2RSxJQUFJLENBQUMsbUJBQW1CLEVBQUUsQ0FBQztRQUN6QixPQUFPLEVBQUUsUUFBUSxFQUFFLFlBQVksRUFBRSxZQUFZLEVBQUUsZ0JBQWdCLEVBQUUsQ0FBQztJQUNwRSxDQUFDO0lBRUQsTUFBTSxjQUFjLEdBQUcsbUJBQW1CLENBQUMsT0FBTyxDQUFDLEdBQUcsQ0FBQyxDQUFDO0lBQ3hELE1BQU0sTUFBTSxHQUFHLGNBQWMsR0FBRyxDQUFDLENBQUMsQ0FBQyxDQUFDLG1CQUFtQixDQUFDLENBQUMsQ0FBQyxtQkFBbUIsQ0FBQyxLQUFLLENBQUMsQ0FBQyxFQUFFLGNBQWMsQ0FBQyxDQUFDO0lBQ3ZHLElBQUksTUFBTSxDQUFDLFdBQVcsRUFBRSxLQUFLLFlBQVksRUFBRSxDQUFDO1FBQzFDLE1BQU0sMEJBQVUsQ0FBQyxhQUFhLENBQUMsMkNBQTJDLENBQUMsQ0FBQztJQUM5RSxDQUFDO0lBRUQsTUFBTSxXQUFXLEdBQUcsc0JBQXNCLENBQ3hDLGNBQWMsR0FBRyxDQUFDLENBQUMsQ0FBQyxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUMsbUJBQW1CLENBQUMsS0FBSyxDQUFDLGNBQWMsR0FBRyxDQUFDLENBQUMsQ0FBQyxJQUFJLEVBQUUsQ0FDL0UsQ0FBQztJQUVGLElBQUksZ0JBQWdCLEVBQUUsQ0FBQztRQUNyQixNQUFNLDBCQUFVLENBQUMsY0FBYyxDQUM3Qiw2RUFBNkUsQ0FDOUUsQ0FBQztJQUNKLENBQUM7SUFDRCxJQUFJLFlBQVksSUFBSSxZQUFZLEtBQUssV0FBVyxDQUFDLFFBQVEsRUFBRSxDQUFDO1FBQzFELE1BQU0sMEJBQVUsQ0FBQyxjQUFjLENBQzdCLGdFQUFnRSxDQUNqRSxDQUFDO0lBQ0osQ0FBQztJQUVELDZFQUE2RTtJQUM3RSx1RUFBdUU7SUFDdkUsMEJBQTBCO0lBQzFCLE9BQU87UUFDTCxRQUFRLEVBQUUsV0FBVyxDQUFDLFFBQVEsSUFBSSxTQUFTO1FBQzNDLFlBQVksRUFBRSxXQUFXLENBQUMsWUFBWSxJQUFJLFNBQVM7S0FDcEQsQ0FBQztBQUNKLENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvb2F1dGhDbGllbnRBdXRoLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogUkZDIDY3NDkgwqcyLjMgY2xpZW50IGF1dGhlbnRpY2F0aW9uIGZvciB0aGUgdG9rZW4gZW5kcG9pbnQuXG4gKlxuICogVHdvIG1ldGhvZHMgYXJlIHN1cHBvcnRlZCwgYW5kIGV4YWN0bHkgb25lIG1heSBiZSB1c2VkIHBlciByZXF1ZXN0OlxuICpcbiAqICAgLSBgY2xpZW50X3NlY3JldF9iYXNpY2Ag4oCUIEhUVFAgQmFzaWMgKMKnMi4zLjEpLiBUaGlzIGlzIHRoZSBtZXRob2QgUkZDIDY3NDlcbiAqICAgICBzYXlzIGNvbmZpZGVudGlhbCBjbGllbnRzIFNIT1VMRCB1c2UsIGFuZCB0aGUgb25lIHN0YW5kYXJkIE9BdXRoXG4gKiAgICAgbGlicmFyaWVzIHJlYWNoIGZvciBieSBkZWZhdWx0LlxuICogICAtIGBjbGllbnRfc2VjcmV0X3Bvc3RgIOKAlCBgY2xpZW50X2lkYCAvIGBjbGllbnRfc2VjcmV0YCBpbiB0aGUgZm9ybSBib2R5LlxuICpcbiAqIFB1YmxpYyBjbGllbnRzIChQS0NFKSBhdXRoZW50aWNhdGUgd2l0aCBuZWl0aGVyOyB0aGV5IHNlbmQgYGNsaWVudF9pZGAgaW4gdGhlXG4gKiBib2R5IGFuZCBwcm92ZSBwb3NzZXNzaW9uIHdpdGggYGNvZGVfdmVyaWZpZXJgLlxuICpcbiAqIFJlc29sdXRpb24gaXMgZGVsaWJlcmF0ZWx5IGtlcHQgZnJlZSBvZiBkYXRhYmFzZSBhY2Nlc3Mgc28gdGhlIHBhcnNpbmcgcnVsZXNcbiAqIOKAlCB3aGljaCBkZWNpZGUgV0hJQ0ggY3JlZGVudGlhbCB0aGUgY2FsbGVyIGNsYWltcyDigJQgYXJlIHVuaXQtdGVzdGFibGUgb25cbiAqIHRoZWlyIG93biwgc2VwYXJhdGVseSBmcm9tIHdoZXRoZXIgdGhhdCBjcmVkZW50aWFsIGlzIHZhbGlkLlxuICovXG5cbmltcG9ydCB7IE9BdXRoRXJyb3IgfSBmcm9tICcuL29hdXRoUmVzcG9uc2UnO1xuXG5leHBvcnQgaW50ZXJmYWNlIFJlc29sdmVkQ2xpZW50QXV0aGVudGljYXRpb24ge1xuICAvKiogVGhlIGNsYWltZWQgY2xpZW50IGlkZW50aWZpZXIsIG9yIHVuZGVmaW5lZCB3aGVuIHRoZSByZXF1ZXN0IG5hbWVkIG5vbmUuICovXG4gIGNsaWVudElkOiBzdHJpbmcgfCB1bmRlZmluZWQ7XG4gIC8qKlxuICAgKiBUaGUgYXNzZXJ0ZWQgY2xpZW50IHNlY3JldCwgb3IgdW5kZWZpbmVkIGZvciBhIHB1YmxpYyAoUEtDRSkgY2xpZW50LlxuICAgKiBBc3NlcnRpbmcgYSBzZWNyZXQgZG9lcyBOT1QgbWVhbiBpdCBpcyBjb3JyZWN0IOKAlCB0aGUgY2FsbGVyIHZlcmlmaWVzIGl0LlxuICAgKi9cbiAgY2xpZW50U2VjcmV0OiBzdHJpbmcgfCB1bmRlZmluZWQ7XG59XG5cbmNvbnN0IEJBU0lDX1NDSEVNRSA9ICdiYXNpYyc7XG5cbi8qKlxuICogRGVjb2RlIG9uZSBoYWxmIG9mIGEgQmFzaWMgY3JlZGVudGlhbC5cbiAqXG4gKiBSRkMgNjc0OSDCpzIuMy4xIHJlcXVpcmVzIHRoZSBjbGllbnQgaWQgYW5kIHNlY3JldCB0byBiZVxuICogYGFwcGxpY2F0aW9uL3gtd3d3LWZvcm0tdXJsZW5jb2RlZGAtZW5jb2RlZCBCRUZPUkUgYmFzZTY0LCBzbyB0aGV5IG11c3QgYmVcbiAqIGRlY29kZWQgaGVyZSDigJQgaW5jbHVkaW5nIGArYCBhcyBhIHNwYWNlLCB3aGljaCBpcyB3aGF0IHRoYXQgZW5jb2RpbmcgbWVhbnMuXG4gKiBPeHkgY2xpZW50IGlkcyAoYG94eV9ka188aGV4PmApIGFuZCBzZWNyZXRzIChoZXgpIGNvbnRhaW4gb25seSB1bnJlc2VydmVkXG4gKiBjaGFyYWN0ZXJzLCBzbyBmb3IgcmVhbCBjcmVkZW50aWFscyB0aGlzIGlzIHRoZSBpZGVudGl0eSB0cmFuc2Zvcm07IGl0IGV4aXN0c1xuICogc28gYSBzcGVjLWNvbmZvcm1pbmcgY2xpZW50IHdpdGggYW55IG90aGVyIGNyZWRlbnRpYWwgc2hhcGUgc3RpbGwgd29ya3MuXG4gKlxuICogVGhyb3dzIGBVUklFcnJvcmAgb24gYSBtYWxmb3JtZWQgcGVyY2VudC1lc2NhcGU7IHRoZSBjYWxsZXIgbWFwcyB0aGF0IHRvXG4gKiBgaW52YWxpZF9jbGllbnRgIHNpbmNlIG5vIE94eSBjcmVkZW50aWFsIGNhbiBwcm9kdWNlIG9uZS5cbiAqL1xuZnVuY3Rpb24gZm9ybVVybERlY29kZSh2YWx1ZTogc3RyaW5nKTogc3RyaW5nIHtcbiAgcmV0dXJuIGRlY29kZVVSSUNvbXBvbmVudCh2YWx1ZS5yZXBsYWNlKC9cXCsvZywgJyUyMCcpKTtcbn1cblxuLyoqXG4gKiBTcGxpdCBhbiBgQXV0aG9yaXphdGlvbjogQmFzaWNgIGhlYWRlciBpbnRvIGl0cyB0d28gaGFsdmVzLlxuICpcbiAqIFJGQyA3NjE3IMKnMiBzcGxpdHMgb24gdGhlIEZJUlNUIGNvbG9uOiB0aGUgdXNlci1pZCBtYXkgbm90IGNvbnRhaW4gb25lLCB0aGVcbiAqIHBhc3N3b3JkIG1heS5cbiAqL1xuZnVuY3Rpb24gZGVjb2RlQmFzaWNDcmVkZW50aWFscyhlbmNvZGVkOiBzdHJpbmcpOiB7IGNsaWVudElkOiBzdHJpbmc7IGNsaWVudFNlY3JldDogc3RyaW5nIH0ge1xuICBjb25zdCBkZWNvZGVkID0gQnVmZmVyLmZyb20oZW5jb2RlZCwgJ2Jhc2U2NCcpLnRvU3RyaW5nKCd1dGY4Jyk7XG4gIGNvbnN0IHNlcGFyYXRvckluZGV4ID0gZGVjb2RlZC5pbmRleE9mKCc6Jyk7XG4gIGlmIChzZXBhcmF0b3JJbmRleCA8IDApIHtcbiAgICB0aHJvdyBPQXV0aEVycm9yLmludmFsaWRDbGllbnQoJ01hbGZvcm1lZCBCYXNpYyBhdXRob3JpemF0aW9uIGhlYWRlci4nKTtcbiAgfVxuXG4gIHRyeSB7XG4gICAgcmV0dXJuIHtcbiAgICAgIGNsaWVudElkOiBmb3JtVXJsRGVjb2RlKGRlY29kZWQuc2xpY2UoMCwgc2VwYXJhdG9ySW5kZXgpKSxcbiAgICAgIGNsaWVudFNlY3JldDogZm9ybVVybERlY29kZShkZWNvZGVkLnNsaWNlKHNlcGFyYXRvckluZGV4ICsgMSkpLFxuICAgIH07XG4gIH0gY2F0Y2gge1xuICAgIHRocm93IE9BdXRoRXJyb3IuaW52YWxpZENsaWVudCgnTWFsZm9ybWVkIEJhc2ljIGF1dGhvcml6YXRpb24gaGVhZGVyLicpO1xuICB9XG59XG5cbi8qKlxuICogUmVzb2x2ZSB3aGljaCBjbGllbnQgdGhlIHJlcXVlc3QgY2xhaW1zIHRvIGJlLCBhbmQgd2l0aCB3aGF0IHNlY3JldC5cbiAqXG4gKiBSZWplY3RzOlxuICogICAtIGFuIGBBdXRob3JpemF0aW9uYCBoZWFkZXIgaW4gYW55IHNjaGVtZSBvdGhlciB0aGFuIGBCYXNpY2BcbiAqICAgICAoYGludmFsaWRfY2xpZW50YCDigJQgdGhlIGNsaWVudCB0cmllZCB0byBhdXRoZW50aWNhdGUgYW5kIHdlIGNhbm5vdCksXG4gKiAgIC0gY29tYmluaW5nIEJhc2ljIHdpdGggYSBib2R5IGBjbGllbnRfc2VjcmV0YCwgd2hpY2ggUkZDIDY3NDkgwqcyLjMgZm9yYmlkc1xuICogICAgIChcIk1VU1QgTk9UIHVzZSBtb3JlIHRoYW4gb25lIGF1dGhlbnRpY2F0aW9uIG1ldGhvZCBpbiBlYWNoIHJlcXVlc3RcIiksXG4gKiAgIC0gYSBib2R5IGBjbGllbnRfaWRgIHRoYXQgY29udHJhZGljdHMgdGhlIG9uZSBpbiB0aGUgQmFzaWMgaGVhZGVyLlxuICpcbiAqIFRoZSBsYXN0IHR3byBhcmUgYGludmFsaWRfcmVxdWVzdGAsIG5vdCBgaW52YWxpZF9jbGllbnRgOiB0aGUgcmVxdWVzdCBpc1xuICogc2VsZi1jb250cmFkaWN0b3J5LCBzbyB0aGVyZSBpcyBubyBzaW5nbGUgY3JlZGVudGlhbCB0byBldmVuIHRlc3QuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiByZXNvbHZlQ2xpZW50QXV0aGVudGljYXRpb24ocGFyYW1zOiB7XG4gIGF1dGhvcml6YXRpb25IZWFkZXI6IHN0cmluZyB8IHVuZGVmaW5lZDtcbiAgYm9keUNsaWVudElkOiBzdHJpbmcgfCB1bmRlZmluZWQ7XG4gIGJvZHlDbGllbnRTZWNyZXQ6IHN0cmluZyB8IHVuZGVmaW5lZDtcbn0pOiBSZXNvbHZlZENsaWVudEF1dGhlbnRpY2F0aW9uIHtcbiAgY29uc3QgeyBhdXRob3JpemF0aW9uSGVhZGVyLCBib2R5Q2xpZW50SWQsIGJvZHlDbGllbnRTZWNyZXQgfSA9IHBhcmFtcztcblxuICBpZiAoIWF1dGhvcml6YXRpb25IZWFkZXIpIHtcbiAgICByZXR1cm4geyBjbGllbnRJZDogYm9keUNsaWVudElkLCBjbGllbnRTZWNyZXQ6IGJvZHlDbGllbnRTZWNyZXQgfTtcbiAgfVxuXG4gIGNvbnN0IHNlcGFyYXRvckluZGV4ID0gYXV0aG9yaXphdGlvbkhlYWRlci5pbmRleE9mKCcgJyk7XG4gIGNvbnN0IHNjaGVtZSA9IHNlcGFyYXRvckluZGV4IDwgMCA/IGF1dGhvcml6YXRpb25IZWFkZXIgOiBhdXRob3JpemF0aW9uSGVhZGVyLnNsaWNlKDAsIHNlcGFyYXRvckluZGV4KTtcbiAgaWYgKHNjaGVtZS50b0xvd2VyQ2FzZSgpICE9PSBCQVNJQ19TQ0hFTUUpIHtcbiAgICB0aHJvdyBPQXV0aEVycm9yLmludmFsaWRDbGllbnQoJ1Vuc3VwcG9ydGVkIGNsaWVudCBhdXRoZW50aWNhdGlvbiBtZXRob2QuJyk7XG4gIH1cblxuICBjb25zdCBjcmVkZW50aWFscyA9IGRlY29kZUJhc2ljQ3JlZGVudGlhbHMoXG4gICAgc2VwYXJhdG9ySW5kZXggPCAwID8gJycgOiBhdXRob3JpemF0aW9uSGVhZGVyLnNsaWNlKHNlcGFyYXRvckluZGV4ICsgMSkudHJpbSgpLFxuICApO1xuXG4gIGlmIChib2R5Q2xpZW50U2VjcmV0KSB7XG4gICAgdGhyb3cgT0F1dGhFcnJvci5pbnZhbGlkUmVxdWVzdChcbiAgICAgICdVc2UgZWl0aGVyIHRoZSBBdXRob3JpemF0aW9uIGhlYWRlciBvciBjbGllbnRfc2VjcmV0IGluIHRoZSBib2R5LCBub3QgYm90aC4nLFxuICAgICk7XG4gIH1cbiAgaWYgKGJvZHlDbGllbnRJZCAmJiBib2R5Q2xpZW50SWQgIT09IGNyZWRlbnRpYWxzLmNsaWVudElkKSB7XG4gICAgdGhyb3cgT0F1dGhFcnJvci5pbnZhbGlkUmVxdWVzdChcbiAgICAgICdjbGllbnRfaWQgaW4gdGhlIGJvZHkgZG9lcyBub3QgbWF0Y2ggdGhlIEF1dGhvcml6YXRpb24gaGVhZGVyLicsXG4gICAgKTtcbiAgfVxuXG4gIC8vIEFuIGVtcHR5IGhhbGYgKGBCYXNpYyBiYXNlNjQoXCJpZDpcIilgKSBjYXJyaWVzIG5vIGNyZWRlbnRpYWwg4oCUIG5vcm1hbGlzZSBpdFxuICAvLyB0byBgdW5kZWZpbmVkYCBzbyBkb3duc3RyZWFtIHByZXNlbmNlIGNoZWNrcyBhcmUgdW5pZm9ybSBhY3Jvc3MgYm90aFxuICAvLyBhdXRoZW50aWNhdGlvbiBtZXRob2RzLlxuICByZXR1cm4ge1xuICAgIGNsaWVudElkOiBjcmVkZW50aWFscy5jbGllbnRJZCB8fCB1bmRlZmluZWQsXG4gICAgY2xpZW50U2VjcmV0OiBjcmVkZW50aWFscy5jbGllbnRTZWNyZXQgfHwgdW5kZWZpbmVkLFxuICB9O1xufVxuIl0sInZlcnNpb24iOjN9

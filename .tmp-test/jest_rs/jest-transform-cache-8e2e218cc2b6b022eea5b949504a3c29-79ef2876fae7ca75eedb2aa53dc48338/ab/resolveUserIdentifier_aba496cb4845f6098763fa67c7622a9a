@@ -1,0 +1,109 @@
+e0b8bd53142052593f25b8201238815b
+"use strict";
+/**
+ * Resolve a human-friendly user identifier (username OR email) to an account.
+ *
+ * Member-invite endpoints accept an identifier real people actually know — a
+ * username or an email address — instead of an opaque account id. This helper
+ * centralises the "username or email → account" resolution so every invite path
+ * behaves identically.
+ *
+ * ## The lookups are written as the unique indexes are built
+ *
+ * `users` is unique on `lower(btrim(username))`, `lower(btrim(email))` and
+ * `lower(btrim(public_key))` (`db/schema/users.ts`). Both lookups below are
+ * spelled `lower(btrim(column)) = lower(btrim($1))` because that is the
+ * EXPRESSION those indexes are built on — a plain `email = $1` is
+ * correct-looking, case-sensitive, and will not use the index.
+ *
+ * ## The ambiguity branch is gone, because the ambiguity is unrepresentable
+ *
+ * Mongo indexed `username` case-SENSITIVELY, so `Nate` and `nate` could coexist
+ * while every lookup matched case-INSENSITIVELY. This function therefore had to
+ * fetch two rows and refuse to resolve when both matched, so a membership grant
+ * could not land on an arbitrary one of two look-alike accounts.
+ *
+ * `users_lower_username_key` makes that pair impossible to store: the second
+ * insert fails on the unique index. (If two such accounts exist in production
+ * today the BACKFILL fails and names them, which is the correct outcome — the
+ * application cannot tell them apart either.) The guard is deleted rather than
+ * carried, and `__tests__` pins the constraint that replaced it: the collision
+ * is refused at write time, not tolerated at read time.
+ *
+ * ## What this returns, and the bug that changes
+ *
+ * It used to return the Mongoose document, and `routes/accounts.ts:719` reads
+ * `.id` off it — the model's `id` VIRTUAL, which is `publicKey ?? _id`. So for
+ * any account that had linked a Commons identity key, the invite path passed a
+ * PUBLIC KEY where an account id belongs. That is a `text` column with a real
+ * foreign key now, so the bad value would be rejected by
+ * `account_members_user_id_users_id_fk` instead of being stored. Returning the
+ * account id closes it at the source; the shape below is deliberately narrow so
+ * nothing can read the virtual again.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.escapeRegExp = escapeRegExp;
+exports.exactCaseInsensitiveUsernameRegex = exactCaseInsensitiveUsernameRegex;
+exports.resolveUserByIdentifier = resolveUserByIdentifier;
+const drizzle_orm_1 = require("drizzle-orm");
+const postgres_1 = require("../config/postgres");
+const users_1 = require("../db/schema/users");
+/** Escape regex metacharacters so the identifier matches literally. */
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+/**
+ * Build an anchored, escaped, case-insensitive regex that matches a username
+ * EXACTLY (not as a substring) regardless of letter case.
+ *
+ * NOT used by the resolver below any more — a `lower(btrim(username))` lookup
+ * is both exact and index-served. It remains exported for `server.ts` and
+ * `scripts/dedupe-own-domain-federated-users.ts`, whose Mongo reads belong to a
+ * later batch; it must go with the last of them.
+ */
+function exactCaseInsensitiveUsernameRegex(username) {
+    return new RegExp(`^${escapeRegExp(username)}$`, 'i');
+}
+/**
+ * Resolve a username or email to its account.
+ *
+ * @param identifier A raw username or email address.
+ * @returns The matching account, or `null` if not found / blank input.
+ */
+function resolveUserByIdentifier(identifier) {
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b;
+        const trimmed = identifier.trim();
+        if (trimmed.length === 0) {
+            return null;
+        }
+        // An `@` means an email address; a username cannot contain one.
+        const match = trimmed.includes('@')
+            ? (0, drizzle_orm_1.sql) `lower(btrim(${users_1.users.email})) = lower(btrim(${trimmed}))`
+            : (0, drizzle_orm_1.sql) `lower(btrim(${users_1.users.username})) = lower(btrim(${trimmed}))`;
+        const [row] = yield (0, postgres_1.getDb)()
+            .select({ id: users_1.users.id, username: users_1.users.username, email: users_1.users.email })
+            .from(users_1.users)
+            .where(match)
+            .limit(1);
+        if (!row) {
+            return null;
+        }
+        // An absent optional is OMITTED, not emitted as null.
+        return {
+            id: row.id,
+            username: (_a = row.username) !== null && _a !== void 0 ? _a : undefined,
+            email: (_b = row.email) !== null && _b !== void 0 ? _b : undefined,
+        };
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvcmVzb2x2ZVVzZXJJZGVudGlmaWVyLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQXdDRzs7Ozs7Ozs7Ozs7QUFPSCxvQ0FFQztBQVdELDhFQUVDO0FBZ0JELDBEQTZCQztBQWpFRCw2Q0FBa0M7QUFDbEMsaURBQTJDO0FBQzNDLDhDQUEyQztBQUUzQyx1RUFBdUU7QUFDdkUsU0FBZ0IsWUFBWSxDQUFDLEtBQWE7SUFDeEMsT0FBTyxLQUFLLENBQUMsT0FBTyxDQUFDLHFCQUFxQixFQUFFLE1BQU0sQ0FBQyxDQUFDO0FBQ3RELENBQUM7QUFFRDs7Ozs7Ozs7R0FRRztBQUNILFNBQWdCLGlDQUFpQyxDQUFDLFFBQWdCO0lBQ2hFLE9BQU8sSUFBSSxNQUFNLENBQUMsSUFBSSxZQUFZLENBQUMsUUFBUSxDQUFDLEdBQUcsRUFBRSxHQUFHLENBQUMsQ0FBQztBQUN4RCxDQUFDO0FBVUQ7Ozs7O0dBS0c7QUFDSCxTQUFzQix1QkFBdUIsQ0FDM0MsVUFBa0I7OztRQUVsQixNQUFNLE9BQU8sR0FBRyxVQUFVLENBQUMsSUFBSSxFQUFFLENBQUM7UUFDbEMsSUFBSSxPQUFPLENBQUMsTUFBTSxLQUFLLENBQUMsRUFBRSxDQUFDO1lBQ3pCLE9BQU8sSUFBSSxDQUFDO1FBQ2QsQ0FBQztRQUVELGdFQUFnRTtRQUNoRSxNQUFNLEtBQUssR0FBRyxPQUFPLENBQUMsUUFBUSxDQUFDLEdBQUcsQ0FBQztZQUNqQyxDQUFDLENBQUMsSUFBQSxpQkFBRyxFQUFBLGVBQWUsYUFBSyxDQUFDLEtBQUssb0JBQW9CLE9BQU8sSUFBSTtZQUM5RCxDQUFDLENBQUMsSUFBQSxpQkFBRyxFQUFBLGVBQWUsYUFBSyxDQUFDLFFBQVEsb0JBQW9CLE9BQU8sSUFBSSxDQUFDO1FBRXBFLE1BQU0sQ0FBQyxHQUFHLENBQUMsR0FBRyxNQUFNLElBQUEsZ0JBQUssR0FBRTthQUN4QixNQUFNLENBQUMsRUFBRSxFQUFFLEVBQUUsYUFBSyxDQUFDLEVBQUUsRUFBRSxRQUFRLEVBQUUsYUFBSyxDQUFDLFFBQVEsRUFBRSxLQUFLLEVBQUUsYUFBSyxDQUFDLEtBQUssRUFBRSxDQUFDO2FBQ3RFLElBQUksQ0FBQyxhQUFLLENBQUM7YUFDWCxLQUFLLENBQUMsS0FBSyxDQUFDO2FBQ1osS0FBSyxDQUFDLENBQUMsQ0FBQyxDQUFDO1FBRVosSUFBSSxDQUFDLEdBQUcsRUFBRSxDQUFDO1lBQ1QsT0FBTyxJQUFJLENBQUM7UUFDZCxDQUFDO1FBRUQsc0RBQXNEO1FBQ3RELE9BQU87WUFDTCxFQUFFLEVBQUUsR0FBRyxDQUFDLEVBQUU7WUFDVixRQUFRLEVBQUUsTUFBQSxHQUFHLENBQUMsUUFBUSxtQ0FBSSxTQUFTO1lBQ25DLEtBQUssRUFBRSxNQUFBLEdBQUcsQ0FBQyxLQUFLLG1DQUFJLFNBQVM7U0FDOUIsQ0FBQztJQUNKLENBQUM7Q0FBQSIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy91dGlscy9yZXNvbHZlVXNlcklkZW50aWZpZXIudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBSZXNvbHZlIGEgaHVtYW4tZnJpZW5kbHkgdXNlciBpZGVudGlmaWVyICh1c2VybmFtZSBPUiBlbWFpbCkgdG8gYW4gYWNjb3VudC5cbiAqXG4gKiBNZW1iZXItaW52aXRlIGVuZHBvaW50cyBhY2NlcHQgYW4gaWRlbnRpZmllciByZWFsIHBlb3BsZSBhY3R1YWxseSBrbm93IOKAlCBhXG4gKiB1c2VybmFtZSBvciBhbiBlbWFpbCBhZGRyZXNzIOKAlCBpbnN0ZWFkIG9mIGFuIG9wYXF1ZSBhY2NvdW50IGlkLiBUaGlzIGhlbHBlclxuICogY2VudHJhbGlzZXMgdGhlIFwidXNlcm5hbWUgb3IgZW1haWwg4oaSIGFjY291bnRcIiByZXNvbHV0aW9uIHNvIGV2ZXJ5IGludml0ZSBwYXRoXG4gKiBiZWhhdmVzIGlkZW50aWNhbGx5LlxuICpcbiAqICMjIFRoZSBsb29rdXBzIGFyZSB3cml0dGVuIGFzIHRoZSB1bmlxdWUgaW5kZXhlcyBhcmUgYnVpbHRcbiAqXG4gKiBgdXNlcnNgIGlzIHVuaXF1ZSBvbiBgbG93ZXIoYnRyaW0odXNlcm5hbWUpKWAsIGBsb3dlcihidHJpbShlbWFpbCkpYCBhbmRcbiAqIGBsb3dlcihidHJpbShwdWJsaWNfa2V5KSlgIChgZGIvc2NoZW1hL3VzZXJzLnRzYCkuIEJvdGggbG9va3VwcyBiZWxvdyBhcmVcbiAqIHNwZWxsZWQgYGxvd2VyKGJ0cmltKGNvbHVtbikpID0gbG93ZXIoYnRyaW0oJDEpKWAgYmVjYXVzZSB0aGF0IGlzIHRoZVxuICogRVhQUkVTU0lPTiB0aG9zZSBpbmRleGVzIGFyZSBidWlsdCBvbiDigJQgYSBwbGFpbiBgZW1haWwgPSAkMWAgaXNcbiAqIGNvcnJlY3QtbG9va2luZywgY2FzZS1zZW5zaXRpdmUsIGFuZCB3aWxsIG5vdCB1c2UgdGhlIGluZGV4LlxuICpcbiAqICMjIFRoZSBhbWJpZ3VpdHkgYnJhbmNoIGlzIGdvbmUsIGJlY2F1c2UgdGhlIGFtYmlndWl0eSBpcyB1bnJlcHJlc2VudGFibGVcbiAqXG4gKiBNb25nbyBpbmRleGVkIGB1c2VybmFtZWAgY2FzZS1TRU5TSVRJVkVMWSwgc28gYE5hdGVgIGFuZCBgbmF0ZWAgY291bGQgY29leGlzdFxuICogd2hpbGUgZXZlcnkgbG9va3VwIG1hdGNoZWQgY2FzZS1JTlNFTlNJVElWRUxZLiBUaGlzIGZ1bmN0aW9uIHRoZXJlZm9yZSBoYWQgdG9cbiAqIGZldGNoIHR3byByb3dzIGFuZCByZWZ1c2UgdG8gcmVzb2x2ZSB3aGVuIGJvdGggbWF0Y2hlZCwgc28gYSBtZW1iZXJzaGlwIGdyYW50XG4gKiBjb3VsZCBub3QgbGFuZCBvbiBhbiBhcmJpdHJhcnkgb25lIG9mIHR3byBsb29rLWFsaWtlIGFjY291bnRzLlxuICpcbiAqIGB1c2Vyc19sb3dlcl91c2VybmFtZV9rZXlgIG1ha2VzIHRoYXQgcGFpciBpbXBvc3NpYmxlIHRvIHN0b3JlOiB0aGUgc2Vjb25kXG4gKiBpbnNlcnQgZmFpbHMgb24gdGhlIHVuaXF1ZSBpbmRleC4gKElmIHR3byBzdWNoIGFjY291bnRzIGV4aXN0IGluIHByb2R1Y3Rpb25cbiAqIHRvZGF5IHRoZSBCQUNLRklMTCBmYWlscyBhbmQgbmFtZXMgdGhlbSwgd2hpY2ggaXMgdGhlIGNvcnJlY3Qgb3V0Y29tZSDigJQgdGhlXG4gKiBhcHBsaWNhdGlvbiBjYW5ub3QgdGVsbCB0aGVtIGFwYXJ0IGVpdGhlci4pIFRoZSBndWFyZCBpcyBkZWxldGVkIHJhdGhlciB0aGFuXG4gKiBjYXJyaWVkLCBhbmQgYF9fdGVzdHNfX2AgcGlucyB0aGUgY29uc3RyYWludCB0aGF0IHJlcGxhY2VkIGl0OiB0aGUgY29sbGlzaW9uXG4gKiBpcyByZWZ1c2VkIGF0IHdyaXRlIHRpbWUsIG5vdCB0b2xlcmF0ZWQgYXQgcmVhZCB0aW1lLlxuICpcbiAqICMjIFdoYXQgdGhpcyByZXR1cm5zLCBhbmQgdGhlIGJ1ZyB0aGF0IGNoYW5nZXNcbiAqXG4gKiBJdCB1c2VkIHRvIHJldHVybiB0aGUgTW9uZ29vc2UgZG9jdW1lbnQsIGFuZCBgcm91dGVzL2FjY291bnRzLnRzOjcxOWAgcmVhZHNcbiAqIGAuaWRgIG9mZiBpdCDigJQgdGhlIG1vZGVsJ3MgYGlkYCBWSVJUVUFMLCB3aGljaCBpcyBgcHVibGljS2V5ID8/IF9pZGAuIFNvIGZvclxuICogYW55IGFjY291bnQgdGhhdCBoYWQgbGlua2VkIGEgQ29tbW9ucyBpZGVudGl0eSBrZXksIHRoZSBpbnZpdGUgcGF0aCBwYXNzZWQgYVxuICogUFVCTElDIEtFWSB3aGVyZSBhbiBhY2NvdW50IGlkIGJlbG9uZ3MuIFRoYXQgaXMgYSBgdGV4dGAgY29sdW1uIHdpdGggYSByZWFsXG4gKiBmb3JlaWduIGtleSBub3csIHNvIHRoZSBiYWQgdmFsdWUgd291bGQgYmUgcmVqZWN0ZWQgYnlcbiAqIGBhY2NvdW50X21lbWJlcnNfdXNlcl9pZF91c2Vyc19pZF9ma2AgaW5zdGVhZCBvZiBiZWluZyBzdG9yZWQuIFJldHVybmluZyB0aGVcbiAqIGFjY291bnQgaWQgY2xvc2VzIGl0IGF0IHRoZSBzb3VyY2U7IHRoZSBzaGFwZSBiZWxvdyBpcyBkZWxpYmVyYXRlbHkgbmFycm93IHNvXG4gKiBub3RoaW5nIGNhbiByZWFkIHRoZSB2aXJ0dWFsIGFnYWluLlxuICovXG5cbmltcG9ydCB7IHNxbCB9IGZyb20gJ2RyaXp6bGUtb3JtJztcbmltcG9ydCB7IGdldERiIH0gZnJvbSAnLi4vY29uZmlnL3Bvc3RncmVzJztcbmltcG9ydCB7IHVzZXJzIH0gZnJvbSAnLi4vZGIvc2NoZW1hL3VzZXJzJztcblxuLyoqIEVzY2FwZSByZWdleCBtZXRhY2hhcmFjdGVycyBzbyB0aGUgaWRlbnRpZmllciBtYXRjaGVzIGxpdGVyYWxseS4gKi9cbmV4cG9ydCBmdW5jdGlvbiBlc2NhcGVSZWdFeHAodmFsdWU6IHN0cmluZyk6IHN0cmluZyB7XG4gIHJldHVybiB2YWx1ZS5yZXBsYWNlKC9bLiorP14ke30oKXxbXFxdXFxcXF0vZywgJ1xcXFwkJicpO1xufVxuXG4vKipcbiAqIEJ1aWxkIGFuIGFuY2hvcmVkLCBlc2NhcGVkLCBjYXNlLWluc2Vuc2l0aXZlIHJlZ2V4IHRoYXQgbWF0Y2hlcyBhIHVzZXJuYW1lXG4gKiBFWEFDVExZIChub3QgYXMgYSBzdWJzdHJpbmcpIHJlZ2FyZGxlc3Mgb2YgbGV0dGVyIGNhc2UuXG4gKlxuICogTk9UIHVzZWQgYnkgdGhlIHJlc29sdmVyIGJlbG93IGFueSBtb3JlIOKAlCBhIGBsb3dlcihidHJpbSh1c2VybmFtZSkpYCBsb29rdXBcbiAqIGlzIGJvdGggZXhhY3QgYW5kIGluZGV4LXNlcnZlZC4gSXQgcmVtYWlucyBleHBvcnRlZCBmb3IgYHNlcnZlci50c2AgYW5kXG4gKiBgc2NyaXB0cy9kZWR1cGUtb3duLWRvbWFpbi1mZWRlcmF0ZWQtdXNlcnMudHNgLCB3aG9zZSBNb25nbyByZWFkcyBiZWxvbmcgdG8gYVxuICogbGF0ZXIgYmF0Y2g7IGl0IG11c3QgZ28gd2l0aCB0aGUgbGFzdCBvZiB0aGVtLlxuICovXG5leHBvcnQgZnVuY3Rpb24gZXhhY3RDYXNlSW5zZW5zaXRpdmVVc2VybmFtZVJlZ2V4KHVzZXJuYW1lOiBzdHJpbmcpOiBSZWdFeHAge1xuICByZXR1cm4gbmV3IFJlZ0V4cChgXiR7ZXNjYXBlUmVnRXhwKHVzZXJuYW1lKX0kYCwgJ2knKTtcbn1cblxuLyoqIFRoZSBhY2NvdW50IGFuIGlkZW50aWZpZXIgcmVzb2x2ZWQgdG8uICovXG5leHBvcnQgaW50ZXJmYWNlIFJlc29sdmVkVXNlcklkZW50aXR5IHtcbiAgLyoqIFRoZSBjYW5vbmljYWwgYWNjb3VudCBpZCDigJQgbmV2ZXIgdGhlIHB1YmxpYyBrZXkuICovXG4gIGlkOiBzdHJpbmc7XG4gIHVzZXJuYW1lPzogc3RyaW5nO1xuICBlbWFpbD86IHN0cmluZztcbn1cblxuLyoqXG4gKiBSZXNvbHZlIGEgdXNlcm5hbWUgb3IgZW1haWwgdG8gaXRzIGFjY291bnQuXG4gKlxuICogQHBhcmFtIGlkZW50aWZpZXIgQSByYXcgdXNlcm5hbWUgb3IgZW1haWwgYWRkcmVzcy5cbiAqIEByZXR1cm5zIFRoZSBtYXRjaGluZyBhY2NvdW50LCBvciBgbnVsbGAgaWYgbm90IGZvdW5kIC8gYmxhbmsgaW5wdXQuXG4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiByZXNvbHZlVXNlckJ5SWRlbnRpZmllcihcbiAgaWRlbnRpZmllcjogc3RyaW5nXG4pOiBQcm9taXNlPFJlc29sdmVkVXNlcklkZW50aXR5IHwgbnVsbD4ge1xuICBjb25zdCB0cmltbWVkID0gaWRlbnRpZmllci50cmltKCk7XG4gIGlmICh0cmltbWVkLmxlbmd0aCA9PT0gMCkge1xuICAgIHJldHVybiBudWxsO1xuICB9XG5cbiAgLy8gQW4gYEBgIG1lYW5zIGFuIGVtYWlsIGFkZHJlc3M7IGEgdXNlcm5hbWUgY2Fubm90IGNvbnRhaW4gb25lLlxuICBjb25zdCBtYXRjaCA9IHRyaW1tZWQuaW5jbHVkZXMoJ0AnKVxuICAgID8gc3FsYGxvd2VyKGJ0cmltKCR7dXNlcnMuZW1haWx9KSkgPSBsb3dlcihidHJpbSgke3RyaW1tZWR9KSlgXG4gICAgOiBzcWxgbG93ZXIoYnRyaW0oJHt1c2Vycy51c2VybmFtZX0pKSA9IGxvd2VyKGJ0cmltKCR7dHJpbW1lZH0pKWA7XG5cbiAgY29uc3QgW3Jvd10gPSBhd2FpdCBnZXREYigpXG4gICAgLnNlbGVjdCh7IGlkOiB1c2Vycy5pZCwgdXNlcm5hbWU6IHVzZXJzLnVzZXJuYW1lLCBlbWFpbDogdXNlcnMuZW1haWwgfSlcbiAgICAuZnJvbSh1c2VycylcbiAgICAud2hlcmUobWF0Y2gpXG4gICAgLmxpbWl0KDEpO1xuXG4gIGlmICghcm93KSB7XG4gICAgcmV0dXJuIG51bGw7XG4gIH1cblxuICAvLyBBbiBhYnNlbnQgb3B0aW9uYWwgaXMgT01JVFRFRCwgbm90IGVtaXR0ZWQgYXMgbnVsbC5cbiAgcmV0dXJuIHtcbiAgICBpZDogcm93LmlkLFxuICAgIHVzZXJuYW1lOiByb3cudXNlcm5hbWUgPz8gdW5kZWZpbmVkLFxuICAgIGVtYWlsOiByb3cuZW1haWwgPz8gdW5kZWZpbmVkLFxuICB9O1xufVxuIl0sInZlcnNpb24iOjN9

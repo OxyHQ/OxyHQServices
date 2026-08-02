@@ -1,0 +1,121 @@
+0ef6fac96f4f1ef754840c8039fa7bb3
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getDatabaseStats = exports.getMemoryStats = exports.monitorDatabaseQuery = exports.performanceMiddleware = void 0;
+const postgres_1 = require("../config/postgres");
+const performanceMonitor_1 = require("../utils/performanceMonitor");
+const logger_1 = require("../utils/logger");
+/**
+ * Performance monitoring middleware
+ * Tracks API response times and logs slow requests
+ */
+const performanceMiddleware = (req, res, next) => {
+    const startTime = Date.now();
+    const operation = `${req.method} ${req.path}`;
+    // Track response finish
+    res.on('finish', () => {
+        const duration = Date.now() - startTime;
+        // Record the metric
+        performanceMonitor_1.performanceMonitor.recordMetric(operation, duration, {
+            method: req.method,
+            path: req.path,
+            statusCode: res.statusCode,
+            userAgent: req.get('user-agent'),
+        });
+        // Log slow requests
+        if (duration > 1000) {
+            logger_1.logger.warn(`Slow request: ${operation} took ${duration}ms`, {
+                method: req.method,
+                path: req.path,
+                statusCode: res.statusCode,
+            });
+        }
+    });
+    next();
+};
+exports.performanceMiddleware = performanceMiddleware;
+/**
+ * Database query monitoring middleware
+ * Wraps mongoose queries to track performance
+ */
+const monitorDatabaseQuery = (operation, queryFn) => __awaiter(void 0, void 0, void 0, function* () {
+    const endTimer = performanceMonitor_1.performanceMonitor.startTimer(`db:${operation}`);
+    try {
+        const result = yield queryFn();
+        endTimer({ success: true });
+        return result;
+    }
+    catch (error) {
+        endTimer({ success: false, error: error instanceof Error ? error.message : String(error) });
+        throw error;
+    }
+});
+exports.monitorDatabaseQuery = monitorDatabaseQuery;
+/**
+ * Get memory usage statistics
+ */
+const getMemoryStats = () => {
+    const usage = process.memoryUsage();
+    return {
+        rss: Math.round(usage.rss / 1024 / 1024), // Resident Set Size in MB
+        heapTotal: Math.round(usage.heapTotal / 1024 / 1024), // Total heap in MB
+        heapUsed: Math.round(usage.heapUsed / 1024 / 1024), // Used heap in MB
+        external: Math.round(usage.external / 1024 / 1024), // External memory in MB
+        arrayBuffers: Math.round(usage.arrayBuffers / 1024 / 1024), // Array buffers in MB
+    };
+};
+exports.getMemoryStats = getMemoryStats;
+/**
+ * Which database this process is pointed at, for `GET /metrics`.
+ *
+ * Replaces `getConnectionPoolStats(mongoose.connection)`. Two of its three
+ * fields survive because they describe the SERVER, not the driver: `host` and
+ * `name`. `readyState` does not — it was a mongoose enum (0–3) with no Postgres
+ * counterpart, and inventing one would be exactly the Mongo baggage the
+ * migration contract forbids. `connected` answers the question `readyState` was
+ * actually read for, in the vocabulary of the pool that now exists.
+ *
+ * `connected` is `isPostgresConnected()`, so this reports whether a pool is
+ * OPEN, not whether the server answers. Liveness is `GET /health`, which issues
+ * a real round trip; two probes with the same answer would be one probe too
+ * many, and the health one is the ALB's.
+ *
+ * Parsed from `DATABASE_URL` rather than read off the pool: `postgres.js`
+ * exposes no such accessor, and a URL parse cannot accidentally surface the
+ * password the way a driver-options dump can.
+ */
+const getDatabaseStats = () => {
+    const url = process.env.DATABASE_URL;
+    if (!url) {
+        return null;
+    }
+    let host;
+    let name;
+    try {
+        const parsed = new URL(url);
+        host = parsed.hostname;
+        name = parsed.pathname.replace(/^\//, '');
+    }
+    catch (_a) {
+        // A malformed DATABASE_URL is a startup problem the health endpoint already
+        // reports; a metrics read must not become the thing that throws.
+        return { connected: (0, postgres_1.isPostgresConnected)(), host: null, name: null };
+    }
+    return {
+        connected: (0, postgres_1.isPostgresConnected)(),
+        host,
+        name,
+    };
+};
+exports.getDatabaseStats = getDatabaseStats;
+exports.default = exports.performanceMiddleware;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvbWlkZGxld2FyZS9wZXJmb3JtYW5jZS50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7QUFDQSxpREFBeUQ7QUFDekQsb0VBQWlFO0FBQ2pFLDRDQUF5QztBQUV6Qzs7O0dBR0c7QUFDSSxNQUFNLHFCQUFxQixHQUFHLENBQUMsR0FBWSxFQUFFLEdBQWEsRUFBRSxJQUFrQixFQUFFLEVBQUU7SUFDdkYsTUFBTSxTQUFTLEdBQUcsSUFBSSxDQUFDLEdBQUcsRUFBRSxDQUFDO0lBQzdCLE1BQU0sU0FBUyxHQUFHLEdBQUcsR0FBRyxDQUFDLE1BQU0sSUFBSSxHQUFHLENBQUMsSUFBSSxFQUFFLENBQUM7SUFFOUMsd0JBQXdCO0lBQ3hCLEdBQUcsQ0FBQyxFQUFFLENBQUMsUUFBUSxFQUFFLEdBQUcsRUFBRTtRQUNwQixNQUFNLFFBQVEsR0FBRyxJQUFJLENBQUMsR0FBRyxFQUFFLEdBQUcsU0FBUyxDQUFDO1FBRXhDLG9CQUFvQjtRQUNwQix1Q0FBa0IsQ0FBQyxZQUFZLENBQUMsU0FBUyxFQUFFLFFBQVEsRUFBRTtZQUNuRCxNQUFNLEVBQUUsR0FBRyxDQUFDLE1BQU07WUFDbEIsSUFBSSxFQUFFLEdBQUcsQ0FBQyxJQUFJO1lBQ2QsVUFBVSxFQUFFLEdBQUcsQ0FBQyxVQUFVO1lBQzFCLFNBQVMsRUFBRSxHQUFHLENBQUMsR0FBRyxDQUFDLFlBQVksQ0FBQztTQUNqQyxDQUFDLENBQUM7UUFFSCxvQkFBb0I7UUFDcEIsSUFBSSxRQUFRLEdBQUcsSUFBSSxFQUFFLENBQUM7WUFDcEIsZUFBTSxDQUFDLElBQUksQ0FBQyxpQkFBaUIsU0FBUyxTQUFTLFFBQVEsSUFBSSxFQUFFO2dCQUMzRCxNQUFNLEVBQUUsR0FBRyxDQUFDLE1BQU07Z0JBQ2xCLElBQUksRUFBRSxHQUFHLENBQUMsSUFBSTtnQkFDZCxVQUFVLEVBQUUsR0FBRyxDQUFDLFVBQVU7YUFDM0IsQ0FBQyxDQUFDO1FB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TCxDQUFDO0FBQ0osQ0FBQyxDQUFDO0FBdkJXLFFBQUEsZ0JBQWdCLG9CQXVCM0I7QUFFRixrQkFBZSw2QkFBcUIsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9taWRkbGV3YXJlL3BlcmZvcm1hbmNlLnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB0eXBlIHsgUmVxdWVzdCwgUmVzcG9uc2UsIE5leHRGdW5jdGlvbiB9IGZyb20gJ2V4cHJlc3MnO1xuaW1wb3J0IHsgaXNQb3N0Z3Jlc0Nvbm5lY3RlZCB9IGZyb20gJy4uL2NvbmZpZy9wb3N0Z3Jlcyc7XG5pbXBvcnQgeyBwZXJmb3JtYW5jZU1vbml0b3IgfSBmcm9tICcuLi91dGlscy9wZXJmb3JtYW5jZU1vbml0b3InO1xuaW1wb3J0IHsgbG9nZ2VyIH0gZnJvbSAnLi4vdXRpbHMvbG9nZ2VyJztcblxuLyoqXG4gKiBQZXJmb3JtYW5jZSBtb25pdG9yaW5nIG1pZGRsZXdhcmVcbiAqIFRyYWNrcyBBUEkgcmVzcG9uc2UgdGltZXMgYW5kIGxvZ3Mgc2xvdyByZXF1ZXN0c1xuICovXG5leHBvcnQgY29uc3QgcGVyZm9ybWFuY2VNaWRkbGV3YXJlID0gKHJlcTogUmVxdWVzdCwgcmVzOiBSZXNwb25zZSwgbmV4dDogTmV4dEZ1bmN0aW9uKSA9PiB7XG4gIGNvbnN0IHN0YXJ0VGltZSA9IERhdGUubm93KCk7XG4gIGNvbnN0IG9wZXJhdGlvbiA9IGAke3JlcS5tZXRob2R9ICR7cmVxLnBhdGh9YDtcblxuICAvLyBUcmFjayByZXNwb25zZSBmaW5pc2hcbiAgcmVzLm9uKCdmaW5pc2gnLCAoKSA9PiB7XG4gICAgY29uc3QgZHVyYXRpb24gPSBEYXRlLm5vdygpIC0gc3RhcnRUaW1lO1xuICAgIFxuICAgIC8vIFJlY29yZCB0aGUgbWV0cmljXG4gICAgcGVyZm9ybWFuY2VNb25pdG9yLnJlY29yZE1ldHJpYyhvcGVyYXRpb24sIGR1cmF0aW9uLCB7XG4gICAgICBtZXRob2Q6IHJlcS5tZXRob2QsXG4gICAgICBwYXRoOiByZXEucGF0aCxcbiAgICAgIHN0YXR1c0NvZGU6IHJlcy5zdGF0dXNDb2RlLFxuICAgICAgdXNlckFnZW50OiByZXEuZ2V0KCd1c2VyLWFnZW50JyksXG4gICAgfSk7XG5cbiAgICAvLyBMb2cgc2xvdyByZXF1ZXN0c1xuICAgIGlmIChkdXJhdGlvbiA+IDEwMDApIHtcbiAgICAgIGxvZ2dlci53YXJuKGBTbG93IHJlcXVlc3Q6ICR7b3BlcmF0aW9ufSB0b29rICR7ZHVyYXRpb259bXNgLCB7XG4gICAgICAgIG1ldGhvZDogcmVxLm1ldGhvZCxcbiAgICAgICAgcGF0aDogcmVxLnBhdGgsXG4gICAgICAgIHN0YXR1c0NvZGU6IHJlcy5zdGF0dXNDb2RlLFxuICAgICAgfSk7XG4gICAgfVxuICB9KTtcblxuICBuZXh0KCk7XG59O1xuXG4vKipcbiAqIERhdGFiYXNlIHF1ZXJ5IG1vbml0b3JpbmcgbWlkZGxld2FyZVxuICogV3JhcHMgbW9uZ29vc2UgcXVlcmllcyB0byB0cmFjayBwZXJmb3JtYW5jZVxuICovXG5leHBvcnQgY29uc3QgbW9uaXRvckRhdGFiYXNlUXVlcnkgPSBhc3luYyA8VD4oXG4gIG9wZXJhdGlvbjogc3RyaW5nLFxuICBxdWVyeUZuOiAoKSA9PiBQcm9taXNlPFQ+XG4pOiBQcm9taXNlPFQ+ID0+IHtcbiAgY29uc3QgZW5kVGltZXIgPSBwZXJmb3JtYW5jZU1vbml0b3Iuc3RhcnRUaW1lcihgZGI6JHtvcGVyYXRpb259YCk7XG4gIFxuICB0cnkge1xuICAgIGNvbnN0IHJlc3VsdCA9IGF3YWl0IHF1ZXJ5Rm4oKTtcbiAgICBlbmRUaW1lcih7IHN1Y2Nlc3M6IHRydWUgfSk7XG4gICAgcmV0dXJuIHJlc3VsdDtcbiAgfSBjYXRjaCAoZXJyb3IpIHtcbiAgICBlbmRUaW1lcih7IHN1Y2Nlc3M6IGZhbHNlLCBlcnJvcjogZXJyb3IgaW5zdGFuY2VvZiBFcnJvciA/IGVycm9yLm1lc3NhZ2UgOiBTdHJpbmcoZXJyb3IpIH0pO1xuICAgIHRocm93IGVycm9yO1xuICB9XG59O1xuXG4vKipcbiAqIEdldCBtZW1vcnkgdXNhZ2Ugc3RhdGlzdGljc1xuICovXG5leHBvcnQgY29uc3QgZ2V0TWVtb3J5U3RhdHMgPSAoKSA9PiB7XG4gIGNvbnN0IHVzYWdlID0gcHJvY2Vzcy5tZW1vcnlVc2FnZSgpO1xuICByZXR1cm4ge1xuICAgIHJzczogTWF0aC5yb3VuZCh1c2FnZS5yc3MgLyAxMDI0IC8gMTAyNCksIC8vIFJlc2lkZW50IFNldCBTaXplIGluIE1CXG4gICAgaGVhcFRvdGFsOiBNYXRoLnJvdW5kKHVzYWdlLmhlYXBUb3RhbCAvIDEwMjQgLyAxMDI0KSwgLy8gVG90YWwgaGVhcCBpbiBNQlxuICAgIGhlYXBVc2VkOiBNYXRoLnJvdW5kKHVzYWdlLmhlYXBVc2VkIC8gMTAyNCAvIDEwMjQpLCAvLyBVc2VkIGhlYXAgaW4gTUJcbiAgICBleHRlcm5hbDogTWF0aC5yb3VuZCh1c2FnZS5leHRlcm5hbCAvIDEwMjQgLyAxMDI0KSwgLy8gRXh0ZXJuYWwgbWVtb3J5IGluIE1CXG4gICAgYXJyYXlCdWZmZXJzOiBNYXRoLnJvdW5kKHVzYWdlLmFycmF5QnVmZmVycyAvIDEwMjQgLyAxMDI0KSwgLy8gQXJyYXkgYnVmZmVycyBpbiBNQlxuICB9O1xufTtcblxuLyoqXG4gKiBXaGljaCBkYXRhYmFzZSB0aGlzIHByb2Nlc3MgaXMgcG9pbnRlZCBhdCwgZm9yIGBHRVQgL21ldHJpY3NgLlxuICpcbiAqIFJlcGxhY2VzIGBnZXRDb25uZWN0aW9uUG9vbFN0YXRzKG1vbmdvb3NlLmNvbm5lY3Rpb24pYC4gVHdvIG9mIGl0cyB0aHJlZVxuICogZmllbGRzIHN1cnZpdmUgYmVjYXVzZSB0aGV5IGRlc2NyaWJlIHRoZSBTRVJWRVIsIG5vdCB0aGUgZHJpdmVyOiBgaG9zdGAgYW5kXG4gKiBgbmFtZWAuIGByZWFkeVN0YXRlYCBkb2VzIG5vdCDigJQgaXQgd2FzIGEgbW9uZ29vc2UgZW51bSAoMOKAkzMpIHdpdGggbm8gUG9zdGdyZXNcbiAqIGNvdW50ZXJwYXJ0LCBhbmQgaW52ZW50aW5nIG9uZSB3b3VsZCBiZSBleGFjdGx5IHRoZSBNb25nbyBiYWdnYWdlIHRoZVxuICogbWlncmF0aW9uIGNvbnRyYWN0IGZvcmJpZHMuIGBjb25uZWN0ZWRgIGFuc3dlcnMgdGhlIHF1ZXN0aW9uIGByZWFkeVN0YXRlYCB3YXNcbiAqIGFjdHVhbGx5IHJlYWQgZm9yLCBpbiB0aGUgdm9jYWJ1bGFyeSBvZiB0aGUgcG9vbCB0aGF0IG5vdyBleGlzdHMuXG4gKlxuICogYGNvbm5lY3RlZGAgaXMgYGlzUG9zdGdyZXNDb25uZWN0ZWQoKWAsIHNvIHRoaXMgcmVwb3J0cyB3aGV0aGVyIGEgcG9vbCBpc1xuICogT1BFTiwgbm90IHdoZXRoZXIgdGhlIHNlcnZlciBhbnN3ZXJzLiBMaXZlbmVzcyBpcyBgR0VUIC9oZWFsdGhgLCB3aGljaCBpc3N1ZXNcbiAqIGEgcmVhbCByb3VuZCB0cmlwOyB0d28gcHJvYmVzIHdpdGggdGhlIHNhbWUgYW5zd2VyIHdvdWxkIGJlIG9uZSBwcm9iZSB0b29cbiAqIG1hbnksIGFuZCB0aGUgaGVhbHRoIG9uZSBpcyB0aGUgQUxCJ3MuXG4gKlxuICogUGFyc2VkIGZyb20gYERBVEFCQVNFX1VSTGAgcmF0aGVyIHRoYW4gcmVhZCBvZmYgdGhlIHBvb2w6IGBwb3N0Z3Jlcy5qc2BcbiAqIGV4cG9zZXMgbm8gc3VjaCBhY2Nlc3NvciwgYW5kIGEgVVJMIHBhcnNlIGNhbm5vdCBhY2NpZGVudGFsbHkgc3VyZmFjZSB0aGVcbiAqIHBhc3N3b3JkIHRoZSB3YXkgYSBkcml2ZXItb3B0aW9ucyBkdW1wIGNhbi5cbiAqL1xuZXhwb3J0IGNvbnN0IGdldERhdGFiYXNlU3RhdHMgPSAoKSA9PiB7XG4gIGNvbnN0IHVybCA9IHByb2Nlc3MuZW52LkRBVEFCQVNFX1VSTDtcbiAgaWYgKCF1cmwpIHtcbiAgICByZXR1cm4gbnVsbDtcbiAgfVxuXG4gIGxldCBob3N0OiBzdHJpbmc7XG4gIGxldCBuYW1lOiBzdHJpbmc7XG4gIHRyeSB7XG4gICAgY29uc3QgcGFyc2VkID0gbmV3IFVSTCh1cmwpO1xuICAgIGhvc3QgPSBwYXJzZWQuaG9zdG5hbWU7XG4gICAgbmFtZSA9IHBhcnNlZC5wYXRobmFtZS5yZXBsYWNlKC9eXFwvLywgJycpO1xuICB9IGNhdGNoIHtcbiAgICAvLyBBIG1hbGZvcm1lZCBEQVRBQkFTRV9VUkwgaXMgYSBzdGFydHVwIHByb2JsZW0gdGhlIGhlYWx0aCBlbmRwb2ludCBhbHJlYWR5XG4gICAgLy8gcmVwb3J0czsgYSBtZXRyaWNzIHJlYWQgbXVzdCBub3QgYmVjb21lIHRoZSB0aGluZyB0aGF0IHRocm93cy5cbiAgICByZXR1cm4geyBjb25uZWN0ZWQ6IGlzUG9zdGdyZXNDb25uZWN0ZWQoKSwgaG9zdDogbnVsbCwgbmFtZTogbnVsbCB9O1xuICB9XG5cbiAgcmV0dXJuIHtcbiAgICBjb25uZWN0ZWQ6IGlzUG9zdGdyZXNDb25uZWN0ZWQoKSxcbiAgICBob3N0LFxuICAgIG5hbWUsXG4gIH07XG59O1xuXG5leHBvcnQgZGVmYXVsdCBwZXJmb3JtYW5jZU1pZGRsZXdhcmU7XG5cbiJdLCJ2ZXJzaW9uIjozfQ==

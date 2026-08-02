@@ -1,0 +1,119 @@
+db89c8746fda36175bec1ac29b82ea23
+"use strict";
+/**
+ * WHICH BRIDGE HOSTS THIS API WILL LET A SERVICE RE-ATTRIBUTE AN ACCOUNT TO.
+ *
+ * `PUT /users/resolve` binds a federated actor's URI host to the domain the
+ * caller asserts, so a service cannot claim to vouch for a user on a host it does
+ * not own. A BRIDGE is the one case where the two legitimately differ: an account
+ * republished at `@wired@some-bridge.example` is WIRED on X, and its identity
+ * belongs to the network rather than to the host the copy arrived through.
+ * WebFinger cannot settle that — X publishes none, and no amount of asking the
+ * bridge would make it authoritative for `x.com`.
+ *
+ * WHY THIS LIST IS *HERE* AND NOT IN `@oxyhq/federation`
+ *
+ *   Deciding that a given operator may be trusted to re-attribute somebody's
+ *   account is a moderation judgement, not a platform fact. Putting it in the
+ *   shared package would hand every Oxy app that imports the package a trust
+ *   decision its owner never made. So the package ships the MECHANISM and this
+ *   service ships its own policy — the same division the blocklist uses: Oxy
+ *   holds a capability, never a policy.
+ *
+ * WHY IT IS NOT THE CALLING APP'S LIST EITHER
+ *
+ *   The whole point of the host binding is that it is not the caller's decision.
+ *   A connector DERIVES a bridged identity; this endpoint ADJUDICATES it. An
+ *   adjudicator that reads the applicant's own list is not adjudicating — it is
+ *   taking their word, which is exactly the impersonation vector the binding
+ *   exists to close.
+ *
+ * ⚠ THE SECOND LIST IS NOT DUPLICATION. DO NOT CONSOLIDATE THEM.
+ *
+ *   A reader who finds this file and a connector's bridge policy side by side
+ *   will see two lists of the same domains and reach for the obvious tidy-up:
+ *   import one from the other, or hoist both into the shared package. Doing that
+ *   silently deletes the property that makes this safe.
+ *
+ *   Kept separate, drift between the two FAILS CLOSED in BOTH directions:
+ *
+ *     app lists a bridge this file does not   → resolve refused; the actor
+ *                                               simply keeps its bridge identity
+ *     this file lists one no app derives for  → nothing happens at all
+ *
+ *   Neither direction can produce an ACCEPTED ATTRIBUTION NOBODY REVIEWED, which
+ *   is the failure both halves of this design exist to prevent. Consolidate them
+ *   and one side's list becomes the other's authority, so a single unreviewed
+ *   entry — in either repository — starts re-attributing real people's writing.
+ *   The redundancy is the safety mechanism, not an oversight.
+ *
+ * A wrong entry attributes one person's writing to another, which is heavier than
+ * a wrong block, so an entry states what was verified about the operator and when
+ * it was reviewed. Matching is exact canonical-host membership — a subdomain is a
+ * different server and needs its own reviewed entry.
+ *
+ * This list answers ONLY whether a bridge host may vouch for a network domain
+ * at resolve time. Whether an app actually re-labels ingested actors (`relabel:
+ * 'enabled' | 'pending_dedup'`) is a separate decision on the app's bridge
+ * entries — API trust does not gate relabel timing.
+ *
+ * FOLLOW-UP: the properly Oxy-shaped version of this is a staff-granted
+ * `Application` capability (see `utils/applicationCapabilities.ts`) that lets a
+ * registered app assert bridged identities, replacing the host list entirely.
+ * That widens what a compromised credential could claim, so it wants its own
+ * review rather than being folded into this change.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.FEDERATION_BRIDGE_TRUST = void 0;
+exports.bridgeVouchesForNetwork = bridgeVouchesForNetwork;
+const federation_1 = require("@oxyhq/federation");
+/**
+ * THE COMMITTED TRUST LIST.
+ *
+ * The BirdsiteLive family is enumerated rather than pattern-matched on software
+ * name: the software is self-hostable, so "runs BirdsiteLive" is a claim any host
+ * can make about itself and is not a reason to believe its attributions.
+ */
+exports.FEDERATION_BRIDGE_TRUST = [
+    {
+        host: 'bird.makeup',
+        networkDomain: 'x.com',
+        reason: 'BirdsiteLive mirror of X accounts; each actor publishes a rel="me" link to the X profile it mirrors.',
+        since: '2026-08-02',
+    },
+    {
+        host: 'kilogram.makeup',
+        networkDomain: 'instagram.com',
+        reason: 'BirdsiteLive mirror of Instagram accounts by the bird.makeup operator; same rel="me" backlink.',
+        since: '2026-08-02',
+    },
+    {
+        host: 'mastox.eu',
+        networkDomain: 'x.com',
+        reason: 'Mastodon instance that exists to mirror X accounts, declared as such by its operator; mirrored actors carry a per-account bot notice.',
+        since: '2026-08-02',
+    },
+    {
+        host: 'bsky.brid.gy',
+        networkDomain: 'bsky.social',
+        reason: 'Bridgy Fed opt-in Bluesky bridge; each actor carries its atproto DID in alsoKnownAs and a rel="me" link to its bsky.app profile.',
+        since: '2026-08-02',
+    },
+];
+const TRUSTED_BY_HOST = new Map(exports.FEDERATION_BRIDGE_TRUST.map((entry) => [
+    (0, federation_1.canonicalFederationHost)(entry.host),
+    (0, federation_1.canonicalFederationHost)(entry.networkDomain),
+]));
+/**
+ * Whether `actorHost` is a reviewed bridge this API trusts to vouch for
+ * `networkDomain`.
+ *
+ * Both halves must match. A bridge mirrors ONE network, so being on the list is
+ * never on its own a licence to claim any domain — otherwise a single trusted
+ * host could re-attribute accounts to every network at once.
+ */
+function bridgeVouchesForNetwork(actorHost, networkDomain) {
+    const trusted = TRUSTED_BY_HOST.get((0, federation_1.canonicalFederationHost)(actorHost));
+    return trusted !== undefined && trusted === (0, federation_1.canonicalFederationHost)(networkDomain);
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY29uZmlnL2ZlZGVyYXRpb25CcmlkZ2VUcnVzdC50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBOERHOzs7QUFpRUgsMERBR0M7QUFsRUQsa0RBQTREO0FBYzVEOzs7Ozs7R0FNRztBQUNVLFFBQUEsdUJBQXVCLEdBQTBDO0lBQzVFO1FBQ0UsSUFBSSxFQUFFLGFBQWE7UUFDbkIsYUFBYSxFQUFFLE9BQU87UUFDdEIsTUFBTSxFQUFFLHNHQUFzRztRQUM5RyxLQUFLLEVBQUUsWUFBWTtLQUNwQjtJQUNEO1FBQ0UsSUFBSSxFQUFFLGlCQUFpQjtRQUN2QixhQUFhLEVBQUUsZUFBZTtRQUM5QixNQUFNLEVBQUUsZ0dBQWdHO1FBQ3hHLEtBQUssRUFBRSxZQUFZO0tBQ3BCO0lBQ0Q7UUFDRSxJQUFJLEVBQUUsV0FBVztRQUNqQixhQUFhLEVBQUUsT0FBTztRQUN0QixNQUFNLEVBQUUsdUlBQXVJO1FBQy9JLEtBQUssRUFBRSxZQUFZO0tBQ3BCO0lBQ0Q7UUFDRSxJQUFJLEVBQUUsY0FBYztRQUNwQixhQUFhLEVBQUUsYUFBYTtRQUM1QixNQUFNLEVBQUUsa0lBQWtJO1FBQzFJLEtBQUssRUFBRSxZQUFZO0tBQ3BCO0NBQ0YsQ0FBQztBQUVGLE1BQU0sZUFBZSxHQUFnQyxJQUFJLEdBQUcsQ0FDMUQsK0JBQXVCLENBQUMsR0FBRyxDQUFDLENBQUMsS0FBSyxFQUFFLEVBQUUsQ0FBQztJQUNyQyxJQUFBLG9DQUF1QixFQUFDLEtBQUssQ0FBQyxJQUFJLENBQUM7SUFDbkMsSUFBQSxvQ0FBdUIsRUFBQyxLQUFLLENBQUMsYUFBYSxDQUFDO0NBQzdDLENBQUMsQ0FDSCxDQUFDO0FBRUY7Ozs7Ozs7R0FPRztBQUNILFNBQWdCLHVCQUF1QixDQUFDLFNBQWlCLEVBQUUsYUFBcUI7SUFDOUUsTUFBTSxPQUFPLEdBQUcsZUFBZSxDQUFDLEdBQUcsQ0FBQyxJQUFBLG9DQUF1QixFQUFDLFNBQVMsQ0FBQyxDQUFDLENBQUM7SUFDeEUsT0FBTyxPQUFPLEtBQUssU0FBUyxJQUFJLE9BQU8sS0FBSyxJQUFBLG9DQUF1QixFQUFDLGFBQWEsQ0FBQyxDQUFDO0FBQ3JGLENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY29uZmlnL2ZlZGVyYXRpb25CcmlkZ2VUcnVzdC50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIFdISUNIIEJSSURHRSBIT1NUUyBUSElTIEFQSSBXSUxMIExFVCBBIFNFUlZJQ0UgUkUtQVRUUklCVVRFIEFOIEFDQ09VTlQgVE8uXG4gKlxuICogYFBVVCAvdXNlcnMvcmVzb2x2ZWAgYmluZHMgYSBmZWRlcmF0ZWQgYWN0b3IncyBVUkkgaG9zdCB0byB0aGUgZG9tYWluIHRoZVxuICogY2FsbGVyIGFzc2VydHMsIHNvIGEgc2VydmljZSBjYW5ub3QgY2xhaW0gdG8gdm91Y2ggZm9yIGEgdXNlciBvbiBhIGhvc3QgaXQgZG9lc1xuICogbm90IG93bi4gQSBCUklER0UgaXMgdGhlIG9uZSBjYXNlIHdoZXJlIHRoZSB0d28gbGVnaXRpbWF0ZWx5IGRpZmZlcjogYW4gYWNjb3VudFxuICogcmVwdWJsaXNoZWQgYXQgYEB3aXJlZEBzb21lLWJyaWRnZS5leGFtcGxlYCBpcyBXSVJFRCBvbiBYLCBhbmQgaXRzIGlkZW50aXR5XG4gKiBiZWxvbmdzIHRvIHRoZSBuZXR3b3JrIHJhdGhlciB0aGFuIHRvIHRoZSBob3N0IHRoZSBjb3B5IGFycml2ZWQgdGhyb3VnaC5cbiAqIFdlYkZpbmdlciBjYW5ub3Qgc2V0dGxlIHRoYXQg4oCUIFggcHVibGlzaGVzIG5vbmUsIGFuZCBubyBhbW91bnQgb2YgYXNraW5nIHRoZVxuICogYnJpZGdlIHdvdWxkIG1ha2UgaXQgYXV0aG9yaXRhdGl2ZSBmb3IgYHguY29tYC5cbiAqXG4gKiBXSFkgVEhJUyBMSVNUIElTICpIRVJFKiBBTkQgTk9UIElOIGBAb3h5aHEvZmVkZXJhdGlvbmBcbiAqXG4gKiAgIERlY2lkaW5nIHRoYXQgYSBnaXZlbiBvcGVyYXRvciBtYXkgYmUgdHJ1c3RlZCB0byByZS1hdHRyaWJ1dGUgc29tZWJvZHknc1xuICogICBhY2NvdW50IGlzIGEgbW9kZXJhdGlvbiBqdWRnZW1lbnQsIG5vdCBhIHBsYXRmb3JtIGZhY3QuIFB1dHRpbmcgaXQgaW4gdGhlXG4gKiAgIHNoYXJlZCBwYWNrYWdlIHdvdWxkIGhhbmQgZXZlcnkgT3h5IGFwcCB0aGF0IGltcG9ydHMgdGhlIHBhY2thZ2UgYSB0cnVzdFxuICogICBkZWNpc2lvbiBpdHMgb3duZXIgbmV2ZXIgbWFkZS4gU28gdGhlIHBhY2thZ2Ugc2hpcHMgdGhlIE1FQ0hBTklTTSBhbmQgdGhpc1xuICogICBzZXJ2aWNlIHNoaXBzIGl0cyBvd24gcG9saWN5IOKAlCB0aGUgc2FtZSBkaXZpc2lvbiB0aGUgYmxvY2tsaXN0IHVzZXM6IE94eVxuICogICBob2xkcyBhIGNhcGFiaWxpdHksIG5ldmVyIGEgcG9saWN5LlxuICpcbiAqIFdIWSBJVCBJUyBOT1QgVEhFIENBTExJTkcgQVBQJ1MgTElTVCBFSVRIRVJcbiAqXG4gKiAgIFRoZSB3aG9sZSBwb2ludCBvZiB0aGUgaG9zdCBiaW5kaW5nIGlzIHRoYXQgaXQgaXMgbm90IHRoZSBjYWxsZXIncyBkZWNpc2lvbi5cbiAqICAgQSBjb25uZWN0b3IgREVSSVZFUyBhIGJyaWRnZWQgaWRlbnRpdHk7IHRoaXMgZW5kcG9pbnQgQURKVURJQ0FURVMgaXQuIEFuXG4gKiAgIGFkanVkaWNhdG9yIHRoYXQgcmVhZHMgdGhlIGFwcGxpY2FudCdzIG93biBsaXN0IGlzIG5vdCBhZGp1ZGljYXRpbmcg4oCUIGl0IGlzXG4gKiAgIHRha2luZyB0aGVpciB3b3JkLCB3aGljaCBpcyBleGFjdGx5IHRoZSBpbXBlcnNvbmF0aW9uIHZlY3RvciB0aGUgYmluZGluZ1xuICogICBleGlzdHMgdG8gY2xvc2UuXG4gKlxuICog4pqgIFRIRSBTRUNPTkQgTElTVCBJUyBOT1QgRFVQTElDQVRJT04uIERPIE5PVCBDT05TT0xJREFURSBUSEVNLlxuICpcbiAqICAgQSByZWFkZXIgd2hvIGZpbmRzIHRoaXMgZmlsZSBhbmQgYSBjb25uZWN0b3IncyBicmlkZ2UgcG9saWN5IHNpZGUgYnkgc2lkZVxuICogICB3aWxsIHNlZSB0d28gbGlzdHMgb2YgdGhlIHNhbWUgZG9tYWlucyBhbmQgcmVhY2ggZm9yIHRoZSBvYnZpb3VzIHRpZHktdXA6XG4gKiAgIGltcG9ydCBvbmUgZnJvbSB0aGUgb3RoZXIsIG9yIGhvaXN0IGJvdGggaW50byB0aGUgc2hhcmVkIHBhY2thZ2UuIERvaW5nIHRoYXRcbiAqICAgc2lsZW50bHkgZGVsZXRlcyB0aGUgcHJvcGVydHkgdGhhdCBtYWtlcyB0aGlzIHNhZmUuXG4gKlxuICogICBLZXB0IHNlcGFyYXRlLCBkcmlmdCBiZXR3ZWVuIHRoZSB0d28gRkFJTFMgQ0xPU0VEIGluIEJPVEggZGlyZWN0aW9uczpcbiAqXG4gKiAgICAgYXBwIGxpc3RzIGEgYnJpZGdlIHRoaXMgZmlsZSBkb2VzIG5vdCAgIOKGkiByZXNvbHZlIHJlZnVzZWQ7IHRoZSBhY3RvclxuICogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHNpbXBseSBrZWVwcyBpdHMgYnJpZGdlIGlkZW50aXR5XG4gKiAgICAgdGhpcyBmaWxlIGxpc3RzIG9uZSBubyBhcHAgZGVyaXZlcyBmb3IgIOKGkiBub3RoaW5nIGhhcHBlbnMgYXQgYWxsXG4gKlxuICogICBOZWl0aGVyIGRpcmVjdGlvbiBjYW4gcHJvZHVjZSBhbiBBQ0NFUFRFRCBBVFRSSUJVVElPTiBOT0JPRFkgUkVWSUVXRUQsIHdoaWNoXG4gKiAgIGlzIHRoZSBmYWlsdXJlIGJvdGggaGFsdmVzIG9mIHRoaXMgZGVzaWduIGV4aXN0IHRvIHByZXZlbnQuIENvbnNvbGlkYXRlIHRoZW1cbiAqICAgYW5kIG9uZSBzaWRlJ3MgbGlzdCBiZWNvbWVzIHRoZSBvdGhlcidzIGF1dGhvcml0eSwgc28gYSBzaW5nbGUgdW5yZXZpZXdlZFxuICogICBlbnRyeSDigJQgaW4gZWl0aGVyIHJlcG9zaXRvcnkg4oCUIHN0YXJ0cyByZS1hdHRyaWJ1dGluZyByZWFsIHBlb3BsZSdzIHdyaXRpbmcuXG4gKiAgIFRoZSByZWR1bmRhbmN5IGlzIHRoZSBzYWZldHkgbWVjaGFuaXNtLCBub3QgYW4gb3ZlcnNpZ2h0LlxuICpcbiAqIEEgd3JvbmcgZW50cnkgYXR0cmlidXRlcyBvbmUgcGVyc29uJ3Mgd3JpdGluZyB0byBhbm90aGVyLCB3aGljaCBpcyBoZWF2aWVyIHRoYW5cbiAqIGEgd3JvbmcgYmxvY2ssIHNvIGFuIGVudHJ5IHN0YXRlcyB3aGF0IHdhcyB2ZXJpZmllZCBhYm91dCB0aGUgb3BlcmF0b3IgYW5kIHdoZW5cbiAqIGl0IHdhcyByZXZpZXdlZC4gTWF0Y2hpbmcgaXMgZXhhY3QgY2Fub25pY2FsLWhvc3QgbWVtYmVyc2hpcCDigJQgYSBzdWJkb21haW4gaXMgYVxuICogZGlmZmVyZW50IHNlcnZlciBhbmQgbmVlZHMgaXRzIG93biByZXZpZXdlZCBlbnRyeS5cbiAqXG4gKiBUaGlzIGxpc3QgYW5zd2VycyBPTkxZIHdoZXRoZXIgYSBicmlkZ2UgaG9zdCBtYXkgdm91Y2ggZm9yIGEgbmV0d29yayBkb21haW5cbiAqIGF0IHJlc29sdmUgdGltZS4gV2hldGhlciBhbiBhcHAgYWN0dWFsbHkgcmUtbGFiZWxzIGluZ2VzdGVkIGFjdG9ycyAoYHJlbGFiZWw6XG4gKiAnZW5hYmxlZCcgfCAncGVuZGluZ19kZWR1cCdgKSBpcyBhIHNlcGFyYXRlIGRlY2lzaW9uIG9uIHRoZSBhcHAncyBicmlkZ2VcbiAqIGVudHJpZXMg4oCUIEFQSSB0cnVzdCBkb2VzIG5vdCBnYXRlIHJlbGFiZWwgdGltaW5nLlxuICpcbiAqIEZPTExPVy1VUDogdGhlIHByb3Blcmx5IE94eS1zaGFwZWQgdmVyc2lvbiBvZiB0aGlzIGlzIGEgc3RhZmYtZ3JhbnRlZFxuICogYEFwcGxpY2F0aW9uYCBjYXBhYmlsaXR5IChzZWUgYHV0aWxzL2FwcGxpY2F0aW9uQ2FwYWJpbGl0aWVzLnRzYCkgdGhhdCBsZXRzIGFcbiAqIHJlZ2lzdGVyZWQgYXBwIGFzc2VydCBicmlkZ2VkIGlkZW50aXRpZXMsIHJlcGxhY2luZyB0aGUgaG9zdCBsaXN0IGVudGlyZWx5LlxuICogVGhhdCB3aWRlbnMgd2hhdCBhIGNvbXByb21pc2VkIGNyZWRlbnRpYWwgY291bGQgY2xhaW0sIHNvIGl0IHdhbnRzIGl0cyBvd25cbiAqIHJldmlldyByYXRoZXIgdGhhbiBiZWluZyBmb2xkZWQgaW50byB0aGlzIGNoYW5nZS5cbiAqL1xuXG5pbXBvcnQgeyBjYW5vbmljYWxGZWRlcmF0aW9uSG9zdCB9IGZyb20gJ0BveHlocS9mZWRlcmF0aW9uJztcblxuLyoqIE9uZSByZXZpZXdlZCBicmlkZ2UgaG9zdCBhbmQgdGhlIHNpbmdsZSBuZXR3b3JrIGl0IGlzIHRydXN0ZWQgdG8gdm91Y2ggZm9yLiAqL1xuZXhwb3J0IGludGVyZmFjZSBGZWRlcmF0aW9uQnJpZGdlVHJ1c3RFbnRyeSB7XG4gIC8qKiBDYW5vbmljYWwgaG9zdCDigJQgbG93ZXJjYXNlLCBiYXJlLCBubyBzY2hlbWUsIG5vIGB3d3cuYC4gKi9cbiAgcmVhZG9ubHkgaG9zdDogc3RyaW5nO1xuICAvKiogVGhlIG5ldHdvcmsgZG9tYWluIHRoaXMgaG9zdCBtYXkgYXNzZXJ0IGFzIGEgZmVkZXJhdGVkIGlkZW50aXR5J3MgZG9tYWluLiAqL1xuICByZWFkb25seSBuZXR3b3JrRG9tYWluOiBzdHJpbmc7XG4gIC8qKiBXaGF0IHdhcyB2ZXJpZmllZCBhYm91dCB0aGUgb3BlcmF0b3IsIGluIG9uZSBzZW50ZW5jZS4gKi9cbiAgcmVhZG9ubHkgcmVhc29uOiBzdHJpbmc7XG4gIC8qKiBgWVlZWS1NTS1ERGAg4oCUIHRoZSBkYXkgdGhlIGVudHJ5IHdhcyByZXZpZXdlZC4gKi9cbiAgcmVhZG9ubHkgc2luY2U6IHN0cmluZztcbn1cblxuLyoqXG4gKiBUSEUgQ09NTUlUVEVEIFRSVVNUIExJU1QuXG4gKlxuICogVGhlIEJpcmRzaXRlTGl2ZSBmYW1pbHkgaXMgZW51bWVyYXRlZCByYXRoZXIgdGhhbiBwYXR0ZXJuLW1hdGNoZWQgb24gc29mdHdhcmVcbiAqIG5hbWU6IHRoZSBzb2Z0d2FyZSBpcyBzZWxmLWhvc3RhYmxlLCBzbyBcInJ1bnMgQmlyZHNpdGVMaXZlXCIgaXMgYSBjbGFpbSBhbnkgaG9zdFxuICogY2FuIG1ha2UgYWJvdXQgaXRzZWxmIGFuZCBpcyBub3QgYSByZWFzb24gdG8gYmVsaWV2ZSBpdHMgYXR0cmlidXRpb25zLlxuICovXG5leHBvcnQgY29uc3QgRkVERVJBVElPTl9CUklER0VfVFJVU1Q6IHJlYWRvbmx5IEZlZGVyYXRpb25CcmlkZ2VUcnVzdEVudHJ5W10gPSBbXG4gIHtcbiAgICBob3N0OiAnYmlyZC5tYWtldXAnLFxuICAgIG5ldHdvcmtEb21haW46ICd4LmNvbScsXG4gICAgcmVhc29uOiAnQmlyZHNpdGVMaXZlIG1pcnJvciBvZiBYIGFjY291bnRzOyBlYWNoIGFjdG9yIHB1Ymxpc2hlcyBhIHJlbD1cIm1lXCIgbGluayB0byB0aGUgWCBwcm9maWxlIGl0IG1pcnJvcnMuJyxcbiAgICBzaW5jZTogJzIwMjYtMDgtMDInLFxuICB9LFxuICB7XG4gICAgaG9zdDogJ2tpbG9ncmFtLm1ha2V1cCcsXG4gICAgbmV0d29ya0RvbWFpbjogJ2luc3RhZ3JhbS5jb20nLFxuICAgIHJlYXNvbjogJ0JpcmRzaXRlTGl2ZSBtaXJyb3Igb2YgSW5zdGFncmFtIGFjY291bnRzIGJ5IHRoZSBiaXJkLm1ha2V1cCBvcGVyYXRvcjsgc2FtZSByZWw9XCJtZVwiIGJhY2tsaW5rLicsXG4gICAgc2luY2U6ICcyMDI2LTA4LTAyJyxcbiAgfSxcbiAge1xuICAgIGhvc3Q6ICdtYXN0b3guZXUnLFxuICAgIG5ldHdvcmtEb21haW46ICd4LmNvbScsXG4gICAgcmVhc29uOiAnTWFzdG9kb24gaW5zdGFuY2UgdGhhdCBleGlzdHMgdG8gbWlycm9yIFggYWNjb3VudHMsIGRlY2xhcmVkIGFzIHN1Y2ggYnkgaXRzIG9wZXJhdG9yOyBtaXJyb3JlZCBhY3RvcnMgY2FycnkgYSBwZXItYWNjb3VudCBib3Qgbm90aWNlLicsXG4gICAgc2luY2U6ICcyMDI2LTA4LTAyJyxcbiAgfSxcbiAge1xuICAgIGhvc3Q6ICdic2t5LmJyaWQuZ3knLFxuICAgIG5ldHdvcmtEb21haW46ICdic2t5LnNvY2lhbCcsXG4gICAgcmVhc29uOiAnQnJpZGd5IEZlZCBvcHQtaW4gQmx1ZXNreSBicmlkZ2U7IGVhY2ggYWN0b3IgY2FycmllcyBpdHMgYXRwcm90byBESUQgaW4gYWxzb0tub3duQXMgYW5kIGEgcmVsPVwibWVcIiBsaW5rIHRvIGl0cyBic2t5LmFwcCBwcm9maWxlLicsXG4gICAgc2luY2U6ICcyMDI2LTA4LTAyJyxcbiAgfSxcbl07XG5cbmNvbnN0IFRSVVNURURfQllfSE9TVDogUmVhZG9ubHlNYXA8c3RyaW5nLCBzdHJpbmc+ID0gbmV3IE1hcChcbiAgRkVERVJBVElPTl9CUklER0VfVFJVU1QubWFwKChlbnRyeSkgPT4gW1xuICAgIGNhbm9uaWNhbEZlZGVyYXRpb25Ib3N0KGVudHJ5Lmhvc3QpLFxuICAgIGNhbm9uaWNhbEZlZGVyYXRpb25Ib3N0KGVudHJ5Lm5ldHdvcmtEb21haW4pLFxuICBdKSxcbik7XG5cbi8qKlxuICogV2hldGhlciBgYWN0b3JIb3N0YCBpcyBhIHJldmlld2VkIGJyaWRnZSB0aGlzIEFQSSB0cnVzdHMgdG8gdm91Y2ggZm9yXG4gKiBgbmV0d29ya0RvbWFpbmAuXG4gKlxuICogQm90aCBoYWx2ZXMgbXVzdCBtYXRjaC4gQSBicmlkZ2UgbWlycm9ycyBPTkUgbmV0d29yaywgc28gYmVpbmcgb24gdGhlIGxpc3QgaXNcbiAqIG5ldmVyIG9uIGl0cyBvd24gYSBsaWNlbmNlIHRvIGNsYWltIGFueSBkb21haW4g4oCUIG90aGVyd2lzZSBhIHNpbmdsZSB0cnVzdGVkXG4gKiBob3N0IGNvdWxkIHJlLWF0dHJpYnV0ZSBhY2NvdW50cyB0byBldmVyeSBuZXR3b3JrIGF0IG9uY2UuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBicmlkZ2VWb3VjaGVzRm9yTmV0d29yayhhY3Rvckhvc3Q6IHN0cmluZywgbmV0d29ya0RvbWFpbjogc3RyaW5nKTogYm9vbGVhbiB7XG4gIGNvbnN0IHRydXN0ZWQgPSBUUlVTVEVEX0JZX0hPU1QuZ2V0KGNhbm9uaWNhbEZlZGVyYXRpb25Ib3N0KGFjdG9ySG9zdCkpO1xuICByZXR1cm4gdHJ1c3RlZCAhPT0gdW5kZWZpbmVkICYmIHRydXN0ZWQgPT09IGNhbm9uaWNhbEZlZGVyYXRpb25Ib3N0KG5ldHdvcmtEb21haW4pO1xufVxuIl0sInZlcnNpb24iOjN9

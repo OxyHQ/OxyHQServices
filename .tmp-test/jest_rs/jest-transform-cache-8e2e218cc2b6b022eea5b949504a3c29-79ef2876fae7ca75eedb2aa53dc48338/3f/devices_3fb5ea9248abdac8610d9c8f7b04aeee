@@ -1,0 +1,101 @@
+fe7d64717a5e012930193b4027813b15
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const devices_controller_1 = require("../controllers/devices.controller");
+const auth_1 = require("../middleware/auth");
+const validate_1 = require("../middleware/validate");
+const devices_schemas_1 = require("../schemas/devices.schemas");
+const router = express_1.default.Router();
+// All device routes require authentication
+router.use(auth_1.authMiddleware);
+/**
+ * @openapi
+ * /devices:
+ *   get:
+ *     tags:
+ *       - Devices
+ *     summary: List the user's devices
+ *     description: >
+ *       Return every device that has at least one active session for the
+ *       authenticated user. Useful for "Where am I signed in?" screens.
+ *     responses:
+ *       200:
+ *         description: List of devices.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Device'
+ *             examples:
+ *               twoDevices:
+ *                 value:
+ *                   - id: dev_64f7c2a1b8e9d3f4a1c2b3d4
+ *                     name: MacBook Pro 16
+ *                     platform: macOS
+ *                     firstSeenAt: '2024-01-15T12:34:56.789Z'
+ *                     lastSeenAt: '2025-05-12T09:00:00.000Z'
+ *                     sessionCount: 2
+ *                   - id: dev_74f7c2a1b8e9d3f4a1c2b3d5
+ *                     name: iPhone 15 Pro
+ *                     platform: iOS
+ *                     firstSeenAt: '2024-02-01T08:00:00.000Z'
+ *                     lastSeenAt: '2025-05-12T08:55:00.000Z'
+ *                     sessionCount: 1
+ *       401:
+ *         description: Missing or invalid bearer token.
+ */
+router.get('/', devices_controller_1.DevicesController.getUserDevices);
+/**
+ * @openapi
+ * /devices/security:
+ *   get:
+ *     tags:
+ *       - Devices
+ *       - Security
+ *     summary: Get aggregate security info for the user's devices
+ *     description: >
+ *       Return high-level security signals across the user's devices
+ *       (count of active sessions, unusual logins, last suspicious activity,
+ *       etc.). Used to surface a security health summary on the account
+ *       dashboard.
+ *     responses:
+ *       200:
+ *         description: Security info payload.
+ *       401:
+ *         description: Missing or invalid bearer token.
+ */
+router.get('/security', devices_controller_1.DevicesController.getSecurityInfo);
+/**
+ * @openapi
+ * /devices/{deviceId}:
+ *   delete:
+ *     tags:
+ *       - Devices
+ *     summary: Remove a device
+ *     description: >
+ *       Revoke every active session attached to the given device. The user
+ *       on that device will be signed out the next time their client tries
+ *       to refresh its access token.
+ *     parameters:
+ *       - name: deviceId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: dev_64f7c2a1b8e9d3f4a1c2b3d4
+ *     responses:
+ *       200:
+ *         description: Device removed.
+ *       401:
+ *         description: Missing or invalid bearer token.
+ *       404:
+ *         description: Device not found.
+ */
+router.delete('/:deviceId', (0, validate_1.validate)({ params: devices_schemas_1.deviceIdParams }), devices_controller_1.DevicesController.removeDevice);
+exports.default = router;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcm91dGVzL2RldmljZXMudHMiLCJtYXBwaW5ncyI6Ijs7Ozs7QUFBQSxzREFBOEI7QUFDOUIsMEVBQXNFO0FBQ3RFLDZDQUFvRDtBQUNwRCxxREFBa0Q7QUFDbEQsZ0VBQTREO0FBRTVELE1BQU0sTUFBTSxHQUFHLGlCQUFPLENBQUMsTUFBTSxFQUFFLENBQUM7QUFFaEMsMkNBQTJDO0FBQzNDLE1BQU0sQ0FBQyxHQUFHLENBQUMscUJBQWMsQ0FBQyxDQUFDO0FBRTNCOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0FvQ0c7QUFDSCxNQUFNLENBQUMsR0FBRyxDQUFDLEdBQUcsRUFBRSxzQ0FBaUIsQ0FBQyxjQUFjLENBQUMsQ0FBQztBQUVsRDs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBa0JHO0FBQ0gsTUFBTSxDQUFDLEdBQUcsQ0FBQyxXQUFXLEVBQUUsc0NBQWlCLENBQUMsZUFBZSxDQUFDLENBQUM7QUFFM0Q7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0F5Qkc7QUFDSCxNQUFNLENBQUMsTUFBTSxDQUFDLFlBQVksRUFBRSxJQUFBLG1CQUFRLEVBQUMsRUFBRSxNQUFNLEVBQUUsZ0NBQWMsRUFBRSxDQUFDLEVBQUUsc0NBQWlCLENBQUMsWUFBWSxDQUFDLENBQUM7QUFFbEcsa0JBQWUsTUFBTSxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3JvdXRlcy9kZXZpY2VzLnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCBleHByZXNzIGZyb20gJ2V4cHJlc3MnO1xuaW1wb3J0IHsgRGV2aWNlc0NvbnRyb2xsZXIgfSBmcm9tICcuLi9jb250cm9sbGVycy9kZXZpY2VzLmNvbnRyb2xsZXInO1xuaW1wb3J0IHsgYXV0aE1pZGRsZXdhcmUgfSBmcm9tICcuLi9taWRkbGV3YXJlL2F1dGgnO1xuaW1wb3J0IHsgdmFsaWRhdGUgfSBmcm9tICcuLi9taWRkbGV3YXJlL3ZhbGlkYXRlJztcbmltcG9ydCB7IGRldmljZUlkUGFyYW1zIH0gZnJvbSAnLi4vc2NoZW1hcy9kZXZpY2VzLnNjaGVtYXMnO1xuXG5jb25zdCByb3V0ZXIgPSBleHByZXNzLlJvdXRlcigpO1xuXG4vLyBBbGwgZGV2aWNlIHJvdXRlcyByZXF1aXJlIGF1dGhlbnRpY2F0aW9uXG5yb3V0ZXIudXNlKGF1dGhNaWRkbGV3YXJlKTtcblxuLyoqXG4gKiBAb3BlbmFwaVxuICogL2RldmljZXM6XG4gKiAgIGdldDpcbiAqICAgICB0YWdzOlxuICogICAgICAgLSBEZXZpY2VzXG4gKiAgICAgc3VtbWFyeTogTGlzdCB0aGUgdXNlcidzIGRldmljZXNcbiAqICAgICBkZXNjcmlwdGlvbjogPlxuICogICAgICAgUmV0dXJuIGV2ZXJ5IGRldmljZSB0aGF0IGhhcyBhdCBsZWFzdCBvbmUgYWN0aXZlIHNlc3Npb24gZm9yIHRoZVxuICogICAgICAgYXV0aGVudGljYXRlZCB1c2VyLiBVc2VmdWwgZm9yIFwiV2hlcmUgYW0gSSBzaWduZWQgaW4/XCIgc2NyZWVucy5cbiAqICAgICByZXNwb25zZXM6XG4gKiAgICAgICAyMDA6XG4gKiAgICAgICAgIGRlc2NyaXB0aW9uOiBMaXN0IG9mIGRldmljZXMuXG4gKiAgICAgICAgIGNvbnRlbnQ6XG4gKiAgICAgICAgICAgYXBwbGljYXRpb24vanNvbjpcbiAqICAgICAgICAgICAgIHNjaGVtYTpcbiAqICAgICAgICAgICAgICAgdHlwZTogYXJyYXlcbiAqICAgICAgICAgICAgICAgaXRlbXM6XG4gKiAgICAgICAgICAgICAgICAgJHJlZjogJyMvY29tcG9uZW50cy9zY2hlbWFzL0RldmljZSdcbiAqICAgICAgICAgICAgIGV4YW1wbGVzOlxuICogICAgICAgICAgICAgICB0d29EZXZpY2VzOlxuICogICAgICAgICAgICAgICAgIHZhbHVlOlxuICogICAgICAgICAgICAgICAgICAgLSBpZDogZGV2XzY0ZjdjMmExYjhlOWQzZjRhMWMyYjNkNFxuICogICAgICAgICAgICAgICAgICAgICBuYW1lOiBNYWNCb29rIFBybyAxNlxuICogICAgICAgICAgICAgICAgICAgICBwbGF0Zm9ybTogbWFjT1NcbiAqICAgICAgICAgICAgICAgICAgICAgZmlyc3RTZWVuQXQ6ICcyMDI0LTAxLTE1VDEyOjM0OjU2Ljc4OVonXG4gKiAgICAgICAgICAgICAgICAgICAgIGxhc3RTZWVuQXQ6ICcyMDI1LTA1LTEyVDA5OjAwOjAwLjAwMFonXG4gKiAgICAgICAgICAgICAgICAgICAgIHNlc3Npb25Db3VudDogMlxuICogICAgICAgICAgICAgICAgICAgLSBpZDogZGV2Xzc0ZjdjMmExYjhlOWQzZjRhMWMyYjNkNVxuICogICAgICAgICAgICAgICAgICAgICBuYW1lOiBpUGhvbmUgMTUgUHJvXG4gKiAgICAgICAgICAgICAgICAgICAgIHBsYXRmb3JtOiBpT1NcbiAqICAgICAgICAgICAgICAgICAgICAgZmlyc3RTZWVuQXQ6ICcyMDI0LTAyLTAxVDA4OjAwOjAwLjAwMFonXG4gKiAgICAgICAgICAgICAgICAgICAgIGxhc3RTZWVuQXQ6ICcyMDI1LTA1LTEyVDA4OjU1OjAwLjAwMFonXG4gKiAgICAgICAgICAgICAgICAgICAgIHNlc3Npb25Db3VudDogMVxuICogICAgICAgNDAxOlxuICogICAgICAgICBkZXNjcmlwdGlvbjogTWlzc2luZyBvciBpbnZhbGlkIGJlYXJlciB0b2tlbi5cbiAqL1xucm91dGVyLmdldCgnLycsIERldmljZXNDb250cm9sbGVyLmdldFVzZXJEZXZpY2VzKTtcblxuLyoqXG4gKiBAb3BlbmFwaVxuICogL2RldmljZXMvc2VjdXJpdHk6XG4gKiAgIGdldDpcbiAqICAgICB0YWdzOlxuICogICAgICAgLSBEZXZpY2VzXG4gKiAgICAgICAtIFNlY3VyaXR5XG4gKiAgICAgc3VtbWFyeTogR2V0IGFnZ3JlZ2F0ZSBzZWN1cml0eSBpbmZvIGZvciB0aGUgdXNlcidzIGRldmljZXNcbiAqICAgICBkZXNjcmlwdGlvbjogPlxuICogICAgICAgUmV0dXJuIGhpZ2gtbGV2ZWwgc2VjdXJpdHkgc2lnbmFscyBhY3Jvc3MgdGhlIHVzZXIncyBkZXZpY2VzXG4gKiAgICAgICAoY291bnQgb2YgYWN0aXZlIHNlc3Npb25zLCB1bnVzdWFsIGxvZ2lucywgbGFzdCBzdXNwaWNpb3VzIGFjdGl2aXR5LFxuICogICAgICAgZXRjLikuIFVzZWQgdG8gc3VyZmFjZSBhIHNlY3VyaXR5IGhlYWx0aCBzdW1tYXJ5IG9uIHRoZSBhY2NvdW50XG4gKiAgICAgICBkYXNoYm9hcmQuXG4gKiAgICAgcmVzcG9uc2VzOlxuICogICAgICAgMjAwOlxuICogICAgICAgICBkZXNjcmlwdGlvbjogU2VjdXJpdHkgaW5mbyBwYXlsb2FkLlxuICogICAgICAgNDAxOlxuICogICAgICAgICBkZXNjcmlwdGlvbjogTWlzc2luZyBvciBpbnZhbGlkIGJlYXJlciB0b2tlbi5cbiAqL1xucm91dGVyLmdldCgnL3NlY3VyaXR5JywgRGV2aWNlc0NvbnRyb2xsZXIuZ2V0U2VjdXJpdHlJbmZvKTtcblxuLyoqXG4gKiBAb3BlbmFwaVxuICogL2RldmljZXMve2RldmljZUlkfTpcbiAqICAgZGVsZXRlOlxuICogICAgIHRhZ3M6XG4gKiAgICAgICAtIERldmljZXNcbiAqICAgICBzdW1tYXJ5OiBSZW1vdmUgYSBkZXZpY2VcbiAqICAgICBkZXNjcmlwdGlvbjogPlxuICogICAgICAgUmV2b2tlIGV2ZXJ5IGFjdGl2ZSBzZXNzaW9uIGF0dGFjaGVkIHRvIHRoZSBnaXZlbiBkZXZpY2UuIFRoZSB1c2VyXG4gKiAgICAgICBvbiB0aGF0IGRldmljZSB3aWxsIGJlIHNpZ25lZCBvdXQgdGhlIG5leHQgdGltZSB0aGVpciBjbGllbnQgdHJpZXNcbiAqICAgICAgIHRvIHJlZnJlc2ggaXRzIGFjY2VzcyB0b2tlbi5cbiAqICAgICBwYXJhbWV0ZXJzOlxuICogICAgICAgLSBuYW1lOiBkZXZpY2VJZFxuICogICAgICAgICBpbjogcGF0aFxuICogICAgICAgICByZXF1aXJlZDogdHJ1ZVxuICogICAgICAgICBzY2hlbWE6XG4gKiAgICAgICAgICAgdHlwZTogc3RyaW5nXG4gKiAgICAgICAgICAgZXhhbXBsZTogZGV2XzY0ZjdjMmExYjhlOWQzZjRhMWMyYjNkNFxuICogICAgIHJlc3BvbnNlczpcbiAqICAgICAgIDIwMDpcbiAqICAgICAgICAgZGVzY3JpcHRpb246IERldmljZSByZW1vdmVkLlxuICogICAgICAgNDAxOlxuICogICAgICAgICBkZXNjcmlwdGlvbjogTWlzc2luZyBvciBpbnZhbGlkIGJlYXJlciB0b2tlbi5cbiAqICAgICAgIDQwNDpcbiAqICAgICAgICAgZGVzY3JpcHRpb246IERldmljZSBub3QgZm91bmQuXG4gKi9cbnJvdXRlci5kZWxldGUoJy86ZGV2aWNlSWQnLCB2YWxpZGF0ZSh7IHBhcmFtczogZGV2aWNlSWRQYXJhbXMgfSksIERldmljZXNDb250cm9sbGVyLnJlbW92ZURldmljZSk7XG5cbmV4cG9ydCBkZWZhdWx0IHJvdXRlcjtcbiJdLCJ2ZXJzaW9uIjozfQ==

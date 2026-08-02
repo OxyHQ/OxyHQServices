@@ -1,0 +1,35 @@
+a55117119b94db57f8288676b200db18
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isStaffUser = exports.requireStaff = void 0;
+/**
+ * Platform staff guard.
+ *
+ * Requires the authenticated user to carry the `isStaff` flag on their User
+ * document (set in the DB by a platform administrator only — there is no
+ * self-service route to grant it). Used to gate staff-only operations such as
+ * editing an Application's `type` / `isOfficial` / `isInternal` / `capabilities`
+ * fields, which are NOT grantable through any application membership role.
+ *
+ * MUST run after `authMiddleware` so `req.user` is populated.
+ */
+const requireStaff = (req, res, next) => {
+    var _a;
+    if (((_a = req.user) === null || _a === void 0 ? void 0 : _a.isStaff) === true) {
+        next();
+        return;
+    }
+    res.status(403).json({
+        error: 'Forbidden',
+        message: 'This operation requires Oxy platform staff privileges',
+    });
+};
+exports.requireStaff = requireStaff;
+/**
+ * Predicate form of the staff guard for inline checks inside a handler (e.g.
+ * silently ignoring staff-only fields on a normal update path rather than
+ * rejecting the whole request).
+ */
+const isStaffUser = (req) => { var _a; return ((_a = req.user) === null || _a === void 0 ? void 0 : _a.isStaff) === true; };
+exports.isStaffUser = isStaffUser;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvbWlkZGxld2FyZS9yZXF1aXJlU3RhZmYudHMiLCJtYXBwaW5ncyI6Ijs7O0FBR0E7Ozs7Ozs7Ozs7R0FVRztBQUNJLE1BQU0sWUFBWSxHQUFHLENBQUMsR0FBZ0IsRUFBRSxHQUFhLEVBQUUsSUFBa0IsRUFBUSxFQUFFOztJQUN4RixJQUFJLENBQUEsTUFBQSxHQUFHLENBQUMsSUFBSSwwQ0FBRSxPQUFPLE1BQUssSUFBSSxFQUFFLENBQUM7UUFDL0IsSUFBSSxFQUFFLENBQUM7UUFDUCxPQUFPO0lBQ1QsQ0FBQztJQUNELEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxDQUFDO1FBQ25CLEtBQUssRUFBRSxXQUFXO1FBQ2xCLE9BQU8sRUFBRSx1REFBdUQ7S0FDakUsQ0FBQyxDQUFDO0FBQ0wsQ0FBQyxDQUFDO0FBVFcsUUFBQSxZQUFZLGdCQVN2QjtBQUVGOzs7O0dBSUc7QUFDSSxNQUFNLFdBQVcsR0FBRyxDQUFDLEdBQWdCLEVBQVcsRUFBRSxXQUFDLE9BQUEsQ0FBQSxNQUFBLEdBQUcsQ0FBQyxJQUFJLDBDQUFFLE9BQU8sTUFBSyxJQUFJLENBQUEsRUFBQSxDQUFDO0FBQXhFLFFBQUEsV0FBVyxlQUE2RCIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9taWRkbGV3YXJlL3JlcXVpcmVTdGFmZi50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgdHlwZSB7IFJlc3BvbnNlLCBOZXh0RnVuY3Rpb24gfSBmcm9tICdleHByZXNzJztcbmltcG9ydCB0eXBlIHsgQXV0aFJlcXVlc3QgfSBmcm9tICcuL2F1dGgnO1xuXG4vKipcbiAqIFBsYXRmb3JtIHN0YWZmIGd1YXJkLlxuICpcbiAqIFJlcXVpcmVzIHRoZSBhdXRoZW50aWNhdGVkIHVzZXIgdG8gY2FycnkgdGhlIGBpc1N0YWZmYCBmbGFnIG9uIHRoZWlyIFVzZXJcbiAqIGRvY3VtZW50IChzZXQgaW4gdGhlIERCIGJ5IGEgcGxhdGZvcm0gYWRtaW5pc3RyYXRvciBvbmx5IOKAlCB0aGVyZSBpcyBub1xuICogc2VsZi1zZXJ2aWNlIHJvdXRlIHRvIGdyYW50IGl0KS4gVXNlZCB0byBnYXRlIHN0YWZmLW9ubHkgb3BlcmF0aW9ucyBzdWNoIGFzXG4gKiBlZGl0aW5nIGFuIEFwcGxpY2F0aW9uJ3MgYHR5cGVgIC8gYGlzT2ZmaWNpYWxgIC8gYGlzSW50ZXJuYWxgIC8gYGNhcGFiaWxpdGllc2BcbiAqIGZpZWxkcywgd2hpY2ggYXJlIE5PVCBncmFudGFibGUgdGhyb3VnaCBhbnkgYXBwbGljYXRpb24gbWVtYmVyc2hpcCByb2xlLlxuICpcbiAqIE1VU1QgcnVuIGFmdGVyIGBhdXRoTWlkZGxld2FyZWAgc28gYHJlcS51c2VyYCBpcyBwb3B1bGF0ZWQuXG4gKi9cbmV4cG9ydCBjb25zdCByZXF1aXJlU3RhZmYgPSAocmVxOiBBdXRoUmVxdWVzdCwgcmVzOiBSZXNwb25zZSwgbmV4dDogTmV4dEZ1bmN0aW9uKTogdm9pZCA9PiB7XG4gIGlmIChyZXEudXNlcj8uaXNTdGFmZiA9PT0gdHJ1ZSkge1xuICAgIG5leHQoKTtcbiAgICByZXR1cm47XG4gIH1cbiAgcmVzLnN0YXR1cyg0MDMpLmpzb24oe1xuICAgIGVycm9yOiAnRm9yYmlkZGVuJyxcbiAgICBtZXNzYWdlOiAnVGhpcyBvcGVyYXRpb24gcmVxdWlyZXMgT3h5IHBsYXRmb3JtIHN0YWZmIHByaXZpbGVnZXMnLFxuICB9KTtcbn07XG5cbi8qKlxuICogUHJlZGljYXRlIGZvcm0gb2YgdGhlIHN0YWZmIGd1YXJkIGZvciBpbmxpbmUgY2hlY2tzIGluc2lkZSBhIGhhbmRsZXIgKGUuZy5cbiAqIHNpbGVudGx5IGlnbm9yaW5nIHN0YWZmLW9ubHkgZmllbGRzIG9uIGEgbm9ybWFsIHVwZGF0ZSBwYXRoIHJhdGhlciB0aGFuXG4gKiByZWplY3RpbmcgdGhlIHdob2xlIHJlcXVlc3QpLlxuICovXG5leHBvcnQgY29uc3QgaXNTdGFmZlVzZXIgPSAocmVxOiBBdXRoUmVxdWVzdCk6IGJvb2xlYW4gPT4gcmVxLnVzZXI/LmlzU3RhZmYgPT09IHRydWU7XG4iXSwidmVyc2lvbiI6M30=

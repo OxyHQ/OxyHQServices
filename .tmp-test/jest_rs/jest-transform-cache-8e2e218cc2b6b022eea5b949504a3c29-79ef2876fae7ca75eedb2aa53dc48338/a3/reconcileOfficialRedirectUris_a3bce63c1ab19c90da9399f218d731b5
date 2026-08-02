@@ -1,0 +1,84 @@
+8505241d3f8512997bbbe3d2f9aa9b75
+"use strict";
+/**
+ * Self-heal official Application redirect URIs when missing or drifted.
+ *
+ * Production drift blocks `POST /auth/oauth/authorize` with
+ * "redirect_uri is not registered for this client", breaking password sign-in
+ * hand-offs from every first-party app. Official apps declare a `websiteUrl`
+ * whose origin is the canonical OAuth redirect surface.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.reconcileOfficialRedirectUris = reconcileOfficialRedirectUris;
+const drizzle_orm_1 = require("drizzle-orm");
+const postgres_1 = require("./postgres");
+const dbConnection_1 = require("../utils/dbConnection");
+const applications_1 = require("../db/schema/applications");
+const redirectUris_1 = require("../utils/redirectUris");
+const logger_1 = require("../utils/logger");
+const trustedApplication_1 = require("../utils/trustedApplication");
+/**
+ * The columns the repair decision reads plus the id it writes back by.
+ *
+ * Named explicitly rather than `select()`-ing the table, for the same reason
+ * the origin registry does: this job decides on six fields and has no business
+ * loading the rest of an application row.
+ */
+const REPAIR_COLUMNS = {
+    id: applications_1.applications.id,
+    name: applications_1.applications.name,
+    type: applications_1.applications.type,
+    isOfficial: applications_1.applications.isOfficial,
+    isInternal: applications_1.applications.isInternal,
+    websiteUrl: applications_1.applications.websiteUrl,
+    redirectUris: applications_1.applications.redirectUris,
+};
+function reconcileOfficialRedirectUris() {
+    return __awaiter(this, void 0, void 0, function* () {
+        // Runs from startup and from `refreshOriginRegistry`, both of which can fire
+        // before the pool is open. `getDb()` throws when called early, so the
+        // synchronous check is the guard.
+        if (!(0, dbConnection_1.isDatabaseConnected)()) {
+            return 0;
+        }
+        const db = (0, postgres_1.getDb)();
+        const apps = yield db
+            .select(REPAIR_COLUMNS)
+            .from(applications_1.applications)
+            .where((0, drizzle_orm_1.eq)(applications_1.applications.status, 'active'));
+        let repaired = 0;
+        for (const app of apps) {
+            if (!(0, trustedApplication_1.isTrustedApplication)(app))
+                continue;
+            // `websiteUrl` is NULL in Postgres where Mongo left it absent. Both mean "no
+            // canonical redirect surface declared" and the repair already accepts
+            // either, so the NULL travels rather than being laundered into `undefined`.
+            const repairedUris = (0, redirectUris_1.computeOfficialRedirectUriRepair)(app.redirectUris, app.websiteUrl);
+            if (!repairedUris)
+                continue;
+            // A targeted column update replaces Mongoose's load-mutate-`save()`: the
+            // document round trip existed only because Mongoose needed a hydrated doc
+            // to write one field.
+            yield db
+                .update(applications_1.applications)
+                .set({ redirectUris: repairedUris })
+                .where((0, drizzle_orm_1.eq)(applications_1.applications.id, app.id));
+            repaired += 1;
+            logger_1.logger.info('[reconcileOfficialRedirectUris] restored redirectUris', {
+                name: app.name,
+                redirectUris: repairedUris,
+            });
+        }
+        return repaired;
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY29uZmlnL3JlY29uY2lsZU9mZmljaWFsUmVkaXJlY3RVcmlzLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7OztHQU9HOzs7Ozs7Ozs7OztBQTJCSCxzRUF1Q0M7QUFoRUQsNkNBQWlDO0FBQ2pDLHlDQUFtQztBQUNuQyx3REFBNEQ7QUFDNUQsNERBQXlEO0FBQ3pELHdEQUF5RTtBQUN6RSw0Q0FBeUM7QUFDekMsb0VBQW1FO0FBRW5FOzs7Ozs7R0FNRztBQUNILE1BQU0sY0FBYyxHQUFHO0lBQ3JCLEVBQUUsRUFBRSwyQkFBWSxDQUFDLEVBQUU7SUFDbkIsSUFBSSxFQUFFLDJCQUFZLENBQUMsSUFBSTtJQUN2QixJQUFJLEVBQUUsMkJBQVksQ0FBQyxJQUFJO0lBQ3ZCLFVBQVUsRUFBRSwyQkFBWSxDQUFDLFVBQVU7SUFDbkMsVUFBVSxFQUFFLDJCQUFZLENBQUMsVUFBVTtJQUNuQyxVQUFVLEVBQUUsMkJBQVksQ0FBQyxVQUFVO0lBQ25DLFlBQVksRUFBRSwyQkFBWSxDQUFDLFlBQVk7Q0FDL0IsQ0FBQztBQUVYLFNBQXNCLDZCQUE2Qjs7UUFDakQsNkVBQTZFO1FBQzdFLHNFQUFzRTtRQUN0RSxrQ0FBa0M7UUFDbEMsSUFBSSxDQUFDLElBQUEsa0NBQW1CLEdBQUUsRUFBRSxDQUFDO1lBQzNCLE9BQU8sQ0FBQyxDQUFDO1FBQ1gsQ0FBQztRQUVELE1BQU0sRUFBRSxHQUFHLElBQUEsZ0JBQUssR0FBRSxDQUFDO1FBQ25CLE1BQU0sSUFBSSxHQUFHLE1BQU0sRUFBRTthQUNsQixNQUFNLENBQUMsY0FBYyxDQUFDO2FBQ3RCLElBQUksQ0FBQywyQkFBWSxDQUFDO2FBQ2xCLEtBQUssQ0FBQyxJQUFBLGdCQUFFLEVBQUMsMkJBQVksQ0FBQyxNQUFNLEVBQUUsUUFBUSxDQUFDLENBQUMsQ0FBQztRQUU1QyxJQUFJLFFBQVEsR0FBRyxDQUFDLENBQUM7UUFDakIsS0FBSyxNQUFNLEdBQUcsSUFBSSxJQUFJLEVBQUUsQ0FBQztZQUN2QixJQUFJLENBQUMsSUFBQSx5Q0FBb0IsRUFBQyxHQUFHLENBQUM7Z0JBQUUsU0FBUztZQUV6Qyw2RUFBNkU7WUFDN0Usc0VBQXNFO1lBQ3RFLDRFQUE0RTtZQUM1RSxNQUFNLFlBQVksR0FBRyxJQUFBLCtDQUFnQyxFQUFDLEdBQUcsQ0FBQyxZQUFZLEVBQUUsR0FBRyxDQUFDLFVBQVUsQ0FBQyxDQUFDO1lBQ3hGLElBQUksQ0FBQyxZQUFZO2dCQUFFLFNBQVM7WUFFNUIseUVBQXlFO1lBQ3pFLDBFQUEwRTtZQUMxRSxzQkFBc0I7WUFDdEIsTUFBTSxFQUFFO2lCQUNMLE1BQU0sQ0FBQywyQkFBWSxDQUFDO2lCQUNwQixHQUFHLENBQUMsRUFBRSxZQUFZLEVBQUUsWUFBWSxFQUFFLENBQUM7aUJBQ25DLEtBQUssQ0FBQyxJQUFBLGdCQUFFLEVBQUMsMkJBQVksQ0FBQyxFQUFFLEVBQUUsR0FBRyxDQUFDLEVBQUUsQ0FBQyxDQUFDLENBQUM7WUFDdEMsUUFBUSxJQUFJLENBQUMsQ0FBQztZQUNkLGVBQU0sQ0FBQyxJQUFJLENBQUMsdURBQXVELEVBQUU7Z0JBQ25FLElBQUksRUFBRSxHQUFHLENBQUMsSUFBSTtnQkFDZCxZQUFZLEVBQUUsWUFBWTthQUMzQixDQUFDLENBQUM7UUFDTCxDQUFDO1FBRUQsT0FBTyxRQUFRLENBQUM7SUFDbEIsQ0FBQztDQUFBIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL2NvbmZpZy9yZWNvbmNpbGVPZmZpY2lhbFJlZGlyZWN0VXJpcy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIFNlbGYtaGVhbCBvZmZpY2lhbCBBcHBsaWNhdGlvbiByZWRpcmVjdCBVUklzIHdoZW4gbWlzc2luZyBvciBkcmlmdGVkLlxuICpcbiAqIFByb2R1Y3Rpb24gZHJpZnQgYmxvY2tzIGBQT1NUIC9hdXRoL29hdXRoL2F1dGhvcml6ZWAgd2l0aFxuICogXCJyZWRpcmVjdF91cmkgaXMgbm90IHJlZ2lzdGVyZWQgZm9yIHRoaXMgY2xpZW50XCIsIGJyZWFraW5nIHBhc3N3b3JkIHNpZ24taW5cbiAqIGhhbmQtb2ZmcyBmcm9tIGV2ZXJ5IGZpcnN0LXBhcnR5IGFwcC4gT2ZmaWNpYWwgYXBwcyBkZWNsYXJlIGEgYHdlYnNpdGVVcmxgXG4gKiB3aG9zZSBvcmlnaW4gaXMgdGhlIGNhbm9uaWNhbCBPQXV0aCByZWRpcmVjdCBzdXJmYWNlLlxuICovXG5cbmltcG9ydCB7IGVxIH0gZnJvbSAnZHJpenpsZS1vcm0nO1xuaW1wb3J0IHsgZ2V0RGIgfSBmcm9tICcuL3Bvc3RncmVzJztcbmltcG9ydCB7IGlzRGF0YWJhc2VDb25uZWN0ZWQgfSBmcm9tICcuLi91dGlscy9kYkNvbm5lY3Rpb24nO1xuaW1wb3J0IHsgYXBwbGljYXRpb25zIH0gZnJvbSAnLi4vZGIvc2NoZW1hL2FwcGxpY2F0aW9ucyc7XG5pbXBvcnQgeyBjb21wdXRlT2ZmaWNpYWxSZWRpcmVjdFVyaVJlcGFpciB9IGZyb20gJy4uL3V0aWxzL3JlZGlyZWN0VXJpcyc7XG5pbXBvcnQgeyBsb2dnZXIgfSBmcm9tICcuLi91dGlscy9sb2dnZXInO1xuaW1wb3J0IHsgaXNUcnVzdGVkQXBwbGljYXRpb24gfSBmcm9tICcuLi91dGlscy90cnVzdGVkQXBwbGljYXRpb24nO1xuXG4vKipcbiAqIFRoZSBjb2x1bW5zIHRoZSByZXBhaXIgZGVjaXNpb24gcmVhZHMgcGx1cyB0aGUgaWQgaXQgd3JpdGVzIGJhY2sgYnkuXG4gKlxuICogTmFtZWQgZXhwbGljaXRseSByYXRoZXIgdGhhbiBgc2VsZWN0KClgLWluZyB0aGUgdGFibGUsIGZvciB0aGUgc2FtZSByZWFzb25cbiAqIHRoZSBvcmlnaW4gcmVnaXN0cnkgZG9lczogdGhpcyBqb2IgZGVjaWRlcyBvbiBzaXggZmllbGRzIGFuZCBoYXMgbm8gYnVzaW5lc3NcbiAqIGxvYWRpbmcgdGhlIHJlc3Qgb2YgYW4gYXBwbGljYXRpb24gcm93LlxuICovXG5jb25zdCBSRVBBSVJfQ09MVU1OUyA9IHtcbiAgaWQ6IGFwcGxpY2F0aW9ucy5pZCxcbiAgbmFtZTogYXBwbGljYXRpb25zLm5hbWUsXG4gIHR5cGU6IGFwcGxpY2F0aW9ucy50eXBlLFxuICBpc09mZmljaWFsOiBhcHBsaWNhdGlvbnMuaXNPZmZpY2lhbCxcbiAgaXNJbnRlcm5hbDogYXBwbGljYXRpb25zLmlzSW50ZXJuYWwsXG4gIHdlYnNpdGVVcmw6IGFwcGxpY2F0aW9ucy53ZWJzaXRlVXJsLFxuICByZWRpcmVjdFVyaXM6IGFwcGxpY2F0aW9ucy5yZWRpcmVjdFVyaXMsXG59IGFzIGNvbnN0O1xuXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gcmVjb25jaWxlT2ZmaWNpYWxSZWRpcmVjdFVyaXMoKTogUHJvbWlzZTxudW1iZXI+IHtcbiAgLy8gUnVucyBmcm9tIHN0YXJ0dXAgYW5kIGZyb20gYHJlZnJlc2hPcmlnaW5SZWdpc3RyeWAsIGJvdGggb2Ygd2hpY2ggY2FuIGZpcmVcbiAgLy8gYmVmb3JlIHRoZSBwb29sIGlzIG9wZW4uIGBnZXREYigpYCB0aHJvd3Mgd2hlbiBjYWxsZWQgZWFybHksIHNvIHRoZVxuICAvLyBzeW5jaHJvbm91cyBjaGVjayBpcyB0aGUgZ3VhcmQuXG4gIGlmICghaXNEYXRhYmFzZUNvbm5lY3RlZCgpKSB7XG4gICAgcmV0dXJuIDA7XG4gIH1cblxuICBjb25zdCBkYiA9IGdldERiKCk7XG4gIGNvbnN0IGFwcHMgPSBhd2FpdCBkYlxuICAgIC5zZWxlY3QoUkVQQUlSX0NPTFVNTlMpXG4gICAgLmZyb20oYXBwbGljYXRpb25zKVxuICAgIC53aGVyZShlcShhcHBsaWNhdGlvbnMuc3RhdHVzLCAnYWN0aXZlJykpO1xuXG4gIGxldCByZXBhaXJlZCA9IDA7XG4gIGZvciAoY29uc3QgYXBwIG9mIGFwcHMpIHtcbiAgICBpZiAoIWlzVHJ1c3RlZEFwcGxpY2F0aW9uKGFwcCkpIGNvbnRpbnVlO1xuXG4gICAgLy8gYHdlYnNpdGVVcmxgIGlzIE5VTEwgaW4gUG9zdGdyZXMgd2hlcmUgTW9uZ28gbGVmdCBpdCBhYnNlbnQuIEJvdGggbWVhbiBcIm5vXG4gICAgLy8gY2Fub25pY2FsIHJlZGlyZWN0IHN1cmZhY2UgZGVjbGFyZWRcIiBhbmQgdGhlIHJlcGFpciBhbHJlYWR5IGFjY2VwdHNcbiAgICAvLyBlaXRoZXIsIHNvIHRoZSBOVUxMIHRyYXZlbHMgcmF0aGVyIHRoYW4gYmVpbmcgbGF1bmRlcmVkIGludG8gYHVuZGVmaW5lZGAuXG4gICAgY29uc3QgcmVwYWlyZWRVcmlzID0gY29tcHV0ZU9mZmljaWFsUmVkaXJlY3RVcmlSZXBhaXIoYXBwLnJlZGlyZWN0VXJpcywgYXBwLndlYnNpdGVVcmwpO1xuICAgIGlmICghcmVwYWlyZWRVcmlzKSBjb250aW51ZTtcblxuICAgIC8vIEEgdGFyZ2V0ZWQgY29sdW1uIHVwZGF0ZSByZXBsYWNlcyBNb25nb29zZSdzIGxvYWQtbXV0YXRlLWBzYXZlKClgOiB0aGVcbiAgICAvLyBkb2N1bWVudCByb3VuZCB0cmlwIGV4aXN0ZWQgb25seSBiZWNhdXNlIE1vbmdvb3NlIG5lZWRlZCBhIGh5ZHJhdGVkIGRvY1xuICAgIC8vIHRvIHdyaXRlIG9uZSBmaWVsZC5cbiAgICBhd2FpdCBkYlxuICAgICAgLnVwZGF0ZShhcHBsaWNhdGlvbnMpXG4gICAgICAuc2V0KHsgcmVkaXJlY3RVcmlzOiByZXBhaXJlZFVyaXMgfSlcbiAgICAgIC53aGVyZShlcShhcHBsaWNhdGlvbnMuaWQsIGFwcC5pZCkpO1xuICAgIHJlcGFpcmVkICs9IDE7XG4gICAgbG9nZ2VyLmluZm8oJ1tyZWNvbmNpbGVPZmZpY2lhbFJlZGlyZWN0VXJpc10gcmVzdG9yZWQgcmVkaXJlY3RVcmlzJywge1xuICAgICAgbmFtZTogYXBwLm5hbWUsXG4gICAgICByZWRpcmVjdFVyaXM6IHJlcGFpcmVkVXJpcyxcbiAgICB9KTtcbiAgfVxuXG4gIHJldHVybiByZXBhaXJlZDtcbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

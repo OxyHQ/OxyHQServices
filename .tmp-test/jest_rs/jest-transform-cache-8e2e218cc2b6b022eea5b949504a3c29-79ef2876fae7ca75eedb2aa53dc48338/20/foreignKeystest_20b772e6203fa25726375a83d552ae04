@@ -1,0 +1,141 @@
+9d14cd9a79784ecc046bdfca44e61856
+"use strict";
+/**
+ * Foreign-key coverage gate.
+ *
+ * The migration lands table by table, so some foreign keys cannot be declared
+ * yet — their parent table does not exist. `deferredForeignKeys.ts` records each
+ * one as data; this file turns that record into a gate with two properties:
+ *
+ *   1. A deferred foreign key becomes MANDATORY the moment its parent table
+ *      appears in the schema barrel. Whoever lands `users` gets a red test
+ *      naming every column that must now reference it — the FK cannot be
+ *      quietly forgotten, and the ledger empties itself as the port completes.
+ *   2. A NEW id-shaped column cannot arrive unclassified. It must have a real
+ *      constraint, or be in one of the two ledgers with a reason.
+ *
+ * These assertions read the drizzle schema objects, not the database, so they
+ * hold even before a migration is applied.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+const drizzle_orm_1 = require("drizzle-orm");
+const pg_core_1 = require("drizzle-orm/pg-core");
+const casing_1 = require("../../casing");
+const schema = __importStar(require("../index"));
+const deferredForeignKeys_1 = require("../deferredForeignKeys");
+/**
+ * Vacuity floor. If the barrel traversal below ever breaks, it would find zero
+ * tables and every assertion in this file would pass by examining nothing.
+ */
+const MINIMUM_TABLES = 27;
+const tables = Object.values(schema).filter((value) => (0, drizzle_orm_1.is)(value, pg_core_1.PgTable));
+/**
+ * `blocks.user_id` — the identity used in every failure message here.
+ *
+ * The SQL name via `sqlColumnName`, never `column.name`: the latter is the
+ * TypeScript property (`userId`), so an `endsWith('_id')` test against it
+ * matches nothing and passes vacuously.
+ */
+function describeColumn(table, column) {
+    return `${(0, pg_core_1.getTableConfig)(table).name}.${(0, casing_1.sqlColumnName)(column)}`;
+}
+describe('schema foreign keys', () => {
+    it('finds the schema barrel (guards against a vacuous pass)', () => {
+        expect(tables.length).toBeGreaterThanOrEqual(MINIMUM_TABLES);
+    });
+    it('declares a real foreign key as soon as the parent table exists', () => {
+        const present = new Set(tables.map((table) => (0, pg_core_1.getTableConfig)(table).name));
+        const owed = deferredForeignKeys_1.DEFERRED_FOREIGN_KEYS.filter((fk) => present.has(fk.parentTable)).map((fk) => `${describeColumn(fk.table, fk.column)} -> ${fk.parentTable}.${fk.parentColumn} ` +
+            `(on delete ${fk.onDelete})`);
+        // Reads as: "`users` is in the schema now, so these columns must reference
+        // it — declare them with .references(), then delete their DEFERRED entries."
+        expect(owed).toEqual([]);
+    });
+    it('classifies every id-shaped column', () => {
+        const declared = new Set();
+        for (const table of tables) {
+            for (const fk of (0, pg_core_1.getTableConfig)(table).foreignKeys) {
+                for (const column of fk.reference().columns) {
+                    declared.add(describeColumn(table, column));
+                }
+            }
+        }
+        const deferred = new Set(deferredForeignKeys_1.DEFERRED_FOREIGN_KEYS.map((fk) => describeColumn(fk.table, fk.column)));
+        const exempt = new Set(deferredForeignKeys_1.ID_COLUMNS_WITHOUT_FOREIGN_KEY.map((entry) => describeColumn(entry.table, entry.column)));
+        const unclassified = [];
+        for (const table of tables) {
+            for (const column of (0, pg_core_1.getTableConfig)(table).columns) {
+                if (column.primary || !(0, casing_1.sqlColumnName)(column).endsWith('_id'))
+                    continue;
+                const id = describeColumn(table, column);
+                if (declared.has(id) || deferred.has(id) || exempt.has(id))
+                    continue;
+                unclassified.push(id);
+            }
+        }
+        // Reads as: "this column looks like a relation and nobody decided about it —
+        // give it .references(), or add it to DEFERRED_FOREIGN_KEYS /
+        // ID_COLUMNS_WITHOUT_FOREIGN_KEY with a reason."
+        expect(unclassified).toEqual([]);
+    });
+    it('does not carry a stale ledger entry', () => {
+        const columns = new Set();
+        for (const table of tables) {
+            for (const column of (0, pg_core_1.getTableConfig)(table).columns) {
+                columns.add(describeColumn(table, column));
+            }
+        }
+        const ledger = [
+            ...deferredForeignKeys_1.DEFERRED_FOREIGN_KEYS.map((fk) => describeColumn(fk.table, fk.column)),
+            ...deferredForeignKeys_1.ID_COLUMNS_WITHOUT_FOREIGN_KEY.map((entry) => describeColumn(entry.table, entry.column)),
+        ];
+        expect(ledger.filter((id) => !columns.has(id))).toEqual([]);
+    });
+    it('states an ON DELETE and a reason for every deferred foreign key', () => {
+        const incomplete = deferredForeignKeys_1.DEFERRED_FOREIGN_KEYS.filter((fk) => fk.reason.trim() === '' || fk.parentColumn.trim() === '').map((fk) => describeColumn(fk.table, fk.column));
+        expect(incomplete).toEqual([]);
+        // `onDelete` is a closed union, so tsc already refuses an unset one.
+        //
+        // The vacuity floor sits on the PERMANENT list, not on
+        // `DEFERRED_FOREIGN_KEYS` being non-empty: an empty deferred ledger is the
+        // finish line the module's own doc comment describes, so asserting it stays
+        // populated would turn the goal into a failure. (It is non-empty today —
+        // three entries owed to `reputation_transactions` — but that is a fact about
+        // where the port has got to, not something to hold in place.)
+        expect(deferredForeignKeys_1.ID_COLUMNS_WITHOUT_FOREIGN_KEY.length).toBeGreaterThan(0);
+    });
+});
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvZGIvc2NoZW1hL19fdGVzdHNfXy9mb3JlaWduS2V5cy50ZXN0LnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7OztHQWdCRzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7QUFFSCw2Q0FBOEM7QUFDOUMsaURBQThEO0FBQzlELHlDQUE2QztBQUM3QyxpREFBbUM7QUFDbkMsZ0VBR2dDO0FBRWhDOzs7R0FHRztBQUNILE1BQU0sY0FBYyxHQUFHLEVBQUUsQ0FBQztBQUUxQixNQUFNLE1BQU0sR0FBRyxNQUFNLENBQUMsTUFBTSxDQUFDLE1BQU0sQ0FBQyxDQUFDLE1BQU0sQ0FBQyxDQUFDLEtBQUssRUFBb0IsRUFBRSxDQUN0RSxJQUFBLGdCQUFFLEVBQUMsS0FBSyxFQUFFLGlCQUFPLENBQUMsQ0FDbkIsQ0FBQztBQUVGOzs7Ozs7R0FNRztBQUNILFNBQVMsY0FBYyxDQUFDLEtBQWMsRUFBRSxNQUFjO0lBQ3BELE9BQU8sR0FBRyxJQUFBLHdCQUFjLEVBQUMsS0FBSyxDQUFDLENBQUMsSUFBSSxJQUFJLElBQUEsc0JBQWEsRUFBQyxNQUFNLENBQUMsRUFBRSxDQUFDO0FBQ2xFLENBQUM7QUFFRCxRQUFRLENBQUMscUJBQXFCLEVBQUUsR0FBRyxFQUFFO0lBQ25DLEVBQUUsQ0FBQyx5REFBeUQsRUFBRSxHQUFHLEVBQUU7UUFDakUsTUFBTSxDQUFDLE1BQU0sQ0FBQyxNQUFNLENBQUMsQ0FBQyxzQkFBc0IsQ0FBQyxjQUFjLENBQUMsQ0FBQztJQUMvRCxDQUFDLENBQUMsQ0FBQztJQUVILEVBQUUsQ0FBQyxnRUFBZ0UsRUFBRSxHQUFHLEVBQUU7UUFDeEUsTUFBTSxPQUFPLEdBQUcsSUFBSSxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLEtBQUssRUFBRSxFQUFFLENBQUMsSUFBQSx3QkFBYyxFQUFDLEtBQUssQ0FBQyxDQUFDLElB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QyxFQUFFLENBQUMsQ0FBQztRQUMvQixxRUFBcUU7UUFDckUsRUFBRTtRQUNGLHVEQUF1RDtRQUN2RCwyRUFBMkU7UUFDM0UsNEVBQTRFO1FBQzVFLHlFQUF5RTtRQUN6RSw2RUFBNkU7UUFDN0UsOERBQThEO1FBQzlELE1BQU0sQ0FBQyxvREFBOEIsQ0FBQyxNQUFNLENBQUMsQ0FBQyxlQUFlLENBQUMsQ0FBQyxDQUFDLENBQUM7SUFDbkUsQ0FBQyxDQUFDLENBQUM7QUFDTCxDQUFDLENBQUMsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9kYi9zY2hlbWEvX190ZXN0c19fL2ZvcmVpZ25LZXlzLnRlc3QudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBGb3JlaWduLWtleSBjb3ZlcmFnZSBnYXRlLlxuICpcbiAqIFRoZSBtaWdyYXRpb24gbGFuZHMgdGFibGUgYnkgdGFibGUsIHNvIHNvbWUgZm9yZWlnbiBrZXlzIGNhbm5vdCBiZSBkZWNsYXJlZFxuICogeWV0IOKAlCB0aGVpciBwYXJlbnQgdGFibGUgZG9lcyBub3QgZXhpc3QuIGBkZWZlcnJlZEZvcmVpZ25LZXlzLnRzYCByZWNvcmRzIGVhY2hcbiAqIG9uZSBhcyBkYXRhOyB0aGlzIGZpbGUgdHVybnMgdGhhdCByZWNvcmQgaW50byBhIGdhdGUgd2l0aCB0d28gcHJvcGVydGllczpcbiAqXG4gKiAgIDEuIEEgZGVmZXJyZWQgZm9yZWlnbiBrZXkgYmVjb21lcyBNQU5EQVRPUlkgdGhlIG1vbWVudCBpdHMgcGFyZW50IHRhYmxlXG4gKiAgICAgIGFwcGVhcnMgaW4gdGhlIHNjaGVtYSBiYXJyZWwuIFdob2V2ZXIgbGFuZHMgYHVzZXJzYCBnZXRzIGEgcmVkIHRlc3RcbiAqICAgICAgbmFtaW5nIGV2ZXJ5IGNvbHVtbiB0aGF0IG11c3Qgbm93IHJlZmVyZW5jZSBpdCDigJQgdGhlIEZLIGNhbm5vdCBiZVxuICogICAgICBxdWlldGx5IGZvcmdvdHRlbiwgYW5kIHRoZSBsZWRnZXIgZW1wdGllcyBpdHNlbGYgYXMgdGhlIHBvcnQgY29tcGxldGVzLlxuICogICAyLiBBIE5FVyBpZC1zaGFwZWQgY29sdW1uIGNhbm5vdCBhcnJpdmUgdW5jbGFzc2lmaWVkLiBJdCBtdXN0IGhhdmUgYSByZWFsXG4gKiAgICAgIGNvbnN0cmFpbnQsIG9yIGJlIGluIG9uZSBvZiB0aGUgdHdvIGxlZGdlcnMgd2l0aCBhIHJlYXNvbi5cbiAqXG4gKiBUaGVzZSBhc3NlcnRpb25zIHJlYWQgdGhlIGRyaXp6bGUgc2NoZW1hIG9iamVjdHMsIG5vdCB0aGUgZGF0YWJhc2UsIHNvIHRoZXlcbiAqIGhvbGQgZXZlbiBiZWZvcmUgYSBtaWdyYXRpb24gaXMgYXBwbGllZC5cbiAqL1xuXG5pbXBvcnQgeyBpcywgdHlwZSBDb2x1bW4gfSBmcm9tICdkcml6emxlLW9ybSc7XG5pbXBvcnQgeyBQZ1RhYmxlLCBnZXRUYWJsZUNvbmZpZyB9IGZyb20gJ2RyaXp6bGUtb3JtL3BnLWNvcmUnO1xuaW1wb3J0IHsgc3FsQ29sdW1uTmFtZSB9IGZyb20gJy4uLy4uL2Nhc2luZyc7XG5pbXBvcnQgKiBhcyBzY2hlbWEgZnJvbSAnLi4vaW5kZXgnO1xuaW1wb3J0IHtcbiAgREVGRVJSRURfRk9SRUlHTl9LRVlTLFxuICBJRF9DT0xVTU5TX1dJVEhPVVRfRk9SRUlHTl9LRVksXG59IGZyb20gJy4uL2RlZmVycmVkRm9yZWlnbktleXMnO1xuXG4vKipcbiAqIFZhY3VpdHkgZmxvb3IuIElmIHRoZSBiYXJyZWwgdHJhdmVyc2FsIGJlbG93IGV2ZXIgYnJlYWtzLCBpdCB3b3VsZCBmaW5kIHplcm9cbiAqIHRhYmxlcyBhbmQgZXZlcnkgYXNzZXJ0aW9uIGluIHRoaXMgZmlsZSB3b3VsZCBwYXNzIGJ5IGV4YW1pbmluZyBub3RoaW5nLlxuICovXG5jb25zdCBNSU5JTVVNX1RBQkxFUyA9IDI3O1xuXG5jb25zdCB0YWJsZXMgPSBPYmplY3QudmFsdWVzKHNjaGVtYSkuZmlsdGVyKCh2YWx1ZSk6IHZhbHVlIGlzIFBnVGFibGUgPT5cbiAgaXModmFsdWUsIFBnVGFibGUpXG4pO1xuXG4vKipcbiAqIGBibG9ja3MudXNlcl9pZGAg4oCUIHRoZSBpZGVudGl0eSB1c2VkIGluIGV2ZXJ5IGZhaWx1cmUgbWVzc2FnZSBoZXJlLlxuICpcbiAqIFRoZSBTUUwgbmFtZSB2aWEgYHNxbENvbHVtbk5hbWVgLCBuZXZlciBgY29sdW1uLm5hbWVgOiB0aGUgbGF0dGVyIGlzIHRoZVxuICogVHlwZVNjcmlwdCBwcm9wZXJ0eSAoYHVzZXJJZGApLCBzbyBhbiBgZW5kc1dpdGgoJ19pZCcpYCB0ZXN0IGFnYWluc3QgaXRcbiAqIG1hdGNoZXMgbm90aGluZyBhbmQgcGFzc2VzIHZhY3VvdXNseS5cbiAqL1xuZnVuY3Rpb24gZGVzY3JpYmVDb2x1bW4odGFibGU6IFBnVGFibGUsIGNvbHVtbjogQ29sdW1uKTogc3RyaW5nIHtcbiAgcmV0dXJuIGAke2dldFRhYmxlQ29uZmlnKHRhYmxlKS5uYW1lfS4ke3NxbENvbHVtbk5hbWUoY29sdW1uKX1gO1xufVxuXG5kZXNjcmliZSgnc2NoZW1hIGZvcmVpZ24ga2V5cycsICgpID0+IHtcbiAgaXQoJ2ZpbmRzIHRoZSBzY2hlbWEgYmFycmVsIChndWFyZHMgYWdhaW5zdCBhIHZhY3VvdXMgcGFzcyknLCAoKSA9PiB7XG4gICAgZXhwZWN0KHRhYmxlcy5sZW5ndGgpLnRvQmVHcmVhdGVyVGhhbk9yRXF1YWwoTUlOSU1VTV9UQUJMRVMpO1xuICB9KTtcblxuICBpdCgnZGVjbGFyZXMgYSByZWFsIGZvcmVpZ24ga2V5IGFzIHNvb24gYXMgdGhlIHBhcmVudCB0YWJsZSBleGlzdHMnLCAoKSA9PiB7XG4gICAgY29uc3QgcHJlc2VudCA9IG5ldyBTZXQodGFibGVzLm1hcCgodGFibGUpID0+IGdldFRhYmxlQ29uZmlnKHRhYmxlKS5uYW1lKSk7XG5cbiAgICBjb25zdCBvd2VkID0gREVGRVJSRURfRk9SRUlHTl9LRVlTLmZpbHRlcigoZmspID0+IHByZXNlbnQuaGFzKGZrLnBhcmVudFRhYmxlKSkubWFwKFxuICAgICAgKGZrKSA9PlxuICAgICAgICBgJHtkZXNjcmliZUNvbHVtbihmay50YWJsZSwgZmsuY29sdW1uKX0gLT4gJHtmay5wYXJlbnRUYWJsZX0uJHtmay5wYXJlbnRDb2x1bW59IGAgK1xuICAgICAgICBgKG9uIGRlbGV0ZSAke2ZrLm9uRGVsZXRlfSlgXG4gICAgKTtcblxuICAgIC8vIFJlYWRzIGFzOiBcImB1c2Vyc2AgaXMgaW4gdGhlIHNjaGVtYSBub3csIHNvIHRoZXNlIGNvbHVtbnMgbXVzdCByZWZlcmVuY2VcbiAgICAvLyBpdCDigJQgZGVjbGFyZSB0aGVtIHdpdGggLnJlZmVyZW5jZXMoKSwgdGhlbiBkZWxldGUgdGhlaXIgREVGRVJSRUQgZW50cmllcy5cIlxuICAgIGV4cGVjdChvd2VkKS50b0VxdWFsKFtdKTtcbiAgfSk7XG5cbiAgaXQoJ2NsYXNzaWZpZXMgZXZlcnkgaWQtc2hhcGVkIGNvbHVtbicsICgpID0+IHtcbiAgICBjb25zdCBkZWNsYXJlZCA9IG5ldyBTZXQ8c3RyaW5nPigpO1xuICAgIGZvciAoY29uc3QgdGFibGUgb2YgdGFibGVzKSB7XG4gICAgICBmb3IgKGNvbnN0IGZrIG9mIGdldFRhYmxlQ29uZmlnKHRhYmxlKS5mb3JlaWduS2V5cykge1xuICAgICAgICBmb3IgKGNvbnN0IGNvbHVtbiBvZiBmay5yZWZlcmVuY2UoKS5jb2x1bW5zKSB7XG4gICAgICAgICAgZGVjbGFyZWQuYWRkKGRlc2NyaWJlQ29sdW1uKHRhYmxlLCBjb2x1bW4pKTtcbiAgICAgICAgfVxuICAgICAgfVxuICAgIH1cblxuICAgIGNvbnN0IGRlZmVycmVkID0gbmV3IFNldChcbiAgICAgIERFRkVSUkVEX0ZPUkVJR05fS0VZUy5tYXAoKGZrKSA9PiBkZXNjcmliZUNvbHVtbihmay50YWJsZSwgZmsuY29sdW1uKSlcbiAgICApO1xuICAgIGNvbnN0IGV4ZW1wdCA9IG5ldyBTZXQoXG4gICAgICBJRF9DT0xVTU5TX1dJVEhPVVRfRk9SRUlHTl9LRVkubWFwKChlbnRyeSkgPT5cbiAgICAgICAgZGVzY3JpYmVDb2x1bW4oZW50cnkudGFibGUsIGVudHJ5LmNvbHVtbilcbiAgICAgIClcbiAgICApO1xuXG4gICAgY29uc3QgdW5jbGFzc2lmaWVkOiBzdHJpbmdbXSA9IFtdO1xuICAgIGZvciAoY29uc3QgdGFibGUgb2YgdGFibGVzKSB7XG4gICAgICBmb3IgKGNvbnN0IGNvbHVtbiBvZiBnZXRUYWJsZUNvbmZpZyh0YWJsZSkuY29sdW1ucykge1xuICAgICAgICBpZiAoY29sdW1uLnByaW1hcnkgfHwgIXNxbENvbHVtbk5hbWUoY29sdW1uKS5lbmRzV2l0aCgnX2lkJykpIGNvbnRpbnVlO1xuICAgICAgICBjb25zdCBpZCA9IGRlc2NyaWJlQ29sdW1uKHRhYmxlLCBjb2x1bW4pO1xuICAgICAgICBpZiAoZGVjbGFyZWQuaGFzKGlkKSB8fCBkZWZlcnJlZC5oYXMoaWQpIHx8IGV4ZW1wdC5oYXMoaWQpKSBjb250aW51ZTtcbiAgICAgICAgdW5jbGFzc2lmaWVkLnB1c2goaWQpO1xuICAgICAgfVxuICAgIH1cblxuICAgIC8vIFJlYWRzIGFzOiBcInRoaXMgY29sdW1uIGxvb2tzIGxpa2UgYSByZWxhdGlvbiBhbmQgbm9ib2R5IGRlY2lkZWQgYWJvdXQgaXQg4oCUXG4gICAgLy8gZ2l2ZSBpdCAucmVmZXJlbmNlcygpLCBvciBhZGQgaXQgdG8gREVGRVJSRURfRk9SRUlHTl9LRVlTIC9cbiAgICAvLyBJRF9DT0xVTU5TX1dJVEhPVVRfRk9SRUlHTl9LRVkgd2l0aCBhIHJlYXNvbi5cIlxuICAgIGV4cGVjdCh1bmNsYXNzaWZpZWQpLnRvRXF1YWwoW10pO1xuICB9KTtcblxuICBpdCgnZG9lcyBub3QgY2FycnkgYSBzdGFsZSBsZWRnZXIgZW50cnknLCAoKSA9PiB7XG4gICAgY29uc3QgY29sdW1ucyA9IG5ldyBTZXQ8c3RyaW5nPigpO1xuICAgIGZvciAoY29uc3QgdGFibGUgb2YgdGFibGVzKSB7XG4gICAgICBmb3IgKGNvbnN0IGNvbHVtbiBvZiBnZXRUYWJsZUNvbmZpZyh0YWJsZSkuY29sdW1ucykge1xuICAgICAgICBjb2x1bW5zLmFkZChkZXNjcmliZUNvbHVtbih0YWJsZSwgY29sdW1uKSk7XG4gICAgICB9XG4gICAgfVxuXG4gICAgY29uc3QgbGVkZ2VyID0gW1xuICAgICAgLi4uREVGRVJSRURfRk9SRUlHTl9LRVlTLm1hcCgoZmspID0+IGRlc2NyaWJlQ29sdW1uKGZrLnRhYmxlLCBmay5jb2x1bW4pKSxcbiAgICAgIC4uLklEX0NPTFVNTlNfV0lUSE9VVF9GT1JFSUdOX0tFWS5tYXAoKGVudHJ5KSA9PlxuICAgICAgICBkZXNjcmliZUNvbHVtbihlbnRyeS50YWJsZSwgZW50cnkuY29sdW1uKVxuICAgICAgKSxcbiAgICBdO1xuXG4gICAgZXhwZWN0KGxlZGdlci5maWx0ZXIoKGlkKSA9PiAhY29sdW1ucy5oYXMoaWQpKSkudG9FcXVhbChbXSk7XG4gIH0pO1xuXG4gIGl0KCdzdGF0ZXMgYW4gT04gREVMRVRFIGFuZCBhIHJlYXNvbiBmb3IgZXZlcnkgZGVmZXJyZWQgZm9yZWlnbiBrZXknLCAoKSA9PiB7XG4gICAgY29uc3QgaW5jb21wbGV0ZSA9IERFRkVSUkVEX0ZPUkVJR05fS0VZUy5maWx0ZXIoXG4gICAgICAoZmspID0+IGZrLnJlYXNvbi50cmltKCkgPT09ICcnIHx8IGZrLnBhcmVudENvbHVtbi50cmltKCkgPT09ICcnXG4gICAgKS5tYXAoKGZrKSA9PiBkZXNjcmliZUNvbHVtbihmay50YWJsZSwgZmsuY29sdW1uKSk7XG5cbiAgICBleHBlY3QoaW5jb21wbGV0ZSkudG9FcXVhbChbXSk7XG4gICAgLy8gYG9uRGVsZXRlYCBpcyBhIGNsb3NlZCB1bmlvbiwgc28gdHNjIGFscmVhZHkgcmVmdXNlcyBhbiB1bnNldCBvbmUuXG4gICAgLy9cbiAgICAvLyBUaGUgdmFjdWl0eSBmbG9vciBzaXRzIG9uIHRoZSBQRVJNQU5FTlQgbGlzdCwgbm90IG9uXG4gICAgLy8gYERFRkVSUkVEX0ZPUkVJR05fS0VZU2AgYmVpbmcgbm9uLWVtcHR5OiBhbiBlbXB0eSBkZWZlcnJlZCBsZWRnZXIgaXMgdGhlXG4gICAgLy8gZmluaXNoIGxpbmUgdGhlIG1vZHVsZSdzIG93biBkb2MgY29tbWVudCBkZXNjcmliZXMsIHNvIGFzc2VydGluZyBpdCBzdGF5c1xuICAgIC8vIHBvcHVsYXRlZCB3b3VsZCB0dXJuIHRoZSBnb2FsIGludG8gYSBmYWlsdXJlLiAoSXQgaXMgbm9uLWVtcHR5IHRvZGF5IOKAlFxuICAgIC8vIHRocmVlIGVudHJpZXMgb3dlZCB0byBgcmVwdXRhdGlvbl90cmFuc2FjdGlvbnNgIOKAlCBidXQgdGhhdCBpcyBhIGZhY3QgYWJvdXRcbiAgICAvLyB3aGVyZSB0aGUgcG9ydCBoYXMgZ290IHRvLCBub3Qgc29tZXRoaW5nIHRvIGhvbGQgaW4gcGxhY2UuKVxuICAgIGV4cGVjdChJRF9DT0xVTU5TX1dJVEhPVVRfRk9SRUlHTl9LRVkubGVuZ3RoKS50b0JlR3JlYXRlclRoYW4oMCk7XG4gIH0pO1xufSk7XG4iXSwidmVyc2lvbiI6M30=

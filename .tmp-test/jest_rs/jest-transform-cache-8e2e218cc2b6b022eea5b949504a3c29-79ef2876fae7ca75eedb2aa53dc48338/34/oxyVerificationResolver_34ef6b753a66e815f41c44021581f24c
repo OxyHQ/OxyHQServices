@@ -1,0 +1,88 @@
+56bbf294aaa4137bb42ce3e2991d0a87
+"use strict";
+/**
+ * Oxy VerificationMethodResolver — the identity HALF of the chain adapter.
+ *
+ * This is the Oxy AUTHORIZATION policy the app-agnostic @oxyhq/protocol engine
+ * delegates to: given a subject DID, it resolves the account's current
+ * verification methods (its primary key + any `identity` auth-method keys) and
+ * the Oxy custodial issuer that may sign provenance records ABOUT the subject.
+ * The engine's `isAuthorizedKey` then applies the uniform rule (self-issued ⇒
+ * key ∈ current VMs; custodial ⇒ key === the custodial key; else untrusted).
+ *
+ * Custodial note: `OXY_PUBLIC_KEY` is the verification method of `OXY_DID` and is
+ * PUBLIC (it is published in the Oxy organisation's DID document at
+ * `/.well-known/did.json`). It is not a secret, so a plain-equality comparison
+ * in the engine is sufficient — there is no secret to protect with a
+ * constant-time compare. The signature is still verified against `env.publicKey`,
+ * so only the holder of `OXY_PRIVATE_KEY` (the server) can mint a record that
+ * passes BOTH the custodial-key check and the signature check.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.oxyVerificationResolver = void 0;
+const drizzle_orm_1 = require("drizzle-orm");
+const did_service_1 = require("./did.service");
+const postgres_1 = require("../config/postgres");
+const userAuthMethods_1 = require("../db/schema/userAuthMethods");
+const users_1 = require("../db/schema/users");
+/**
+ * Collect the distinct current verification-method public keys for a subject:
+ * its primary `publicKey` first, then any `identity` auth-method keys. Mirrors
+ * the DID document's `verificationMethod` set.
+ *
+ * `authMethods[]` was an embedded array and is the `user_auth_methods` table
+ * now, so the `type === 'identity'` filter moves into the query — an account
+ * with many auth methods no longer loads the ones this cannot authorize.
+ */
+function collectCurrentPublicKeys(primaryPublicKey, identityKeys) {
+    const keys = [];
+    if (primaryPublicKey) {
+        keys.push(primaryPublicKey);
+    }
+    for (const method of identityKeys) {
+        const key = method.methodPublicKey;
+        if (key && !keys.includes(key)) {
+            keys.push(key);
+        }
+    }
+    return keys;
+}
+/**
+ * The Oxy resolver: maps a subject DID → its current verification methods + the
+ * Oxy custodial issuer. Returns `null` when the DID is not a user DID for this
+ * issuer's domain or the account does not exist (no key is then authorized).
+ */
+exports.oxyVerificationResolver = {
+    resolve(subjectDid) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const userId = (0, did_service_1.parseUserDid)(subjectDid);
+            if (!userId) {
+                return null;
+            }
+            const [user] = yield (0, postgres_1.getDb)()
+                .select({ publicKey: users_1.users.publicKey })
+                .from(users_1.users)
+                .where((0, drizzle_orm_1.eq)(users_1.users.id, userId))
+                .limit(1);
+            if (!user) {
+                return null;
+            }
+            const identityKeys = yield (0, postgres_1.getDb)()
+                .select({ methodPublicKey: userAuthMethods_1.userAuthMethods.methodPublicKey })
+                .from(userAuthMethods_1.userAuthMethods)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(userAuthMethods_1.userAuthMethods.userId, userId), (0, drizzle_orm_1.eq)(userAuthMethods_1.userAuthMethods.type, 'identity')));
+            const custodialPublicKey = process.env.OXY_PUBLIC_KEY;
+            return Object.assign({ currentPublicKeys: collectCurrentPublicKeys(user.publicKey, identityKeys), custodialIssuer: did_service_1.OXY_DID }, (custodialPublicKey ? { custodialPublicKey } : {}));
+        });
+    },
+};
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2VydmljZXMvb3h5VmVyaWZpY2F0aW9uUmVzb2x2ZXIudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7Ozs7OztHQWlCRzs7Ozs7Ozs7Ozs7O0FBRUgsNkNBQXNDO0FBRXRDLCtDQUFzRDtBQUN0RCxpREFBMkM7QUFDM0Msa0VBQStEO0FBQy9ELDhDQUEyQztBQUUzQzs7Ozs7Ozs7R0FRRztBQUNILFNBQVMsd0JBQXdCLENBQy9CLGdCQUErQixFQUMvQixZQUF1RDtJQUV2RCxNQUFNLElBQUksR0FBYSxFQUFFLENBQUM7SUFDMUIsSUFBSSxnQkFBZ0IsRUFBRSxDQUFDO1FBQ3JCLElBQUksQ0FBQyxJQUFJLENBQUMsZ0JBQWdCLENBQUMsQ0FBQztJQUM5QixDQUFDO0lBQ0QsS0FBSyxNQUFNLE1BQU0sSUFBSSxZQUFZLEVBQUUsQ0FBQztRQUNsQyxNQUFNLEdBQUcsR0FBRyxNQUFNLENBQUMsZUFBZSxDQUFDO1FBQ25DLElBQUksR0FBRyxJQUFJLENBQUMsSUFBSSxDQUFDLFFBQVEsQ0FBQyxHQUFHLENBQUMsRUFBRSxDQUFDO1lBQy9CLElBQUksQ0FBQyxJQUFJLENBQUMsR0FBRyxDQUFDLENBQUM7UUFDakIsQ0FBQztJQUNILENBQUM7SUFDRCxPQUFPLElBQUksQ0FBQztBQUNkLENBQUM7QUFFRDs7OztHQUlHO0FBQ1UsUUFBQSx1QkFBdUIsR0FBK0I7SUFDM0QsT0FBTyxDQUFDLFVBQWtCOztZQUM5QixNQUFNLE1BQU0sR0FBRyxJQUFBLDBCQUFZLEVBQUMsVUFBVSxDQUFDLENBQUM7WUFDeEMsSUFBSSxDQUFDLE1BQU0sRUFBRSxDQUFDO2dCQUNaLE9BQU8sSUFBSSxDQUFDO1lBQ2QsQ0FBQztZQUNELE1BQU0sQ0FBQyxJQUFJLENBQUMsR0FBRyxNQUFNLElBQUEsZ0JBQUssR0FBRTtpQkFDekIsTUFBTSxDQUFDLEVBQUUsU0FBUyxFQUFFLGFBQUssQ0FBQyxTQUFTLEVBQUUsQ0FBQztpQkFDdEMsSUFBSSxDQUFDLGFBQUssQ0FBQztpQkFDWCxLQUFLLENBQUMsSUFBQSxnQkFBRSxFQUFDLGFBQUssQ0FBQyxFQUFFLEVBQUUsTUFBTSxDQUFDLENBQUM7aUJBQzNCLEtBQUssQ0FBQyxDQUFDLENBQUMsQ0FBQztZQUNaLElBQUksQ0FBQyxJQUFJLEVBQUUsQ0FBQztnQkFDVixPQUFPLElBQUksQ0FBQztZQUNkLENBQUM7WUFDRCxNQUFNLFlBQVksR0FBRyxNQUFNLElBQUEsZ0JBQUssR0FBRTtpQkFDL0IsTUFBTSxDQUFDLEVBQUUsZUFBZSxFQUFFLGlDQUFlLENBQUMsZUFBZSxFQUFFLENBQUM7aUJBQzVELElBQUksQ0FBQyxpQ0FBZSxDQUFDO2lCQUNyQixLQUFLLENBQUMsSUFBQSxpQkFBRyxFQUFDLElBQUEsZ0JBQUUsRUFBQyxpQ0FBZSxDQUFDLE1BQU0sRUFBRSxNQUFNLENBQUMsRUFBRSxJQUFBLGdCQUFFLEVBQUMsaUNBQWUsQ0FBQyxJQUFJLEVBQUUsVUFBVSxDQUFDLENBQUMsQ0FBQyxDQUFDO1lBRXhGLE1BQU0sa0JBQWtCLEdBQUcsT0FBTyxDQUFDLEdBQUcsQ0FBQyxjQUFjLENBQUM7WUFDdEQsdUJBQ0UsaUJBQWlCLEVBQUUsd0JBQXdCLENBQUMsSUFBSSxDQUFDLFNBQVMsRUFBRSxZQUFZLENBQUMsRUFDekUsZUFBZSxFQUFFLHFCQUFPLElBR3JCLENBQUMsa0JBQWtCLENBQUMsQ0FBQyxDQUFDLEVBQUUsa0JBQWtCLEVBQUUsQ0FBQyxDQUFDLENBQUMsRUFBRSxDQUFDLEVBQ3JEO1FBQ0osQ0FBQztLQUFBO0NBQ0YsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9zZXJ2aWNlcy9veHlWZXJpZmljYXRpb25SZXNvbHZlci50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIE94eSBWZXJpZmljYXRpb25NZXRob2RSZXNvbHZlciDigJQgdGhlIGlkZW50aXR5IEhBTEYgb2YgdGhlIGNoYWluIGFkYXB0ZXIuXG4gKlxuICogVGhpcyBpcyB0aGUgT3h5IEFVVEhPUklaQVRJT04gcG9saWN5IHRoZSBhcHAtYWdub3N0aWMgQG94eWhxL3Byb3RvY29sIGVuZ2luZVxuICogZGVsZWdhdGVzIHRvOiBnaXZlbiBhIHN1YmplY3QgRElELCBpdCByZXNvbHZlcyB0aGUgYWNjb3VudCdzIGN1cnJlbnRcbiAqIHZlcmlmaWNhdGlvbiBtZXRob2RzIChpdHMgcHJpbWFyeSBrZXkgKyBhbnkgYGlkZW50aXR5YCBhdXRoLW1ldGhvZCBrZXlzKSBhbmRcbiAqIHRoZSBPeHkgY3VzdG9kaWFsIGlzc3VlciB0aGF0IG1heSBzaWduIHByb3ZlbmFuY2UgcmVjb3JkcyBBQk9VVCB0aGUgc3ViamVjdC5cbiAqIFRoZSBlbmdpbmUncyBgaXNBdXRob3JpemVkS2V5YCB0aGVuIGFwcGxpZXMgdGhlIHVuaWZvcm0gcnVsZSAoc2VsZi1pc3N1ZWQg4oeSXG4gKiBrZXkg4oiIIGN1cnJlbnQgVk1zOyBjdXN0b2RpYWwg4oeSIGtleSA9PT0gdGhlIGN1c3RvZGlhbCBrZXk7IGVsc2UgdW50cnVzdGVkKS5cbiAqXG4gKiBDdXN0b2RpYWwgbm90ZTogYE9YWV9QVUJMSUNfS0VZYCBpcyB0aGUgdmVyaWZpY2F0aW9uIG1ldGhvZCBvZiBgT1hZX0RJRGAgYW5kIGlzXG4gKiBQVUJMSUMgKGl0IGlzIHB1Ymxpc2hlZCBpbiB0aGUgT3h5IG9yZ2FuaXNhdGlvbidzIERJRCBkb2N1bWVudCBhdFxuICogYC8ud2VsbC1rbm93bi9kaWQuanNvbmApLiBJdCBpcyBub3QgYSBzZWNyZXQsIHNvIGEgcGxhaW4tZXF1YWxpdHkgY29tcGFyaXNvblxuICogaW4gdGhlIGVuZ2luZSBpcyBzdWZmaWNpZW50IOKAlCB0aGVyZSBpcyBubyBzZWNyZXQgdG8gcHJvdGVjdCB3aXRoIGFcbiAqIGNvbnN0YW50LXRpbWUgY29tcGFyZS4gVGhlIHNpZ25hdHVyZSBpcyBzdGlsbCB2ZXJpZmllZCBhZ2FpbnN0IGBlbnYucHVibGljS2V5YCxcbiAqIHNvIG9ubHkgdGhlIGhvbGRlciBvZiBgT1hZX1BSSVZBVEVfS0VZYCAodGhlIHNlcnZlcikgY2FuIG1pbnQgYSByZWNvcmQgdGhhdFxuICogcGFzc2VzIEJPVEggdGhlIGN1c3RvZGlhbC1rZXkgY2hlY2sgYW5kIHRoZSBzaWduYXR1cmUgY2hlY2suXG4gKi9cblxuaW1wb3J0IHsgYW5kLCBlcSB9IGZyb20gJ2RyaXp6bGUtb3JtJztcbmltcG9ydCB0eXBlIHsgUmVzb2x2ZWRWZXJpZmljYXRpb25NZXRob2RzLCBWZXJpZmljYXRpb25NZXRob2RSZXNvbHZlciB9IGZyb20gJ0BveHlocS9wcm90b2NvbCc7XG5pbXBvcnQgeyBPWFlfRElELCBwYXJzZVVzZXJEaWQgfSBmcm9tICcuL2RpZC5zZXJ2aWNlJztcbmltcG9ydCB7IGdldERiIH0gZnJvbSAnLi4vY29uZmlnL3Bvc3RncmVzJztcbmltcG9ydCB7IHVzZXJBdXRoTWV0aG9kcyB9IGZyb20gJy4uL2RiL3NjaGVtYS91c2VyQXV0aE1ldGhvZHMnO1xuaW1wb3J0IHsgdXNlcnMgfSBmcm9tICcuLi9kYi9zY2hlbWEvdXNlcnMnO1xuXG4vKipcbiAqIENvbGxlY3QgdGhlIGRpc3RpbmN0IGN1cnJlbnQgdmVyaWZpY2F0aW9uLW1ldGhvZCBwdWJsaWMga2V5cyBmb3IgYSBzdWJqZWN0OlxuICogaXRzIHByaW1hcnkgYHB1YmxpY0tleWAgZmlyc3QsIHRoZW4gYW55IGBpZGVudGl0eWAgYXV0aC1tZXRob2Qga2V5cy4gTWlycm9yc1xuICogdGhlIERJRCBkb2N1bWVudCdzIGB2ZXJpZmljYXRpb25NZXRob2RgIHNldC5cbiAqXG4gKiBgYXV0aE1ldGhvZHNbXWAgd2FzIGFuIGVtYmVkZGVkIGFycmF5IGFuZCBpcyB0aGUgYHVzZXJfYXV0aF9tZXRob2RzYCB0YWJsZVxuICogbm93LCBzbyB0aGUgYHR5cGUgPT09ICdpZGVudGl0eSdgIGZpbHRlciBtb3ZlcyBpbnRvIHRoZSBxdWVyeSDigJQgYW4gYWNjb3VudFxuICogd2l0aCBtYW55IGF1dGggbWV0aG9kcyBubyBsb25nZXIgbG9hZHMgdGhlIG9uZXMgdGhpcyBjYW5ub3QgYXV0aG9yaXplLlxuICovXG5mdW5jdGlvbiBjb2xsZWN0Q3VycmVudFB1YmxpY0tleXMoXG4gIHByaW1hcnlQdWJsaWNLZXk6IHN0cmluZyB8IG51bGwsXG4gIGlkZW50aXR5S2V5czogQXJyYXk8eyBtZXRob2RQdWJsaWNLZXk6IHN0cmluZyB8IG51bGwgfT5cbik6IHN0cmluZ1tdIHtcbiAgY29uc3Qga2V5czogc3RyaW5nW10gPSBbXTtcbiAgaWYgKHByaW1hcnlQdWJsaWNLZXkpIHtcbiAgICBrZXlzLnB1c2gocHJpbWFyeVB1YmxpY0tleSk7XG4gIH1cbiAgZm9yIChjb25zdCBtZXRob2Qgb2YgaWRlbnRpdHlLZXlzKSB7XG4gICAgY29uc3Qga2V5ID0gbWV0aG9kLm1ldGhvZFB1YmxpY0tleTtcbiAgICBpZiAoa2V5ICYmICFrZXlzLmluY2x1ZGVzKGtleSkpIHtcbiAgICAgIGtleXMucHVzaChrZXkpO1xuICAgIH1cbiAgfVxuICByZXR1cm4ga2V5cztcbn1cblxuLyoqXG4gKiBUaGUgT3h5IHJlc29sdmVyOiBtYXBzIGEgc3ViamVjdCBESUQg4oaSIGl0cyBjdXJyZW50IHZlcmlmaWNhdGlvbiBtZXRob2RzICsgdGhlXG4gKiBPeHkgY3VzdG9kaWFsIGlzc3Vlci4gUmV0dXJucyBgbnVsbGAgd2hlbiB0aGUgRElEIGlzIG5vdCBhIHVzZXIgRElEIGZvciB0aGlzXG4gKiBpc3N1ZXIncyBkb21haW4gb3IgdGhlIGFjY291bnQgZG9lcyBub3QgZXhpc3QgKG5vIGtleSBpcyB0aGVuIGF1dGhvcml6ZWQpLlxuICovXG5leHBvcnQgY29uc3Qgb3h5VmVyaWZpY2F0aW9uUmVzb2x2ZXI6IFZlcmlmaWNhdGlvbk1ldGhvZFJlc29sdmVyID0ge1xuICBhc3luYyByZXNvbHZlKHN1YmplY3REaWQ6IHN0cmluZyk6IFByb21pc2U8UmVzb2x2ZWRWZXJpZmljYXRpb25NZXRob2RzIHwgbnVsbD4ge1xuICAgIGNvbnN0IHVzZXJJZCA9IHBhcnNlVXNlckRpZChzdWJqZWN0RGlkKTtcbiAgICBpZiAoIXVzZXJJZCkge1xuICAgICAgcmV0dXJuIG51bGw7XG4gICAgfVxuICAgIGNvbnN0IFt1c2VyXSA9IGF3YWl0IGdldERiKClcbiAgICAgIC5zZWxlY3QoeyBwdWJsaWNLZXk6IHVzZXJzLnB1YmxpY0tleSB9KVxuICAgICAgLmZyb20odXNlcnMpXG4gICAgICAud2hlcmUoZXEodXNlcnMuaWQsIHVzZXJJZCkpXG4gICAgICAubGltaXQoMSk7XG4gICAgaWYgKCF1c2VyKSB7XG4gICAgICByZXR1cm4gbnVsbDtcbiAgICB9XG4gICAgY29uc3QgaWRlbnRpdHlLZXlzID0gYXdhaXQgZ2V0RGIoKVxuICAgICAgLnNlbGVjdCh7IG1ldGhvZFB1YmxpY0tleTogdXNlckF1dGhNZXRob2RzLm1ldGhvZFB1YmxpY0tleSB9KVxuICAgICAgLmZyb20odXNlckF1dGhNZXRob2RzKVxuICAgICAgLndoZXJlKGFuZChlcSh1c2VyQXV0aE1ldGhvZHMudXNlcklkLCB1c2VySWQpLCBlcSh1c2VyQXV0aE1ldGhvZHMudHlwZSwgJ2lkZW50aXR5JykpKTtcblxuICAgIGNvbnN0IGN1c3RvZGlhbFB1YmxpY0tleSA9IHByb2Nlc3MuZW52Lk9YWV9QVUJMSUNfS0VZO1xuICAgIHJldHVybiB7XG4gICAgICBjdXJyZW50UHVibGljS2V5czogY29sbGVjdEN1cnJlbnRQdWJsaWNLZXlzKHVzZXIucHVibGljS2V5LCBpZGVudGl0eUtleXMpLFxuICAgICAgY3VzdG9kaWFsSXNzdWVyOiBPWFlfRElELFxuICAgICAgLy8gT21pdCB0aGUgY3VzdG9kaWFsIGtleSB3aGVuIHVuY29uZmlndXJlZCBzbyBhIGN1c3RvZGlhbCByZWNvcmQgY2FuIG5ldmVyXG4gICAgICAvLyB2ZXJpZnkgaW4gYW4gZW52aXJvbm1lbnQgd2l0aCBubyBPeHkga2V5LlxuICAgICAgLi4uKGN1c3RvZGlhbFB1YmxpY0tleSA/IHsgY3VzdG9kaWFsUHVibGljS2V5IH0gOiB7fSksXG4gICAgfTtcbiAgfSxcbn07XG4iXSwidmVyc2lvbiI6M30=

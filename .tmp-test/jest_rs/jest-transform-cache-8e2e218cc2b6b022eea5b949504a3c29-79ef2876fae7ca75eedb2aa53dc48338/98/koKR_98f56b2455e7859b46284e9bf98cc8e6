@@ -1,0 +1,283 @@
+0a9021e1366c4a41f208634c75a672df
+{
+  "signin": {
+    "title": "로그인",
+    "subtitle": "계속하려면 로그인하세요",
+    "addAccountTitle": "다른 계정 추가",
+    "addAccountSubtitle": "다른 계정으로 로그인",
+    "username": {
+      "label": "사용자 이름",
+      "placeholder": "사용자 이름을 입력하세요",
+      "helper": "3-30자, 영문과 숫자만",
+      "required": "사용자 이름을 입력해주세요.",
+      "minLength": "사용자 이름은 최소 3자 이상이어야 합니다."
+    },
+    "password": {
+      "label": "비밀번호",
+      "placeholder": "비밀번호를 입력하세요",
+      "required": "비밀번호를 입력해주세요.",
+      "hint": "로그인하려면 비밀번호를 입력하세요"
+    },
+    "actions": {
+      "continue": "계속",
+      "back": "뒤로",
+      "signIn": "로그인",
+      "verify": "확인",
+      "openAccountSwitcher": "다른 계정으로 전환",
+      "openAccountSwitcherSubtitle": "{{count}}개의 다른 계정 사용 가능",
+      "openAccountSwitcherSubtitle_singular": "1개의 다른 계정 사용 가능",
+      "openAccountSwitcherSubtitle_zero": "저장된 계정 검토",
+      "manageAccounts": "저장된 계정 관리",
+      "manageAccountsSubtitle": "세션 검토, 제거 또는 로그아웃",
+      "loadingOtherAccounts": "다른 계정 로드 중…",
+      "switchAccountFailed": "계정을 전환할 수 없습니다. 다시 시도해주세요."
+    },
+    "forgotPrompt": "비밀번호를 잊으셨나요?",
+    "security": {
+      "dataSecure": "데이터가 암호화되어 안전합니다"
+    },
+    "currentlySignedInAs": "현재 로그인 중:",
+    "alreadySignedInWith": "이미 로그인 중:",
+    "alreadySignedIn": "이미 로그인됨",
+    "alreadySignedInMessage": "이 계정은 이미 로그인되어 있습니다. 이 계정으로 계속하시겠습니까?",
+    "continueWithAccount": "계속",
+    "currentAccount": "현재",
+    "or": "또는",
+    "viewAllAccounts": "{{count}}개 더 보기",
+    "createAccountLink": "Oxy가 처음이신가요? 계정 만들기",
+    "status": {
+      "accountSwitched": "{{name}} 사용 중",
+      "signingIn": "로그인 중…"
+    }
+  },
+  "signup": {
+    "title": "계정 만들기",
+    "subtitle": "생태계 전체를 위한 하나의 아이덴티티.",
+    "commonsHeadline": "Commons에서 나의 아이덴티티 만들기",
+    "commonsExplainer": "Commons는 완전한 자기 보관 방식의 Oxy 아이덴티티입니다. 하나의 앱으로 어디서나 사용하세요.",
+    "createInCommons": "Commons에서 나의 아이덴티티 만들기",
+    "passkeyAlternative": "Commons가 없으신가요? 이 기기에서 패스키를 만드세요",
+    "createAccount": "계정 만들기",
+    "creating": "만드는 중…",
+    "usernamePlaceholder": "사용자 이름 선택",
+    "usernameChecking": "확인 중…",
+    "usernameAvailable": "사용 가능",
+    "usernameTaken": "이미 사용 중인 사용자 이름입니다",
+    "backToSignInLink": "이미 계정이 있으신가요? 로그인",
+    "hubExplainer": "안전한 창에서 Oxy ID를 만든 후 바로 돌아오세요.",
+    "continueInWindow": "새 창에서 계속하기",
+    "welcome": {
+      "title": "Oxy에 오신 것을 환영합니다!",
+      "subtitle": "몇 단계만으로 계정을 만드세요",
+      "haveAccount": "이미 계정이 있으신가요?",
+      "signInCta": "로그인"
+    },
+    "identity": {
+      "title": "당신은 누구인가요?",
+      "subtitle": "사용자 이름을 선택하고 이메일을 입력하세요"
+    },
+    "username": {
+      "helper": "3-30자, 영문과 숫자만",
+      "required": "사용자 이름을 입력해주세요",
+      "minLength": "사용자 이름은 최소 3자 이상이어야 합니다"
+    },
+    "email": {
+      "required": "이메일 주소를 입력해주세요",
+      "invalid": "유효한 이메일 주소를 입력해주세요",
+      "helper": "이메일을 공유하지 않습니다"
+    },
+    "security": {
+      "title": "계정 보호",
+      "subtitle": "계정을 보호하기 위한 강력한 비밀번호를 만드세요"
+    },
+    "password": {
+      "helper": "최소 8자",
+      "required": "비밀번호를 입력해주세요",
+      "minLength": "비밀번호는 최소 8자 이상이어야 합니다",
+      "confirmRequired": "비밀번호를 확인해주세요",
+      "mismatch": "비밀번호가 일치하지 않습니다",
+      "confirmHint": "확인을 위해 비밀번호를 다시 입력하세요"
+    },
+    "summary": {
+      "title": "거의 완료되었습니다!",
+      "subtitle": "정보를 검토하고 계정을 만드세요",
+      "sectionTitle": "계정 정보",
+      "fields": {
+        "username": "사용자 이름",
+        "email": "이메일",
+        "password": "비밀번호"
+      },
+      "notSet": "설정되지 않음",
+      "securityTip": "더 강력한 보안을 위해 계정을 만든 후 계정 설정에서 생체 인증을 활성화하세요.",
+      "legalReminder": "계정을 만들면 서비스 약관 및 개인정보 보호정책에 동의하는 것입니다."
+    }
+  },
+  "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "내 계정"
+    },
+    "loading": "계정을 불러오는 중...",
+    "qrHeadline": "Oxy ID로 로그인",
+    "signInWithOxy": "Oxy로 로그인",
+    "useIdentityOnDevice": "Commons가 없으신가요? 이 기기의 패스키를 사용하세요",
+    "passkeySigningIn": "로그인 중…",
+    "getCommons": "Commons 다운로드",
+    "commonsNotInstalled": "Commons가 없으신가요? 앱을 다운로드하여 Oxy ID로 로그인하세요.",
+    "showQrAnyway": "다른 기기에 Commons가 있습니다",
+    "switchWhileSignedInAs": "계정 전환, {{name}}(으)로 로그인됨",
+    "manageOnDevice": "이 기기의 계정 관리",
+    "continueWithOxy": "Oxy로 계속하기",
+    "havingTrouble": "문제가 있으신가요?",
+    "progress": {
+      "preparing": "요청 준비 중",
+      "awaitingApproval": "승인 대기 중",
+      "scanWithCommons": "휴대폰의 Commons로 스캔하세요",
+      "continueInCommons": "Commons에서 계속하세요",
+      "checkCommons": "휴대폰에서 Commons를 확인하세요",
+      "openedInCommons": "Commons에서 열림",
+      "confirming": "신원 확인 중",
+      "confirmed": "신원 확인 완료"
+    }
+  },
+  "common": {
+    "actions": {
+      "back": "뒤로",
+      "continue": "계속",
+      "next": "다음",
+      "getStarted": "시작하기",
+      "createAccount": "계정 만들기",
+      "signIn": "로그인",
+      "verify": "확인",
+      "resetPassword": "비밀번호 재설정",
+      "signedOut": "로그아웃됨",
+      "close": "닫기",
+      "tryAgain": "다시 시도"
+    },
+    "links": {
+      "recoverAccount": "계정 복구",
+      "signUp": "가입하기"
+    },
+    "labels": {
+      "username": "사용자 이름",
+      "email": "이메일",
+      "password": "비밀번호",
+      "confirmPassword": "비밀번호 확인"
+    },
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "모든 계정에서 로그아웃하는 중 문제가 발생했습니다. 다시 시도해 주세요."
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "subtitle": "Manage push, email, and security alerts",
+    "updateError": "Failed to update notification preferences",
+    "sections": {
+      "channels": "Channels",
+      "alerts": "Alerts",
+      "marketing": "Marketing"
+    },
+    "items": {
+      "push": {
+        "title": "Push notifications",
+        "subtitle": "Real-time alerts on your devices"
+      },
+      "emailDigest": {
+        "title": "Email digest",
+        "subtitle": "Periodic summary of your account activity"
+      },
+      "securityAlerts": {
+        "title": "Security alerts",
+        "subtitle": "Sign-ins, recovery codes, and key changes"
+      },
+      "marketingEmails": {
+        "title": "Marketing emails",
+        "subtitle": "Product news and occasional offers"
+      }
+    }
+  },
+  "preferences": {
+    "title": "Preferences",
+    "subtitle": "Theme, motion, and regional settings",
+    "sections": {
+      "appearance": "Appearance",
+      "language": "Language",
+      "region": "Region"
+    },
+    "theme": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System default"
+    },
+    "items": {
+      "theme": {
+        "title": "Theme"
+      },
+      "reduceMotion": {
+        "title": "Reduce motion",
+        "subtitle": "Minimise animations across Oxy apps",
+        "systemOn": "Following system: reduce motion is on"
+      },
+      "language": {
+        "title": "Language"
+      },
+      "timezone": {
+        "title": "Timezone",
+        "unknown": "Unable to detect timezone"
+      },
+      "about": {
+        "title": "About preferences",
+        "subtitle": "Preferences sync across every Oxy app you sign into"
+      }
+    }
+  },
+  "connectedApps": {
+    "title": "Connected apps",
+    "subtitle": "Manage third-party app access",
+    "empty": {
+      "title": "No connected apps",
+      "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
+    },
+    "item": {
+      "granted": "{{relative}}에 부여됨",
+      "lastUsed": "Last used {{relative}}"
+    },
+    "confirm": {
+      "title": "Revoke access",
+      "message": "Revoke {{name}}'s access to your Oxy account?"
+    },
+    "toasts": {
+      "revoked": "Revoked access for {{name}}",
+      "revokeFailed": "Failed to revoke access"
+    }
+  },
+  "accountMenu": {
+    "label": "계정 메뉴",
+    "manage": "Oxy 계정 관리",
+    "viewProfile": "프로필 보기",
+    "addAnother": "다른 계정 추가",
+    "signOutAll": "모든 계정에서 로그아웃",
+    "open": "계정 메뉴",
+    "openHint": "계정 메뉴를 엽니다",
+    "openWithUser": "{{name}}의 계정 메뉴",
+    "switching": "계정 전환 중…",
+    "signOutAccount": "{{name}} 로그아웃",
+    "greeting": "안녕하세요, {{name}}님!",
+    "switchAccount": "계정 전환",
+    "storage": {
+      "title": "Oxy 저장소",
+      "usage": "{{total}} 중 {{used}} 사용",
+      "used": "사용됨",
+      "free": "여유",
+      "unavailable": "사용량 정보를 사용할 수 없음",
+      "upgrade": "플랜 업그레이드",
+      "manage": "저장소 관리"
+    },
+    "data": "Oxy의 데이터",
+    "settings": "Oxy 설정",
+    "help": "도움말 및 피드백",
+    "signOut": "로그아웃",
+    "privacy": "개인정보 처리방침",
+    "terms": "서비스 약관"
+  }
+}

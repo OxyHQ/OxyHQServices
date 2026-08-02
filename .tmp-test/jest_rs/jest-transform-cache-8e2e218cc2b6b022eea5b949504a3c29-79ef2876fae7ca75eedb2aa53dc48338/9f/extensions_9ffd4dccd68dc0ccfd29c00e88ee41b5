@@ -1,0 +1,131 @@
+5068d69f8fdb03184434a9df62690f42
+"use strict";
+/**
+ * Postgres extensions this schema requires.
+ *
+ * The registry is DATA, with a reason per entry — the same shape as
+ * `DEFERRED_FOREIGN_KEYS` and `PROTECTED_COLUMNS`, for the same reason: a rule
+ * a reader can enumerate beats a rule spread across the files that happen to
+ * need it.
+ *
+ * ## Why this is not a numbered migration
+ *
+ * An extension has to exist BEFORE the first statement that names a type it
+ * provides. `user_locations.geo` is `geography(Point,4326)`, so a migration
+ * that creates it fails outright on a database with no PostGIS — and it fails
+ * only on a FRESH database, which is precisely the shape that passes on a
+ * developer's warm machine and then fails in CI or on a new RDS instance.
+ *
+ * Putting `CREATE EXTENSION` in a numbered migration would answer that only for
+ * as long as nobody renumbers, squashes or regenerates the sequence. The
+ * migration contract says the opposite: schema TS is the source of truth,
+ * generation is deterministic, and migrations get regenerated centrally under
+ * whatever number is correct. Anything that must be true before migration 0000
+ * therefore cannot live INSIDE the numbered sequence at all.
+ *
+ * So it is a precondition of the migrator instead: `bun run db:migrate` runs
+ * `scripts/ensure-extensions.ts` first and `drizzle-kit migrate` second. That is
+ * the single migration mechanism in this package — a developer, CI, and the
+ * jest harness (`db/testDatabase.ts` shells out to the same script) all go
+ * through it — so there is no environment where the ordering can be wrong, and
+ * no migration number that can be assigned wrongly.
+ *
+ * ## Why `IF NOT EXISTS` is the right spelling on a managed database
+ *
+ * `CREATE EXTENSION` normally needs a superuser (`rds_superuser` on RDS), which
+ * the application's migration role may not have. `IF NOT EXISTS` short-circuits
+ * on the duplicate check BEFORE any privilege check, so once the extension is
+ * installed — by infrastructure, by the master user, once — this step is a
+ * NOTICE and a no-op for an unprivileged role. Measured, not assumed: see
+ * `db/__tests__/extensions.test.ts`, which runs it as a freshly created role
+ * with no privileges at all.
+ *
+ * ## The trap the docker image does NOT cover
+ *
+ * `postgis/postgis` seeds PostGIS into `$POSTGRES_DB` and into a
+ * `template_postgis` template — NOT into `template1`. Every throwaway test
+ * database is `create database "oxy_test_…"` with no TEMPLATE clause, i.e. from
+ * `template1`, so it lands WITHOUT PostGIS. Running the right image is
+ * necessary and not sufficient; this step is what makes each new database
+ * usable.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.REQUIRED_EXTENSIONS = void 0;
+exports.ensureExtensions = ensureExtensions;
+const postgres_1 = __importDefault(require("postgres"));
+const env_1 = require("../config/env");
+/** Seconds the one-shot admin connection waits before forcing itself shut. */
+const CLOSE_TIMEOUT_SECONDS = 5;
+/**
+ * Extension names are interpolated into DDL (`CREATE EXTENSION` takes no bound
+ * parameter), so the vocabulary is constrained to what a real extension name
+ * can contain. Every entry below is a literal in this file; the guard exists so
+ * a future entry read from anywhere else cannot become an injection site.
+ */
+const EXTENSION_NAME = /^[a-z][a-z0-9_]*$/;
+/**
+ * Every extension the schema depends on. An entry here is a claim that some
+ * column, index or constraint does not exist without it — not a convenience.
+ */
+exports.REQUIRED_EXTENSIONS = [
+    {
+        name: 'postgis',
+        reason: '`user_locations.geo` is a generated `geography(Point,4326)` column with a ' +
+            'GiST index; `geography`, `ST_MakePoint`, `ST_DWithin` and `ST_Distance` ' +
+            'all come from PostGIS.',
+    },
+];
+/**
+ * Create every required extension on `databaseUrl`, in one short-lived
+ * connection.
+ *
+ * Idempotent by construction (`IF NOT EXISTS`), so it is safe to run before
+ * every migration rather than only on a fresh database.
+ *
+ * @throws {ConfigurationError} When an extension is unavailable in the server's
+ *   installation, or the role may not create it and nobody has installed it
+ *   already. Both are environment faults that must stop the migration rather
+ *   than let it fail later with a confusing `type "geography" does not exist`.
+ */
+function ensureExtensions(databaseUrl) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const client = (0, postgres_1.default)(databaseUrl, { max: 1 });
+        try {
+            for (const extension of exports.REQUIRED_EXTENSIONS) {
+                if (!EXTENSION_NAME.test(extension.name)) {
+                    throw new env_1.ConfigurationError(`Refusing to create extension "${extension.name}": an extension name ` +
+                        'must match /^[a-z][a-z0-9_]*$/.');
+                }
+                try {
+                    yield client.unsafe(`create extension if not exists "${extension.name}"`);
+                }
+                catch (error) {
+                    const detail = error instanceof Error ? error.message : String(error);
+                    throw new env_1.ConfigurationError(`Could not ensure the "${extension.name}" extension: ${detail}\n` +
+                        `It is required because ${extension.reason}\n` +
+                        'Locally and in CI this means the Postgres image must ship it ' +
+                        '(docker-compose.dev.yml and .github/workflows/ci.yml both use ' +
+                        'postgis/postgis:17-3.5). On a managed database, a role with ' +
+                        'sufficient privilege must run `CREATE EXTENSION` once; after that ' +
+                        'this step is a no-op for the migration role.');
+                }
+            }
+        }
+        finally {
+            yield client.end({ timeout: CLOSE_TIMEOUT_SECONDS });
+        }
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvZGIvZXh0ZW5zaW9ucy50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQWdERzs7Ozs7Ozs7Ozs7Ozs7O0FBaURILDRDQTRCQztBQTNFRCx3REFBZ0M7QUFDaEMsdUNBQW1EO0FBRW5ELDhFQUE4RTtBQUM5RSxNQUFNLHFCQUFxQixHQUFHLENBQUMsQ0FBQztBQUVoQzs7Ozs7R0FLRztBQUNILE1BQU0sY0FBYyxHQUFHLG1CQUFtQixDQUFDO0FBUzNDOzs7R0FHRztBQUNVLFFBQUEsbUJBQW1CLEdBQWlDO0lBQy9EO1FBQ0UsSUFBSSxFQUFFLFNBQVM7UUFDZixNQUFNLEVBQ0osNEVBQTRFO1lBQzVFLDBFQUEwRTtZQUMxRSx3QkFBd0I7S0FDM0I7Q0FDRixDQUFDO0FBRUY7Ozs7Ozs7Ozs7O0dBV0c7QUFDSCxTQUFzQixnQkFBZ0IsQ0FBQyxXQUFtQjs7UUFDeEQsTUFBTSxNQUFNLEdBQUcsSUFBQSxrQkFBUSxFQUFDLFdBQVcsRUFBRSxFQUFFLEdBQUcsRUFBRSxDQUFDLEVBQUUsQ0FBQyxDQUFDO1FBQ2pELElBQUksQ0FBQztZQUNILEtBQUssTUFBTSxTQUFTLElBQUksMkJBQW1CLEVBQUUsQ0FBQztnQkFDNUMsSUFBSSxDQUFDLGNBQWMsQ0FBQyxJQUFJLENBQUMsU0FBUyxDQUFDLElBQUksQ0FBQyxFQUFFLENBQUM7b0JBQ3pDLE1BQU0sSUFBSSx3QkFBa0IsQ0FDMUIsaUNBQWlDLFNBQVMsQ0FBQyxJQUFJLHVCQUF1Qjt3QkFDdEUsaUNBQWlDLENBQ2xDLENBQUM7Z0JBQ0osQ0FBQztnQkFDRCxJQUFJLENBQUM7b0JBQ0gsTUFBTSxNQUFNLENBQUMsTUFBTSxDQUFDLG1DQUFtQyxTQUFTLENBQUMsSUFBSSxHQUFHLENBQUMsQ0FBQztnQkFDNUUsQ0FBQztnQkFBQyxPQUFPLEtBQUssRUFBRSxDQUFDO29CQUNmLE1BQU0sTUFBTSxHQUFHLEtBQUssWUFBWSxLQUFLLENBQUMsQ0FBQyxDQUFDLEtBQUssQ0FBQyxPQUFPLENBQUMsQ0FBQyxDQUFDLE1BQU0sQ0FBQyxLQUFLLENBQUMsQ0FBQztvQkFDdEUsTUFBTSxJQUFJLHdCQUFrQixDQUMxQix5QkFBeUIsU0FBUyxDQUFDLElBQUksZ0JBQWdCLE1BQU0sSUFBSTt3QkFDakUsMEJBQTBCLFNBQVMsQ0FBQyxNQUFNLElBQUk7d0JBQzlDLCtEQUErRDt3QkFDL0QsZ0VBQWdFO3dCQUNoRSw4REFBOEQ7d0JBQzlELG9FQUFvRTt3QkFDcEUsOENBQThDLENBQy9DLENBQUM7Z0JBQ0osQ0FBQztZQUNILENBQUM7UUFDSCxDQUFDO2dCQUFTLENBQUM7WUFDVCxNQUFNLE1BQU0sQ0FBQyxHQUFHLENBQUMsRUFBRSxPQUFPLEVBQUUscUJBQXFCLEVBQUUsQ0FBQyxDQUFDO1FBQ3ZELENBQUM7SUFDSCxDQUFDO0NBQUEiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvZGIvZXh0ZW5zaW9ucy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIFBvc3RncmVzIGV4dGVuc2lvbnMgdGhpcyBzY2hlbWEgcmVxdWlyZXMuXG4gKlxuICogVGhlIHJlZ2lzdHJ5IGlzIERBVEEsIHdpdGggYSByZWFzb24gcGVyIGVudHJ5IOKAlCB0aGUgc2FtZSBzaGFwZSBhc1xuICogYERFRkVSUkVEX0ZPUkVJR05fS0VZU2AgYW5kIGBQUk9URUNURURfQ09MVU1OU2AsIGZvciB0aGUgc2FtZSByZWFzb246IGEgcnVsZVxuICogYSByZWFkZXIgY2FuIGVudW1lcmF0ZSBiZWF0cyBhIHJ1bGUgc3ByZWFkIGFjcm9zcyB0aGUgZmlsZXMgdGhhdCBoYXBwZW4gdG9cbiAqIG5lZWQgaXQuXG4gKlxuICogIyMgV2h5IHRoaXMgaXMgbm90IGEgbnVtYmVyZWQgbWlncmF0aW9uXG4gKlxuICogQW4gZXh0ZW5zaW9uIGhhcyB0byBleGlzdCBCRUZPUkUgdGhlIGZpcnN0IHN0YXRlbWVudCB0aGF0IG5hbWVzIGEgdHlwZSBpdFxuICogcHJvdmlkZXMuIGB1c2VyX2xvY2F0aW9ucy5nZW9gIGlzIGBnZW9ncmFwaHkoUG9pbnQsNDMyNilgLCBzbyBhIG1pZ3JhdGlvblxuICogdGhhdCBjcmVhdGVzIGl0IGZhaWxzIG91dHJpZ2h0IG9uIGEgZGF0YWJhc2Ugd2l0aCBubyBQb3N0R0lTIOKAlCBhbmQgaXQgZmFpbHNcbiAqIG9ubHkgb24gYSBGUkVTSCBkYXRhYmFzZSwgd2hpY2ggaXMgcHJlY2lzZWx5IHRoZSBzaGFwZSB0aGF0IHBhc3NlcyBvbiBhXG4gKiBkZXZlbG9wZXIncyB3YXJtIG1hY2hpbmUgYW5kIHRoZW4gZmFpbHMgaW4gQ0kgb3Igb24gYSBuZXcgUkRTIGluc3RhbmNlLlxuICpcbiAqIFB1dHRpbmcgYENSRUFURSBFWFRFTlNJT05gIGluIGEgbnVtYmVyZWQgbWlncmF0aW9uIHdvdWxkIGFuc3dlciB0aGF0IG9ubHkgZm9yXG4gKiBhcyBsb25nIGFzIG5vYm9keSByZW51bWJlcnMsIHNxdWFzaGVzIG9yIHJlZ2VuZXJhdGVzIHRoZSBzZXF1ZW5jZS4gVGhlXG4gKiBtaWdyYXRpb24gY29udHJhY3Qgc2F5cyB0aGUgb3Bwb3NpdGU6IHNjaGVtYSBUUyBpcyB0aGUgc291cmNlIG9mIHRydXRoLFxuICogZ2VuZXJhdGlvbiBpcyBkZXRlcm1pbmlzdGljLCBhbmQgbWlncmF0aW9ucyBnZXQgcmVnZW5lcmF0ZWQgY2VudHJhbGx5IHVuZGVyXG4gKiB3aGF0ZXZlciBudW1iZXIgaXMgY29ycmVjdC4gQW55dGhpbmcgdGhhdCBtdXN0IGJlIHRydWUgYmVmb3JlIG1pZ3JhdGlvbiAwMDAwXG4gKiB0aGVyZWZvcmUgY2Fubm90IGxpdmUgSU5TSURFIHRoZSBudW1iZXJlZCBzZXF1ZW5jZSBhdCBhbGwuXG4gKlxuICogU28gaXQgaXMgYSBwcmVjb25kaXRpb24gb2YgdGhlIG1pZ3JhdG9yIGluc3RlYWQ6IGBidW4gcnVuIGRiOm1pZ3JhdGVgIHJ1bnNcbiAqIGBzY3JpcHRzL2Vuc3VyZS1leHRlbnNpb25zLnRzYCBmaXJzdCBhbmQgYGRyaXp6bGUta2l0IG1pZ3JhdGVgIHNlY29uZC4gVGhhdCBpc1xuICogdGhlIHNpbmdsZSBtaWdyYXRpb24gbWVjaGFuaXNtIGluIHRoaXMgcGFja2FnZSDigJQgYSBkZXZlbG9wZXIsIENJLCBhbmQgdGhlXG4gKiBqZXN0IGhhcm5lc3MgKGBkYi90ZXN0RGF0YWJhc2UudHNgIHNoZWxscyBvdXQgdG8gdGhlIHNhbWUgc2NyaXB0KSBhbGwgZ29cbiAqIHRocm91Z2ggaXQg4oCUIHNvIHRoZXJlIGlzIG5vIGVudmlyb25tZW50IHdoZXJlIHRoZSBvcmRlcmluZyBjYW4gYmUgd3JvbmcsIGFuZFxuICogbm8gbWlncmF0aW9uIG51bWJlciB0aGF0IGNhbiBiZSBhc3NpZ25lZCB3cm9uZ2x5LlxuICpcbiAqICMjIFdoeSBgSUYgTk9UIEVYSVNUU2AgaXMgdGhlIHJpZ2h0IHNwZWxsaW5nIG9uIGEgbWFuYWdlZCBkYXRhYmFzZVxuICpcbiAqIGBDUkVBVEUgRVhURU5TSU9OYCBub3JtYWxseSBuZWVkcyBhIHN1cGVydXNlciAoYHJkc19zdXBlcnVzZXJgIG9uIFJEUyksIHdoaWNoXG4gKiB0aGUgYXBwbGljYXRpb24ncyBtaWdyYXRpb24gcm9sZSBtYXkgbm90IGhhdmUuIGBJRiBOT1QgRVhJU1RTYCBzaG9ydC1jaXJjdWl0c1xuICogb24gdGhlIGR1cGxpY2F0ZSBjaGVjayBCRUZPUkUgYW55IHByaXZpbGVnZSBjaGVjaywgc28gb25jZSB0aGUgZXh0ZW5zaW9uIGlzXG4gKiBpbnN0YWxsZWQg4oCUIGJ5IGluZnJhc3RydWN0dXJlLCBieSB0aGUgbWFzdGVyIHVzZXIsIG9uY2Ug4oCUIHRoaXMgc3RlcCBpcyBhXG4gKiBOT1RJQ0UgYW5kIGEgbm8tb3AgZm9yIGFuIHVucHJpdmlsZWdlZCByb2xlLiBNZWFzdXJlZCwgbm90IGFzc3VtZWQ6IHNlZVxuICogYGRiL19fdGVzdHNfXy9leHRlbnNpb25zLnRlc3QudHNgLCB3aGljaCBydW5zIGl0IGFzIGEgZnJlc2hseSBjcmVhdGVkIHJvbGVcbiAqIHdpdGggbm8gcHJpdmlsZWdlcyBhdCBhbGwuXG4gKlxuICogIyMgVGhlIHRyYXAgdGhlIGRvY2tlciBpbWFnZSBkb2VzIE5PVCBjb3ZlclxuICpcbiAqIGBwb3N0Z2lzL3Bvc3RnaXNgIHNlZWRzIFBvc3RHSVMgaW50byBgJFBPU1RHUkVTX0RCYCBhbmQgaW50byBhXG4gKiBgdGVtcGxhdGVfcG9zdGdpc2AgdGVtcGxhdGUg4oCUIE5PVCBpbnRvIGB0ZW1wbGF0ZTFgLiBFdmVyeSB0aHJvd2F3YXkgdGVzdFxuICogZGF0YWJhc2UgaXMgYGNyZWF0ZSBkYXRhYmFzZSBcIm94eV90ZXN0X+KAplwiYCB3aXRoIG5vIFRFTVBMQVRFIGNsYXVzZSwgaS5lLiBmcm9tXG4gKiBgdGVtcGxhdGUxYCwgc28gaXQgbGFuZHMgV0lUSE9VVCBQb3N0R0lTLiBSdW5uaW5nIHRoZSByaWdodCBpbWFnZSBpc1xuICogbmVjZXNzYXJ5IGFuZCBub3Qgc3VmZmljaWVudDsgdGhpcyBzdGVwIGlzIHdoYXQgbWFrZXMgZWFjaCBuZXcgZGF0YWJhc2VcbiAqIHVzYWJsZS5cbiAqL1xuXG5pbXBvcnQgcG9zdGdyZXMgZnJvbSAncG9zdGdyZXMnO1xuaW1wb3J0IHsgQ29uZmlndXJhdGlvbkVycm9yIH0gZnJvbSAnLi4vY29uZmlnL2Vudic7XG5cbi8qKiBTZWNvbmRzIHRoZSBvbmUtc2hvdCBhZG1pbiBjb25uZWN0aW9uIHdhaXRzIGJlZm9yZSBmb3JjaW5nIGl0c2VsZiBzaHV0LiAqL1xuY29uc3QgQ0xPU0VfVElNRU9VVF9TRUNPTkRTID0gNTtcblxuLyoqXG4gKiBFeHRlbnNpb24gbmFtZXMgYXJlIGludGVycG9sYXRlZCBpbnRvIERETCAoYENSRUFURSBFWFRFTlNJT05gIHRha2VzIG5vIGJvdW5kXG4gKiBwYXJhbWV0ZXIpLCBzbyB0aGUgdm9jYWJ1bGFyeSBpcyBjb25zdHJhaW5lZCB0byB3aGF0IGEgcmVhbCBleHRlbnNpb24gbmFtZVxuICogY2FuIGNvbnRhaW4uIEV2ZXJ5IGVudHJ5IGJlbG93IGlzIGEgbGl0ZXJhbCBpbiB0aGlzIGZpbGU7IHRoZSBndWFyZCBleGlzdHMgc29cbiAqIGEgZnV0dXJlIGVudHJ5IHJlYWQgZnJvbSBhbnl3aGVyZSBlbHNlIGNhbm5vdCBiZWNvbWUgYW4gaW5qZWN0aW9uIHNpdGUuXG4gKi9cbmNvbnN0IEVYVEVOU0lPTl9OQU1FID0gL15bYS16XVthLXowLTlfXSokLztcblxuZXhwb3J0IGludGVyZmFjZSBSZXF1aXJlZEV4dGVuc2lvbiB7XG4gIC8qKiBUaGUgYENSRUFURSBFWFRFTlNJT05gIG5hbWUuICovXG4gIHJlYWRvbmx5IG5hbWU6IHN0cmluZztcbiAgLyoqIFdoYXQgaW4gdGhpcyBzY2hlbWEgc3RvcHMgd29ya2luZyB3aXRob3V0IGl0LiAqL1xuICByZWFkb25seSByZWFzb246IHN0cmluZztcbn1cblxuLyoqXG4gKiBFdmVyeSBleHRlbnNpb24gdGhlIHNjaGVtYSBkZXBlbmRzIG9uLiBBbiBlbnRyeSBoZXJlIGlzIGEgY2xhaW0gdGhhdCBzb21lXG4gKiBjb2x1bW4sIGluZGV4IG9yIGNvbnN0cmFpbnQgZG9lcyBub3QgZXhpc3Qgd2l0aG91dCBpdCDigJQgbm90IGEgY29udmVuaWVuY2UuXG4gKi9cbmV4cG9ydCBjb25zdCBSRVFVSVJFRF9FWFRFTlNJT05TOiByZWFkb25seSBSZXF1aXJlZEV4dGVuc2lvbltdID0gW1xuICB7XG4gICAgbmFtZTogJ3Bvc3RnaXMnLFxuICAgIHJlYXNvbjpcbiAgICAgICdgdXNlcl9sb2NhdGlvbnMuZ2VvYCBpcyBhIGdlbmVyYXRlZCBgZ2VvZ3JhcGh5KFBvaW50LDQzMjYpYCBjb2x1bW4gd2l0aCBhICcgK1xuICAgICAgJ0dpU1QgaW5kZXg7IGBnZW9ncmFwaHlgLCBgU1RfTWFrZVBvaW50YCwgYFNUX0RXaXRoaW5gIGFuZCBgU1RfRGlzdGFuY2VgICcgK1xuICAgICAgJ2FsbCBjb21lIGZyb20gUG9zdEdJUy4nLFxuICB9LFxuXTtcblxuLyoqXG4gKiBDcmVhdGUgZXZlcnkgcmVxdWlyZWQgZXh0ZW5zaW9uIG9uIGBkYXRhYmFzZVVybGAsIGluIG9uZSBzaG9ydC1saXZlZFxuICogY29ubmVjdGlvbi5cbiAqXG4gKiBJZGVtcG90ZW50IGJ5IGNvbnN0cnVjdGlvbiAoYElGIE5PVCBFWElTVFNgKSwgc28gaXQgaXMgc2FmZSB0byBydW4gYmVmb3JlXG4gKiBldmVyeSBtaWdyYXRpb24gcmF0aGVyIHRoYW4gb25seSBvbiBhIGZyZXNoIGRhdGFiYXNlLlxuICpcbiAqIEB0aHJvd3Mge0NvbmZpZ3VyYXRpb25FcnJvcn0gV2hlbiBhbiBleHRlbnNpb24gaXMgdW5hdmFpbGFibGUgaW4gdGhlIHNlcnZlcidzXG4gKiAgIGluc3RhbGxhdGlvbiwgb3IgdGhlIHJvbGUgbWF5IG5vdCBjcmVhdGUgaXQgYW5kIG5vYm9keSBoYXMgaW5zdGFsbGVkIGl0XG4gKiAgIGFscmVhZHkuIEJvdGggYXJlIGVudmlyb25tZW50IGZhdWx0cyB0aGF0IG11c3Qgc3RvcCB0aGUgbWlncmF0aW9uIHJhdGhlclxuICogICB0aGFuIGxldCBpdCBmYWlsIGxhdGVyIHdpdGggYSBjb25mdXNpbmcgYHR5cGUgXCJnZW9ncmFwaHlcIiBkb2VzIG5vdCBleGlzdGAuXG4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiBlbnN1cmVFeHRlbnNpb25zKGRhdGFiYXNlVXJsOiBzdHJpbmcpOiBQcm9taXNlPHZvaWQ+IHtcbiAgY29uc3QgY2xpZW50ID0gcG9zdGdyZXMoZGF0YWJhc2VVcmwsIHsgbWF4OiAxIH0pO1xuICB0cnkge1xuICAgIGZvciAoY29uc3QgZXh0ZW5zaW9uIG9mIFJFUVVJUkVEX0VYVEVOU0lPTlMpIHtcbiAgICAgIGlmICghRVhURU5TSU9OX05BTUUudGVzdChleHRlbnNpb24ubmFtZSkpIHtcbiAgICAgICAgdGhyb3cgbmV3IENvbmZpZ3VyYXRpb25FcnJvcihcbiAgICAgICAgICBgUmVmdXNpbmcgdG8gY3JlYXRlIGV4dGVuc2lvbiBcIiR7ZXh0ZW5zaW9uLm5hbWV9XCI6IGFuIGV4dGVuc2lvbiBuYW1lIGAgK1xuICAgICAgICAgICdtdXN0IG1hdGNoIC9eW2Etel1bYS16MC05X10qJC8uJ1xuICAgICAgICApO1xuICAgICAgfVxuICAgICAgdHJ5IHtcbiAgICAgICAgYXdhaXQgY2xpZW50LnVuc2FmZShgY3JlYXRlIGV4dGVuc2lvbiBpZiBub3QgZXhpc3RzIFwiJHtleHRlbnNpb24ubmFtZX1cImApO1xuICAgICAgfSBjYXRjaCAoZXJyb3IpIHtcbiAgICAgICAgY29uc3QgZGV0YWlsID0gZXJyb3IgaW5zdGFuY2VvZiBFcnJvciA/IGVycm9yLm1lc3NhZ2UgOiBTdHJpbmcoZXJyb3IpO1xuICAgICAgICB0aHJvdyBuZXcgQ29uZmlndXJhdGlvbkVycm9yKFxuICAgICAgICAgIGBDb3VsZCBub3QgZW5zdXJlIHRoZSBcIiR7ZXh0ZW5zaW9uLm5hbWV9XCIgZXh0ZW5zaW9uOiAke2RldGFpbH1cXG5gICtcbiAgICAgICAgICBgSXQgaXMgcmVxdWlyZWQgYmVjYXVzZSAke2V4dGVuc2lvbi5yZWFzb259XFxuYCArXG4gICAgICAgICAgJ0xvY2FsbHkgYW5kIGluIENJIHRoaXMgbWVhbnMgdGhlIFBvc3RncmVzIGltYWdlIG11c3Qgc2hpcCBpdCAnICtcbiAgICAgICAgICAnKGRvY2tlci1jb21wb3NlLmRldi55bWwgYW5kIC5naXRodWIvd29ya2Zsb3dzL2NpLnltbCBib3RoIHVzZSAnICtcbiAgICAgICAgICAncG9zdGdpcy9wb3N0Z2lzOjE3LTMuNSkuIE9uIGEgbWFuYWdlZCBkYXRhYmFzZSwgYSByb2xlIHdpdGggJyArXG4gICAgICAgICAgJ3N1ZmZpY2llbnQgcHJpdmlsZWdlIG11c3QgcnVuIGBDUkVBVEUgRVhURU5TSU9OYCBvbmNlOyBhZnRlciB0aGF0ICcgK1xuICAgICAgICAgICd0aGlzIHN0ZXAgaXMgYSBuby1vcCBmb3IgdGhlIG1pZ3JhdGlvbiByb2xlLidcbiAgICAgICAgKTtcbiAgICAgIH1cbiAgICB9XG4gIH0gZmluYWxseSB7XG4gICAgYXdhaXQgY2xpZW50LmVuZCh7IHRpbWVvdXQ6IENMT1NFX1RJTUVPVVRfU0VDT05EUyB9KTtcbiAgfVxufVxuIl0sInZlcnNpb24iOjN9

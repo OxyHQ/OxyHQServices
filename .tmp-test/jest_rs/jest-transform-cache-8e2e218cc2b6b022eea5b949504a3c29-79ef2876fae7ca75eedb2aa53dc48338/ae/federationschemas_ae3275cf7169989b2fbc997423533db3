@@ -1,0 +1,177 @@
+f7dbb0e0569cf9358a9c2b5aa8d405e1
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.federationDomainPurgeSchema = exports.federationActorDeleteSchema = exports.federationActorGoneSchema = exports.federationFollowSchema = exports.signRequestSchema = exports.publicKeyQuerySchema = exports.publicKeyParamsSchema = exports.MAX_SIGNING_STRING_LENGTH = void 0;
+const zod_1 = require("zod");
+const validation_1 = require("../utils/validation");
+/**
+ * Schemas for the federation sign-on-behalf routes (`/federation/...`).
+ *
+ * SECURITY: these endpoints let a service credential (e.g. Mention) obtain the
+ * public half of, and HTTP-Signature signatures from, a domain-scoped key whose
+ * PRIVATE half never leaves Oxy. The schemas here enforce the structural
+ * contract; the route enforces the trust boundary (keyId host must belong to
+ * the credential's Application — see `routes/federation.ts`).
+ */
+/**
+ * Max length of an HTTP-Signature signing string. A signing string is a handful
+ * of header lines (request-target, host, date, digest, content-type); a few KB
+ * is comfortably above any legitimate value and well below anything that could
+ * be abused to turn the endpoint into a bulk signing oracle.
+ */
+exports.MAX_SIGNING_STRING_LENGTH = 4096;
+/** A federation `#main-key` keyId — must be an absolute https URL. */
+const keyIdSchema = zod_1.z
+    .string()
+    .trim()
+    .url('keyId must be a valid URL')
+    .max(2048, 'keyId is too long')
+    .refine((value) => value.startsWith('https://'), {
+    message: 'keyId must be an https URL',
+})
+    .refine((value) => value.endsWith('#main-key'), {
+    message: 'keyId must end with #main-key',
+});
+// GET /federation/public-key/:username
+exports.publicKeyParamsSchema = zod_1.z.object({
+    username: zod_1.z.string().trim().min(1, 'username is required').max(256),
+});
+// GET /federation/public-key/:username?domain=<domain>
+exports.publicKeyQuerySchema = zod_1.z.object({
+    domain: zod_1.z
+        .string()
+        .trim()
+        .toLowerCase()
+        .min(1, 'domain is required')
+        .max(253, 'domain is too long')
+        // RFC-1123-ish hostname: labels of [a-z0-9-] separated by dots, at least
+        // one dot. Rejects schemes, ports, paths, and userinfo.
+        .regex(/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/, 'domain must be a bare hostname'),
+});
+// POST /federation/sign
+exports.signRequestSchema = zod_1.z.object({
+    keyId: keyIdSchema,
+    signingString: zod_1.z
+        .string()
+        .min(1, 'signingString is required')
+        .max(exports.MAX_SIGNING_STRING_LENGTH, `signingString must not exceed ${exports.MAX_SIGNING_STRING_LENGTH} characters`)
+        // Not a generic signing oracle: the first signed header MUST be the HTTP
+        // request-target pseudo-header, i.e. this is signing an outbound AP request.
+        .refine((value) => value.startsWith('(request-target):'), {
+        message: 'signingString must begin with "(request-target):"',
+    }),
+});
+/**
+ * An Oxy account id, in EITHER of the two shapes that are live.
+ *
+ * This used to be `/^[a-f0-9]{24}$/i` — a MongoDB ObjectId, and nothing else.
+ * Per `db/MIGRATION-CONTRACT.md` the pre-cutover ids are preserved verbatim but
+ * every account created SINCE is given a **uuid v7** (`db/schema/columns.ts`
+ * `generatedId()`), so that regex rejected the id of every new account. It ran
+ * inside `validate({ body })`, i.e. BEFORE the handler, so `POST /federation/follow`,
+ * `/actor-gone` and `/actor-delete` all answered 400 for a post-cutover account
+ * without ever looking one up: a remote Follow could not be mirrored, and a dead
+ * federated actor could not be archived or deleted.
+ *
+ * The validation is KEPT rather than deleted — unlike the `ObjectId.isValid`
+ * guards the contract retires, a 400 here is the documented answer to a
+ * malformed body on a service-to-service bridge, and `validate` is where this
+ * route family reports one. What changes is only which strings are malformed:
+ * {@link isAccountIdFormat} accepts both live shapes and is the single place
+ * that knows what they are.
+ */
+const accountIdSchema = zod_1.z
+    .string()
+    .trim()
+    .refine(validation_1.isAccountIdFormat, 'must be an Oxy account id');
+/**
+ * A ROW id used as a pagination cursor — not an account id, though it validates
+ * the same way.
+ *
+ * `main` wrote this as `objectIdSchema`, which the port retired: after the
+ * cutover a row's id is a uuid v7, so a 24-hex refinement would reject every
+ * cursor the endpoint itself had just issued. `isAccountIdFormat` is the single
+ * place that knows both live shapes; the separate name is so a reader does not
+ * conclude this field carries an account.
+ */
+const entityIdSchema = zod_1.z
+    .string()
+    .trim()
+    .refine(validation_1.isAccountIdFormat, 'must be a live entity id');
+/**
+ * POST /federation/follow
+ *
+ * Moves a single Oxy follow-graph edge on behalf of a FEDERATED actor: a remote
+ * actor that Follows/Unfollows a local user over ActivityPub. `followerUserId`
+ * is the (federated) remote actor's Oxy user id and `targetUserId` is the local
+ * user being followed; the route enforces those type constraints.
+ */
+exports.federationFollowSchema = zod_1.z.object({
+    followerUserId: accountIdSchema,
+    targetUserId: accountIdSchema,
+    action: zod_1.z.enum(['follow', 'unfollow']),
+});
+/**
+ * POST /federation/actor-gone
+ *
+ * Marks a dead remote fediverse identity gone. Mention is the only component
+ * that talks to the remote fediverse; when it gets an HTTP 410 Gone for an
+ * actor it calls this to archive the corresponding Oxy user so the identity
+ * leaves discovery/search surfaces. `oxyUserId` is the (federated) actor's Oxy
+ * user id; the route enforces that it resolves to a `type:'federated'` user
+ * before archiving (a local/agent/automated account is never archivable here).
+ */
+exports.federationActorGoneSchema = zod_1.z.object({
+    oxyUserId: accountIdSchema,
+});
+/**
+ * POST /federation/actor-delete
+ *
+ * HARD-DELETES a dead remote fediverse identity and purges its Oxy follow-graph
+ * edges. Mention calls this after a federated actor has been permanently removed
+ * upstream (HTTP 410 Gone for a spam/deleted account) to erase the ghost
+ * identity and its social-graph residue from Oxy entirely — the irreversible
+ * counterpart to `actor-gone` (which only archives). `oxyUserId` is the
+ * (federated) actor's Oxy user id; the route enforces that it resolves to a
+ * `type:'federated'` user before any destructive write, and the delete filter
+ * re-asserts `type:'federated'` atomically so a real account can never be hit.
+ */
+exports.federationActorDeleteSchema = zod_1.z.object({
+    oxyUserId: accountIdSchema,
+});
+/**
+ * POST /federation/domain-purge
+ *
+ * Removes what Oxy holds for a fediverse instance an app has blocked. The app
+ * owns the blocklist; Oxy is handed ONE domain at a time and never stores which
+ * domains are blocked (see `services/federation/blockedDomainPurge.service.ts`).
+ *
+ * `dryRun` DEFAULTS TO TRUE: the safe value is the one you get by omission, so
+ * a caller that forgets the field plans instead of deleting. Deleting requires
+ * sending `dryRun: false` explicitly AND an armed deployment.
+ *
+ * `domain` is a bare host — no scheme, no port, no path — because that is what
+ * the federation engine's canonicaliser consumes. A value containing any of
+ * those is rejected here rather than being silently canonicalised into
+ * something that matches the wrong rows.
+ */
+exports.federationDomainPurgeSchema = zod_1.z.object({
+    domain: zod_1.z
+        .string()
+        .trim()
+        .min(1, 'domain is required')
+        .max(253, 'domain exceeds the maximum DNS name length')
+        .refine((value) => !/[/:@\s]/.test(value), {
+        message: 'domain must be a bare host (no scheme, port, path or whitespace)',
+    }),
+    dryRun: zod_1.z.boolean().default(true),
+    limit: zod_1.z.number().int().min(1).max(1000).optional(),
+    /**
+     * Continuation cursor from the previous response's `nextCursor`. Progress is
+     * driven by this rather than by rows disappearing, because a dry run and a
+     * retained row both leave every row in place — a caller looping on "anything
+     * left?" would never terminate.
+     */
+    afterId: entityIdSchema.optional(),
+});
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2NoZW1hcy9mZWRlcmF0aW9uLnNjaGVtYXMudHMiLCJtYXBwaW5ncyI6Ijs7O0FBQUEsNkJBQXdCO0FBQ3hCLG9EQUF3RDtBQUV4RDs7Ozs7Ozs7R0FRRztBQUVIOzs7OztHQUtHO0FBQ1UsUUFBQSx5QkFBeUIsR0FBRyxJQUFJLENBQUM7QUFFOUMsc0VBQXNFO0FBQ3RFLE1BQU0sV0FBVyxHQUFHLE9BQUM7S0FDbEIsTUFBTSxFQUFFO0tBQ1IsSUFBSSxFQUFFO0tBQ04sR0FBRyxDQUFDLDJCQUEyQixDQUFDO0tBQ2hDLEdBQUcsQ0FBQyxJQUFJLEVBQUUsbUJBQW1CLENBQUM7S0FDOUIsTUFBTSxDQUFDLENBQUMsS0FBSyxFQUFFLEVBQUUsQ0FBQyxLQUFLLENBQUMsVUFBVSxDQUFDLFVBQVUsQ0FBQyxFQUFFO0lBQy9DLE9BQU8sRUFBRSw0QkFBNEI7Q0FDdEMsQ0FBQztLQUNELE1BQU0sQ0FBQyxDQUFDLEtBQUssRUFBRSxFQUFFLENBQUMsS0FBSyxDQUFDLFFBQVEsQ0FBQyxXQUFXLENBQUMsRUFBRTtJQUM5QyxPQUFPLEVBQUUsK0JBQStCO0NBQ3pDLENBQUMsQ0FBQztBQUVMLHVDQUF1QztBQUMxQixRQUFBLHFCQUFxQixHQUFHLE9BQUMsQ0FBQyxNQUFNLENBQUM7SUFDNUMsUUFBUSxFQUFFLE9BQUMsQ0FBQyxNQUFNLEVBQUUsQ0FBQyxJQUFJLEVBQUUsQ0FBQyxHQUFHLENBQUMsQ0FBQyxFQUFFLHNCQUFzQixDQUFDLENBQUMsR0FBRyxDQUFDLEdBQUcsQ0FBQztDQUNwRSxDQUFDLENBQUM7QUFFSCx1REFBdUQ7QUFDMUMsUUFBQSxvQkFBb0IsR0FBRyxPQUFDLENBQUMsTUFBTSxDQUFDO0lBQzNDLE1BQU0sRUFBRSxPQUFDO1NBQ04sTUFBTSxFQUFFO1NBQ1IsSUFBSSxFQUFFO1NBQ04sV0FBVyxFQUFFO1NBQ2IsR0FBRyxDQUFDLENBQUMsRUFBRSxvQkFBb0IsQ0FBQztTQUM1QixHQUFHLENBQUMsR0FBRyxFQUFFLG9CQUFvQixDQUFDO1FBQy9CLHlFQUF5RTtRQUN6RSx3REFBd0Q7U0FDdkQsS0FBSyxDQUNKLDRGQUE0RixFQUM1RixnQ0FBZ0MsQ0FDakM7Q0FDSixDQUFDLENBQUM7QUFFSCx3QkFBd0I7QUFDWCxRQUFBLGlCQUFpQixHQUFHLE9BQUMsQ0FBQyxNQUFNLENBQUM7SUFDeEMsS0FBSyxFQUFFLFdBQVc7SUFDbEIsYUFBYSxFQUFFLE9BQUM7U0FDYixNQUFNLEVBQUU7U0FDUixHQUFHLENBQUMsQ0FBQyxFQUFFLDJCQUEyQixDQUFDO1NBQ25DLEdBQUcsQ0FBQyxpQ0FBeUIsRUFBRSxpQ0FBaUMsaUNBQXlCLGFBQWEsQ0FBQztRQUN4Ryx5RUFBeUU7UUFDekUsNkVBQTZFO1NBQzVFLE1BQU0sQ0FBQyxDQUFDLEtBQUssRUFBRSxFQUFFLENBQUMsS0FBSyxDQUFDLFVBQVUsQ0FBQyxtQkFBbUIsQ0FBQyxFQUFFO1FBQ3hELE9BQU8sRUFBRSxtREFBbUQ7S0FDN0QsQ0FBQztDQUNMLENBQUMsQ0FBQztBQUVIOzs7Ozs7Ozs7Ozs7Ozs7Ozs7R0FrQkc7QUFDSCxNQUFNLGVBQWUsR0FBRyxPQUFDO0tBQ3RCLE1BQU0sRUFBRTtLQUNSLElBQUksRUFBRTtLQUNOLE1BQU0sQ0FBQyw4QkFBaUIsRUFBRSwyQkFBMkIsQ0FBQyxDQUFDO0FBRTFEOzs7Ozs7Ozs7R0FTRztBQUNILE1BQU0sY0FBYyxHQUFHLE9BQUM7S0FDckIsTUFBTSxFQUFFO0tBQ1IsSUFBSSxFQUFFO0tBQ04sTUFBTSxDQUFDLDhCQUFpQixFQUFFLDBCQUEwQixDQUFDLENBQUM7QUFFekQ7Ozs7Ozs7R0FPRztBQUNVLFFBQUEsc0JBQXNCLEdBQUcsT0FBQyxDQUFDLE1BQU0sQ0FBQztJQUM3QyxjQUFjLEVBQUUsZUFBZTtJQUMvQixZQUFZLEVBQUUsZUFBZTtJQUM3QixNQUFNLEVBQUUsT0FBQyxDQUFDLElBQUksQ0FBQyxDQUFDLFFBQVEsRUFBRSxVQUFVLENBQUMsQ0FBQztDQUN2QyxDQUFDLENBQUM7QUFFSDs7Ozs7Ozs7O0dBU0c7QUFDVSxRQUFBLHlCQUF5QixHQUFHLE9BQUMsQ0FBQyxNQUFNLENBQUM7SUFDaEQsU0FBUyxFQUFFLGVBQWU7Q0FDM0IsQ0FBQyxDQUFDO0FBRUg7Ozs7Ozs7Ozs7O0dBV0c7QUFDVSxRQUFBLDJCQUEyQixHQUFHLE9BQUMsQ0FBQyxNQUFNLENBQUM7SUFDbEQsU0FBUyxFQUFFLGVBQWU7Q0FDM0IsQ0FBQyxDQUFDO0FBRUg7Ozs7Ozs7Ozs7Ozs7OztHQWVHO0FBQ1UsUUFBQSwyQkFBMkIsR0FBRyxPQUFDLENBQUMsTUFBTSxDQUFDO0lBQ2xELE1BQU0sRUFBRSxPQUFDO1NBQ04sTUFBTSxFQUFFO1NBQ1IsSUFBSSxFQUFFO1NBQ04sR0FBRyxDQUFDLENBQUMsRUFBRSxvQkFBb0IsQ0FBQztTQUM1QixHQUFHLENBQUMsR0FBRyxFQUFFLDRDQUE0QyxDQUFDO1NBQ3RELE1BQU0sQ0FBQyxDQUFDLEtBQUssRUFBRSxFQUFFLENBQUMsQ0FBQyxTQUFTLENBQUMsSUFBSSxDQUFDLEtBQUssQ0FBQyxFQUFFO1FBQ3pDLE9BQU8sRUFBRSxrRUFBa0U7S0FDNUUsQ0FBQztJQUNKLE1BQU0sRUFBRSxPQUFDLENBQUMsT0FBTyxFQUFFLENBQUMsT0FBTyxDQUFDLElBQUksQ0FBQztJQUNqQyxLQUFLLEVBQUUsT0FBQyxDQUFDLE1BQU0sRUFBRSxDQUFDLEdBQUcsRUFBRSxDQUFDLEdBQUcsQ0FBQyxDQUFDLENBQUMsQ0FBQyxHQUFHLENBQUMsSUFBSSxDQUFDLENBQUMsUUFBUSxFQUFFO0lBQ25EOzs7OztPQUtHO0lBQ0gsT0FBTyxFQUFFLGNBQWMsQ0FBQyxRQUFRLEVBQUU7Q0FDbkMsQ0FBQyxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3NjaGVtYXMvZmVkZXJhdGlvbi5zY2hlbWFzLnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IHogfSBmcm9tICd6b2QnO1xuaW1wb3J0IHsgaXNBY2NvdW50SWRGb3JtYXQgfSBmcm9tICcuLi91dGlscy92YWxpZGF0aW9uJztcblxuLyoqXG4gKiBTY2hlbWFzIGZvciB0aGUgZmVkZXJhdGlvbiBzaWduLW9uLWJlaGFsZiByb3V0ZXMgKGAvZmVkZXJhdGlvbi8uLi5gKS5cbiAqXG4gKiBTRUNVUklUWTogdGhlc2UgZW5kcG9pbnRzIGxldCBhIHNlcnZpY2UgY3JlZGVudGlhbCAoZS5nLiBNZW50aW9uKSBvYnRhaW4gdGhlXG4gKiBwdWJsaWMgaGFsZiBvZiwgYW5kIEhUVFAtU2lnbmF0dXJlIHNpZ25hdHVyZXMgZnJvbSwgYSBkb21haW4tc2NvcGVkIGtleSB3aG9zZVxuICogUFJJVkFURSBoYWxmIG5ldmVyIGxlYXZlcyBPeHkuIFRoZSBzY2hlbWFzIGhlcmUgZW5mb3JjZSB0aGUgc3RydWN0dXJhbFxuICogY29udHJhY3Q7IHRoZSByb3V0ZSBlbmZvcmNlcyB0aGUgdHJ1c3QgYm91bmRhcnkgKGtleUlkIGhvc3QgbXVzdCBiZWxvbmcgdG9cbiAqIHRoZSBjcmVkZW50aWFsJ3MgQXBwbGljYXRpb24g4oCUIHNlZSBgcm91dGVzL2ZlZGVyYXRpb24udHNgKS5cbiAqL1xuXG4vKipcbiAqIE1heCBsZW5ndGggb2YgYW4gSFRUUC1TaWduYXR1cmUgc2lnbmluZyBzdHJpbmcuIEEgc2lnbmluZyBzdHJpbmcgaXMgYSBoYW5kZnVsXG4gKiBvZiBoZWFkZXIgbGluZXMgKHJlcXVlc3QtdGFyZ2V0LCBob3N0LCBkYXRlLCBkaWdlc3QsIGNvbnRlbnQtdHlwZSk7IGEgZmV3IEtCXG4gKiBpcyBjb21mb3J0YWJseSBhYm92ZSBhbnkgbGVnaXRpbWF0ZSB2YWx1ZSBhbmQgd2VsbCBiZWxvdyBhbnl0aGluZyB0aGF0IGNvdWxkXG4gKiBiZSBhYnVzZWQgdG8gdHVybiB0aGUgZW5kcG9pbnQgaW50byBhIGJ1bGsgc2lnbmluZyBvcmFjbGUuXG4gKi9cbmV4cG9ydCBjb25zdCBNQVhfU0lHTklOR19TVFJJTkdfTEVOR1RIID0gNDA5NjtcblxuLyoqIEEgZmVkZXJhdGlvbiBgI21haW4ta2V5YCBrZXlJZCDigJQgbXVzdCBiZSBhbiBhYnNvbHV0ZSBodHRwcyBVUkwuICovXG5jb25zdCBrZXlJZFNjaGVtYSA9IHpcbiAgLnN0cmluZygpXG4gIC50cmltKClcbiAgLnVybCgna2V5SWQgbXVzdCBiZSBhIHZhbGlkIFVSTCcpXG4gIC5tYXgoMjA0OCwgJ2tleUlkIGlzIHRvbyBsb25nJylcbiAgLnJlZmluZSgodmFsdWUpID0+IHZhbHVlLnN0YXJ0c1dpdGgoJ2h0dHBzOi8vJyksIHtcbiAgICBtZXNzYWdlOiAna2V5SWQgbXVzdCBiZSBhbiBodHRwcyBVUkwnLFxuICB9KVxuICAucmVmaW5lKCh2YWx1ZSkgPT4gdmFsdWUuZW5kc1dpdGgoJyNtYWluLWtleScpLCB7XG4gICAgbWVzc2FnZTogJ2tleUlkIG11c3QgZW5kIHdpdGggI21haW4ta2V5JyxcbiAgfSk7XG5cbi8vIEdFVCAvZmVkZXJhdGlvbi9wdWJsaWMta2V5Lzp1c2VybmFtZVxuZXhwb3J0IGNvbnN0IHB1YmxpY0tleVBhcmFtc1NjaGVtYSA9IHoub2JqZWN0KHtcbiAgdXNlcm5hbWU6IHouc3RyaW5nKCkudHJpbSgpLm1pbigxLCAndXNlcm5hbWUgaXMgcmVxdWlyZWQnKS5tYXgoMjU2KSxcbn0pO1xuXG4vLyBHRVQgL2ZlZGVyYXRpb24vcHVibGljLWtleS86dXNlcm5hbWU/ZG9tYWluPTxkb21haW4+XG5leHBvcnQgY29uc3QgcHVibGljS2V5UXVlcnlTY2hlbWEgPSB6Lm9iamVjdCh7XG4gIGRvbWFpbjogelxuICAgIC5zdHJpbmcoKVxuICAgIC50cmltKClcbiAgICAudG9Mb3dlckNhc2UoKVxuICAgIC5taW4oMSwgJ2RvbWFpbiBpcyByZXF1aXJlZCcpXG4gICAgLm1heCgyNTMsICdkb21haW4gaXMgdG9vIGxvbmcnKVxuICAgIC8vIFJGQy0xMTIzLWlzaCBob3N0bmFtZTogbGFiZWxzIG9mIFthLXowLTktXSBzZXBhcmF0ZWQgYnkgZG90cywgYXQgbGVhc3RcbiAgICAvLyBvbmUgZG90LiBSZWplY3RzIHNjaGVtZXMsIHBvcnRzLCBwYXRocywgYW5kIHVzZXJpbmZvLlxuICAgIC5yZWdleChcbiAgICAgIC9eKD89LnsxLDI1M30kKShbYS16MC05XShbYS16MC05LV17MCw2MX1bYS16MC05XSk/KShcXC5bYS16MC05XShbYS16MC05LV17MCw2MX1bYS16MC05XSk/KSskLyxcbiAgICAgICdkb21haW4gbXVzdCBiZSBhIGJhcmUgaG9zdG5hbWUnLFxuICAgICksXG59KTtcblxuLy8gUE9TVCAvZmVkZXJhdGlvbi9zaWduXG5leHBvcnQgY29uc3Qgc2lnblJlcXVlc3RTY2hlbWEgPSB6Lm9iamVjdCh7XG4gIGtleUlkOiBrZXlJZFNjaGVtYSxcbiAgc2lnbmluZ1N0cmluZzogelxuICAgIC5zdHJpbmcoKVxuICAgIC5taW4oMSwgJ3NpZ25pbmdTdHJpbmcgaXMgcmVxdWlyZWQnKVxuICAgIC5tYXgoTUFYX1NJR05JTkdfU1RSSU5HX0xFTkdUSCwgYHNpZ25pbmdTdHJpbmcgbXVzdCBub3QgZXhjZWVkICR7TUFYX1NJR05JTkdfU1RSSU5HX0xFTkdUSH0gY2hhcmFjdGVyc2ApXG4gICAgLy8gTm90IGEgZ2VuZXJpYyBzaWduaW5nIG9yYWNsZTogdGhlIGZpcnN0IHNpZ25lZCBoZWFkZXIgTVVTVCBiZSB0aGUgSFRUUFxuICAgIC8vIHJlcXVlc3QtdGFyZ2V0IHBzZXVkby1oZWFkZXIsIGkuZS4gdGhpcyBpcyBzaWduaW5nIGFuIG91dGJvdW5kIEFQIHJlcXVlc3QuXG4gICAgLnJlZmluZSgodmFsdWUpID0+IHZhbHVlLnN0YXJ0c1dpdGgoJyhyZXF1ZXN0LXRhcmdldCk6JyksIHtcbiAgICAgIG1lc3NhZ2U6ICdzaWduaW5nU3RyaW5nIG11c3QgYmVnaW4gd2l0aCBcIihyZXF1ZXN0LXRhcmdldCk6XCInLFxuICAgIH0pLFxufSk7XG5cbi8qKlxuICogQW4gT3h5IGFjY291bnQgaWQsIGluIEVJVEhFUiBvZiB0aGUgdHdvIHNoYXBlcyB0aGF0IGFyZSBsaXZlLlxuICpcbiAqIFRoaXMgdXNlZCB0byBiZSBgL15bYS1mMC05XXsyNH0kL2lgIOKAlCBhIE1vbmdvREIgT2JqZWN0SWQsIGFuZCBub3RoaW5nIGVsc2UuXG4gKiBQZXIgYGRiL01JR1JBVElPTi1DT05UUkFDVC5tZGAgdGhlIHByZS1jdXRvdmVyIGlkcyBhcmUgcHJlc2VydmVkIHZlcmJhdGltIGJ1dFxuICogZXZlcnkgYWNjb3VudCBjcmVhdGVkIFNJTkNFIGlzIGdpdmVuIGEgKip1dWlkIHY3KiogKGBkYi9zY2hlbWEvY29sdW1ucy50c2BcbiAqIGBnZW5lcmF0ZWRJZCgpYCksIHNvIHRoYXQgcmVnZXggcmVqZWN0ZWQgdGhlIGlkIG9mIGV2ZXJ5IG5ldyBhY2NvdW50LiBJdCByYW5cbiAqIGluc2lkZSBgdmFsaWRhdGUoeyBib2R5IH0pYCwgaS5lLiBCRUZPUkUgdGhlIGhhbmRsZXIsIHNvIGBQT1NUIC9mZWRlcmF0aW9uL2ZvbGxvd2AsXG4gKiBgL2FjdG9yLWdvbmVgIGFuZCBgL2FjdG9yLWRlbGV0ZWAgYWxsIGFuc3dlcmVkIDQwMCBmb3IgYSBwb3N0LWN1dG92ZXIgYWNjb3VudFxuICogd2l0aG91dCBldmVyIGxvb2tpbmcgb25lIHVwOiBhIHJlbW90ZSBGb2xsb3cgY291bGQgbm90IGJlIG1pcnJvcmVkLCBhbmQgYSBkZWFkXG4gKiBmZWRlcmF0ZWQgYWN0b3IgY291bGQgbm90IGJlIGFyY2hpdmVkIG9yIGRlbGV0ZWQuXG4gKlxuICogVGhlIHZhbGlkYXRpb24gaXMgS0VQVCByYXRoZXIgdGhhbiBkZWxldGVkIOKAlCB1bmxpa2UgdGhlIGBPYmplY3RJZC5pc1ZhbGlkYFxuICogZ3VhcmRzIHRoZSBjb250cmFjdCByZXRpcmVzLCBhIDQwMCBoZXJlIGlzIHRoZSBkb2N1bWVudGVkIGFuc3dlciB0byBhXG4gKiBtYWxmb3JtZWQgYm9keSBvbiBhIHNlcnZpY2UtdG8tc2VydmljZSBicmlkZ2UsIGFuZCBgdmFsaWRhdGVgIGlzIHdoZXJlIHRoaXNcbiAqIHJvdXRlIGZhbWlseSByZXBvcnRzIG9uZS4gV2hhdCBjaGFuZ2VzIGlzIG9ubHkgd2hpY2ggc3RyaW5ncyBhcmUgbWFsZm9ybWVkOlxuICoge0BsaW5rIGlzQWNjb3VudElkRm9ybWF0fSBhY2NlcHRzIGJvdGggbGl2ZSBzaGFwZXMgYW5kIGlzIHRoZSBzaW5nbGUgcGxhY2VcbiAqIHRoYXQga25vd3Mgd2hhdCB0aGV5IGFyZS5cbiAqL1xuY29uc3QgYWNjb3VudElkU2NoZW1hID0gelxuICAuc3RyaW5nKClcbiAgLnRyaW0oKVxuICAucmVmaW5lKGlzQWNjb3VudElkRm9ybWF0LCAnbXVzdCBiZSBhbiBPeHkgYWNjb3VudCBpZCcpO1xuXG4vKipcbiAqIEEgUk9XIGlkIHVzZWQgYXMgYSBwYWdpbmF0aW9uIGN1cnNvciDigJQgbm90IGFuIGFjY291bnQgaWQsIHRob3VnaCBpdCB2YWxpZGF0ZXNcbiAqIHRoZSBzYW1lIHdheS5cbiAqXG4gKiBgbWFpbmAgd3JvdGUgdGhpcyBhcyBgb2JqZWN0SWRTY2hlbWFgLCB3aGljaCB0aGUgcG9ydCByZXRpcmVkOiBhZnRlciB0aGVcbiAqIGN1dG92ZXIgYSByb3cncyBpZCBpcyBhIHV1aWQgdjcsIHNvIGEgMjQtaGV4IHJlZmluZW1lbnQgd291bGQgcmVqZWN0IGV2ZXJ5XG4gKiBjdXJzb3IgdGhlIGVuZHBvaW50IGl0c2VsZiBoYWQganVzdCBpc3N1ZWQuIGBpc0FjY291bnRJZEZvcm1hdGAgaXMgdGhlIHNpbmdsZVxuICogcGxhY2UgdGhhdCBrbm93cyBib3RoIGxpdmUgc2hhcGVzOyB0aGUgc2VwYXJhdGUgbmFtZSBpcyBzbyBhIHJlYWRlciBkb2VzIG5vdFxuICogY29uY2x1ZGUgdGhpcyBmaWVsZCBjYXJyaWVzIGFuIGFjY291bnQuXG4gKi9cbmNvbnN0IGVudGl0eUlkU2NoZW1hID0gelxuICAuc3RyaW5nKClcbiAgLnRyaW0oKVxuICAucmVmaW5lKGlzQWNjb3VudElkRm9ybWF0LCAnbXVzdCBiZSBhIGxpdmUgZW50aXR5IGlkJyk7XG5cbi8qKlxuICogUE9TVCAvZmVkZXJhdGlvbi9mb2xsb3dcbiAqXG4gKiBNb3ZlcyBhIHNpbmdsZSBPeHkgZm9sbG93LWdyYXBoIGVkZ2Ugb24gYmVoYWxmIG9mIGEgRkVERVJBVEVEIGFjdG9yOiBhIHJlbW90ZVxuICogYWN0b3IgdGhhdCBGb2xsb3dzL1VuZm9sbG93cyBhIGxvY2FsIHVzZXIgb3ZlciBBY3Rpdml0eVB1Yi4gYGZvbGxvd2VyVXNlcklkYFxuICogaXMgdGhlIChmZWRlcmF0ZWQpIHJlbW90ZSBhY3RvcidzIE94eSB1c2VyIGlkIGFuZCBgdGFyZ2V0VXNlcklkYCBpcyB0aGUgbG9jYWxcbiAqIHVzZXIgYmVpbmcgZm9sbG93ZWQ7IHRoZSByb3V0ZSBlbmZvcmNlcyB0aG9zZSB0eXBlIGNvbnN0cmFpbnRzLlxuICovXG5leHBvcnQgY29uc3QgZmVkZXJhdGlvbkZvbGxvd1NjaGVtYSA9IHoub2JqZWN0KHtcbiAgZm9sbG93ZXJVc2VySWQ6IGFjY291bnRJZFNjaGVtYSxcbiAgdGFyZ2V0VXNlcklkOiBhY2NvdW50SWRTY2hlbWEsXG4gIGFjdGlvbjogei5lbnVtKFsnZm9sbG93JywgJ3VuZm9sbG93J10pLFxufSk7XG5cbi8qKlxuICogUE9TVCAvZmVkZXJhdGlvbi9hY3Rvci1nb25lXG4gKlxuICogTWFya3MgYSBkZWFkIHJlbW90ZSBmZWRpdmVyc2UgaWRlbnRpdHkgZ29uZS4gTWVudGlvbiBpcyB0aGUgb25seSBjb21wb25lbnRcbiAqIHRoYXQgdGFsa3MgdG8gdGhlIHJlbW90ZSBmZWRpdmVyc2U7IHdoZW4gaXQgZ2V0cyBhbiBIVFRQIDQxMCBHb25lIGZvciBhblxuICogYWN0b3IgaXQgY2FsbHMgdGhpcyB0byBhcmNoaXZlIHRoZSBjb3JyZXNwb25kaW5nIE94eSB1c2VyIHNvIHRoZSBpZGVudGl0eVxuICogbGVhdmVzIGRpc2NvdmVyeS9zZWFyY2ggc3VyZmFjZXMuIGBveHlVc2VySWRgIGlzIHRoZSAoZmVkZXJhdGVkKSBhY3RvcidzIE94eVxuICogdXNlciBpZDsgdGhlIHJvdXRlIGVuZm9yY2VzIHRoYXQgaXQgcmVzb2x2ZXMgdG8gYSBgdHlwZTonZmVkZXJhdGVkJ2AgdXNlclxuICogYmVmb3JlIGFyY2hpdmluZyAoYSBsb2NhbC9hZ2VudC9hdXRvbWF0ZWQgYWNjb3VudCBpcyBuZXZlciBhcmNoaXZhYmxlIGhlcmUpLlxuICovXG5leHBvcnQgY29uc3QgZmVkZXJhdGlvbkFjdG9yR29uZVNjaGVtYSA9IHoub2JqZWN0KHtcbiAgb3h5VXNlcklkOiBhY2NvdW50SWRTY2hlbWEsXG59KTtcblxuLyoqXG4gKiBQT1NUIC9mZWRlcmF0aW9uL2FjdG9yLWRlbGV0ZVxuICpcbiAqIEhBUkQtREVMRVRFUyBhIGRlYWQgcmVtb3RlIGZlZGl2ZXJzZSBpZGVudGl0eSBhbmQgcHVyZ2VzIGl0cyBPeHkgZm9sbG93LWdyYXBoXG4gKiBlZGdlcy4gTWVudGlvbiBjYWxscyB0aGlzIGFmdGVyIGEgZmVkZXJhdGVkIGFjdG9yIGhhcyBiZWVuIHBlcm1hbmVudGx5IHJlbW92ZWRcbiAqIHVwc3RyZWFtIChIVFRQIDQxMCBHb25lIGZvciBhIHNwYW0vZGVsZXRlZCBhY2NvdW50KSB0byBlcmFzZSB0aGUgZ2hvc3RcbiAqIGlkZW50aXR5IGFuZCBpdHMgc29jaWFsLWdyYXBoIHJlc2lkdWUgZnJvbSBPeHkgZW50aXJlbHkg4oCUIHRoZSBpcnJldmVyc2libGVcbiAqIGNvdW50ZXJwYXJ0IHRvIGBhY3Rvci1nb25lYCAod2hpY2ggb25seSBhcmNoaXZlcykuIGBveHlVc2VySWRgIGlzIHRoZVxuICogKGZlZGVyYXRlZCkgYWN0b3IncyBPeHkgdXNlciBpZDsgdGhlIHJvdXRlIGVuZm9yY2VzIHRoYXQgaXQgcmVzb2x2ZXMgdG8gYVxuICogYHR5cGU6J2ZlZGVyYXRlZCdgIHVzZXIgYmVmb3JlIGFueSBkZXN0cnVjdGl2ZSB3cml0ZSwgYW5kIHRoZSBkZWxldGUgZmlsdGVyXG4gKiByZS1hc3NlcnRzIGB0eXBlOidmZWRlcmF0ZWQnYCBhdG9taWNhbGx5IHNvIGEgcmVhbCBhY2NvdW50IGNhbiBuZXZlciBiZSBoaXQuXG4gKi9cbmV4cG9ydCBjb25zdCBmZWRlcmF0aW9uQWN0b3JEZWxldGVTY2hlbWEgPSB6Lm9iamVjdCh7XG4gIG94eVVzZXJJZDogYWNjb3VudElkU2NoZW1hLFxufSk7XG5cbi8qKlxuICogUE9TVCAvZmVkZXJhdGlvbi9kb21haW4tcHVyZ2VcbiAqXG4gKiBSZW1vdmVzIHdoYXQgT3h5IGhvbGRzIGZvciBhIGZlZGl2ZXJzZSBpbnN0YW5jZSBhbiBhcHAgaGFzIGJsb2NrZWQuIFRoZSBhcHBcbiAqIG93bnMgdGhlIGJsb2NrbGlzdDsgT3h5IGlzIGhhbmRlZCBPTkUgZG9tYWluIGF0IGEgdGltZSBhbmQgbmV2ZXIgc3RvcmVzIHdoaWNoXG4gKiBkb21haW5zIGFyZSBibG9ja2VkIChzZWUgYHNlcnZpY2VzL2ZlZGVyYXRpb24vYmxvY2tlZERvbWFpblB1cmdlLnNlcnZpY2UudHNgKS5cbiAqXG4gKiBgZHJ5UnVuYCBERUZBVUxUUyBUTyBUUlVFOiB0aGUgc2FmZSB2YWx1ZSBpcyB0aGUgb25lIHlvdSBnZXQgYnkgb21pc3Npb24sIHNvXG4gKiBhIGNhbGxlciB0aGF0IGZvcmdldHMgdGhlIGZpZWxkIHBsYW5zIGluc3RlYWQgb2YgZGVsZXRpbmcuIERlbGV0aW5nIHJlcXVpcmVzXG4gKiBzZW5kaW5nIGBkcnlSdW46IGZhbHNlYCBleHBsaWNpdGx5IEFORCBhbiBhcm1lZCBkZXBsb3ltZW50LlxuICpcbiAqIGBkb21haW5gIGlzIGEgYmFyZSBob3N0IOKAlCBubyBzY2hlbWUsIG5vIHBvcnQsIG5vIHBhdGgg4oCUIGJlY2F1c2UgdGhhdCBpcyB3aGF0XG4gKiB0aGUgZmVkZXJhdGlvbiBlbmdpbmUncyBjYW5vbmljYWxpc2VyIGNvbnN1bWVzLiBBIHZhbHVlIGNvbnRhaW5pbmcgYW55IG9mXG4gKiB0aG9zZSBpcyByZWplY3RlZCBoZXJlIHJhdGhlciB0aGFuIGJlaW5nIHNpbGVudGx5IGNhbm9uaWNhbGlzZWQgaW50b1xuICogc29tZXRoaW5nIHRoYXQgbWF0Y2hlcyB0aGUgd3Jvbmcgcm93cy5cbiAqL1xuZXhwb3J0IGNvbnN0IGZlZGVyYXRpb25Eb21haW5QdXJnZVNjaGVtYSA9IHoub2JqZWN0KHtcbiAgZG9tYWluOiB6XG4gICAgLnN0cmluZygpXG4gICAgLnRyaW0oKVxuICAgIC5taW4oMSwgJ2RvbWFpbiBpcyByZXF1aXJlZCcpXG4gICAgLm1heCgyNTMsICdkb21haW4gZXhjZWVkcyB0aGUgbWF4aW11bSBETlMgbmFtZSBsZW5ndGgnKVxuICAgIC5yZWZpbmUoKHZhbHVlKSA9PiAhL1svOkBcXHNdLy50ZXN0KHZhbHVlKSwge1xuICAgICAgbWVzc2FnZTogJ2RvbWFpbiBtdXN0IGJlIGEgYmFyZSBob3N0IChubyBzY2hlbWUsIHBvcnQsIHBhdGggb3Igd2hpdGVzcGFjZSknLFxuICAgIH0pLFxuICBkcnlSdW46IHouYm9vbGVhbigpLmRlZmF1bHQodHJ1ZSksXG4gIGxpbWl0OiB6Lm51bWJlcigpLmludCgpLm1pbigxKS5tYXgoMTAwMCkub3B0aW9uYWwoKSxcbiAgLyoqXG4gICAqIENvbnRpbnVhdGlvbiBjdXJzb3IgZnJvbSB0aGUgcHJldmlvdXMgcmVzcG9uc2UncyBgbmV4dEN1cnNvcmAuIFByb2dyZXNzIGlzXG4gICAqIGRyaXZlbiBieSB0aGlzIHJhdGhlciB0aGFuIGJ5IHJvd3MgZGlzYXBwZWFyaW5nLCBiZWNhdXNlIGEgZHJ5IHJ1biBhbmQgYVxuICAgKiByZXRhaW5lZCByb3cgYm90aCBsZWF2ZSBldmVyeSByb3cgaW4gcGxhY2Ug4oCUIGEgY2FsbGVyIGxvb3Bpbmcgb24gXCJhbnl0aGluZ1xuICAgKiBsZWZ0P1wiIHdvdWxkIG5ldmVyIHRlcm1pbmF0ZS5cbiAgICovXG4gIGFmdGVySWQ6IGVudGl0eUlkU2NoZW1hLm9wdGlvbmFsKCksXG59KTtcblxuZXhwb3J0IHR5cGUgUHVibGljS2V5UGFyYW1zID0gei5pbmZlcjx0eXBlb2YgcHVibGljS2V5UGFyYW1zU2NoZW1hPjtcbmV4cG9ydCB0eXBlIFB1YmxpY0tleVF1ZXJ5ID0gei5pbmZlcjx0eXBlb2YgcHVibGljS2V5UXVlcnlTY2hlbWE+O1xuZXhwb3J0IHR5cGUgU2lnblJlcXVlc3RCb2R5ID0gei5pbmZlcjx0eXBlb2Ygc2lnblJlcXVlc3RTY2hlbWE+O1xuZXhwb3J0IHR5cGUgRmVkZXJhdGlvbkZvbGxvd0JvZHkgPSB6LmluZmVyPHR5cGVvZiBmZWRlcmF0aW9uRm9sbG93U2NoZW1hPjtcbmV4cG9ydCB0eXBlIEZlZGVyYXRpb25BY3RvckdvbmVCb2R5ID0gei5pbmZlcjx0eXBlb2YgZmVkZXJhdGlvbkFjdG9yR29uZVNjaGVtYT47XG5leHBvcnQgdHlwZSBGZWRlcmF0aW9uQWN0b3JEZWxldGVCb2R5ID0gei5pbmZlcjx0eXBlb2YgZmVkZXJhdGlvbkFjdG9yRGVsZXRlU2NoZW1hPjtcbmV4cG9ydCB0eXBlIEZlZGVyYXRpb25Eb21haW5QdXJnZUJvZHkgPSB6LmluZmVyPHR5cGVvZiBmZWRlcmF0aW9uRG9tYWluUHVyZ2VTY2hlbWE+O1xuIl0sInZlcnNpb24iOjN9

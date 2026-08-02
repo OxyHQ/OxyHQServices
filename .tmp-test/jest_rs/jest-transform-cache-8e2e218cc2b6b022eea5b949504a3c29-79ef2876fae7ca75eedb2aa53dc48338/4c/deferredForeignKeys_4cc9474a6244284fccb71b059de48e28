@@ -1,0 +1,369 @@
+5e18945ffc6308c535aa81bffb7dba8d
+"use strict";
+/**
+ * Foreign Keys This Schema Cannot Declare Yet
+ *
+ * The migration is landing table by table, so a table can arrive before its
+ * parent does — `push_tokens.application_id` points at `applications`, which no
+ * module in this schema defines yet. Drizzle cannot express a forward reference,
+ * so the column ships without its constraint.
+ *
+ * "Add the FK when `users` lands" written in a comment is a convention nothing
+ * checks, and those get violated. So it is written HERE as data, and
+ * `__tests__/foreignKeys.test.ts` turns it into a gate: the moment the parent
+ * table appears in the schema barrel, the test fails and names the exact column
+ * whose constraint is now missing. The ledger deletes itself as the port
+ * completes — an empty `DEFERRED_FOREIGN_KEYS` is the finish line.
+ *
+ * `ID_COLUMNS_WITHOUT_FOREIGN_KEY` is the separate, PERMANENT list: `*_id`
+ * columns that will never carry a constraint, each with the reason. Between the
+ * two lists plus the real constraints, every id-shaped column in the schema is
+ * classified — which is what lets `foreignKeys.test.ts` fail on a NEW one
+ * nobody decided about.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ID_COLUMNS_WITHOUT_FOREIGN_KEY = exports.DEFERRED_FOREIGN_KEYS = void 0;
+const appAffinitySeenEvents_1 = require("./appAffinitySeenEvents");
+const appEndorsementEdges_1 = require("./appEndorsementEdges");
+const appUpdates_1 = require("./appUpdates");
+const authCodes_1 = require("./authCodes");
+const authSessions_1 = require("./authSessions");
+const billingSubscriptions_1 = require("./billingSubscriptions");
+const billingTransactions_1 = require("./billingTransactions");
+const bookmarks_1 = require("./bookmarks");
+const conductStrikes_1 = require("./conductStrikes");
+const devicePairingSessions_1 = require("./devicePairingSessions");
+const deviceSessionAccounts_1 = require("./deviceSessionAccounts");
+const deviceSessions_1 = require("./deviceSessions");
+const federationKeyPairs_1 = require("./federationKeyPairs");
+const fileLinks_1 = require("./fileLinks");
+const identityBindings_1 = require("./identityBindings");
+const messageAttachments_1 = require("./messageAttachments");
+const messages_1 = require("./messages");
+const moderationEffects_1 = require("./moderationEffects");
+const notifications_1 = require("./notifications");
+const pushTokens_1 = require("./pushTokens");
+const reputationTransactions_1 = require("./reputationTransactions");
+const securityActivities_1 = require("./securityActivities");
+const sessions_1 = require("./sessions");
+const signedRecords_1 = require("./signedRecords");
+const transactions_1 = require("./transactions");
+const transparencyCheckpoints_1 = require("./transparencyCheckpoints");
+const userAuthMethods_1 = require("./userAuthMethods");
+const userCredits_1 = require("./userCredits");
+const userLocations_1 = require("./userLocations");
+const users_1 = require("./users");
+const validationRequests_1 = require("./validationRequests");
+const webauthnCredentials_1 = require("./webauthnCredentials");
+/**
+ * `users` landed, so every entry that owed it a constraint has been converted to
+ * a real `.references()` and deleted from this list — `blocks.user_id`,
+ * `blocks.blocked_id`, `bookmarks.user_id`, `push_tokens.user_id`,
+ * `labels.user_id` and `webauthn_credentials.user_id`. What remains is owed to
+ * `applications`, which has not landed yet.
+ */
+exports.DEFERRED_FOREIGN_KEYS = [];
+exports.ID_COLUMNS_WITHOUT_FOREIGN_KEY = [
+    {
+        table: bookmarks_1.bookmarks,
+        column: bookmarks_1.bookmarks.postId,
+        reason: '`Post` is Mention\'s model in Mention\'s database. There is no local ' +
+            'table to reference, and the relation is enforced by neither store today.',
+    },
+    {
+        table: pushTokens_1.pushTokens,
+        column: pushTokens_1.pushTokens.deviceId,
+        reason: 'A central DEVICE id (the `DeviceSession.deviceId` id space), not the ' +
+            'primary key of any row. Nothing to reference.',
+    },
+    {
+        table: webauthnCredentials_1.webauthnCredentials,
+        column: webauthnCredentials_1.webauthnCredentials.credentialID,
+        reason: 'The browser-supplied base64url WebAuthn credential handle. Id-shaped by ' +
+            'name only — it identifies an authenticator credential, not an Oxy row.',
+    },
+    {
+        table: federationKeyPairs_1.federationKeyPairs,
+        column: federationKeyPairs_1.federationKeyPairs.keyId,
+        reason: 'An ActivityPub keyId URI (`https://<domain>/ap/users/<name>#main-key`). ' +
+            'It names an actor on some domain — often a relying app Oxy signs for, ' +
+            'not an Oxy account — so there is no local row to reference.',
+    },
+    {
+        table: appAffinitySeenEvents_1.appAffinitySeenEvents,
+        column: appAffinitySeenEvents_1.appAffinitySeenEvents.eventId,
+        reason: 'An id minted by the CONSUMING application for its own event. Oxy stores ' +
+            'it to dedupe and never resolves it to anything.',
+    },
+    {
+        table: users_1.users,
+        column: users_1.users.federationActorId,
+        reason: "`FederatedActor._id` in the CONSUMING app's database (Mention's), not " +
+            'in this one. Oxy stores it and never resolves it.',
+    },
+    {
+        table: userAuthMethods_1.userAuthMethods,
+        column: userAuthMethods_1.userAuthMethods.methodCredentialId,
+        reason: 'The browser-supplied base64url WebAuthn credential handle, mirrored ' +
+            'from `webauthn_credentials.credential_id`. It identifies an ' +
+            'authenticator credential, not an Oxy row.',
+    },
+    {
+        table: userLocations_1.userLocations,
+        column: userLocations_1.userLocations.placeId,
+        reason: "A third-party geocoder's identifier for a place (Nominatim, Google " +
+            'Places). Opaque, external, and never dereferenced by Oxy.',
+    },
+    {
+        table: userLocations_1.userLocations,
+        column: userLocations_1.userLocations.osmId,
+        reason: 'An OpenStreetMap element id, meaningful only together with `osm_type`. ' +
+            'External to Oxy entirely.',
+    },
+    {
+        table: sessions_1.sessions,
+        column: sessions_1.sessions.sessionId,
+        reason: "(a) This row's own public handle — the UUID minted for it and embedded " +
+            'in every access token. Other tables reference it; it references nothing.',
+    },
+    {
+        table: sessions_1.sessions,
+        column: sessions_1.sessions.deviceId,
+        reason: '(b) The central DEVICE id space (`device_sessions.device_id`), not the ' +
+            'primary key of any row. A session is routinely created before that ' +
+            'device has a `device_sessions` row at all.',
+    },
+    {
+        table: deviceSessions_1.deviceSessions,
+        column: deviceSessions_1.deviceSessions.deviceId,
+        reason: "(a) The device's own identifier — per web origin, per native app group. " +
+            'It is this row\'s natural key, which is why it is UNIQUE here and a ' +
+            'loose value everywhere else.',
+    },
+    {
+        table: deviceSessionAccounts_1.deviceSessionAccounts,
+        column: deviceSessionAccounts_1.deviceSessionAccounts.sessionId,
+        reason: '(c) Names a `sessions` row by its natural key, with lifecycles that are ' +
+            'independent BY DESIGN: the application never deletes a session (only ' +
+            'the expiry sweep does), and when one goes the entry must SURVIVE so the ' +
+            'mint path answers "dead session" instead of the device\'s account set ' +
+            'silently shrinking — a shrink that would also skip the `revision` bump ' +
+            'every real membership change makes. CASCADE would cause exactly that ' +
+            'shrink; RESTRICT would stop the sweep.',
+    },
+    {
+        table: authCodes_1.authCodes,
+        column: authCodes_1.authCodes.deviceId,
+        reason: '(b) Central device id, threaded so the token exchange lands on the ' +
+            'device the flow started from. Not a row id.',
+    },
+    {
+        table: authSessions_1.authSessions,
+        column: authSessions_1.authSessions.deviceId,
+        reason: '(b) Central device id of the browser that STARTED the request, resolved ' +
+            'from an optional device token. Not a row id.',
+    },
+    {
+        table: authSessions_1.authSessions,
+        column: authSessions_1.authSessions.authorizedSessionId,
+        reason: '(c) The `sessions.session_id` of the session minted on approval. Same ' +
+            'independent lifecycle as `device_session_accounts.session_id`, on a row ' +
+            'that is itself swept an hour later.',
+    },
+    {
+        table: authSessions_1.authSessions,
+        column: authSessions_1.authSessions.finalizedAuthCodeId,
+        reason: '(c) A RESERVATION, not a reference: `finalizeCommonsOAuth` mints the id ' +
+            'and writes it in the SAME atomic update that spends the request, before ' +
+            'the `auth_codes` row exists — and the mint may then fail, leaving an id ' +
+            'that never becomes a row. A constraint would reject that write and ' +
+            'destroy the single-use guarantee; SET NULL would be worse, resurrecting ' +
+            "a spent request as un-finalized when the code's own 5-minute sweep ran " +
+            'and letting it mint a SECOND authorization code.',
+    },
+    {
+        table: devicePairingSessions_1.devicePairingSessions,
+        column: devicePairingSessions_1.devicePairingSessions.pairingId,
+        reason: "(a) This row's own single-use QR handle, which doubles as the HKDF salt " +
+            'for the transfer key. Id-shaped by name only.',
+    },
+    {
+        table: identityBindings_1.identityBindings,
+        column: identityBindings_1.identityBindings.localPrincipalId,
+        reason: "The APPLICATION's own identifier for a person, in the application's own " +
+            'id space. Oxy stores it to match a claim against a binding and never ' +
+            'resolves it to anything local.',
+    },
+    {
+        table: securityActivities_1.securityActivities,
+        column: securityActivities_1.securityActivities.deviceId,
+        reason: '(b) Central device id the event happened on. An audit trail must keep ' +
+            'naming the device that was removed, which is precisely one of the ' +
+            'events it records.',
+    },
+    {
+        table: transactions_1.transactions,
+        column: transactions_1.transactions.itemId,
+        reason: 'What was purchased, in the CONSUMING application\'s id space. There is ' +
+            'no local table to reference, and `item_type` — also free-form — is what ' +
+            'names the space it belongs to.',
+    },
+    {
+        table: userCredits_1.userCredits,
+        column: userCredits_1.userCredits.stripeCustomerId,
+        reason: "Stripe's identifier for the customer. Oxy stores it to talk to Stripe " +
+            'and resolves it only back to this same row.',
+    },
+    {
+        table: billingSubscriptions_1.billingSubscriptions,
+        column: billingSubscriptions_1.billingSubscriptions.stripeCustomerId,
+        reason: "Stripe's identifier for the customer. Not a row in this database.",
+    },
+    {
+        table: billingSubscriptions_1.billingSubscriptions,
+        column: billingSubscriptions_1.billingSubscriptions.stripeSubscriptionId,
+        reason: "Stripe's identifier for the subscription. This table IS the local " +
+            'mirror of it; the authority is Stripe.',
+    },
+    {
+        table: billingSubscriptions_1.billingSubscriptions,
+        column: billingSubscriptions_1.billingSubscriptions.stripePriceId,
+        reason: "Stripe's identifier for the price. The catalogue it belongs to is a code " +
+            'constant (`billing.ts:74`), not a table.',
+    },
+    {
+        table: billingTransactions_1.billingTransactions,
+        column: billingTransactions_1.billingTransactions.stripeCustomerId,
+        reason: "Stripe's identifier for the customer. Not a row in this database.",
+    },
+    {
+        table: billingTransactions_1.billingTransactions,
+        column: billingTransactions_1.billingTransactions.stripePaymentIntentId,
+        reason: "Stripe's identifier for the payment intent. Not a row in this database.",
+    },
+    {
+        table: billingTransactions_1.billingTransactions,
+        column: billingTransactions_1.billingTransactions.stripeSubscriptionId,
+        // This one COULD be a foreign key — `billing_subscriptions.stripe_subscription_id`
+        // is unique, and Postgres will reference a unique column. It deliberately is
+        // not: `billing_subscriptions` is a MIRROR that may legitimately be missing a
+        // subscription (one created before the mirror existed, or under a price id
+        // this deployment does not recognise), and a record of money actually
+        // charged must never be refused because a local mirror is incomplete.
+        reason: "Stripe's identifier for the subscription this payment covers. Pointing " +
+            'it at the local mirror would let an incomplete mirror reject a real ' +
+            'payment record; Stripe is the authority for both.',
+    },
+    {
+        table: notifications_1.notifications,
+        column: notifications_1.notifications.entityId,
+        reason: 'Polymorphic, discriminated by `entity_type`. Two of the three types ' +
+            '(`post`, `reply`) name rows in MENTION\'s database; the third ' +
+            '(`profile`) names a user, but a foreign key cannot be conditional on a ' +
+            'sibling column\'s value.',
+    },
+    {
+        table: moderationEffects_1.moderationEffects,
+        column: moderationEffects_1.moderationEffects.eventId,
+        reason: "The emitting moderation system's transport event id. Oxy stores it to " +
+            'answer a redelivery and never resolves it to a row here.',
+    },
+    {
+        table: moderationEffects_1.moderationEffects,
+        column: moderationEffects_1.moderationEffects.incidentId,
+        reason: 'The CROSS-TENANT incident id. The incident is the moderation service\'s ' +
+            'own unit and has no table in this database — that is the point of it ' +
+            'being cross-tenant.',
+    },
+    {
+        table: moderationEffects_1.moderationEffects,
+        column: moderationEffects_1.moderationEffects.caseId,
+        reason: "A case in the moderation service's own store. Not a row here.",
+    },
+    {
+        table: moderationEffects_1.moderationEffects,
+        column: moderationEffects_1.moderationEffects.decisionId,
+        reason: 'The published decision. Its CONTENTS are deliberately not stored here — ' +
+            '`proof_hash` is the provenance — so there is nothing to reference.',
+    },
+    {
+        table: conductStrikes_1.conductStrikes,
+        column: conductStrikes_1.conductStrikes.incidentId,
+        reason: 'Same cross-tenant incident id as on `moderation_effects`.',
+    },
+    {
+        table: conductStrikes_1.conductStrikes,
+        column: conductStrikes_1.conductStrikes.decisionId,
+        reason: 'Same external decision id as on `moderation_effects`.',
+    },
+    {
+        table: messages_1.messages,
+        column: messages_1.messages.messageId,
+        reason: 'The RFC 5322 `Message-ID` header, minted by whichever server sent the ' +
+            'mail. It identifies a MESSAGE in the global email namespace, not a row ' +
+            'here — most values name mail this database has never held.',
+    },
+    {
+        table: messageAttachments_1.messageAttachments,
+        column: messageAttachments_1.messageAttachments.contentId,
+        reason: 'The MIME `Content-ID` header, which an HTML body references as `cid:`. ' +
+            'Scoped to one message and id-shaped by name only.',
+    },
+    {
+        table: fileLinks_1.fileLinks,
+        column: fileLinks_1.fileLinks.entityId,
+        reason: "The entity's id in the CONSUMING application's database (a Mention " +
+            'post, an Alia thread). Meaningful only together with `app` and ' +
+            '`entity_type`, and never resolvable here.',
+    },
+    {
+        table: signedRecords_1.signedRecords,
+        column: signedRecords_1.signedRecords.recordId,
+        reason: 'The content address of the record ITSELF (sha256 of its canonical ' +
+            'signing input) — the TARGET five other tables reference, not a ' +
+            'reference of its own. Id-shaped because it identifies this row.',
+    },
+    {
+        table: reputationTransactions_1.reputationTransactions,
+        column: reputationTransactions_1.reputationTransactions.sourceActionId,
+        reason: 'The idempotency key the REPORTING system minted for its own action. Oxy ' +
+            'stores it to deduplicate awards and never resolves it to anything.',
+    },
+    {
+        table: validationRequests_1.validationRequests,
+        column: validationRequests_1.validationRequests.sourceActionId,
+        reason: 'Same key space as `reputation_transactions.source_action_id` — the ' +
+            "opening system's own action id, used only to dedupe an open jury.",
+    },
+    {
+        table: reputationTransactions_1.reputationTransactions,
+        column: reputationTransactions_1.reputationTransactions.targetEntityId,
+        reason: 'The id of whatever the action was ABOUT — a post, a report, a purchase ' +
+            "— in the SOURCE application's id space. `target_entity_type` says which " +
+            'space; none of them is a table in this database.',
+    },
+    {
+        table: transparencyCheckpoints_1.transparencyCheckpointSnapshotEntries,
+        column: transparencyCheckpoints_1.transparencyCheckpointSnapshotEntries.headRecordId,
+        reason: 'A value the checkpoint COMMITTED to under a signed Merkle root, not a ' +
+            'live pointer. Any ON DELETE action would let an unrelated erasure alter ' +
+            'published evidence, which is the exact tampering the log exists to ' +
+            'detect — so the reference is deliberately unenforced and the row is ' +
+            'immutable by trigger instead.',
+    },
+    {
+        table: appUpdates_1.appUpdates,
+        column: appUpdates_1.appUpdates.updateId,
+        reason: "The update's OWN public handle — the UUID served as the expo-updates " +
+            'manifest `id`, not a reference to another row. It is the TARGET of ' +
+            '`app_updates.promoted_from_update_id`, which does carry a constraint.',
+    },
+    {
+        table: appEndorsementEdges_1.appEndorsementEdges,
+        column: appEndorsementEdges_1.appEndorsementEdges.sourceId,
+        reason: "The consuming application's own key for the object the endorsement came " +
+            'from (a list id, a pack id). Opaque to Oxy, part of the idempotency key ' +
+            'only, and never dereferenced.',
+    },
+];
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvZGIvc2NoZW1hL2RlZmVycmVkRm9yZWlnbktleXMudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQW9CRzs7O0FBR0gsbUVBQWdFO0FBQ2hFLCtEQUE0RDtBQUM1RCw2Q0FBMEM7QUFDMUMsMkNBQXdDO0FBQ3hDLGlEQUE4QztBQUM5QyxpRUFBOEQ7QUFDOUQsK0RBQTREO0FBQzVELDJDQUF3QztBQUN4QyxxREFBa0Q7QUFDbEQsbUVBQWdFO0FBQ2hFLG1FQUFnRTtBQUNoRSxxREFBa0Q7QUFDbEQsNkRBQTBEO0FBQzFELDJDQUF3QztBQUN4Qyx5REFBc0Q7QUFDdEQsNkRBQTBEO0FBQzFELHlDQUFzQztBQUN0QywyREFBd0Q7QUFDeEQsbURBQWdEO0FBQ2hELDZDQUEwQztBQUMxQyxxRUFBa0U7QUFDbEUsNkRBQTBEO0FBQzFELHlDQUFzQztBQUN0QyxtREFBZ0Q7QUFDaEQsaURBQThDO0FBQzlDLHVFQUFrRjtBQUNsRix1REFBb0Q7QUFDcEQsK0NBQTRDO0FBQzVDLG1EQUFnRDtBQUNoRCxtQ0FBZ0M7QUFDaEMsNkRBQTBEO0FBQzFELCtEQUE0RDtBQXVCNUQ7Ozs7OztHQU1HO0FBRVUsUUFBQSxxQkFBcUIsR0FBa0MsRUFDbkUsQ0FBQztBQUVXLFFBQUEsOEJBQThCLEdBQXlDO0lBQ2xGO1FBQ0UsS0FBSyxFQUFFLHFCQUFTO1FBQ2hCLE1BQU0sRUFBRSxxQkFBUyxDQUFDLE1BQU07UUFDeEIsTUFBTSxFQUNKLHVFQUF1RTtZQUN2RSwwRUFBMEU7S0FDN0U7SUFDRDtRQUNFLEtBQUssRUFBRSx1QkFBVTtRQUNqQixNQUFNLEVBQUUsdUJBQVUsQ0FBQyxRQUFRO1FBQzNCLE1BQU0sRUFDSix1RUFBdUU7WUFDdkUsK0NBQStDO0tBQ2xEO0lBQ0Q7UUFDRSxLQUFLLEVBQUUseUNBQW1CO1FBQzFCLE1BQU0sRUFBRSx5Q0FBbUIsQ0FBQyxZQUFZO1FB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O1FBQ2pCLE1BQU0sRUFBRSx1QkFBVSxDQUFDLFFBQVE7UUFDM0IsTUFBTSxFQUNKLHVFQUF1RTtZQUN2RSxxRUFBcUU7WUFDckUsdUVBQXVFO0tBQzFFO0lBQ0Q7UUFDRSxLQUFLLEVBQUUseUNBQW1CO1FBQzFCLE1BQU0sRUFBRSx5Q0FBbUIsQ0FBQyxRQUFRO1FBQ3BDLE1BQU0sRUFDSiwwRUFBMEU7WUFDMUUsMEVBQTBFO1lBQzFFLCtCQUErQjtLQUNsQztDQUNGLENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvZGIvc2NoZW1hL2RlZmVycmVkRm9yZWlnbktleXMudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBGb3JlaWduIEtleXMgVGhpcyBTY2hlbWEgQ2Fubm90IERlY2xhcmUgWWV0XG4gKlxuICogVGhlIG1pZ3JhdGlvbiBpcyBsYW5kaW5nIHRhYmxlIGJ5IHRhYmxlLCBzbyBhIHRhYmxlIGNhbiBhcnJpdmUgYmVmb3JlIGl0c1xuICogcGFyZW50IGRvZXMg4oCUIGBwdXNoX3Rva2Vucy5hcHBsaWNhdGlvbl9pZGAgcG9pbnRzIGF0IGBhcHBsaWNhdGlvbnNgLCB3aGljaCBub1xuICogbW9kdWxlIGluIHRoaXMgc2NoZW1hIGRlZmluZXMgeWV0LiBEcml6emxlIGNhbm5vdCBleHByZXNzIGEgZm9yd2FyZCByZWZlcmVuY2UsXG4gKiBzbyB0aGUgY29sdW1uIHNoaXBzIHdpdGhvdXQgaXRzIGNvbnN0cmFpbnQuXG4gKlxuICogXCJBZGQgdGhlIEZLIHdoZW4gYHVzZXJzYCBsYW5kc1wiIHdyaXR0ZW4gaW4gYSBjb21tZW50IGlzIGEgY29udmVudGlvbiBub3RoaW5nXG4gKiBjaGVja3MsIGFuZCB0aG9zZSBnZXQgdmlvbGF0ZWQuIFNvIGl0IGlzIHdyaXR0ZW4gSEVSRSBhcyBkYXRhLCBhbmRcbiAqIGBfX3Rlc3RzX18vZm9yZWlnbktleXMudGVzdC50c2AgdHVybnMgaXQgaW50byBhIGdhdGU6IHRoZSBtb21lbnQgdGhlIHBhcmVudFxuICogdGFibGUgYXBwZWFycyBpbiB0aGUgc2NoZW1hIGJhcnJlbCwgdGhlIHRlc3QgZmFpbHMgYW5kIG5hbWVzIHRoZSBleGFjdCBjb2x1bW5cbiAqIHdob3NlIGNvbnN0cmFpbnQgaXMgbm93IG1pc3NpbmcuIFRoZSBsZWRnZXIgZGVsZXRlcyBpdHNlbGYgYXMgdGhlIHBvcnRcbiAqIGNvbXBsZXRlcyDigJQgYW4gZW1wdHkgYERFRkVSUkVEX0ZPUkVJR05fS0VZU2AgaXMgdGhlIGZpbmlzaCBsaW5lLlxuICpcbiAqIGBJRF9DT0xVTU5TX1dJVEhPVVRfRk9SRUlHTl9LRVlgIGlzIHRoZSBzZXBhcmF0ZSwgUEVSTUFORU5UIGxpc3Q6IGAqX2lkYFxuICogY29sdW1ucyB0aGF0IHdpbGwgbmV2ZXIgY2FycnkgYSBjb25zdHJhaW50LCBlYWNoIHdpdGggdGhlIHJlYXNvbi4gQmV0d2VlbiB0aGVcbiAqIHR3byBsaXN0cyBwbHVzIHRoZSByZWFsIGNvbnN0cmFpbnRzLCBldmVyeSBpZC1zaGFwZWQgY29sdW1uIGluIHRoZSBzY2hlbWEgaXNcbiAqIGNsYXNzaWZpZWQg4oCUIHdoaWNoIGlzIHdoYXQgbGV0cyBgZm9yZWlnbktleXMudGVzdC50c2AgZmFpbCBvbiBhIE5FVyBvbmVcbiAqIG5vYm9keSBkZWNpZGVkIGFib3V0LlxuICovXG5cbmltcG9ydCB0eXBlIHsgUGdDb2x1bW4sIFBnVGFibGUsIFVwZGF0ZURlbGV0ZUFjdGlvbiB9IGZyb20gJ2RyaXp6bGUtb3JtL3BnLWNvcmUnO1xuaW1wb3J0IHsgYXBwQWZmaW5pdHlTZWVuRXZlbnRzIH0gZnJvbSAnLi9hcHBBZmZpbml0eVNlZW5FdmVudHMnO1xuaW1wb3J0IHsgYXBwRW5kb3JzZW1lbnRFZGdlcyB9IGZyb20gJy4vYXBwRW5kb3JzZW1lbnRFZGdlcyc7XG5pbXBvcnQgeyBhcHBVcGRhdGVzIH0gZnJvbSAnLi9hcHBVcGRhdGVzJztcbmltcG9ydCB7IGF1dGhDb2RlcyB9IGZyb20gJy4vYXV0aENvZGVzJztcbmltcG9ydCB7IGF1dGhTZXNzaW9ucyB9IGZyb20gJy4vYXV0aFNlc3Npb25zJztcbmltcG9ydCB7IGJpbGxpbmdTdWJzY3JpcHRpb25zIH0gZnJvbSAnLi9iaWxsaW5nU3Vic2NyaXB0aW9ucyc7XG5pbXBvcnQgeyBiaWxsaW5nVHJhbnNhY3Rpb25zIH0gZnJvbSAnLi9iaWxsaW5nVHJhbnNhY3Rpb25zJztcbmltcG9ydCB7IGJvb2ttYXJrcyB9IGZyb20gJy4vYm9va21hcmtzJztcbmltcG9ydCB7IGNvbmR1Y3RTdHJpa2VzIH0gZnJvbSAnLi9jb25kdWN0U3RyaWtlcyc7XG5pbXBvcnQgeyBkZXZpY2VQYWlyaW5nU2Vzc2lvbnMgfSBmcm9tICcuL2RldmljZVBhaXJpbmdTZXNzaW9ucyc7XG5pbXBvcnQgeyBkZXZpY2VTZXNzaW9uQWNjb3VudHMgfSBmcm9tICcuL2RldmljZVNlc3Npb25BY2NvdW50cyc7XG5pbXBvcnQgeyBkZXZpY2VTZXNzaW9ucyB9IGZyb20gJy4vZGV2aWNlU2Vzc2lvbnMnO1xuaW1wb3J0IHsgZmVkZXJhdGlvbktleVBhaXJzIH0gZnJvbSAnLi9mZWRlcmF0aW9uS2V5UGFpcnMnO1xuaW1wb3J0IHsgZmlsZUxpbmtzIH0gZnJvbSAnLi9maWxlTGlua3MnO1xuaW1wb3J0IHsgaWRlbnRpdHlCaW5kaW5ncyB9IGZyb20gJy4vaWRlbnRpdHlCaW5kaW5ncyc7XG5pbXBvcnQgeyBtZXNzYWdlQXR0YWNobWVudHMgfSBmcm9tICcuL21lc3NhZ2VBdHRhY2htZW50cyc7XG5pbXBvcnQgeyBtZXNzYWdlcyB9IGZyb20gJy4vbWVzc2FnZXMnO1xuaW1wb3J0IHsgbW9kZXJhdGlvbkVmZmVjdHMgfSBmcm9tICcuL21vZGVyYXRpb25FZmZlY3RzJztcbmltcG9ydCB7IG5vdGlmaWNhdGlvbnMgfSBmcm9tICcuL25vdGlmaWNhdGlvbnMnO1xuaW1wb3J0IHsgcHVzaFRva2VucyB9IGZyb20gJy4vcHVzaFRva2Vucyc7XG5pbXBvcnQgeyByZXB1dGF0aW9uVHJhbnNhY3Rpb25zIH0gZnJvbSAnLi9yZXB1dGF0aW9uVHJhbnNhY3Rpb25zJztcbmltcG9ydCB7IHNlY3VyaXR5QWN0aXZpdGllcyB9IGZyb20gJy4vc2VjdXJpdHlBY3Rpdml0aWVzJztcbmltcG9ydCB7IHNlc3Npb25zIH0gZnJvbSAnLi9zZXNzaW9ucyc7XG5pbXBvcnQgeyBzaWduZWRSZWNvcmRzIH0gZnJvbSAnLi9zaWduZWRSZWNvcmRzJztcbmltcG9ydCB7IHRyYW5zYWN0aW9ucyB9IGZyb20gJy4vdHJhbnNhY3Rpb25zJztcbmltcG9ydCB7IHRyYW5zcGFyZW5jeUNoZWNrcG9pbnRTbmFwc2hvdEVudHJpZXMgfSBmcm9tICcuL3RyYW5zcGFyZW5jeUNoZWNrcG9pbnRzJztcbmltcG9ydCB7IHVzZXJBdXRoTWV0aG9kcyB9IGZyb20gJy4vdXNlckF1dGhNZXRob2RzJztcbmltcG9ydCB7IHVzZXJDcmVkaXRzIH0gZnJvbSAnLi91c2VyQ3JlZGl0cyc7XG5pbXBvcnQgeyB1c2VyTG9jYXRpb25zIH0gZnJvbSAnLi91c2VyTG9jYXRpb25zJztcbmltcG9ydCB7IHVzZXJzIH0gZnJvbSAnLi91c2Vycyc7XG5pbXBvcnQgeyB2YWxpZGF0aW9uUmVxdWVzdHMgfSBmcm9tICcuL3ZhbGlkYXRpb25SZXF1ZXN0cyc7XG5pbXBvcnQgeyB3ZWJhdXRobkNyZWRlbnRpYWxzIH0gZnJvbSAnLi93ZWJhdXRobkNyZWRlbnRpYWxzJztcblxuLyoqIEEgZm9yZWlnbiBrZXkgdGhhdCBpcyBkZWNpZGVkIGJ1dCBub3QgeWV0IGV4cHJlc3NpYmxlLiAqL1xuZXhwb3J0IGludGVyZmFjZSBEZWZlcnJlZEZvcmVpZ25LZXkge1xuICByZWFkb25seSB0YWJsZTogUGdUYWJsZTtcbiAgcmVhZG9ubHkgY29sdW1uOiBQZ0NvbHVtbjtcbiAgLyoqIFNRTCBuYW1lIG9mIHRoZSBwYXJlbnQgdGFibGUsIGUuZy4gYHVzZXJzYC4gKi9cbiAgcmVhZG9ubHkgcGFyZW50VGFibGU6IHN0cmluZztcbiAgLyoqIENvbHVtbiBvbiB0aGUgcGFyZW50LCBlLmcuIGBpZGAuICovXG4gIHJlYWRvbmx5IHBhcmVudENvbHVtbjogc3RyaW5nO1xuICAvKiogRGVjaWRlZCBwZXIgcmVsYXRpb24g4oCUIG5ldmVyIGxlZnQgdG8gZGVmYXVsdC4gKi9cbiAgcmVhZG9ubHkgb25EZWxldGU6IFVwZGF0ZURlbGV0ZUFjdGlvbjtcbiAgLyoqIFdoeSB0aGF0IGBPTiBERUxFVEVgLCBpbiBvbmUgbGluZS4gKi9cbiAgcmVhZG9ubHkgcmVhc29uOiBzdHJpbmc7XG59XG5cbi8qKiBBbiBpZC1zaGFwZWQgY29sdW1uIHRoYXQgd2lsbCBuZXZlciBjYXJyeSBhIGZvcmVpZ24ga2V5LiAqL1xuZXhwb3J0IGludGVyZmFjZSBJZENvbHVtbldpdGhvdXRGb3JlaWduS2V5IHtcbiAgcmVhZG9ubHkgdGFibGU6IFBnVGFibGU7XG4gIHJlYWRvbmx5IGNvbHVtbjogUGdDb2x1bW47XG4gIHJlYWRvbmx5IHJlYXNvbjogc3RyaW5nO1xufVxuXG4vKipcbiAqIGB1c2Vyc2AgbGFuZGVkLCBzbyBldmVyeSBlbnRyeSB0aGF0IG93ZWQgaXQgYSBjb25zdHJhaW50IGhhcyBiZWVuIGNvbnZlcnRlZCB0b1xuICogYSByZWFsIGAucmVmZXJlbmNlcygpYCBhbmQgZGVsZXRlZCBmcm9tIHRoaXMgbGlzdCDigJQgYGJsb2Nrcy51c2VyX2lkYCxcbiAqIGBibG9ja3MuYmxvY2tlZF9pZGAsIGBib29rbWFya3MudXNlcl9pZGAsIGBwdXNoX3Rva2Vucy51c2VyX2lkYCxcbiAqIGBsYWJlbHMudXNlcl9pZGAgYW5kIGB3ZWJhdXRobl9jcmVkZW50aWFscy51c2VyX2lkYC4gV2hhdCByZW1haW5zIGlzIG93ZWQgdG9cbiAqIGBhcHBsaWNhdGlvbnNgLCB3aGljaCBoYXMgbm90IGxhbmRlZCB5ZXQuXG4gKi9cblxuZXhwb3J0IGNvbnN0IERFRkVSUkVEX0ZPUkVJR05fS0VZUzogcmVhZG9ubHkgRGVmZXJyZWRGb3JlaWduS2V5W10gPSBbXG5dO1xuXG5leHBvcnQgY29uc3QgSURfQ09MVU1OU19XSVRIT1VUX0ZPUkVJR05fS0VZOiByZWFkb25seSBJZENvbHVtbldpdGhvdXRGb3JlaWduS2V5W10gPSBbXG4gIHtcbiAgICB0YWJsZTogYm9va21hcmtzLFxuICAgIGNvbHVtbjogYm9va21hcmtzLnBvc3RJZCxcbiAgICByZWFzb246XG4gICAgICAnYFBvc3RgIGlzIE1lbnRpb25cXCdzIG1vZGVsIGluIE1lbnRpb25cXCdzIGRhdGFiYXNlLiBUaGVyZSBpcyBubyBsb2NhbCAnICtcbiAgICAgICd0YWJsZSB0byByZWZlcmVuY2UsIGFuZCB0aGUgcmVsYXRpb24gaXMgZW5mb3JjZWQgYnkgbmVpdGhlciBzdG9yZSB0b2RheS4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IHB1c2hUb2tlbnMsXG4gICAgY29sdW1uOiBwdXNoVG9rZW5zLmRldmljZUlkLFxuICAgIHJlYXNvbjpcbiAgICAgICdBIGNlbnRyYWwgREVWSUNFIGlkICh0aGUgYERldmljZVNlc3Npb24uZGV2aWNlSWRgIGlkIHNwYWNlKSwgbm90IHRoZSAnICtcbiAgICAgICdwcmltYXJ5IGtleSBvZiBhbnkgcm93LiBOb3RoaW5nIHRvIHJlZmVyZW5jZS4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IHdlYmF1dGhuQ3JlZGVudGlhbHMsXG4gICAgY29sdW1uOiB3ZWJhdXRobkNyZWRlbnRpYWxzLmNyZWRlbnRpYWxJRCxcbiAgICByZWFzb246XG4gICAgICAnVGhlIGJyb3dzZXItc3VwcGxpZWQgYmFzZTY0dXJsIFdlYkF1dGhuIGNyZWRlbnRpYWwgaGFuZGxlLiBJZC1zaGFwZWQgYnkgJyArXG4gICAgICAnbmFtZSBvbmx5IOKAlCBpdCBpZGVudGlmaWVzIGFuIGF1dGhlbnRpY2F0b3IgY3JlZGVudGlhbCwgbm90IGFuIE94eSByb3cuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBmZWRlcmF0aW9uS2V5UGFpcnMsXG4gICAgY29sdW1uOiBmZWRlcmF0aW9uS2V5UGFpcnMua2V5SWQsXG4gICAgcmVhc29uOlxuICAgICAgJ0FuIEFjdGl2aXR5UHViIGtleUlkIFVSSSAoYGh0dHBzOi8vPGRvbWFpbj4vYXAvdXNlcnMvPG5hbWU+I21haW4ta2V5YCkuICcgK1xuICAgICAgJ0l0IG5hbWVzIGFuIGFjdG9yIG9uIHNvbWUgZG9tYWluIOKAlCBvZnRlbiBhIHJlbHlpbmcgYXBwIE94eSBzaWducyBmb3IsICcgK1xuICAgICAgJ25vdCBhbiBPeHkgYWNjb3VudCDigJQgc28gdGhlcmUgaXMgbm8gbG9jYWwgcm93IHRvIHJlZmVyZW5jZS4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IGFwcEFmZmluaXR5U2VlbkV2ZW50cyxcbiAgICBjb2x1bW46IGFwcEFmZmluaXR5U2VlbkV2ZW50cy5ldmVudElkLFxuICAgIHJlYXNvbjpcbiAgICAgICdBbiBpZCBtaW50ZWQgYnkgdGhlIENPTlNVTUlORyBhcHBsaWNhdGlvbiBmb3IgaXRzIG93biBldmVudC4gT3h5IHN0b3JlcyAnICtcbiAgICAgICdpdCB0byBkZWR1cGUgYW5kIG5ldmVyIHJlc29sdmVzIGl0IHRvIGFueXRoaW5nLicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogdXNlcnMsXG4gICAgY29sdW1uOiB1c2Vycy5mZWRlcmF0aW9uQWN0b3JJZCxcbiAgICByZWFzb246XG4gICAgICBcImBGZWRlcmF0ZWRBY3Rvci5faWRgIGluIHRoZSBDT05TVU1JTkcgYXBwJ3MgZGF0YWJhc2UgKE1lbnRpb24ncyksIG5vdCBcIiArXG4gICAgICAnaW4gdGhpcyBvbmUuIE94eSBzdG9yZXMgaXQgYW5kIG5ldmVyIHJlc29sdmVzIGl0LicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogdXNlckF1dGhNZXRob2RzLFxuICAgIGNvbHVtbjogdXNlckF1dGhNZXRob2RzLm1ldGhvZENyZWRlbnRpYWxJZCxcbiAgICByZWFzb246XG4gICAgICAnVGhlIGJyb3dzZXItc3VwcGxpZWQgYmFzZTY0dXJsIFdlYkF1dGhuIGNyZWRlbnRpYWwgaGFuZGxlLCBtaXJyb3JlZCAnICtcbiAgICAgICdmcm9tIGB3ZWJhdXRobl9jcmVkZW50aWFscy5jcmVkZW50aWFsX2lkYC4gSXQgaWRlbnRpZmllcyBhbiAnICtcbiAgICAgICdhdXRoZW50aWNhdG9yIGNyZWRlbnRpYWwsIG5vdCBhbiBPeHkgcm93LicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogdXNlckxvY2F0aW9ucyxcbiAgICBjb2x1bW46IHVzZXJMb2NhdGlvbnMucGxhY2VJZCxcbiAgICByZWFzb246XG4gICAgICBcIkEgdGhpcmQtcGFydHkgZ2VvY29kZXIncyBpZGVudGlmaWVyIGZvciBhIHBsYWNlIChOb21pbmF0aW0sIEdvb2dsZSBcIiArXG4gICAgICAnUGxhY2VzKS4gT3BhcXVlLCBleHRlcm5hbCwgYW5kIG5ldmVyIGRlcmVmZXJlbmNlZCBieSBPeHkuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiB1c2VyTG9jYXRpb25zLFxuICAgIGNvbHVtbjogdXNlckxvY2F0aW9ucy5vc21JZCxcbiAgICByZWFzb246XG4gICAgICAnQW4gT3BlblN0cmVldE1hcCBlbGVtZW50IGlkLCBtZWFuaW5nZnVsIG9ubHkgdG9nZXRoZXIgd2l0aCBgb3NtX3R5cGVgLiAnICtcbiAgICAgICdFeHRlcm5hbCB0byBPeHkgZW50aXJlbHkuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBzZXNzaW9ucyxcbiAgICBjb2x1bW46IHNlc3Npb25zLnNlc3Npb25JZCxcbiAgICByZWFzb246XG4gICAgICBcIihhKSBUaGlzIHJvdydzIG93biBwdWJsaWMgaGFuZGxlIOKAlCB0aGUgVVVJRCBtaW50ZWQgZm9yIGl0IGFuZCBlbWJlZGRlZCBcIiArXG4gICAgICAnaW4gZXZlcnkgYWNjZXNzIHRva2VuLiBPdGhlciB0YWJsZXMgcmVmZXJlbmNlIGl0OyBpdCByZWZlcmVuY2VzIG5vdGhpbmcuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBzZXNzaW9ucyxcbiAgICBjb2x1bW46IHNlc3Npb25zLmRldmljZUlkLFxuICAgIHJlYXNvbjpcbiAgICAgICcoYikgVGhlIGNlbnRyYWwgREVWSUNFIGlkIHNwYWNlIChgZGV2aWNlX3Nlc3Npb25zLmRldmljZV9pZGApLCBub3QgdGhlICcgK1xuICAgICAgJ3ByaW1hcnkga2V5IG9mIGFueSByb3cuIEEgc2Vzc2lvbiBpcyByb3V0aW5lbHkgY3JlYXRlZCBiZWZvcmUgdGhhdCAnICtcbiAgICAgICdkZXZpY2UgaGFzIGEgYGRldmljZV9zZXNzaW9uc2Agcm93IGF0IGFsbC4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IGRldmljZVNlc3Npb25zLFxuICAgIGNvbHVtbjogZGV2aWNlU2Vzc2lvbnMuZGV2aWNlSWQsXG4gICAgcmVhc29uOlxuICAgICAgXCIoYSkgVGhlIGRldmljZSdzIG93biBpZGVudGlmaWVyIOKAlCBwZXIgd2ViIG9yaWdpbiwgcGVyIG5hdGl2ZSBhcHAgZ3JvdXAuIFwiICtcbiAgICAgICdJdCBpcyB0aGlzIHJvd1xcJ3MgbmF0dXJhbCBrZXksIHdoaWNoIGlzIHdoeSBpdCBpcyBVTklRVUUgaGVyZSBhbmQgYSAnICtcbiAgICAgICdsb29zZSB2YWx1ZSBldmVyeXdoZXJlIGVsc2UuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBkZXZpY2VTZXNzaW9uQWNjb3VudHMsXG4gICAgY29sdW1uOiBkZXZpY2VTZXNzaW9uQWNjb3VudHMuc2Vzc2lvbklkLFxuICAgIHJlYXNvbjpcbiAgICAgICcoYykgTmFtZXMgYSBgc2Vzc2lvbnNgIHJvdyBieSBpdHMgbmF0dXJhbCBrZXksIHdpdGggbGlmZWN5Y2xlcyB0aGF0IGFyZSAnICtcbiAgICAgICdpbmRlcGVuZGVudCBCWSBERVNJR046IHRoZSBhcHBsaWNhdGlvbiBuZXZlciBkZWxldGVzIGEgc2Vzc2lvbiAob25seSAnICtcbiAgICAgICd0aGUgZXhwaXJ5IHN3ZWVwIGRvZXMpLCBhbmQgd2hlbiBvbmUgZ29lcyB0aGUgZW50cnkgbXVzdCBTVVJWSVZFIHNvIHRoZSAnICtcbiAgICAgICdtaW50IHBhdGggYW5zd2VycyBcImRlYWQgc2Vzc2lvblwiIGluc3RlYWQgb2YgdGhlIGRldmljZVxcJ3MgYWNjb3VudCBzZXQgJyArXG4gICAgICAnc2lsZW50bHkgc2hyaW5raW5nIOKAlCBhIHNocmluayB0aGF0IHdvdWxkIGFsc28gc2tpcCB0aGUgYHJldmlzaW9uYCBidW1wICcgK1xuICAgICAgJ2V2ZXJ5IHJlYWwgbWVtYmVyc2hpcCBjaGFuZ2UgbWFrZXMuIENBU0NBREUgd291bGQgY2F1c2UgZXhhY3RseSB0aGF0ICcgK1xuICAgICAgJ3NocmluazsgUkVTVFJJQ1Qgd291bGQgc3RvcCB0aGUgc3dlZXAuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBhdXRoQ29kZXMsXG4gICAgY29sdW1uOiBhdXRoQ29kZXMuZGV2aWNlSWQsXG4gICAgcmVhc29uOlxuICAgICAgJyhiKSBDZW50cmFsIGRldmljZSBpZCwgdGhyZWFkZWQgc28gdGhlIHRva2VuIGV4Y2hhbmdlIGxhbmRzIG9uIHRoZSAnICtcbiAgICAgICdkZXZpY2UgdGhlIGZsb3cgc3RhcnRlZCBmcm9tLiBOb3QgYSByb3cgaWQuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBhdXRoU2Vzc2lvbnMsXG4gICAgY29sdW1uOiBhdXRoU2Vzc2lvbnMuZGV2aWNlSWQsXG4gICAgcmVhc29uOlxuICAgICAgJyhiKSBDZW50cmFsIGRldmljZSBpZCBvZiB0aGUgYnJvd3NlciB0aGF0IFNUQVJURUQgdGhlIHJlcXVlc3QsIHJlc29sdmVkICcgK1xuICAgICAgJ2Zyb20gYW4gb3B0aW9uYWwgZGV2aWNlIHRva2VuLiBOb3QgYSByb3cgaWQuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBhdXRoU2Vzc2lvbnMsXG4gICAgY29sdW1uOiBhdXRoU2Vzc2lvbnMuYXV0aG9yaXplZFNlc3Npb25JZCxcbiAgICByZWFzb246XG4gICAgICAnKGMpIFRoZSBgc2Vzc2lvbnMuc2Vzc2lvbl9pZGAgb2YgdGhlIHNlc3Npb24gbWludGVkIG9uIGFwcHJvdmFsLiBTYW1lICcgK1xuICAgICAgJ2luZGVwZW5kZW50IGxpZmVjeWNsZSBhcyBgZGV2aWNlX3Nlc3Npb25fYWNjb3VudHMuc2Vzc2lvbl9pZGAsIG9uIGEgcm93ICcgK1xuICAgICAgJ3RoYXQgaXMgaXRzZWxmIHN3ZXB0IGFuIGhvdXIgbGF0ZXIuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBhdXRoU2Vzc2lvbnMsXG4gICAgY29sdW1uOiBhdXRoU2Vzc2lvbnMuZmluYWxpemVkQXV0aENvZGVJZCxcbiAgICByZWFzb246XG4gICAgICAnKGMpIEEgUkVTRVJWQVRJT04sIG5vdCBhIHJlZmVyZW5jZTogYGZpbmFsaXplQ29tbW9uc09BdXRoYCBtaW50cyB0aGUgaWQgJyArXG4gICAgICAnYW5kIHdyaXRlcyBpdCBpbiB0aGUgU0FNRSBhdG9taWMgdXBkYXRlIHRoYXQgc3BlbmRzIHRoZSByZXF1ZXN0LCBiZWZvcmUgJyArXG4gICAgICAndGhlIGBhdXRoX2NvZGVzYCByb3cgZXhpc3RzIOKAlCBhbmQgdGhlIG1pbnQgbWF5IHRoZW4gZmFpbCwgbGVhdmluZyBhbiBpZCAnICtcbiAgICAgICd0aGF0IG5ldmVyIGJlY29tZXMgYSByb3cuIEEgY29uc3RyYWludCB3b3VsZCByZWplY3QgdGhhdCB3cml0ZSBhbmQgJyArXG4gICAgICAnZGVzdHJveSB0aGUgc2luZ2xlLXVzZSBndWFyYW50ZWU7IFNFVCBOVUxMIHdvdWxkIGJlIHdvcnNlLCByZXN1cnJlY3RpbmcgJyArXG4gICAgICBcImEgc3BlbnQgcmVxdWVzdCBhcyB1bi1maW5hbGl6ZWQgd2hlbiB0aGUgY29kZSdzIG93biA1LW1pbnV0ZSBzd2VlcCByYW4gXCIgK1xuICAgICAgJ2FuZCBsZXR0aW5nIGl0IG1pbnQgYSBTRUNPTkQgYXV0aG9yaXphdGlvbiBjb2RlLicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogZGV2aWNlUGFpcmluZ1Nlc3Npb25zLFxuICAgIGNvbHVtbjogZGV2aWNlUGFpcmluZ1Nlc3Npb25zLnBhaXJpbmdJZCxcbiAgICByZWFzb246XG4gICAgICBcIihhKSBUaGlzIHJvdydzIG93biBzaW5nbGUtdXNlIFFSIGhhbmRsZSwgd2hpY2ggZG91YmxlcyBhcyB0aGUgSEtERiBzYWx0IFwiICtcbiAgICAgICdmb3IgdGhlIHRyYW5zZmVyIGtleS4gSWQtc2hhcGVkIGJ5IG5hbWUgb25seS4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IGlkZW50aXR5QmluZGluZ3MsXG4gICAgY29sdW1uOiBpZGVudGl0eUJpbmRpbmdzLmxvY2FsUHJpbmNpcGFsSWQsXG4gICAgcmVhc29uOlxuICAgICAgXCJUaGUgQVBQTElDQVRJT04ncyBvd24gaWRlbnRpZmllciBmb3IgYSBwZXJzb24sIGluIHRoZSBhcHBsaWNhdGlvbidzIG93biBcIiArXG4gICAgICAnaWQgc3BhY2UuIE94eSBzdG9yZXMgaXQgdG8gbWF0Y2ggYSBjbGFpbSBhZ2FpbnN0IGEgYmluZGluZyBhbmQgbmV2ZXIgJyArXG4gICAgICAncmVzb2x2ZXMgaXQgdG8gYW55dGhpbmcgbG9jYWwuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBzZWN1cml0eUFjdGl2aXRpZXMsXG4gICAgY29sdW1uOiBzZWN1cml0eUFjdGl2aXRpZXMuZGV2aWNlSWQsXG4gICAgcmVhc29uOlxuICAgICAgJyhiKSBDZW50cmFsIGRldmljZSBpZCB0aGUgZXZlbnQgaGFwcGVuZWQgb24uIEFuIGF1ZGl0IHRyYWlsIG11c3Qga2VlcCAnICtcbiAgICAgICduYW1pbmcgdGhlIGRldmljZSB0aGF0IHdhcyByZW1vdmVkLCB3aGljaCBpcyBwcmVjaXNlbHkgb25lIG9mIHRoZSAnICtcbiAgICAgICdldmVudHMgaXQgcmVjb3Jkcy4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IHRyYW5zYWN0aW9ucyxcbiAgICBjb2x1bW46IHRyYW5zYWN0aW9ucy5pdGVtSWQsXG4gICAgcmVhc29uOlxuICAgICAgJ1doYXQgd2FzIHB1cmNoYXNlZCwgaW4gdGhlIENPTlNVTUlORyBhcHBsaWNhdGlvblxcJ3MgaWQgc3BhY2UuIFRoZXJlIGlzICcgK1xuICAgICAgJ25vIGxvY2FsIHRhYmxlIHRvIHJlZmVyZW5jZSwgYW5kIGBpdGVtX3R5cGVgIOKAlCBhbHNvIGZyZWUtZm9ybSDigJQgaXMgd2hhdCAnICtcbiAgICAgICduYW1lcyB0aGUgc3BhY2UgaXQgYmVsb25ncyB0by4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IHVzZXJDcmVkaXRzLFxuICAgIGNvbHVtbjogdXNlckNyZWRpdHMuc3RyaXBlQ3VzdG9tZXJJZCxcbiAgICByZWFzb246XG4gICAgICBcIlN0cmlwZSdzIGlkZW50aWZpZXIgZm9yIHRoZSBjdXN0b21lci4gT3h5IHN0b3JlcyBpdCB0byB0YWxrIHRvIFN0cmlwZSBcIiArXG4gICAgICAnYW5kIHJlc29sdmVzIGl0IG9ubHkgYmFjayB0byB0aGlzIHNhbWUgcm93LicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogYmlsbGluZ1N1YnNjcmlwdGlvbnMsXG4gICAgY29sdW1uOiBiaWxsaW5nU3Vic2NyaXB0aW9ucy5zdHJpcGVDdXN0b21lcklkLFxuICAgIHJlYXNvbjogXCJTdHJpcGUncyBpZGVudGlmaWVyIGZvciB0aGUgY3VzdG9tZXIuIE5vdCBhIHJvdyBpbiB0aGlzIGRhdGFiYXNlLlwiLFxuICB9LFxuICB7XG4gICAgdGFibGU6IGJpbGxpbmdTdWJzY3JpcHRpb25zLFxuICAgIGNvbHVtbjogYmlsbGluZ1N1YnNjcmlwdGlvbnMuc3RyaXBlU3Vic2NyaXB0aW9uSWQsXG4gICAgcmVhc29uOlxuICAgICAgXCJTdHJpcGUncyBpZGVudGlmaWVyIGZvciB0aGUgc3Vic2NyaXB0aW9uLiBUaGlzIHRhYmxlIElTIHRoZSBsb2NhbCBcIiArXG4gICAgICAnbWlycm9yIG9mIGl0OyB0aGUgYXV0aG9yaXR5IGlzIFN0cmlwZS4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IGJpbGxpbmdTdWJzY3JpcHRpb25zLFxuICAgIGNvbHVtbjogYmlsbGluZ1N1YnNjcmlwdGlvbnMuc3RyaXBlUHJpY2VJZCxcbiAgICByZWFzb246XG4gICAgICBcIlN0cmlwZSdzIGlkZW50aWZpZXIgZm9yIHRoZSBwcmljZS4gVGhlIGNhdGFsb2d1ZSBpdCBiZWxvbmdzIHRvIGlzIGEgY29kZSBcIiArXG4gICAgICAnY29uc3RhbnQgKGBiaWxsaW5nLnRzOjc0YCksIG5vdCBhIHRhYmxlLicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogYmlsbGluZ1RyYW5zYWN0aW9ucyxcbiAgICBjb2x1bW46IGJpbGxpbmdUcmFuc2FjdGlvbnMuc3RyaXBlQ3VzdG9tZXJJZCxcbiAgICByZWFzb246IFwiU3RyaXBlJ3MgaWRlbnRpZmllciBmb3IgdGhlIGN1c3RvbWVyLiBOb3QgYSByb3cgaW4gdGhpcyBkYXRhYmFzZS5cIixcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBiaWxsaW5nVHJhbnNhY3Rpb25zLFxuICAgIGNvbHVtbjogYmlsbGluZ1RyYW5zYWN0aW9ucy5zdHJpcGVQYXltZW50SW50ZW50SWQsXG4gICAgcmVhc29uOlxuICAgICAgXCJTdHJpcGUncyBpZGVudGlmaWVyIGZvciB0aGUgcGF5bWVudCBpbnRlbnQuIE5vdCBhIHJvdyBpbiB0aGlzIGRhdGFiYXNlLlwiLFxuICB9LFxuICB7XG4gICAgdGFibGU6IGJpbGxpbmdUcmFuc2FjdGlvbnMsXG4gICAgY29sdW1uOiBiaWxsaW5nVHJhbnNhY3Rpb25zLnN0cmlwZVN1YnNjcmlwdGlvbklkLFxuICAgIC8vIFRoaXMgb25lIENPVUxEIGJlIGEgZm9yZWlnbiBrZXkg4oCUIGBiaWxsaW5nX3N1YnNjcmlwdGlvbnMuc3RyaXBlX3N1YnNjcmlwdGlvbl9pZGBcbiAgICAvLyBpcyB1bmlxdWUsIGFuZCBQb3N0Z3JlcyB3aWxsIHJlZmVyZW5jZSBhIHVuaXF1ZSBjb2x1bW4uIEl0IGRlbGliZXJhdGVseSBpc1xuICAgIC8vIG5vdDogYGJpbGxpbmdfc3Vic2NyaXB0aW9uc2AgaXMgYSBNSVJST1IgdGhhdCBtYXkgbGVnaXRpbWF0ZWx5IGJlIG1pc3NpbmcgYVxuICAgIC8vIHN1YnNjcmlwdGlvbiAob25lIGNyZWF0ZWQgYmVmb3JlIHRoZSBtaXJyb3IgZXhpc3RlZCwgb3IgdW5kZXIgYSBwcmljZSBpZFxuICAgIC8vIHRoaXMgZGVwbG95bWVudCBkb2VzIG5vdCByZWNvZ25pc2UpLCBhbmQgYSByZWNvcmQgb2YgbW9uZXkgYWN0dWFsbHlcbiAgICAvLyBjaGFyZ2VkIG11c3QgbmV2ZXIgYmUgcmVmdXNlZCBiZWNhdXNlIGEgbG9jYWwgbWlycm9yIGlzIGluY29tcGxldGUuXG4gICAgcmVhc29uOlxuICAgICAgXCJTdHJpcGUncyBpZGVudGlmaWVyIGZvciB0aGUgc3Vic2NyaXB0aW9uIHRoaXMgcGF5bWVudCBjb3ZlcnMuIFBvaW50aW5nIFwiICtcbiAgICAgICdpdCBhdCB0aGUgbG9jYWwgbWlycm9yIHdvdWxkIGxldCBhbiBpbmNvbXBsZXRlIG1pcnJvciByZWplY3QgYSByZWFsICcgK1xuICAgICAgJ3BheW1lbnQgcmVjb3JkOyBTdHJpcGUgaXMgdGhlIGF1dGhvcml0eSBmb3IgYm90aC4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IG5vdGlmaWNhdGlvbnMsXG4gICAgY29sdW1uOiBub3RpZmljYXRpb25zLmVudGl0eUlkLFxuICAgIHJlYXNvbjpcbiAgICAgICdQb2x5bW9ycGhpYywgZGlzY3JpbWluYXRlZCBieSBgZW50aXR5X3R5cGVgLiBUd28gb2YgdGhlIHRocmVlIHR5cGVzICcgK1xuICAgICAgJyhgcG9zdGAsIGByZXBseWApIG5hbWUgcm93cyBpbiBNRU5USU9OXFwncyBkYXRhYmFzZTsgdGhlIHRoaXJkICcgK1xuICAgICAgJyhgcHJvZmlsZWApIG5hbWVzIGEgdXNlciwgYnV0IGEgZm9yZWlnbiBrZXkgY2Fubm90IGJlIGNvbmRpdGlvbmFsIG9uIGEgJyArXG4gICAgICAnc2libGluZyBjb2x1bW5cXCdzIHZhbHVlLicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogbW9kZXJhdGlvbkVmZmVjdHMsXG4gICAgY29sdW1uOiBtb2RlcmF0aW9uRWZmZWN0cy5ldmVudElkLFxuICAgIHJlYXNvbjpcbiAgICAgIFwiVGhlIGVtaXR0aW5nIG1vZGVyYXRpb24gc3lzdGVtJ3MgdHJhbnNwb3J0IGV2ZW50IGlkLiBPeHkgc3RvcmVzIGl0IHRvIFwiICtcbiAgICAgICdhbnN3ZXIgYSByZWRlbGl2ZXJ5IGFuZCBuZXZlciByZXNvbHZlcyBpdCB0byBhIHJvdyBoZXJlLicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogbW9kZXJhdGlvbkVmZmVjdHMsXG4gICAgY29sdW1uOiBtb2RlcmF0aW9uRWZmZWN0cy5pbmNpZGVudElkLFxuICAgIHJlYXNvbjpcbiAgICAgICdUaGUgQ1JPU1MtVEVOQU5UIGluY2lkZW50IGlkLiBUaGUgaW5jaWRlbnQgaXMgdGhlIG1vZGVyYXRpb24gc2VydmljZVxcJ3MgJyArXG4gICAgICAnb3duIHVuaXQgYW5kIGhhcyBubyB0YWJsZSBpbiB0aGlzIGRhdGFiYXNlIOKAlCB0aGF0IGlzIHRoZSBwb2ludCBvZiBpdCAnICtcbiAgICAgICdiZWluZyBjcm9zcy10ZW5hbnQuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBtb2RlcmF0aW9uRWZmZWN0cyxcbiAgICBjb2x1bW46IG1vZGVyYXRpb25FZmZlY3RzLmNhc2VJZCxcbiAgICByZWFzb246IFwiQSBjYXNlIGluIHRoZSBtb2RlcmF0aW9uIHNlcnZpY2UncyBvd24gc3RvcmUuIE5vdCBhIHJvdyBoZXJlLlwiLFxuICB9LFxuICB7XG4gICAgdGFibGU6IG1vZGVyYXRpb25FZmZlY3RzLFxuICAgIGNvbHVtbjogbW9kZXJhdGlvbkVmZmVjdHMuZGVjaXNpb25JZCxcbiAgICByZWFzb246XG4gICAgICAnVGhlIHB1Ymxpc2hlZCBkZWNpc2lvbi4gSXRzIENPTlRFTlRTIGFyZSBkZWxpYmVyYXRlbHkgbm90IHN0b3JlZCBoZXJlIOKAlCAnICtcbiAgICAgICdgcHJvb2ZfaGFzaGAgaXMgdGhlIHByb3ZlbmFuY2Ug4oCUIHNvIHRoZXJlIGlzIG5vdGhpbmcgdG8gcmVmZXJlbmNlLicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogY29uZHVjdFN0cmlrZXMsXG4gICAgY29sdW1uOiBjb25kdWN0U3RyaWtlcy5pbmNpZGVudElkLFxuICAgIHJlYXNvbjogJ1NhbWUgY3Jvc3MtdGVuYW50IGluY2lkZW50IGlkIGFzIG9uIGBtb2RlcmF0aW9uX2VmZmVjdHNgLicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogY29uZHVjdFN0cmlrZXMsXG4gICAgY29sdW1uOiBjb25kdWN0U3RyaWtlcy5kZWNpc2lvbklkLFxuICAgIHJlYXNvbjogJ1NhbWUgZXh0ZXJuYWwgZGVjaXNpb24gaWQgYXMgb24gYG1vZGVyYXRpb25fZWZmZWN0c2AuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBtZXNzYWdlcyxcbiAgICBjb2x1bW46IG1lc3NhZ2VzLm1lc3NhZ2VJZCxcbiAgICByZWFzb246XG4gICAgICAnVGhlIFJGQyA1MzIyIGBNZXNzYWdlLUlEYCBoZWFkZXIsIG1pbnRlZCBieSB3aGljaGV2ZXIgc2VydmVyIHNlbnQgdGhlICcgK1xuICAgICAgJ21haWwuIEl0IGlkZW50aWZpZXMgYSBNRVNTQUdFIGluIHRoZSBnbG9iYWwgZW1haWwgbmFtZXNwYWNlLCBub3QgYSByb3cgJyArXG4gICAgICAnaGVyZSDigJQgbW9zdCB2YWx1ZXMgbmFtZSBtYWlsIHRoaXMgZGF0YWJhc2UgaGFzIG5ldmVyIGhlbGQuJyxcbiAgfSxcbiAge1xuICAgIHRhYmxlOiBtZXNzYWdlQXR0YWNobWVudHMsXG4gICAgY29sdW1uOiBtZXNzYWdlQXR0YWNobWVudHMuY29udGVudElkLFxuICAgIHJlYXNvbjpcbiAgICAgICdUaGUgTUlNRSBgQ29udGVudC1JRGAgaGVhZGVyLCB3aGljaCBhbiBIVE1MIGJvZHkgcmVmZXJlbmNlcyBhcyBgY2lkOmAuICcgK1xuICAgICAgJ1Njb3BlZCB0byBvbmUgbWVzc2FnZSBhbmQgaWQtc2hhcGVkIGJ5IG5hbWUgb25seS4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IGZpbGVMaW5rcyxcbiAgICBjb2x1bW46IGZpbGVMaW5rcy5lbnRpdHlJZCxcbiAgICByZWFzb246XG4gICAgICBcIlRoZSBlbnRpdHkncyBpZCBpbiB0aGUgQ09OU1VNSU5HIGFwcGxpY2F0aW9uJ3MgZGF0YWJhc2UgKGEgTWVudGlvbiBcIiArXG4gICAgICAncG9zdCwgYW4gQWxpYSB0aHJlYWQpLiBNZWFuaW5nZnVsIG9ubHkgdG9nZXRoZXIgd2l0aCBgYXBwYCBhbmQgJyArXG4gICAgICAnYGVudGl0eV90eXBlYCwgYW5kIG5ldmVyIHJlc29sdmFibGUgaGVyZS4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IHNpZ25lZFJlY29yZHMsXG4gICAgY29sdW1uOiBzaWduZWRSZWNvcmRzLnJlY29yZElkLFxuICAgIHJlYXNvbjpcbiAgICAgICdUaGUgY29udGVudCBhZGRyZXNzIG9mIHRoZSByZWNvcmQgSVRTRUxGIChzaGEyNTYgb2YgaXRzIGNhbm9uaWNhbCAnICtcbiAgICAgICdzaWduaW5nIGlucHV0KSDigJQgdGhlIFRBUkdFVCBmaXZlIG90aGVyIHRhYmxlcyByZWZlcmVuY2UsIG5vdCBhICcgK1xuICAgICAgJ3JlZmVyZW5jZSBvZiBpdHMgb3duLiBJZC1zaGFwZWQgYmVjYXVzZSBpdCBpZGVudGlmaWVzIHRoaXMgcm93LicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogcmVwdXRhdGlvblRyYW5zYWN0aW9ucyxcbiAgICBjb2x1bW46IHJlcHV0YXRpb25UcmFuc2FjdGlvbnMuc291cmNlQWN0aW9uSWQsXG4gICAgcmVhc29uOlxuICAgICAgJ1RoZSBpZGVtcG90ZW5jeSBrZXkgdGhlIFJFUE9SVElORyBzeXN0ZW0gbWludGVkIGZvciBpdHMgb3duIGFjdGlvbi4gT3h5ICcgK1xuICAgICAgJ3N0b3JlcyBpdCB0byBkZWR1cGxpY2F0ZSBhd2FyZHMgYW5kIG5ldmVyIHJlc29sdmVzIGl0IHRvIGFueXRoaW5nLicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogdmFsaWRhdGlvblJlcXVlc3RzLFxuICAgIGNvbHVtbjogdmFsaWRhdGlvblJlcXVlc3RzLnNvdXJjZUFjdGlvbklkLFxuICAgIHJlYXNvbjpcbiAgICAgICdTYW1lIGtleSBzcGFjZSBhcyBgcmVwdXRhdGlvbl90cmFuc2FjdGlvbnMuc291cmNlX2FjdGlvbl9pZGAg4oCUIHRoZSAnICtcbiAgICAgIFwib3BlbmluZyBzeXN0ZW0ncyBvd24gYWN0aW9uIGlkLCB1c2VkIG9ubHkgdG8gZGVkdXBlIGFuIG9wZW4ganVyeS5cIixcbiAgfSxcbiAge1xuICAgIHRhYmxlOiByZXB1dGF0aW9uVHJhbnNhY3Rpb25zLFxuICAgIGNvbHVtbjogcmVwdXRhdGlvblRyYW5zYWN0aW9ucy50YXJnZXRFbnRpdHlJZCxcbiAgICByZWFzb246XG4gICAgICAnVGhlIGlkIG9mIHdoYXRldmVyIHRoZSBhY3Rpb24gd2FzIEFCT1VUIOKAlCBhIHBvc3QsIGEgcmVwb3J0LCBhIHB1cmNoYXNlICcgK1xuICAgICAgXCLigJQgaW4gdGhlIFNPVVJDRSBhcHBsaWNhdGlvbidzIGlkIHNwYWNlLiBgdGFyZ2V0X2VudGl0eV90eXBlYCBzYXlzIHdoaWNoIFwiICtcbiAgICAgICdzcGFjZTsgbm9uZSBvZiB0aGVtIGlzIGEgdGFibGUgaW4gdGhpcyBkYXRhYmFzZS4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IHRyYW5zcGFyZW5jeUNoZWNrcG9pbnRTbmFwc2hvdEVudHJpZXMsXG4gICAgY29sdW1uOiB0cmFuc3BhcmVuY3lDaGVja3BvaW50U25hcHNob3RFbnRyaWVzLmhlYWRSZWNvcmRJZCxcbiAgICByZWFzb246XG4gICAgICAnQSB2YWx1ZSB0aGUgY2hlY2twb2ludCBDT01NSVRURUQgdG8gdW5kZXIgYSBzaWduZWQgTWVya2xlIHJvb3QsIG5vdCBhICcgK1xuICAgICAgJ2xpdmUgcG9pbnRlci4gQW55IE9OIERFTEVURSBhY3Rpb24gd291bGQgbGV0IGFuIHVucmVsYXRlZCBlcmFzdXJlIGFsdGVyICcgK1xuICAgICAgJ3B1Ymxpc2hlZCBldmlkZW5jZSwgd2hpY2ggaXMgdGhlIGV4YWN0IHRhbXBlcmluZyB0aGUgbG9nIGV4aXN0cyB0byAnICtcbiAgICAgICdkZXRlY3Qg4oCUIHNvIHRoZSByZWZlcmVuY2UgaXMgZGVsaWJlcmF0ZWx5IHVuZW5mb3JjZWQgYW5kIHRoZSByb3cgaXMgJyArXG4gICAgICAnaW1tdXRhYmxlIGJ5IHRyaWdnZXIgaW5zdGVhZC4nLFxuICB9LFxuICB7XG4gICAgdGFibGU6IGFwcFVwZGF0ZXMsXG4gICAgY29sdW1uOiBhcHBVcGRhdGVzLnVwZGF0ZUlkLFxuICAgIHJlYXNvbjpcbiAgICAgIFwiVGhlIHVwZGF0ZSdzIE9XTiBwdWJsaWMgaGFuZGxlIOKAlCB0aGUgVVVJRCBzZXJ2ZWQgYXMgdGhlIGV4cG8tdXBkYXRlcyBcIiArXG4gICAgICAnbWFuaWZlc3QgYGlkYCwgbm90IGEgcmVmZXJlbmNlIHRvIGFub3RoZXIgcm93LiBJdCBpcyB0aGUgVEFSR0VUIG9mICcgK1xuICAgICAgJ2BhcHBfdXBkYXRlcy5wcm9tb3RlZF9mcm9tX3VwZGF0ZV9pZGAsIHdoaWNoIGRvZXMgY2FycnkgYSBjb25zdHJhaW50LicsXG4gIH0sXG4gIHtcbiAgICB0YWJsZTogYXBwRW5kb3JzZW1lbnRFZGdlcyxcbiAgICBjb2x1bW46IGFwcEVuZG9yc2VtZW50RWRnZXMuc291cmNlSWQsXG4gICAgcmVhc29uOlxuICAgICAgXCJUaGUgY29uc3VtaW5nIGFwcGxpY2F0aW9uJ3Mgb3duIGtleSBmb3IgdGhlIG9iamVjdCB0aGUgZW5kb3JzZW1lbnQgY2FtZSBcIiArXG4gICAgICAnZnJvbSAoYSBsaXN0IGlkLCBhIHBhY2sgaWQpLiBPcGFxdWUgdG8gT3h5LCBwYXJ0IG9mIHRoZSBpZGVtcG90ZW5jeSBrZXkgJyArXG4gICAgICAnb25seSwgYW5kIG5ldmVyIGRlcmVmZXJlbmNlZC4nLFxuICB9LFxuXTtcbiJdLCJ2ZXJzaW9uIjozfQ==

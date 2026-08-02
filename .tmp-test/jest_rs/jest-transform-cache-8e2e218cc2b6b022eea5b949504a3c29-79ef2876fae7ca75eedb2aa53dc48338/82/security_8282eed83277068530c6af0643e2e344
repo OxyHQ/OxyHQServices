@@ -1,0 +1,178 @@
+ea33ecbf58cd830124ecb7229fea26a7
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const securityActivity_controller_1 = require("../controllers/securityActivity.controller");
+const auth_1 = require("../middleware/auth");
+const validate_1 = require("../middleware/validate");
+const security_schemas_1 = require("../schemas/security.schemas");
+const router = express_1.default.Router();
+/**
+ * @openapi
+ * /security/activity:
+ *   get:
+ *     tags:
+ *       - Security
+ *     summary: Account activity log with pagination
+ *     description: >
+ *       Return security-relevant events for the authenticated user — sign-ins,
+ *       email changes, device add/remove, private-key exports, backup
+ *       creations, suspicious activity flags. Always scoped to the bearer's own
+ *       account; there is no parameter that widens it to another user.
+ *       Used to power the activity history screen.
+ *
+ *
+ *       No event carries an IP address, a country or any other network-derived
+ *       location: the platform stores no user IPs at rest, in any form. Do not
+ *       add such a field here or to the underlying table.
+ *     parameters:
+ *       - name: limit
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 50
+ *       - name: offset
+ *         in: query
+ *         required: false
+ *         description: Rows to skip. Offset/limit paging — there is no cursor.
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *       - name: eventType
+ *         in: query
+ *         required: false
+ *         description: Restrict to one event type. An unknown value is a 400.
+ *         schema:
+ *           type: string
+ *           enum:
+ *             - sign_in
+ *             - sign_out
+ *             - email_changed
+ *             - profile_updated
+ *             - device_added
+ *             - device_removed
+ *             - account_recovery
+ *             - security_settings_changed
+ *             - private_key_exported
+ *             - backup_created
+ *             - suspicious_activity
+ *     responses:
+ *       200:
+ *         description: Activity events, newest first.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       userId:
+ *                         type: string
+ *                       eventType:
+ *                         type: string
+ *                         example: sign_in
+ *                       eventDescription:
+ *                         type: string
+ *                       metadata:
+ *                         type: object
+ *                         additionalProperties: true
+ *                       userAgent:
+ *                         type: string
+ *                         nullable: true
+ *                       deviceId:
+ *                         type: string
+ *                         nullable: true
+ *                       timestamp:
+ *                         type: string
+ *                         format: date-time
+ *                         description: When the EVENT happened.
+ *                       severity:
+ *                         type: string
+ *                         enum: [low, medium, high, critical]
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: When the row was written.
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     offset:
+ *                       type: integer
+ *                     hasMore:
+ *                       type: boolean
+ *       400:
+ *         description: Unknown eventType.
+ *       401:
+ *         description: Missing or invalid bearer token.
+ */
+router.get('/activity', auth_1.authMiddleware, securityActivity_controller_1.getSecurityActivity);
+/**
+ * @openapi
+ * /security/activity/private-key-exported:
+ *   post:
+ *     tags:
+ *       - Security
+ *     summary: Log a "private key exported" event
+ *     description: >
+ *       Record that the local identity wallet exported its private key for
+ *       backup. The event surfaces in the activity log and is used to remind
+ *       the user to safely store the key.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               deviceId:
+ *                 type: string
+ *                 description: Device that performed the export. Optional.
+ *     responses:
+ *       200:
+ *         description: Event recorded.
+ *       401:
+ *         description: Missing or invalid bearer token.
+ */
+router.post('/activity/private-key-exported', auth_1.authMiddleware, (0, validate_1.validate)({ body: security_schemas_1.logPrivateKeyExportedSchema }), securityActivity_controller_1.logPrivateKeyExported);
+/**
+ * @openapi
+ * /security/activity/backup-created:
+ *   post:
+ *     tags:
+ *       - Security
+ *     summary: Log a "backup created" event
+ *     description: Record that the local identity wallet wrote a backup of its keys.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               deviceId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Event recorded.
+ *       401:
+ *         description: Missing or invalid bearer token.
+ */
+router.post('/activity/backup-created', auth_1.authMiddleware, (0, validate_1.validate)({ body: security_schemas_1.logBackupCreatedSchema }), securityActivity_controller_1.logBackupCreated);
+exports.default = router;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcm91dGVzL3NlY3VyaXR5LnRzIiwibWFwcGluZ3MiOiI7Ozs7O0FBQUEsc0RBQThCO0FBQzlCLDRGQUEwSDtBQUMxSCw2Q0FBb0Q7QUFDcEQscURBQWtEO0FBQ2xELGtFQUdxQztBQUVyQyxNQUFNLE1BQU0sR0FBRyxpQkFBTyxDQUFDLE1BQU0sRUFBRSxDQUFDO0FBRWhDOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQThHRztBQUNILE1BQU0sQ0FBQyxHQUFHLENBQUMsV0FBVyxFQUFFLHFCQUFjLEVBQUUsaURBQW1CLENBQUMsQ0FBQztBQUU3RDs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0EwQkc7QUFDSCxNQUFNLENBQUMsSUFBSSxDQUFDLGdDQUFnQyxFQUFFLHFCQUFjLEVBQUUsSUFBQSxtQkFBUSxFQUFDLEVBQUUsSUFBSSxFQUFFLDhDQUEyQixFQUFFLENBQUMsRUFBRSxtREFBcUIsQ0FBQyxDQUFDO0FBRXRJOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBc0JHO0FBQ0gsTUFBTSxDQUFDLElBQUksQ0FBQywwQkFBMEIsRUFBRSxxQkFBYyxFQUFFLElBQUEsbUJBQVEsRUFBQyxFQUFFLElBQUksRUFBRSx5Q0FBc0IsRUFBRSxDQUFDLEVBQUUsOENBQWdCLENBQUMsQ0FBQztBQUV0SCxrQkFBZSxNQUFNLENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcm91dGVzL3NlY3VyaXR5LnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCBleHByZXNzIGZyb20gJ2V4cHJlc3MnO1xuaW1wb3J0IHsgZ2V0U2VjdXJpdHlBY3Rpdml0eSwgbG9nUHJpdmF0ZUtleUV4cG9ydGVkLCBsb2dCYWNrdXBDcmVhdGVkIH0gZnJvbSAnLi4vY29udHJvbGxlcnMvc2VjdXJpdHlBY3Rpdml0eS5jb250cm9sbGVyJztcbmltcG9ydCB7IGF1dGhNaWRkbGV3YXJlIH0gZnJvbSAnLi4vbWlkZGxld2FyZS9hdXRoJztcbmltcG9ydCB7IHZhbGlkYXRlIH0gZnJvbSAnLi4vbWlkZGxld2FyZS92YWxpZGF0ZSc7XG5pbXBvcnQge1xuICBsb2dQcml2YXRlS2V5RXhwb3J0ZWRTY2hlbWEsXG4gIGxvZ0JhY2t1cENyZWF0ZWRTY2hlbWEsXG59IGZyb20gJy4uL3NjaGVtYXMvc2VjdXJpdHkuc2NoZW1hcyc7XG5cbmNvbnN0IHJvdXRlciA9IGV4cHJlc3MuUm91dGVyKCk7XG5cbi8qKlxuICogQG9wZW5hcGlcbiAqIC9zZWN1cml0eS9hY3Rpdml0eTpcbiAqICAgZ2V0OlxuICogICAgIHRhZ3M6XG4gKiAgICAgICAtIFNlY3VyaXR5XG4gKiAgICAgc3VtbWFyeTogQWNjb3VudCBhY3Rpdml0eSBsb2cgd2l0aCBwYWdpbmF0aW9uXG4gKiAgICAgZGVzY3JpcHRpb246ID5cbiAqICAgICAgIFJldHVybiBzZWN1cml0eS1yZWxldmFudCBldmVudHMgZm9yIHRoZSBhdXRoZW50aWNhdGVkIHVzZXIg4oCUIHNpZ24taW5zLFxuICogICAgICAgZW1haWwgY2hhbmdlcywgZGV2aWNlIGFkZC9yZW1vdmUsIHByaXZhdGUta2V5IGV4cG9ydHMsIGJhY2t1cFxuICogICAgICAgY3JlYXRpb25zLCBzdXNwaWNpb3VzIGFjdGl2aXR5IGZsYWdzLiBBbHdheXMgc2NvcGVkIHRvIHRoZSBiZWFyZXIncyBvd25cbiAqICAgICAgIGFjY291bnQ7IHRoZXJlIGlzIG5vIHBhcmFtZXRlciB0aGF0IHdpZGVucyBpdCB0byBhbm90aGVyIHVzZXIuXG4gKiAgICAgICBVc2VkIHRvIHBvd2VyIHRoZSBhY3Rpdml0eSBoaXN0b3J5IHNjcmVlbi5cbiAqXG4gKlxuICogICAgICAgTm8gZXZlbnQgY2FycmllcyBhbiBJUCBhZGRyZXNzLCBhIGNvdW50cnkgb3IgYW55IG90aGVyIG5ldHdvcmstZGVyaXZlZFxuICogICAgICAgbG9jYXRpb246IHRoZSBwbGF0Zm9ybSBzdG9yZXMgbm8gdXNlciBJUHMgYXQgcmVzdCwgaW4gYW55IGZvcm0uIERvIG5vdFxuICogICAgICAgYWRkIHN1Y2ggYSBmaWVsZCBoZXJlIG9yIHRvIHRoZSB1bmRlcmx5aW5nIHRhYmxlLlxuICogICAgIHBhcmFtZXRlcnM6XG4gKiAgICAgICAtIG5hbWU6IGxpbWl0XG4gKiAgICAgICAgIGluOiBxdWVyeVxuICogICAgICAgICByZXF1aXJlZDogZmFsc2VcbiAqICAgICAgICAgc2NoZW1hOlxuICogICAgICAgICAgIHR5cGU6IGludGVnZXJcbiAqICAgICAgICAgICBtaW5pbXVtOiAxXG4gKiAgICAgICAgICAgbWF4aW11bTogMTAwXG4gKiAgICAgICAgICAgZGVmYXVsdDogNTBcbiAqICAgICAgIC0gbmFtZTogb2Zmc2V0XG4gKiAgICAgICAgIGluOiBxdWVyeVxuICogICAgICAgICByZXF1aXJlZDogZmFsc2VcbiAqICAgICAgICAgZGVzY3JpcHRpb246IFJvd3MgdG8gc2tpcC4gT2Zmc2V0L2xpbWl0IHBhZ2luZyDigJQgdGhlcmUgaXMgbm8gY3Vyc29yLlxuICogICAgICAgICBzY2hlbWE6XG4gKiAgICAgICAgICAgdHlwZTogaW50ZWdlclxuICogICAgICAgICAgIG1pbmltdW06IDBcbiAqICAgICAgICAgICBkZWZhdWx0OiAwXG4gKiAgICAgICAtIG5hbWU6IGV2ZW50VHlwZVxuICogICAgICAgICBpbjogcXVlcnlcbiAqICAgICAgICAgcmVxdWlyZWQ6IGZhbHNlXG4gKiAgICAgICAgIGRlc2NyaXB0aW9uOiBSZXN0cmljdCB0byBvbmUgZXZlbnQgdHlwZS4gQW4gdW5rbm93biB2YWx1ZSBpcyBhIDQwMC5cbiAqICAgICAgICAgc2NoZW1hOlxuICogICAgICAgICAgIHR5cGU6IHN0cmluZ1xuICogICAgICAgICAgIGVudW06XG4gKiAgICAgICAgICAgICAtIHNpZ25faW5cbiAqICAgICAgICAgICAgIC0gc2lnbl9vdXRcbiAqICAgICAgICAgICAgIC0gZW1haWxfY2hhbmdlZFxuICogICAgICAgICAgICAgLSBwcm9maWxlX3VwZGF0ZWRcbiAqICAgICAgICAgICAgIC0gZGV2aWNlX2FkZGVkXG4gKiAgICAgICAgICAgICAtIGRldmljZV9yZW1vdmVkXG4gKiAgICAgICAgICAgICAtIGFjY291bnRfcmVjb3ZlcnlcbiAqICAgICAgICAgICAgIC0gc2VjdXJpdHlfc2V0dGluZ3NfY2hhbmdlZFxuICogICAgICAgICAgICAgLSBwcml2YXRlX2tleV9leHBvcnRlZFxuICogICAgICAgICAgICAgLSBiYWNrdXBfY3JlYXRlZFxuICogICAgICAgICAgICAgLSBzdXNwaWNpb3VzX2FjdGl2aXR5XG4gKiAgICAgcmVzcG9uc2VzOlxuICogICAgICAgMjAwOlxuICogICAgICAgICBkZXNjcmlwdGlvbjogQWN0aXZpdHkgZXZlbnRzLCBuZXdlc3QgZmlyc3QuXG4gKiAgICAgICAgIGNvbnRlbnQ6XG4gKiAgICAgICAgICAgYXBwbGljYXRpb24vanNvbjpcbiAqICAgICAgICAgICAgIHNjaGVtYTpcbiAqICAgICAgICAgICAgICAgdHlwZTogb2JqZWN0XG4gKiAgICAgICAgICAgICAgIHByb3BlcnRpZXM6XG4gKiAgICAgICAgICAgICAgICAgZGF0YTpcbiAqICAgICAgICAgICAgICAgICAgIHR5cGU6IGFycmF5XG4gKiAgICAgICAgICAgICAgICAgICBpdGVtczpcbiAqICAgICAgICAgICAgICAgICAgICAgdHlwZTogb2JqZWN0XG4gKiAgICAgICAgICAgICAgICAgICAgIHByb3BlcnRpZXM6XG4gKiAgICAgICAgICAgICAgICAgICAgICAgaWQ6XG4gKiAgICAgICAgICAgICAgICAgICAgICAgICB0eXBlOiBzdHJpbmdcbiAqICAgICAgICAgICAgICAgICAgICAgICB1c2VySWQ6XG4gKiAgICAgICAgICAgICAgICAgICAgICAgICB0eXBlOiBzdHJpbmdcbiAqICAgICAgICAgICAgICAgICAgICAgICBldmVudFR5cGU6XG4gKiAgICAgICAgICAgICAgICAgICAgICAgICB0eXBlOiBzdHJpbmdcbiAqICAgICAgICAgICAgICAgICAgICAgICAgIGV4YW1wbGU6IHNpZ25faW5cbiAqICAgICAgICAgICAgICAgICAgICAgICBldmVudERlc2NyaXB0aW9uOlxuICogICAgICAgICAgICAgICAgICAgICAgICAgdHlwZTogc3RyaW5nXG4gKiAgICAgICAgICAgICAgICAgICAgICAgbWV0YWRhdGE6XG4gKiAgICAgICAgICAgICAgICAgICAgICAgICB0eXBlOiBvYmplY3RcbiAqICAgICAgICAgICAgICAgICAgICAgICAgIGFkZGl0aW9uYWxQcm9wZXJ0aWVzOiB0cnVlXG4gKiAgICAgICAgICAgICAgICAgICAgICAgdXNlckFnZW50OlxuICogICAgICAgICAgICAgICAgICAgICAgICAgdHlwZTogc3RyaW5nXG4gKiAgICAgICAgICAgICAgICAgICAgICAgICBudWxsYWJsZTogdHJ1ZVxuICogICAgICAgICAgICAgICAgICAgICAgIGRldmljZUlkOlxuICogICAgICAgICAgICAgICAgICAgICAgICAgdHlwZTogc3RyaW5nXG4gKiAgICAgICAgICAgICAgICAgICAgICAgICBudWxsYWJsZTogdHJ1ZVxuICogICAgICAgICAgICAgICAgICAgICAgIHRpbWVzdGFtcDpcbiAqICAgICAgICAgICAgICAgICAgICAgICAgIHR5cGU6IHN0cmluZ1xuICogICAgICAgICAgICAgICAgICAgICAgICAgZm9ybWF0OiBkYXRlLXRpbWVcbiAqICAgICAgICAgICAgICAgICAgICAgICAgIGRlc2NyaXB0aW9uOiBXaGVuIHRoZSBFVkVOVCBoYXBwZW5lZC5cbiAqICAgICAgICAgICAgICAgICAgICAgICBzZXZlcml0eTpcbiAqICAgICAgICAgICAgICAgICAgICAgICAgIHR5cGU6IHN0cmluZ1xuICogICAgICAgICAgICAgICAgICAgICAgICAgZW51bTogW2xvdywgbWVkaXVtLCBoaWdoLCBjcml0aWNhbF1cbiAqICAgICAgICAgICAgICAgICAgICAgICBjcmVhdGVkQXQ6XG4gKiAgICAgICAgICAgICAgICAgICAgICAgICB0eXBlOiBzdHJpbmdcbiAqICAgICAgICAgICAgICAgICAgICAgICAgIGZvcm1hdDogZGF0ZS10aW1lXG4gKiAgICAgICAgICAgICAgICAgICAgICAgICBkZXNjcmlwdGlvbjogV2hlbiB0aGUgcm93IHdhcyB3cml0dGVuLlxuICogICAgICAgICAgICAgICAgIHBhZ2luYXRpb246XG4gKiAgICAgICAgICAgICAgICAgICB0eXBlOiBvYmplY3RcbiAqICAgICAgICAgICAgICAgICAgIHByb3BlcnRpZXM6XG4gKiAgICAgICAgICAgICAgICAgICAgIHRvdGFsOlxuICogICAgICAgICAgICAgICAgICAgICAgIHR5cGU6IGludGVnZXJcbiAqICAgICAgICAgICAgICAgICAgICAgbGltaXQ6XG4gKiAgICAgICAgICAgICAgICAgICAgICAgdHlwZTogaW50ZWdlclxuICogICAgICAgICAgICAgICAgICAgICBvZmZzZXQ6XG4gKiAgICAgICAgICAgICAgICAgICAgICAgdHlwZTogaW50ZWdlclxuICogICAgICAgICAgICAgICAgICAgICBoYXNNb3JlOlxuICogICAgICAgICAgICAgICAgICAgICAgIHR5cGU6IGJvb2xlYW5cbiAqICAgICAgIDQwMDpcbiAqICAgICAgICAgZGVzY3JpcHRpb246IFVua25vd24gZXZlbnRUeXBlLlxuICogICAgICAgNDAxOlxuICogICAgICAgICBkZXNjcmlwdGlvbjogTWlzc2luZyBvciBpbnZhbGlkIGJlYXJlciB0b2tlbi5cbiAqL1xucm91dGVyLmdldCgnL2FjdGl2aXR5JywgYXV0aE1pZGRsZXdhcmUsIGdldFNlY3VyaXR5QWN0aXZpdHkpO1xuXG4vKipcbiAqIEBvcGVuYXBpXG4gKiAvc2VjdXJpdHkvYWN0aXZpdHkvcHJpdmF0ZS1rZXktZXhwb3J0ZWQ6XG4gKiAgIHBvc3Q6XG4gKiAgICAgdGFnczpcbiAqICAgICAgIC0gU2VjdXJpdHlcbiAqICAgICBzdW1tYXJ5OiBMb2cgYSBcInByaXZhdGUga2V5IGV4cG9ydGVkXCIgZXZlbnRcbiAqICAgICBkZXNjcmlwdGlvbjogPlxuICogICAgICAgUmVjb3JkIHRoYXQgdGhlIGxvY2FsIGlkZW50aXR5IHdhbGxldCBleHBvcnRlZCBpdHMgcHJpdmF0ZSBrZXkgZm9yXG4gKiAgICAgICBiYWNrdXAuIFRoZSBldmVudCBzdXJmYWNlcyBpbiB0aGUgYWN0aXZpdHkgbG9nIGFuZCBpcyB1c2VkIHRvIHJlbWluZFxuICogICAgICAgdGhlIHVzZXIgdG8gc2FmZWx5IHN0b3JlIHRoZSBrZXkuXG4gKiAgICAgcmVxdWVzdEJvZHk6XG4gKiAgICAgICByZXF1aXJlZDogdHJ1ZVxuICogICAgICAgY29udGVudDpcbiAqICAgICAgICAgYXBwbGljYXRpb24vanNvbjpcbiAqICAgICAgICAgICBzY2hlbWE6XG4gKiAgICAgICAgICAgICB0eXBlOiBvYmplY3RcbiAqICAgICAgICAgICAgIHByb3BlcnRpZXM6XG4gKiAgICAgICAgICAgICAgIGRldmljZUlkOlxuICogICAgICAgICAgICAgICAgIHR5cGU6IHN0cmluZ1xuICogICAgICAgICAgICAgICAgIGRlc2NyaXB0aW9uOiBEZXZpY2UgdGhhdCBwZXJmb3JtZWQgdGhlIGV4cG9ydC4gT3B0aW9uYWwuXG4gKiAgICAgcmVzcG9uc2VzOlxuICogICAgICAgMjAwOlxuICogICAgICAgICBkZXNjcmlwdGlvbjogRXZlbnQgcmVjb3JkZWQuXG4gKiAgICAgICA0MDE6XG4gKiAgICAgICAgIGRlc2NyaXB0aW9uOiBNaXNzaW5nIG9yIGludmFsaWQgYmVhcmVyIHRva2VuLlxuICovXG5yb3V0ZXIucG9zdCgnL2FjdGl2aXR5L3ByaXZhdGUta2V5LWV4cG9ydGVkJywgYXV0aE1pZGRsZXdhcmUsIHZhbGlkYXRlKHsgYm9keTogbG9nUHJpdmF0ZUtleUV4cG9ydGVkU2NoZW1hIH0pLCBsb2dQcml2YXRlS2V5RXhwb3J0ZWQpO1xuXG4vKipcbiAqIEBvcGVuYXBpXG4gKiAvc2VjdXJpdHkvYWN0aXZpdHkvYmFja3VwLWNyZWF0ZWQ6XG4gKiAgIHBvc3Q6XG4gKiAgICAgdGFnczpcbiAqICAgICAgIC0gU2VjdXJpdHlcbiAqICAgICBzdW1tYXJ5OiBMb2cgYSBcImJhY2t1cCBjcmVhdGVkXCIgZXZlbnRcbiAqICAgICBkZXNjcmlwdGlvbjogUmVjb3JkIHRoYXQgdGhlIGxvY2FsIGlkZW50aXR5IHdhbGxldCB3cm90ZSBhIGJhY2t1cCBvZiBpdHMga2V5cy5cbiAqICAgICByZXF1ZXN0Qm9keTpcbiAqICAgICAgIHJlcXVpcmVkOiB0cnVlXG4gKiAgICAgICBjb250ZW50OlxuICogICAgICAgICBhcHBsaWNhdGlvbi9qc29uOlxuICogICAgICAgICAgIHNjaGVtYTpcbiAqICAgICAgICAgICAgIHR5cGU6IG9iamVjdFxuICogICAgICAgICAgICAgcHJvcGVydGllczpcbiAqICAgICAgICAgICAgICAgZGV2aWNlSWQ6XG4gKiAgICAgICAgICAgICAgICAgdHlwZTogc3RyaW5nXG4gKiAgICAgcmVzcG9uc2VzOlxuICogICAgICAgMjAwOlxuICogICAgICAgICBkZXNjcmlwdGlvbjogRXZlbnQgcmVjb3JkZWQuXG4gKiAgICAgICA0MDE6XG4gKiAgICAgICAgIGRlc2NyaXB0aW9uOiBNaXNzaW5nIG9yIGludmFsaWQgYmVhcmVyIHRva2VuLlxuICovXG5yb3V0ZXIucG9zdCgnL2FjdGl2aXR5L2JhY2t1cC1jcmVhdGVkJywgYXV0aE1pZGRsZXdhcmUsIHZhbGlkYXRlKHsgYm9keTogbG9nQmFja3VwQ3JlYXRlZFNjaGVtYSB9KSwgbG9nQmFja3VwQ3JlYXRlZCk7XG5cbmV4cG9ydCBkZWZhdWx0IHJvdXRlcjtcbiJdLCJ2ZXJzaW9uIjozfQ==

@@ -1,0 +1,121 @@
+5514932d733e1861dc585d0198a3685d
+"use strict";
+/**
+ * Managed/org (keyless, `publicKey`-less) account identity on the wire.
+ *
+ * Regression for the `PUT /users/me` 500 ("User must have a publicKey or _id")
+ * when editing a managed/org account while switched (`X-Acting-As`), and for its
+ * mirror image: once a self-custody user LINKS a Commons identity and gains a
+ * `publicKey`, the DTO `id` must not flip to that key. The whole social graph
+ * (Mention `Post.oxyUserId`, follow edges, client follow-state maps) is keyed on
+ * the stable account id, so a key-shaped `id` makes a user's posts vanish.
+ *
+ * The suite this replaces built its inputs by hand — `new Types.ObjectId()`,
+ * a `toObject` stub returning `{ id }`, a fake document with `set`/`save` — so
+ * it asserted that the serializer tolerates shapes the test itself invented.
+ * Those shapes came from the Mongoose transform, which no longer exists. Here
+ * the accounts are real rows and the views come from the production readers
+ * (`getPublicUserById`, `getCurrentUser`, `updateUserProfile`), so what is
+ * checked is that the REAL producers hand the serializer something it can
+ * identify.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const node_crypto_1 = require("node:crypto");
+const postgres_1 = require("../../config/postgres");
+const users_1 = require("../../db/schema/users");
+const user_service_1 = require("../user.service");
+const uniqueId = () => (0, node_crypto_1.randomUUID)().replace(/-/g, '');
+function makeUser() {
+    return __awaiter(this, arguments, void 0, function* (overrides = {}) {
+        const id = uniqueId();
+        yield (0, postgres_1.getDb)()
+            .insert(users_1.users)
+            .values(Object.assign({ id, username: `u${id}` }, overrides));
+        return id;
+    });
+}
+beforeAll(() => __awaiter(void 0, void 0, void 0, function* () {
+    yield (0, postgres_1.connectPostgres)();
+}));
+afterAll(() => __awaiter(void 0, void 0, void 0, function* () {
+    yield (0, postgres_1.closePostgres)();
+}));
+describe('a keyless (publicKey-less) account', () => {
+    it('serializes with the stable account id from every production reader', () => __awaiter(void 0, void 0, void 0, function* () {
+        const id = yield makeUser({ nameFirst: 'Acme', nameLast: 'Org' });
+        const publicView = yield user_service_1.userService.getPublicUserById(id);
+        const selfView = yield user_service_1.userService.getCurrentUser(id);
+        expect(publicView).not.toBeNull();
+        expect(selfView).not.toBeNull();
+        for (const view of [publicView, selfView]) {
+            const dto = user_service_1.userService.formatUserResponse(view);
+            expect(dto.id).toBe(id);
+            expect(dto.username).toBe(`u${id}`);
+        }
+    }));
+    it('survives a profile write — the returned view is still identifiable', () => __awaiter(void 0, void 0, void 0, function* () {
+        // The 500 this replaces happened on the RETURN leg: the write succeeded and
+        // then the serializer could not name the account. Serializing the actual
+        // return value is the only thing that checks that leg.
+        const id = yield makeUser();
+        const updated = yield user_service_1.userService.updateUserProfile(id, {
+            name: { first: 'Acme', last: 'Org' },
+        });
+        expect(() => user_service_1.userService.formatUserResponse(updated)).not.toThrow();
+        expect(user_service_1.userService.formatUserResponse(updated).id).toBe(id);
+    }));
+    it('never emits a `publicKey` property it does not have', () => __awaiter(void 0, void 0, void 0, function* () {
+        const id = yield makeUser();
+        const view = yield user_service_1.userService.getPublicUserById(id);
+        const dto = user_service_1.userService.formatUserResponse(view);
+        expect(dto).not.toHaveProperty('publicKey');
+    }));
+});
+describe('a key-anchored account', () => {
+    it('keeps `id` as the account id, NOT the publicKey', () => __awaiter(void 0, void 0, void 0, function* () {
+        const publicKey = `04${uniqueId()}${uniqueId()}`;
+        const id = yield makeUser({ publicKey, nameFirst: 'Nate' });
+        const view = yield user_service_1.userService.getPublicUserById(id);
+        const dto = user_service_1.userService.formatUserResponse(view);
+        expect(dto.id).toBe(id);
+        expect(dto.id).not.toBe(publicKey);
+    }));
+    it('resolves the same id on the owner’s own view', () => __awaiter(void 0, void 0, void 0, function* () {
+        const publicKey = `04${uniqueId()}${uniqueId()}`;
+        const id = yield makeUser({ publicKey });
+        const self = yield user_service_1.userService.getCurrentUser(id);
+        const dto = user_service_1.userService.formatUserResponse(self, undefined, {
+            includePrivateFields: true,
+        });
+        expect(dto.id).toBe(id);
+    }));
+    it('is still addressable by the graph after a profile write', () => __awaiter(void 0, void 0, void 0, function* () {
+        // The concrete symptom of the id flip: follow edges are keyed on the account
+        // id, so a DTO carrying the key would not match any of them.
+        const publicKey = `04${uniqueId()}${uniqueId()}`;
+        const id = yield makeUser({ publicKey });
+        const follower = yield makeUser();
+        yield user_service_1.userService.followUser(follower, id);
+        const updated = yield user_service_1.userService.updateUserProfile(id, { bio: 'linked identity' });
+        const dto = user_service_1.userService.formatUserResponse(updated);
+        const statuses = yield user_service_1.userService.getFollowingStatuses(follower, [dto.id]);
+        expect(statuses).toEqual({ [id]: true });
+    }));
+});
+describe('the serializer refuses a source it cannot identify', () => {
+    it('throws rather than emitting a DTO with no id', () => {
+        // Failing loudly is the contract: a DTO with `id: undefined` would be
+        // accepted by every consumer and silently detach the row from the graph.
+        expect(() => user_service_1.userService.formatUserResponse({ username: 'nobody' })).toThrow('User must have an _id');
+    });
+});
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2VydmljZXMvX190ZXN0c19fL3VzZXIuc2VydmljZS5rZXlsZXNzUHJvZmlsZS50ZXN0LnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBa0JHOzs7Ozs7Ozs7OztBQUVILDZDQUF5QztBQUN6QyxvREFBOEU7QUFDOUUsaURBQThDO0FBQzlDLGtEQUE4QztBQUU5QyxNQUFNLFFBQVEsR0FBRyxHQUFHLEVBQUUsQ0FBQyxJQUFBLHdCQUFVLEdBQUUsQ0FBQyxPQUFPLENBQUMsSUFBSSxFQUFFLEVBQUUsQ0FBQyxDQUFDO0FBRXRELFNBQWUsUUFBUTt5REFBQyxZQUFnRCxFQUFFO1FBQ3hFLE1BQU0sRUFBRSxHQUFHLFFBQVEsRUFBRSxDQUFDO1FBQ3RCLE1BQU0sSUFBQSxnQkFBSyxHQUFFO2FBQ1YsTUFBTSxDQUFDLGFBQUssQ0FBQzthQUNiLE1BQU0saUJBQUcsRUFBRSxFQUFFLFFBQVEsRUFBRSxJQUFJLEVBQUUsRUFBRSxJQUFLLFNBQVMsRUFBRyxDQUFDO1FBQ3BELE9BQU8sRUFBRSxDQUFDO0lBQ1osQ0FBQztDQUFBO0FBRUQsU0FBUyxDQUFDLEdBQVMsRUFBRTtJQUNuQixNQUFNLElBQUEsMEJBQWUsR0FBRSxDQUFDO0FBQzFCLENBQUMsQ0FBQSxDQUFDLENBQUM7QUFFSCxRQUFRLENBQUMsR0FBUyxFQUFFO0lBQ2xCLE1BQU0sSUFBQSx3QkFBYSxHQUFFLENBQUM7QUFDeEIsQ0FBQyxDQUFBLENBQUMsQ0FBQztBQUVILFFBQVEsQ0FBQyxvQ0FBb0MsRUFBRSxHQUFHLEVBQUU7SUFDbEQsRUFBRSxDQUFDLG9FQUFvRSxFQUFFLEdBQVMsRUFBRTtRQUNsRixNQUFNLEVBQUUsR0FBRyxNQUFNLFFBQVEsQ0FBQyxFQUFFLFNBQVMsRUFBRSxNQUFNLEVBQUUsUUFBUSxFQUFFLEtBQUssRUFBRSxDQUFDLENBQUM7UUFFbEUsTUFBTSxVQUFVLEdBQUcsTUFBTSwwQkFBVyxDQUFDLGlCQUFpQixDQUFDLEVBQUUsQ0FBQyxDQUFDO1FBQzNELE1BQU0sUUFBUSxHQUFHLE1BQU0sMEJBQVcsQ0FBQyxjQUFjLENBQUMsRUFBRSxDQUFDLENBQUM7UUFDdEQsTUFBTSxDQUFDLFVBQVUsQ0FBQyxDQUFDLEdBQUcsQ0FBQyxRQUFRLEVBQUUsQ0FBQztRQUNsQyxNQUFNLENBQUMsUUFBUSxDQUFDLENBQUMsR0FBRyxDQUFDLFFBQVEsRUFBRSxDQUFDO1FBRWhDLEtBQUssTUFBTSxJQUFJLElBQUksQ0FBQyxVQUFVLEVBQUUsUUFBUSxDQUFDLEVBQUUsQ0FBQztZQUMxQyxNQUFNLEdBQUcsR0FBRywwQkFBVyxDQUFDLGtCQUFrQixDQUFDLElBQWdDLENBQUMsQ0FBQztZQUM3RSxNQUFNLENBQUMsR0FBRyxDQUFDLEVBQUUsQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLENBQUMsQ0FBQztZQUN4QixNQUFNLENBQUMsR0FBRyxDQUFDLFFBQVEsQ0FBQyxDQUFDLElBQUksQ0FBQyxJQUFJLEVBQUUsRUFBRSxDQUFDLENBQUM7UUFDdEMsQ0FBQztJQUNILENBQUMsQ0FBQSxDQUFDLENBQUM7SUFFSCxFQUFFLENBQUMsb0VBQW9FLEVBQUUsR0FBUyxFQUFFO1FBQ2xGLDRFQUE0RTtRQUM1RSx5RUFBeUU7UUFDekUsdURBQXVEO1FBQ3ZELE1BQU0sRUFBRSxHQUFHLE1BQU0sUUFBUSxFQUFFLENBQUM7UUFFNUIsTUFBTSxPQUFPLEdBQUcsTUFBTSwwQkFBVyxDQUFDLGlCQUFpQixDQUFDLEVBQUUsRUFBRTtZQUN0RCxJQUFJLEVBQUUsRUFBRSxLQUFLLEVBQUUsTUFBTSxFQUFFLElBQUksRUFBRSxLQUFLLEVBQUU7U0FDckMsQ0FBQyxDQUFDO1FBRUgsTUFBTSxDQUFDLEdBQUcsRUFBRSxDQUFDLDBCQUFXLENBQUMsa0JBQWtCLENBQUMsT0FBTyxDQUFDLENBQUMsQ0FBQyxHQUFHLENBQUMsT0FBTyxFQUFFLENBQUM7UUFDcEUsTUFBTSxDQUFDLDBCQUFXLENBQUMsa0JBQWtCLENBQUMsT0FBTyxDQUFDLENBQUMsRUFBRSxDQUFDLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQyxDQUFDO0lBQzlELENBQUMsQ0FBQSxDQUFDLENBQUM7SUFFSCxFQUFFLENBQUMscURBQXFELEVBQUUsR0FBUyxFQUFFO1FBQ25FLE1BQU0sRUFBRSxHQUFHLE1BQU0sUUFBUSxFQUFFLENBQUM7UUFDNUIsTUFBTSxJQUFJLEdBQUcsTUFBTSwwQkFBVyxDQUFDLGlCQUFpQixDQUFDLEVBQUUsQ0FBQyxDQUFDO1FBQ3JELE1BQU0sR0FBRyxHQUFHLDBCQUFXLENBQUMsa0JBQWtCLENBQUMsSUFBZ0MsQ0FBQyxDQUFDO1FBRTdFLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxHQUFHLENBQUMsY0FBYyxDQUFDLFdBQVcsQ0FBQyxDQUFDO0lBQzlDLENBQUMsQ0FBQSxDQUFDLENBQUM7QUFDTCxDQUFDLENBQUMsQ0FBQztBQUVILFFBQVEsQ0FBQyx3QkFBd0IsRUFBRSxHQUFHLEVBQUU7SUFDdEMsRUFBRSxDQUFDLGlEQUFpRCxFQUFFLEdBQVMsRUFBRTtRQUMvRCxNQUFNLFNBQVMsR0FBRyxLQUFLLFFBQVEsRUFBRSxHQUFHLFFBQVEsRUFBRSxFQUFFLENBQUM7UUFDakQsTUFBTSxFQUFFLEdBQUcsTUFBTSxRQUFRLENBQUMsRUFBRSxTQUFTLEVBQUUsU0FBUyxFQUFFLE1BQU0sRUFBRSxDQUFDLENBQUM7UUFFNUQsTUFBTSxJQUFJLEdBQUcsTUFBTSwwQkFBVyxDQUFDLGlCQUFpQixDQUFDLEVBQUUsQ0FBQyxDQUFDO1FBQ3JELE1BQU0sR0FBRyxHQUFHLDBCQUFXLENBQUMsa0JBQWtCLENBQUMsSUFBZ0MsQ0FBQyxDQUFDO1FBRTdFLE1BQU0sQ0FBQyxHQUFHLENBQUMsRUFBRSxDQUFDLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQyxDQUFDO1FBQ3hCLE1BQU0sQ0FBQyxHQUFHLENBQUMsRUFBRSxDQUFDLENBQUMsR0FBRyxDQUFDLElBQUksQ0FBQyxTQUFTLENBQUMsQ0FBQztJQUNyQyxDQUFDLENBQUEsQ0FBQyxDQUFDO0lBRUgsRUFBRSxDQUFDLDhDQUE4QyxFQUFFLEdBQVMsRUFBRTtRQUM1RCxNQUFNLFNBQVMsR0FBRyxLQUFLLFFBQVEsRUFBRSxHQUFHLFFBQVEsRUFBRSxFQUFFLENBQUM7UUFDakQsTUFBTSxFQUFFLEdBQUcsTUFBTSxRQUFRLENBQUMsRUFBRSxTQUFTLEVBQUUsQ0FBQyxDQUFDO1FBRXpDLE1BQU0sSUFBSSxHQUFHLE1BQU0sMEJBQVcsQ0FBQyxjQUFjLENBQUMsRUFBRSxDQUFDLENBQUM7UUFDbEQsTUFBTSxHQUFHLEdBQUcsMEJBQVcsQ0FBQyxrQkFBa0IsQ0FBQyxJQUFnQyxFQUFFLFNBQVMsRUFBRTtZQUN0RixvQkFBb0IsRUFBRSxJQUFJO1NBQzNCLENBQUMsQ0FBQztRQUVILE1BQU0sQ0FBQyxHQUFHLENBQUMsRUFBRSxDQUFDLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQyxDQUFDO0lBQzFCLENBQUMsQ0FBQSxDQUFDLENBQUM7SUFFSCxFQUFFLENBQUMseURBQXlELEVBQUUsR0FBUyxFQUFFO1FBQ3ZFLDZFQUE2RTtRQUM3RSw2REFBNkQ7UUFDN0QsTUFBTSxTQUFTLEdBQUcsS0FBSyxRQUFRLEVBQUUsR0FBRyxRQUFRLEVBQUUsRUFBRSxDQUFDO1FBQ2pELE1BQU0sRUFBRSxHQUFHLE1BQU0sUUFBUSxDQUFDLEVBQUUsU0FBUyxFQUFFLENBQUMsQ0FBQztRQUN6QyxNQUFNLFFBQVEsR0FBRyxNQUFNLFFBQVEsRUFBRSxDQUFDO1FBQ2xDLE1BQU0sMEJBQVcsQ0FBQyxVQUFVLENBQUMsUUFBUSxFQUFFLEVBQUUsQ0FBQyxDQUFDO1FBRTNDLE1BQU0sT0FBTyxHQUFHLE1BQU0sMEJBQVcsQ0FBQyxpQkFBaUIsQ0FBQyxFQUFFLEVBQUUsRUFBRSxHQUFHLEVBQUUsaUJBQWlCLEVBQUUsQ0FBQyxDQUFDO1FBQ3BGLE1BQU0sR0FBRyxHQUFHLDBCQUFXLENBQUMsa0JBQWtCLENBQUMsT0FBTyxDQUFDLENBQUM7UUFFcEQsTUFBTSxRQUFRLEdBQUcsTUFBTSwwQkFBVyxDQUFDLG9CQUFvQixDQUFDLFFBQVEsRUFBRSxDQUFDLEdBQUcsQ0FBQyxFQUFFLENBQUMsQ0FBQyxDQUFDO1FBQzVFLE1BQU0sQ0FBQyxRQUFRLENBQUMsQ0FBQyxPQUFPLENBQUMsRUFBRSxDQUFDLEVBQUUsQ0FBQyxFQUFFLElBQUksRUFBRSxDQUFDLENBQUM7SUFDM0MsQ0FBQyxDQUFBLENBQUMsQ0FBQztBQUNMLENBQUMsQ0FBQyxDQUFDO0FBRUgsUUFBUSxDQUFDLG9EQUFvRCxFQUFFLEdBQUcsRUFBRTtJQUNsRSxFQUFFLENBQUMsOENBQThDLEVBQUUsR0FBRyxFQUFFO1FBQ3RELHNFQUFzRTtRQUN0RSx5RUFBeUU7UUFDekUsTUFBTSxDQUFDLEdBQUcsRUFBRSxDQUFDLDBCQUFXLENBQUMsa0JBQWtCLENBQUMsRUFBRSxRQUFRLEVBQUUsUUFBUSxFQUFFLENBQUMsQ0FBQyxDQUFDLE9BQU8sQ0FDMUUsdUJBQXVCLENBQ3hCLENBQUM7SUFDSixDQUFDLENBQUMsQ0FBQztBQUNMLENBQUMsQ0FBQyxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3NlcnZpY2VzL19fdGVzdHNfXy91c2VyLnNlcnZpY2Uua2V5bGVzc1Byb2ZpbGUudGVzdC50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIE1hbmFnZWQvb3JnIChrZXlsZXNzLCBgcHVibGljS2V5YC1sZXNzKSBhY2NvdW50IGlkZW50aXR5IG9uIHRoZSB3aXJlLlxuICpcbiAqIFJlZ3Jlc3Npb24gZm9yIHRoZSBgUFVUIC91c2Vycy9tZWAgNTAwIChcIlVzZXIgbXVzdCBoYXZlIGEgcHVibGljS2V5IG9yIF9pZFwiKVxuICogd2hlbiBlZGl0aW5nIGEgbWFuYWdlZC9vcmcgYWNjb3VudCB3aGlsZSBzd2l0Y2hlZCAoYFgtQWN0aW5nLUFzYCksIGFuZCBmb3IgaXRzXG4gKiBtaXJyb3IgaW1hZ2U6IG9uY2UgYSBzZWxmLWN1c3RvZHkgdXNlciBMSU5LUyBhIENvbW1vbnMgaWRlbnRpdHkgYW5kIGdhaW5zIGFcbiAqIGBwdWJsaWNLZXlgLCB0aGUgRFRPIGBpZGAgbXVzdCBub3QgZmxpcCB0byB0aGF0IGtleS4gVGhlIHdob2xlIHNvY2lhbCBncmFwaFxuICogKE1lbnRpb24gYFBvc3Qub3h5VXNlcklkYCwgZm9sbG93IGVkZ2VzLCBjbGllbnQgZm9sbG93LXN0YXRlIG1hcHMpIGlzIGtleWVkIG9uXG4gKiB0aGUgc3RhYmxlIGFjY291bnQgaWQsIHNvIGEga2V5LXNoYXBlZCBgaWRgIG1ha2VzIGEgdXNlcidzIHBvc3RzIHZhbmlzaC5cbiAqXG4gKiBUaGUgc3VpdGUgdGhpcyByZXBsYWNlcyBidWlsdCBpdHMgaW5wdXRzIGJ5IGhhbmQg4oCUIGBuZXcgVHlwZXMuT2JqZWN0SWQoKWAsXG4gKiBhIGB0b09iamVjdGAgc3R1YiByZXR1cm5pbmcgYHsgaWQgfWAsIGEgZmFrZSBkb2N1bWVudCB3aXRoIGBzZXRgL2BzYXZlYCDigJQgc29cbiAqIGl0IGFzc2VydGVkIHRoYXQgdGhlIHNlcmlhbGl6ZXIgdG9sZXJhdGVzIHNoYXBlcyB0aGUgdGVzdCBpdHNlbGYgaW52ZW50ZWQuXG4gKiBUaG9zZSBzaGFwZXMgY2FtZSBmcm9tIHRoZSBNb25nb29zZSB0cmFuc2Zvcm0sIHdoaWNoIG5vIGxvbmdlciBleGlzdHMuIEhlcmVcbiAqIHRoZSBhY2NvdW50cyBhcmUgcmVhbCByb3dzIGFuZCB0aGUgdmlld3MgY29tZSBmcm9tIHRoZSBwcm9kdWN0aW9uIHJlYWRlcnNcbiAqIChgZ2V0UHVibGljVXNlckJ5SWRgLCBgZ2V0Q3VycmVudFVzZXJgLCBgdXBkYXRlVXNlclByb2ZpbGVgKSwgc28gd2hhdCBpc1xuICogY2hlY2tlZCBpcyB0aGF0IHRoZSBSRUFMIHByb2R1Y2VycyBoYW5kIHRoZSBzZXJpYWxpemVyIHNvbWV0aGluZyBpdCBjYW5cbiAqIGlkZW50aWZ5LlxuICovXG5cbmltcG9ydCB7IHJhbmRvbVVVSUQgfSBmcm9tICdub2RlOmNyeXB0byc7XG5pbXBvcnQgeyBjbG9zZVBvc3RncmVzLCBjb25uZWN0UG9zdGdyZXMsIGdldERiIH0gZnJvbSAnLi4vLi4vY29uZmlnL3Bvc3RncmVzJztcbmltcG9ydCB7IHVzZXJzIH0gZnJvbSAnLi4vLi4vZGIvc2NoZW1hL3VzZXJzJztcbmltcG9ydCB7IHVzZXJTZXJ2aWNlIH0gZnJvbSAnLi4vdXNlci5zZXJ2aWNlJztcblxuY29uc3QgdW5pcXVlSWQgPSAoKSA9PiByYW5kb21VVUlEKCkucmVwbGFjZSgvLS9nLCAnJyk7XG5cbmFzeW5jIGZ1bmN0aW9uIG1ha2VVc2VyKG92ZXJyaWRlczogUGFydGlhbDx0eXBlb2YgdXNlcnMuJGluZmVySW5zZXJ0PiA9IHt9KTogUHJvbWlzZTxzdHJpbmc+IHtcbiAgY29uc3QgaWQgPSB1bmlxdWVJZCgpO1xuICBhd2FpdCBnZXREYigpXG4gICAgLmluc2VydCh1c2VycylcbiAgICAudmFsdWVzKHsgaWQsIHVzZXJuYW1lOiBgdSR7aWR9YCwgLi4ub3ZlcnJpZGVzIH0pO1xuICByZXR1cm4gaWQ7XG59XG5cbmJlZm9yZUFsbChhc3luYyAoKSA9PiB7XG4gIGF3YWl0IGNvbm5lY3RQb3N0Z3JlcygpO1xufSk7XG5cbmFmdGVyQWxsKGFzeW5jICgpID0+IHtcbiAgYXdhaXQgY2xvc2VQb3N0Z3JlcygpO1xufSk7XG5cbmRlc2NyaWJlKCdhIGtleWxlc3MgKHB1YmxpY0tleS1sZXNzKSBhY2NvdW50JywgKCkgPT4ge1xuICBpdCgnc2VyaWFsaXplcyB3aXRoIHRoZSBzdGFibGUgYWNjb3VudCBpZCBmcm9tIGV2ZXJ5IHByb2R1Y3Rpb24gcmVhZGVyJywgYXN5bmMgKCkgPT4ge1xuICAgIGNvbnN0IGlkID0gYXdhaXQgbWFrZVVzZXIoeyBuYW1lRmlyc3Q6ICdBY21lJywgbmFtZUxhc3Q6ICdPcmcnIH0pO1xuXG4gICAgY29uc3QgcHVibGljVmlldyA9IGF3YWl0IHVzZXJTZXJ2aWNlLmdldFB1YmxpY1VzZXJCeUlkKGlkKTtcbiAgICBjb25zdCBzZWxmVmlldyA9IGF3YWl0IHVzZXJTZXJ2aWNlLmdldEN1cnJlbnRVc2VyKGlkKTtcbiAgICBleHBlY3QocHVibGljVmlldykubm90LnRvQmVOdWxsKCk7XG4gICAgZXhwZWN0KHNlbGZWaWV3KS5ub3QudG9CZU51bGwoKTtcblxuICAgIGZvciAoY29uc3QgdmlldyBvZiBbcHVibGljVmlldywgc2VsZlZpZXddKSB7XG4gICAgICBjb25zdCBkdG8gPSB1c2VyU2VydmljZS5mb3JtYXRVc2VyUmVzcG9uc2UodmlldyBhcyBOb25OdWxsYWJsZTx0eXBlb2Ygdmlldz4pO1xuICAgICAgZXhwZWN0KGR0by5pZCkudG9CZShpZCk7XG4gICAgICBleHBlY3QoZHRvLnVzZXJuYW1lKS50b0JlKGB1JHtpZH1gKTtcbiAgICB9XG4gIH0pO1xuXG4gIGl0KCdzdXJ2aXZlcyBhIHByb2ZpbGUgd3JpdGUg4oCUIHRoZSByZXR1cm5lZCB2aWV3IGlzIHN0aWxsIGlkZW50aWZpYWJsZScsIGFzeW5jICgpID0+IHtcbiAgICAvLyBUaGUgNTAwIHRoaXMgcmVwbGFjZXMgaGFwcGVuZWQgb24gdGhlIFJFVFVSTiBsZWc6IHRoZSB3cml0ZSBzdWNjZWVkZWQgYW5kXG4gICAgLy8gdGhlbiB0aGUgc2VyaWFsaXplciBjb3VsZCBub3QgbmFtZSB0aGUgYWNjb3VudC4gU2VyaWFsaXppbmcgdGhlIGFjdHVhbFxuICAgIC8vIHJldHVybiB2YWx1ZSBpcyB0aGUgb25seSB0aGluZyB0aGF0IGNoZWNrcyB0aGF0IGxlZy5cbiAgICBjb25zdCBpZCA9IGF3YWl0IG1ha2VVc2VyKCk7XG5cbiAgICBjb25zdCB1cGRhdGVkID0gYXdhaXQgdXNlclNlcnZpY2UudXBkYXRlVXNlclByb2ZpbGUoaWQsIHtcbiAgICAgIG5hbWU6IHsgZmlyc3Q6ICdBY21lJywgbGFzdDogJ09yZycgfSxcbiAgICB9KTtcblxuICAgIGV4cGVjdCgoKSA9PiB1c2VyU2VydmljZS5mb3JtYXRVc2VyUmVzcG9uc2UodXBkYXRlZCkpLm5vdC50b1Rocm93KCk7XG4gICAgZXhwZWN0KHVzZXJTZXJ2aWNlLmZvcm1hdFVzZXJSZXNwb25zZSh1cGRhdGVkKS5pZCkudG9CZShpZCk7XG4gIH0pO1xuXG4gIGl0KCduZXZlciBlbWl0cyBhIGBwdWJsaWNLZXlgIHByb3BlcnR5IGl0IGRvZXMgbm90IGhhdmUnLCBhc3luYyAoKSA9PiB7XG4gICAgY29uc3QgaWQgPSBhd2FpdCBtYWtlVXNlcigpO1xuICAgIGNvbnN0IHZpZXcgPSBhd2FpdCB1c2VyU2VydmljZS5nZXRQdWJsaWNVc2VyQnlJZChpZCk7XG4gICAgY29uc3QgZHRvID0gdXNlclNlcnZpY2UuZm9ybWF0VXNlclJlc3BvbnNlKHZpZXcgYXMgTm9uTnVsbGFibGU8dHlwZW9mIHZpZXc+KTtcblxuICAgIGV4cGVjdChkdG8pLm5vdC50b0hhdmVQcm9wZXJ0eSgncHVibGljS2V5Jyk7XG4gIH0pO1xufSk7XG5cbmRlc2NyaWJlKCdhIGtleS1hbmNob3JlZCBhY2NvdW50JywgKCkgPT4ge1xuICBpdCgna2VlcHMgYGlkYCBhcyB0aGUgYWNjb3VudCBpZCwgTk9UIHRoZSBwdWJsaWNLZXknLCBhc3luYyAoKSA9PiB7XG4gICAgY29uc3QgcHVibGljS2V5ID0gYDA0JHt1bmlxdWVJZCgpfSR7dW5pcXVlSWQoKX1gO1xuICAgIGNvbnN0IGlkID0gYXdhaXQgbWFrZVVzZXIoeyBwdWJsaWNLZXksIG5hbWVGaXJzdDogJ05hdGUnIH0pO1xuXG4gICAgY29uc3QgdmlldyA9IGF3YWl0IHVzZXJTZXJ2aWNlLmdldFB1YmxpY1VzZXJCeUlkKGlkKTtcbiAgICBjb25zdCBkdG8gPSB1c2VyU2VydmljZS5mb3JtYXRVc2VyUmVzcG9uc2UodmlldyBhcyBOb25OdWxsYWJsZTx0eXBlb2Ygdmlldz4pO1xuXG4gICAgZXhwZWN0KGR0by5pZCkudG9CZShpZCk7XG4gICAgZXhwZWN0KGR0by5pZCkubm90LnRvQmUocHVibGljS2V5KTtcbiAgfSk7XG5cbiAgaXQoJ3Jlc29sdmVzIHRoZSBzYW1lIGlkIG9uIHRoZSBvd25lcuKAmXMgb3duIHZpZXcnLCBhc3luYyAoKSA9PiB7XG4gICAgY29uc3QgcHVibGljS2V5ID0gYDA0JHt1bmlxdWVJZCgpfSR7dW5pcXVlSWQoKX1gO1xuICAgIGNvbnN0IGlkID0gYXdhaXQgbWFrZVVzZXIoeyBwdWJsaWNLZXkgfSk7XG5cbiAgICBjb25zdCBzZWxmID0gYXdhaXQgdXNlclNlcnZpY2UuZ2V0Q3VycmVudFVzZXIoaWQpO1xuICAgIGNvbnN0IGR0byA9IHVzZXJTZXJ2aWNlLmZvcm1hdFVzZXJSZXNwb25zZShzZWxmIGFzIE5vbk51bGxhYmxlPHR5cGVvZiBzZWxmPiwgdW5kZWZpbmVkLCB7XG4gICAgICBpbmNsdWRlUHJpdmF0ZUZpZWxkczogdHJ1ZSxcbiAgICB9KTtcblxuICAgIGV4cGVjdChkdG8uaWQpLnRvQmUoaWQpO1xuICB9KTtcblxuICBpdCgnaXMgc3RpbGwgYWRkcmVzc2FibGUgYnkgdGhlIGdyYXBoIGFmdGVyIGEgcHJvZmlsZSB3cml0ZScsIGFzeW5jICgpID0+IHtcbiAgICAvLyBUaGUgY29uY3JldGUgc3ltcHRvbSBvZiB0aGUgaWQgZmxpcDogZm9sbG93IGVkZ2VzIGFyZSBrZXllZCBvbiB0aGUgYWNjb3VudFxuICAgIC8vIGlkLCBzbyBhIERUTyBjYXJyeWluZyB0aGUga2V5IHdvdWxkIG5vdCBtYXRjaCBhbnkgb2YgdGhlbS5cbiAgICBjb25zdCBwdWJsaWNLZXkgPSBgMDQke3VuaXF1ZUlkKCl9JHt1bmlxdWVJZCgpfWA7XG4gICAgY29uc3QgaWQgPSBhd2FpdCBtYWtlVXNlcih7IHB1YmxpY0tleSB9KTtcbiAgICBjb25zdCBmb2xsb3dlciA9IGF3YWl0IG1ha2VVc2VyKCk7XG4gICAgYXdhaXQgdXNlclNlcnZpY2UuZm9sbG93VXNlcihmb2xsb3dlciwgaWQpO1xuXG4gICAgY29uc3QgdXBkYXRlZCA9IGF3YWl0IHVzZXJTZXJ2aWNlLnVwZGF0ZVVzZXJQcm9maWxlKGlkLCB7IGJpbzogJ2xpbmtlZCBpZGVudGl0eScgfSk7XG4gICAgY29uc3QgZHRvID0gdXNlclNlcnZpY2UuZm9ybWF0VXNlclJlc3BvbnNlKHVwZGF0ZWQpO1xuXG4gICAgY29uc3Qgc3RhdHVzZXMgPSBhd2FpdCB1c2VyU2VydmljZS5nZXRGb2xsb3dpbmdTdGF0dXNlcyhmb2xsb3dlciwgW2R0by5pZF0pO1xuICAgIGV4cGVjdChzdGF0dXNlcykudG9FcXVhbCh7IFtpZF06IHRydWUgfSk7XG4gIH0pO1xufSk7XG5cbmRlc2NyaWJlKCd0aGUgc2VyaWFsaXplciByZWZ1c2VzIGEgc291cmNlIGl0IGNhbm5vdCBpZGVudGlmeScsICgpID0+IHtcbiAgaXQoJ3Rocm93cyByYXRoZXIgdGhhbiBlbWl0dGluZyBhIERUTyB3aXRoIG5vIGlkJywgKCkgPT4ge1xuICAgIC8vIEZhaWxpbmcgbG91ZGx5IGlzIHRoZSBjb250cmFjdDogYSBEVE8gd2l0aCBgaWQ6IHVuZGVmaW5lZGAgd291bGQgYmVcbiAgICAvLyBhY2NlcHRlZCBieSBldmVyeSBjb25zdW1lciBhbmQgc2lsZW50bHkgZGV0YWNoIHRoZSByb3cgZnJvbSB0aGUgZ3JhcGguXG4gICAgZXhwZWN0KCgpID0+IHVzZXJTZXJ2aWNlLmZvcm1hdFVzZXJSZXNwb25zZSh7IHVzZXJuYW1lOiAnbm9ib2R5JyB9KSkudG9UaHJvdyhcbiAgICAgICdVc2VyIG11c3QgaGF2ZSBhbiBfaWQnXG4gICAgKTtcbiAgfSk7XG59KTtcbiJdLCJ2ZXJzaW9uIjozfQ==

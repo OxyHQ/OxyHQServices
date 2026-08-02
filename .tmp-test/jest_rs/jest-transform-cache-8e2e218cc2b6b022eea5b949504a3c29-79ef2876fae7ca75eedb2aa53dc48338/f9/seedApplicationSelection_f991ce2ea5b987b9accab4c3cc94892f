@@ -1,0 +1,69 @@
+4873aa62218cbb5a560bbfc6a2586998
+"use strict";
+/**
+ * Bound a `scripts/seed-oxy-applications.ts` run to an explicit subset of the
+ * canonical seed list.
+ *
+ * The seed reconciles EVERY official application on every run, and several of
+ * the fields it reconciles are authoritative replacements (`redirectUris`), so
+ * registering ONE new application otherwise carries the blast radius of all the
+ * others. `ONLY_APPS` removes that blast radius instead of merely warning about
+ * it: the operator names the applications the run may touch, and the invocation
+ * itself is the audit record.
+ *
+ * FAILS CLOSED, deliberately. Every rejected input below could instead have been
+ * "quietly reconcile nothing", and that is the same failure shape as a dry run
+ * reporting `appsUpdated: 0` before a real run changes something — a no-op that
+ * reads as success, which the next operator then trusts. So:
+ *
+ *  - An unset `ONLY_APPS` means "the whole canonical list", the long-standing
+ *    behaviour, unchanged.
+ *  - A SET but empty / whitespace-only value throws. It is never read as "all":
+ *    the dangerous misreading is an operator who meant to bound the run, passed
+ *    a variable that happened to be empty, and got the full-blast-radius run.
+ *  - An unknown name throws and names both what it could not match and what it
+ *    could have — a typo must not silently shrink the run to nothing (or, worse,
+ *    to some other app).
+ *
+ * Pure and dependency-free (no Mongoose, no env access) so the decision is unit
+ * testable without a database, mirroring `registerCommonsClientsPlan.ts`.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.selectSeedApplications = selectSeedApplications;
+/**
+ * Resolve the seed entries a run may touch.
+ *
+ * @param entries   The canonical seed list, in canonical order.
+ * @param rawOnlyApps  The raw `ONLY_APPS` env value: `undefined` when unset, or
+ *   a comma-separated list of application names to restrict the run to.
+ * @returns The selected entries, in the canonical list's own order (never the
+ *   order they were requested in — the seed's behaviour must not depend on how
+ *   an operator happened to type the filter).
+ * @throws When `rawOnlyApps` is set but selects nothing, or names an entry that
+ *   is not in `entries`.
+ */
+function selectSeedApplications(entries, rawOnlyApps) {
+    if (rawOnlyApps === undefined) {
+        return [...entries];
+    }
+    const requested = rawOnlyApps
+        .split(',')
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0);
+    if (requested.length === 0) {
+        throw new Error('ONLY_APPS was set but names no application. Unset it to seed every ' +
+            'application, or name the ones this run may touch — it is never read ' +
+            'as "all".');
+    }
+    // Exact, case-sensitive match: `name` IS the idempotency key (with
+    // createdByUserId), so a near-miss is a different application, not this one.
+    const known = new Set(entries.map((entry) => entry.name));
+    const unknown = requested.filter((name) => !known.has(name));
+    if (unknown.length > 0) {
+        throw new Error(`ONLY_APPS names unknown application(s): [${unknown.join(', ')}]. ` +
+            `Known applications: [${entries.map((entry) => entry.name).join(', ')}].`);
+    }
+    const selected = new Set(requested);
+    return entries.filter((entry) => selected.has(entry.name));
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2NyaXB0cy9zZWVkQXBwbGljYXRpb25TZWxlY3Rpb24udHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7R0EyQkc7O0FBbUJILHdEQWtDQztBQTlDRDs7Ozs7Ozs7Ozs7R0FXRztBQUNILFNBQWdCLHNCQUFzQixDQUNwQyxPQUFxQixFQUNyQixXQUErQjtJQUUvQixJQUFJLFdBQVcsS0FBSyxTQUFTLEVBQUUsQ0FBQztRQUM5QixPQUFPLENBQUMsR0FBRyxPQUFPLENBQUMsQ0FBQztJQUN0QixDQUFDO0lBRUQsTUFBTSxTQUFTLEdBQUcsV0FBVztTQUMxQixLQUFLLENBQUMsR0FBRyxDQUFDO1NBQ1YsR0FBRyxDQUFDLENBQUMsSUFBSSxFQUFFLEVBQUUsQ0FBQyxJQUFJLENBQUMsSUFBSSxFQUFFLENBQUM7U0FDMUIsTUFBTSxDQUFDLENBQUMsSUFBSSxFQUFFLEVBQUUsQ0FBQyxJQUFJLENBQUMsTUFBTSxHQUFHLENBQUMsQ0FBQyxDQUFDO0lBRXJDLElBQUksU0FBUyxDQUFDLE1BQU0sS0FBSyxDQUFDLEVBQUUsQ0FBQztRQUMzQixNQUFNLElBQUksS0FBSyxDQUNiLHFFQUFxRTtZQUNuRSxzRUFBc0U7WUFDdEUsV0FBVyxDQUNkLENBQUM7SUFDSixDQUFDO0lBRUQsbUVBQW1FO0lBQ25FLDZFQUE2RTtJQUM3RSxNQUFNLEtBQUssR0FBRyxJQUFJLEdBQUcsQ0FBQyxPQUFPLENBQUMsR0FBRyxDQUFDLENBQUMsS0FBSyxFQUFFLEVBQUUsQ0FBQyxLQUFLLENBQUMsSUFBSSxDQUFDLENBQUMsQ0FBQztJQUMxRCxNQUFNLE9BQU8sR0FBRyxTQUFTLENBQUMsTUFBTSxDQUFDLENBQUMsSUFBSSxFQUFFLEVBQUUsQ0FBQyxDQUFDLEtBQUssQ0FBQyxHQUFHLENBQUMsSUFBSSxDQUFDLENBQUMsQ0FBQztJQUM3RCxJQUFJLE9BQU8sQ0FBQyxNQUFNLEdBQUcsQ0FBQyxFQUFFLENBQUM7UUFDdkIsTUFBTSxJQUFJLEtBQUssQ0FDYiw0Q0FBNEMsT0FBTyxDQUFDLElBQUksQ0FBQyxJQUFJLENBQUMsS0FBSztZQUNqRSx3QkFBd0IsT0FBTyxDQUFDLEdBQUcsQ0FBQyxDQUFDLEtBQUssRUFBRSxFQUFFLENBQUMsS0FBSyxDQUFDLElBQUksQ0FBQyxDQUFDLElBQUksQ0FBQyxJQUFJLENBQUMsSUFBSSxDQUM1RSxDQUFDO0lBQ0osQ0FBQztJQUVELE1BQU0sUUFBUSxHQUFHLElBQUksR0FBRyxDQUFDLFNBQVMsQ0FBQyxDQUFDO0lBQ3BDLE9BQU8sT0FBTyxDQUFDLE1BQU0sQ0FBQyxDQUFDLEtBQUssRUFBRSxFQUFFLENBQUMsUUFBUSxDQUFDLEdBQUcsQ0FBQyxLQUFLLENBQUMsSUFBSSxDQUFDLENBQUMsQ0FBQztBQUM3RCxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3NjcmlwdHMvc2VlZEFwcGxpY2F0aW9uU2VsZWN0aW9uLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogQm91bmQgYSBgc2NyaXB0cy9zZWVkLW94eS1hcHBsaWNhdGlvbnMudHNgIHJ1biB0byBhbiBleHBsaWNpdCBzdWJzZXQgb2YgdGhlXG4gKiBjYW5vbmljYWwgc2VlZCBsaXN0LlxuICpcbiAqIFRoZSBzZWVkIHJlY29uY2lsZXMgRVZFUlkgb2ZmaWNpYWwgYXBwbGljYXRpb24gb24gZXZlcnkgcnVuLCBhbmQgc2V2ZXJhbCBvZlxuICogdGhlIGZpZWxkcyBpdCByZWNvbmNpbGVzIGFyZSBhdXRob3JpdGF0aXZlIHJlcGxhY2VtZW50cyAoYHJlZGlyZWN0VXJpc2ApLCBzb1xuICogcmVnaXN0ZXJpbmcgT05FIG5ldyBhcHBsaWNhdGlvbiBvdGhlcndpc2UgY2FycmllcyB0aGUgYmxhc3QgcmFkaXVzIG9mIGFsbCB0aGVcbiAqIG90aGVycy4gYE9OTFlfQVBQU2AgcmVtb3ZlcyB0aGF0IGJsYXN0IHJhZGl1cyBpbnN0ZWFkIG9mIG1lcmVseSB3YXJuaW5nIGFib3V0XG4gKiBpdDogdGhlIG9wZXJhdG9yIG5hbWVzIHRoZSBhcHBsaWNhdGlvbnMgdGhlIHJ1biBtYXkgdG91Y2gsIGFuZCB0aGUgaW52b2NhdGlvblxuICogaXRzZWxmIGlzIHRoZSBhdWRpdCByZWNvcmQuXG4gKlxuICogRkFJTFMgQ0xPU0VELCBkZWxpYmVyYXRlbHkuIEV2ZXJ5IHJlamVjdGVkIGlucHV0IGJlbG93IGNvdWxkIGluc3RlYWQgaGF2ZSBiZWVuXG4gKiBcInF1aWV0bHkgcmVjb25jaWxlIG5vdGhpbmdcIiwgYW5kIHRoYXQgaXMgdGhlIHNhbWUgZmFpbHVyZSBzaGFwZSBhcyBhIGRyeSBydW5cbiAqIHJlcG9ydGluZyBgYXBwc1VwZGF0ZWQ6IDBgIGJlZm9yZSBhIHJlYWwgcnVuIGNoYW5nZXMgc29tZXRoaW5nIOKAlCBhIG5vLW9wIHRoYXRcbiAqIHJlYWRzIGFzIHN1Y2Nlc3MsIHdoaWNoIHRoZSBuZXh0IG9wZXJhdG9yIHRoZW4gdHJ1c3RzLiBTbzpcbiAqXG4gKiAgLSBBbiB1bnNldCBgT05MWV9BUFBTYCBtZWFucyBcInRoZSB3aG9sZSBjYW5vbmljYWwgbGlzdFwiLCB0aGUgbG9uZy1zdGFuZGluZ1xuICogICAgYmVoYXZpb3VyLCB1bmNoYW5nZWQuXG4gKiAgLSBBIFNFVCBidXQgZW1wdHkgLyB3aGl0ZXNwYWNlLW9ubHkgdmFsdWUgdGhyb3dzLiBJdCBpcyBuZXZlciByZWFkIGFzIFwiYWxsXCI6XG4gKiAgICB0aGUgZGFuZ2Vyb3VzIG1pc3JlYWRpbmcgaXMgYW4gb3BlcmF0b3Igd2hvIG1lYW50IHRvIGJvdW5kIHRoZSBydW4sIHBhc3NlZFxuICogICAgYSB2YXJpYWJsZSB0aGF0IGhhcHBlbmVkIHRvIGJlIGVtcHR5LCBhbmQgZ290IHRoZSBmdWxsLWJsYXN0LXJhZGl1cyBydW4uXG4gKiAgLSBBbiB1bmtub3duIG5hbWUgdGhyb3dzIGFuZCBuYW1lcyBib3RoIHdoYXQgaXQgY291bGQgbm90IG1hdGNoIGFuZCB3aGF0IGl0XG4gKiAgICBjb3VsZCBoYXZlIOKAlCBhIHR5cG8gbXVzdCBub3Qgc2lsZW50bHkgc2hyaW5rIHRoZSBydW4gdG8gbm90aGluZyAob3IsIHdvcnNlLFxuICogICAgdG8gc29tZSBvdGhlciBhcHApLlxuICpcbiAqIFB1cmUgYW5kIGRlcGVuZGVuY3ktZnJlZSAobm8gTW9uZ29vc2UsIG5vIGVudiBhY2Nlc3MpIHNvIHRoZSBkZWNpc2lvbiBpcyB1bml0XG4gKiB0ZXN0YWJsZSB3aXRob3V0IGEgZGF0YWJhc2UsIG1pcnJvcmluZyBgcmVnaXN0ZXJDb21tb25zQ2xpZW50c1BsYW4udHNgLlxuICovXG5cbi8qKiBUaGUgb25seSB0aGluZyB0aGlzIG1vZHVsZSBuZWVkcyBvZiBhIHNlZWQgZW50cnk6IGl0cyBpZGVtcG90ZW5jeSBrZXkuICovXG5leHBvcnQgaW50ZXJmYWNlIE5hbWVkU2VlZEVudHJ5IHtcbiAgbmFtZTogc3RyaW5nO1xufVxuXG4vKipcbiAqIFJlc29sdmUgdGhlIHNlZWQgZW50cmllcyBhIHJ1biBtYXkgdG91Y2guXG4gKlxuICogQHBhcmFtIGVudHJpZXMgICBUaGUgY2Fub25pY2FsIHNlZWQgbGlzdCwgaW4gY2Fub25pY2FsIG9yZGVyLlxuICogQHBhcmFtIHJhd09ubHlBcHBzICBUaGUgcmF3IGBPTkxZX0FQUFNgIGVudiB2YWx1ZTogYHVuZGVmaW5lZGAgd2hlbiB1bnNldCwgb3JcbiAqICAgYSBjb21tYS1zZXBhcmF0ZWQgbGlzdCBvZiBhcHBsaWNhdGlvbiBuYW1lcyB0byByZXN0cmljdCB0aGUgcnVuIHRvLlxuICogQHJldHVybnMgVGhlIHNlbGVjdGVkIGVudHJpZXMsIGluIHRoZSBjYW5vbmljYWwgbGlzdCdzIG93biBvcmRlciAobmV2ZXIgdGhlXG4gKiAgIG9yZGVyIHRoZXkgd2VyZSByZXF1ZXN0ZWQgaW4g4oCUIHRoZSBzZWVkJ3MgYmVoYXZpb3VyIG11c3Qgbm90IGRlcGVuZCBvbiBob3dcbiAqICAgYW4gb3BlcmF0b3IgaGFwcGVuZWQgdG8gdHlwZSB0aGUgZmlsdGVyKS5cbiAqIEB0aHJvd3MgV2hlbiBgcmF3T25seUFwcHNgIGlzIHNldCBidXQgc2VsZWN0cyBub3RoaW5nLCBvciBuYW1lcyBhbiBlbnRyeSB0aGF0XG4gKiAgIGlzIG5vdCBpbiBgZW50cmllc2AuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBzZWxlY3RTZWVkQXBwbGljYXRpb25zPFQgZXh0ZW5kcyBOYW1lZFNlZWRFbnRyeT4oXG4gIGVudHJpZXM6IHJlYWRvbmx5IFRbXSxcbiAgcmF3T25seUFwcHM6IHN0cmluZyB8IHVuZGVmaW5lZFxuKTogVFtdIHtcbiAgaWYgKHJhd09ubHlBcHBzID09PSB1bmRlZmluZWQpIHtcbiAgICByZXR1cm4gWy4uLmVudHJpZXNdO1xuICB9XG5cbiAgY29uc3QgcmVxdWVzdGVkID0gcmF3T25seUFwcHNcbiAgICAuc3BsaXQoJywnKVxuICAgIC5tYXAoKG5hbWUpID0+IG5hbWUudHJpbSgpKVxuICAgIC5maWx0ZXIoKG5hbWUpID0+IG5hbWUubGVuZ3RoID4gMCk7XG5cbiAgaWYgKHJlcXVlc3RlZC5sZW5ndGggPT09IDApIHtcbiAgICB0aHJvdyBuZXcgRXJyb3IoXG4gICAgICAnT05MWV9BUFBTIHdhcyBzZXQgYnV0IG5hbWVzIG5vIGFwcGxpY2F0aW9uLiBVbnNldCBpdCB0byBzZWVkIGV2ZXJ5ICcgK1xuICAgICAgICAnYXBwbGljYXRpb24sIG9yIG5hbWUgdGhlIG9uZXMgdGhpcyBydW4gbWF5IHRvdWNoIOKAlCBpdCBpcyBuZXZlciByZWFkICcgK1xuICAgICAgICAnYXMgXCJhbGxcIi4nXG4gICAgKTtcbiAgfVxuXG4gIC8vIEV4YWN0LCBjYXNlLXNlbnNpdGl2ZSBtYXRjaDogYG5hbWVgIElTIHRoZSBpZGVtcG90ZW5jeSBrZXkgKHdpdGhcbiAgLy8gY3JlYXRlZEJ5VXNlcklkKSwgc28gYSBuZWFyLW1pc3MgaXMgYSBkaWZmZXJlbnQgYXBwbGljYXRpb24sIG5vdCB0aGlzIG9uZS5cbiAgY29uc3Qga25vd24gPSBuZXcgU2V0KGVudHJpZXMubWFwKChlbnRyeSkgPT4gZW50cnkubmFtZSkpO1xuICBjb25zdCB1bmtub3duID0gcmVxdWVzdGVkLmZpbHRlcigobmFtZSkgPT4gIWtub3duLmhhcyhuYW1lKSk7XG4gIGlmICh1bmtub3duLmxlbmd0aCA+IDApIHtcbiAgICB0aHJvdyBuZXcgRXJyb3IoXG4gICAgICBgT05MWV9BUFBTIG5hbWVzIHVua25vd24gYXBwbGljYXRpb24ocyk6IFske3Vua25vd24uam9pbignLCAnKX1dLiBgICtcbiAgICAgICAgYEtub3duIGFwcGxpY2F0aW9uczogWyR7ZW50cmllcy5tYXAoKGVudHJ5KSA9PiBlbnRyeS5uYW1lKS5qb2luKCcsICcpfV0uYFxuICAgICk7XG4gIH1cblxuICBjb25zdCBzZWxlY3RlZCA9IG5ldyBTZXQocmVxdWVzdGVkKTtcbiAgcmV0dXJuIGVudHJpZXMuZmlsdGVyKChlbnRyeSkgPT4gc2VsZWN0ZWQuaGFzKGVudHJ5Lm5hbWUpKTtcbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

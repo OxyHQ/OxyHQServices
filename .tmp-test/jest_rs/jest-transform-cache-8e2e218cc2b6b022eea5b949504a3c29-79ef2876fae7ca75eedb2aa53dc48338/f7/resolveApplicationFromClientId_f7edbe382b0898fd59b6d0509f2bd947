@@ -1,0 +1,69 @@
+c31f7518b4abb6e055346d1ce6b99dce
+"use strict";
+/**
+ * Resolve an OAuth `clientId` (`ApplicationCredential.publicKey`) to the id of
+ * the active `Application` it belongs to. Returns null when the credential is
+ * unknown, revoked / out of its rotation grace, or its application is not
+ * active.
+ *
+ * ## What the port changes, and why it is not cosmetic
+ *
+ * The Mongoose version was two round trips —
+ * `ApplicationCredential.findOne({publicKey})` then
+ * `Application.findById(credential.applicationId)` — and the second one CAST its
+ * argument. `findById` throws a `CastError` on anything that is not 24-char hex,
+ * so for an application whose id is the **uuid v7 every row minted after the
+ * Postgres cutover carries** (`db/schema/columns.ts` `generatedId()`) this
+ * function did not return null: it THREW, out of a helper whose whole contract
+ * is "null when it does not resolve". `POST /notifications/push-token` answers
+ * that with a 500 instead of its documented 400, and `emailPushDelivery` loses
+ * the whole inbox push for that identity.
+ *
+ * Here both halves are ONE join against `text` ids, so a value that names no
+ * application is a value that matches no row — the documented null — in either
+ * id shape. `application_credentials.public_key` is UNIQUE, so the join can
+ * produce at most one row.
+ *
+ * The return type is the application id as a **string**, not a
+ * `mongoose.Types.ObjectId`: there is no ObjectId left to construct, and the
+ * value has to survive being a uuid.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.resolveApplicationIdFromClientId = resolveApplicationIdFromClientId;
+const drizzle_orm_1 = require("drizzle-orm");
+const postgres_1 = require("../config/postgres");
+const applicationCredentials_1 = require("../db/schema/applicationCredentials");
+const applications_1 = require("../db/schema/applications");
+const credentialUsability_1 = require("./credentialUsability");
+function resolveApplicationIdFromClientId(clientId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const [row] = yield (0, postgres_1.getDb)()
+            .select({
+            applicationId: applications_1.applications.id,
+            status: applicationCredentials_1.applicationCredentials.status,
+            expiresAt: applicationCredentials_1.applicationCredentials.expiresAt,
+        })
+            .from(applicationCredentials_1.applicationCredentials)
+            .innerJoin(applications_1.applications, (0, drizzle_orm_1.eq)(applications_1.applications.id, applicationCredentials_1.applicationCredentials.applicationId))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(applicationCredentials_1.applicationCredentials.publicKey, clientId), (0, drizzle_orm_1.eq)(applications_1.applications.status, 'active')))
+            .limit(1);
+        // The rotation-grace predicate stays in application code rather than becoming
+        // a SQL clause: `utils/credentialUsability.ts` is the single source of truth
+        // shared with OAuth authorize, OAuth token and the service-token mint, and a
+        // second spelling of it here is exactly how those four drift apart.
+        if (!row || !(0, credentialUsability_1.isCredentialUsable)(row)) {
+            return null;
+        }
+        return row.applicationId;
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvcmVzb2x2ZUFwcGxpY2F0aW9uRnJvbUNsaWVudElkLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBMkJHOzs7Ozs7Ozs7OztBQVFILDRFQTRCQztBQWxDRCw2Q0FBc0M7QUFDdEMsaURBQTJDO0FBQzNDLGdGQUE2RTtBQUM3RSw0REFBeUQ7QUFDekQsK0RBQTJEO0FBRTNELFNBQXNCLGdDQUFnQyxDQUNwRCxRQUFnQjs7UUFFaEIsTUFBTSxDQUFDLEdBQUcsQ0FBQyxHQUFHLE1BQU0sSUFBQSxnQkFBSyxHQUFFO2FBQ3hCLE1BQU0sQ0FBQztZQUNOLGFBQWEsRUFBRSwyQkFBWSxDQUFDLEVBQUU7WUFDOUIsTUFBTSxFQUFFLCtDQUFzQixDQUFDLE1BQU07WUFDckMsU0FBUyxFQUFFLCtDQUFzQixDQUFDLFNBQVM7U0FDNUMsQ0FBQzthQUNELElBQUksQ0FBQywrQ0FBc0IsQ0FBQzthQUM1QixTQUFTLENBQUMsMkJBQVksRUFBRSxJQUFBLGdCQUFFLEVBQUMsMkJBQVksQ0FBQyxFQUFFLEVBQUUsK0NBQXNCLENBQUMsYUFBYSxDQUFDLENBQUM7YUFDbEYsS0FBSyxDQUNKLElBQUEsaUJBQUcsRUFDRCxJQUFBLGdCQUFFLEVBQUMsK0NBQXNCLENBQUMsU0FBUyxFQUFFLFFBQVEsQ0FBQyxFQUM5QyxJQUFBLGdCQUFFLEVBQUMsMkJBQVksQ0FBQyxNQUFNLEVBQUUsUUFBUSxDQUFDLENBQ2xDLENBQ0Y7YUFDQSxLQUFLLENBQUMsQ0FBQyxDQUFDLENBQUM7UUFFWiw4RUFBOEU7UUFDOUUsNkVBQTZFO1FBQzdFLDZFQUE2RTtRQUM3RSxvRUFBb0U7UUFDcEUsSUFBSSxDQUFDLEdBQUcsSUFBSSxDQUFDLElBQUEsd0NBQWtCLEVBQUMsR0FBRyxDQUFDLEVBQUUsQ0FBQztZQUNyQyxPQUFPLElBQUksQ0FBQztRQUNkLENBQUM7UUFFRCxPQUFPLEdBQUcsQ0FBQyxhQUFhLENBQUM7SUFDM0IsQ0FBQztDQUFBIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3V0aWxzL3Jlc29sdmVBcHBsaWNhdGlvbkZyb21DbGllbnRJZC50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIFJlc29sdmUgYW4gT0F1dGggYGNsaWVudElkYCAoYEFwcGxpY2F0aW9uQ3JlZGVudGlhbC5wdWJsaWNLZXlgKSB0byB0aGUgaWQgb2ZcbiAqIHRoZSBhY3RpdmUgYEFwcGxpY2F0aW9uYCBpdCBiZWxvbmdzIHRvLiBSZXR1cm5zIG51bGwgd2hlbiB0aGUgY3JlZGVudGlhbCBpc1xuICogdW5rbm93biwgcmV2b2tlZCAvIG91dCBvZiBpdHMgcm90YXRpb24gZ3JhY2UsIG9yIGl0cyBhcHBsaWNhdGlvbiBpcyBub3RcbiAqIGFjdGl2ZS5cbiAqXG4gKiAjIyBXaGF0IHRoZSBwb3J0IGNoYW5nZXMsIGFuZCB3aHkgaXQgaXMgbm90IGNvc21ldGljXG4gKlxuICogVGhlIE1vbmdvb3NlIHZlcnNpb24gd2FzIHR3byByb3VuZCB0cmlwcyDigJRcbiAqIGBBcHBsaWNhdGlvbkNyZWRlbnRpYWwuZmluZE9uZSh7cHVibGljS2V5fSlgIHRoZW5cbiAqIGBBcHBsaWNhdGlvbi5maW5kQnlJZChjcmVkZW50aWFsLmFwcGxpY2F0aW9uSWQpYCDigJQgYW5kIHRoZSBzZWNvbmQgb25lIENBU1QgaXRzXG4gKiBhcmd1bWVudC4gYGZpbmRCeUlkYCB0aHJvd3MgYSBgQ2FzdEVycm9yYCBvbiBhbnl0aGluZyB0aGF0IGlzIG5vdCAyNC1jaGFyIGhleCxcbiAqIHNvIGZvciBhbiBhcHBsaWNhdGlvbiB3aG9zZSBpZCBpcyB0aGUgKip1dWlkIHY3IGV2ZXJ5IHJvdyBtaW50ZWQgYWZ0ZXIgdGhlXG4gKiBQb3N0Z3JlcyBjdXRvdmVyIGNhcnJpZXMqKiAoYGRiL3NjaGVtYS9jb2x1bW5zLnRzYCBgZ2VuZXJhdGVkSWQoKWApIHRoaXNcbiAqIGZ1bmN0aW9uIGRpZCBub3QgcmV0dXJuIG51bGw6IGl0IFRIUkVXLCBvdXQgb2YgYSBoZWxwZXIgd2hvc2Ugd2hvbGUgY29udHJhY3RcbiAqIGlzIFwibnVsbCB3aGVuIGl0IGRvZXMgbm90IHJlc29sdmVcIi4gYFBPU1QgL25vdGlmaWNhdGlvbnMvcHVzaC10b2tlbmAgYW5zd2Vyc1xuICogdGhhdCB3aXRoIGEgNTAwIGluc3RlYWQgb2YgaXRzIGRvY3VtZW50ZWQgNDAwLCBhbmQgYGVtYWlsUHVzaERlbGl2ZXJ5YCBsb3Nlc1xuICogdGhlIHdob2xlIGluYm94IHB1c2ggZm9yIHRoYXQgaWRlbnRpdHkuXG4gKlxuICogSGVyZSBib3RoIGhhbHZlcyBhcmUgT05FIGpvaW4gYWdhaW5zdCBgdGV4dGAgaWRzLCBzbyBhIHZhbHVlIHRoYXQgbmFtZXMgbm9cbiAqIGFwcGxpY2F0aW9uIGlzIGEgdmFsdWUgdGhhdCBtYXRjaGVzIG5vIHJvdyDigJQgdGhlIGRvY3VtZW50ZWQgbnVsbCDigJQgaW4gZWl0aGVyXG4gKiBpZCBzaGFwZS4gYGFwcGxpY2F0aW9uX2NyZWRlbnRpYWxzLnB1YmxpY19rZXlgIGlzIFVOSVFVRSwgc28gdGhlIGpvaW4gY2FuXG4gKiBwcm9kdWNlIGF0IG1vc3Qgb25lIHJvdy5cbiAqXG4gKiBUaGUgcmV0dXJuIHR5cGUgaXMgdGhlIGFwcGxpY2F0aW9uIGlkIGFzIGEgKipzdHJpbmcqKiwgbm90IGFcbiAqIGBtb25nb29zZS5UeXBlcy5PYmplY3RJZGA6IHRoZXJlIGlzIG5vIE9iamVjdElkIGxlZnQgdG8gY29uc3RydWN0LCBhbmQgdGhlXG4gKiB2YWx1ZSBoYXMgdG8gc3Vydml2ZSBiZWluZyBhIHV1aWQuXG4gKi9cblxuaW1wb3J0IHsgYW5kLCBlcSB9IGZyb20gJ2RyaXp6bGUtb3JtJztcbmltcG9ydCB7IGdldERiIH0gZnJvbSAnLi4vY29uZmlnL3Bvc3RncmVzJztcbmltcG9ydCB7IGFwcGxpY2F0aW9uQ3JlZGVudGlhbHMgfSBmcm9tICcuLi9kYi9zY2hlbWEvYXBwbGljYXRpb25DcmVkZW50aWFscyc7XG5pbXBvcnQgeyBhcHBsaWNhdGlvbnMgfSBmcm9tICcuLi9kYi9zY2hlbWEvYXBwbGljYXRpb25zJztcbmltcG9ydCB7IGlzQ3JlZGVudGlhbFVzYWJsZSB9IGZyb20gJy4vY3JlZGVudGlhbFVzYWJpbGl0eSc7XG5cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiByZXNvbHZlQXBwbGljYXRpb25JZEZyb21DbGllbnRJZChcbiAgY2xpZW50SWQ6IHN0cmluZyxcbik6IFByb21pc2U8c3RyaW5nIHwgbnVsbD4ge1xuICBjb25zdCBbcm93XSA9IGF3YWl0IGdldERiKClcbiAgICAuc2VsZWN0KHtcbiAgICAgIGFwcGxpY2F0aW9uSWQ6IGFwcGxpY2F0aW9ucy5pZCxcbiAgICAgIHN0YXR1czogYXBwbGljYXRpb25DcmVkZW50aWFscy5zdGF0dXMsXG4gICAgICBleHBpcmVzQXQ6IGFwcGxpY2F0aW9uQ3JlZGVudGlhbHMuZXhwaXJlc0F0LFxuICAgIH0pXG4gICAgLmZyb20oYXBwbGljYXRpb25DcmVkZW50aWFscylcbiAgICAuaW5uZXJKb2luKGFwcGxpY2F0aW9ucywgZXEoYXBwbGljYXRpb25zLmlkLCBhcHBsaWNhdGlvbkNyZWRlbnRpYWxzLmFwcGxpY2F0aW9uSWQpKVxuICAgIC53aGVyZShcbiAgICAgIGFuZChcbiAgICAgICAgZXEoYXBwbGljYXRpb25DcmVkZW50aWFscy5wdWJsaWNLZXksIGNsaWVudElkKSxcbiAgICAgICAgZXEoYXBwbGljYXRpb25zLnN0YXR1cywgJ2FjdGl2ZScpLFxuICAgICAgKSxcbiAgICApXG4gICAgLmxpbWl0KDEpO1xuXG4gIC8vIFRoZSByb3RhdGlvbi1ncmFjZSBwcmVkaWNhdGUgc3RheXMgaW4gYXBwbGljYXRpb24gY29kZSByYXRoZXIgdGhhbiBiZWNvbWluZ1xuICAvLyBhIFNRTCBjbGF1c2U6IGB1dGlscy9jcmVkZW50aWFsVXNhYmlsaXR5LnRzYCBpcyB0aGUgc2luZ2xlIHNvdXJjZSBvZiB0cnV0aFxuICAvLyBzaGFyZWQgd2l0aCBPQXV0aCBhdXRob3JpemUsIE9BdXRoIHRva2VuIGFuZCB0aGUgc2VydmljZS10b2tlbiBtaW50LCBhbmQgYVxuICAvLyBzZWNvbmQgc3BlbGxpbmcgb2YgaXQgaGVyZSBpcyBleGFjdGx5IGhvdyB0aG9zZSBmb3VyIGRyaWZ0IGFwYXJ0LlxuICBpZiAoIXJvdyB8fCAhaXNDcmVkZW50aWFsVXNhYmxlKHJvdykpIHtcbiAgICByZXR1cm4gbnVsbDtcbiAgfVxuXG4gIHJldHVybiByb3cuYXBwbGljYXRpb25JZDtcbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

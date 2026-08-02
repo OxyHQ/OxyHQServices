@@ -1,0 +1,10 @@
+ccfc8ba79623c946d9071cd6ea0371fc
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.creditsUsageQuerySchema = void 0;
+const zod_1 = require("zod");
+// GET /credits/usage
+exports.creditsUsageQuerySchema = zod_1.z.object({
+    period: zod_1.z.enum(['7d', '30d']).optional(),
+});
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2NoZW1hcy9jcmVkaXRzLnNjaGVtYXMudHMiLCJtYXBwaW5ncyI6Ijs7O0FBQUEsNkJBQXdCO0FBRXhCLHFCQUFxQjtBQUNSLFFBQUEsdUJBQXVCLEdBQUcsT0FBQyxDQUFDLE1BQU0sQ0FBQztJQUM5QyxNQUFNLEVBQUUsT0FBQyxDQUFDLElBQUksQ0FBQyxDQUFDLElBQUksRUFBRSxLQUFLLENBQUMsQ0FBQyxDQUFDLFFBQVEsRUFBRTtDQUN6QyxDQUFDLENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2NoZW1hcy9jcmVkaXRzLnNjaGVtYXMudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHsgeiB9IGZyb20gJ3pvZCc7XG5cbi8vIEdFVCAvY3JlZGl0cy91c2FnZVxuZXhwb3J0IGNvbnN0IGNyZWRpdHNVc2FnZVF1ZXJ5U2NoZW1hID0gei5vYmplY3Qoe1xuICBwZXJpb2Q6IHouZW51bShbJzdkJywgJzMwZCddKS5vcHRpb25hbCgpLFxufSk7XG4iXSwidmVyc2lvbiI6M30=

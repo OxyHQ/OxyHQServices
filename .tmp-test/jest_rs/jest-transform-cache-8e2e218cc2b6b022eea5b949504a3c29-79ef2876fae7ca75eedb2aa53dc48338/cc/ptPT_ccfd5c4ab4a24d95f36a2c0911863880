@@ -1,0 +1,283 @@
+3318dcd6fd08fd0dd6adb3fc299cec9d
+{
+  "signin": {
+    "title": "Iniciar sessão",
+    "subtitle": "Inicie sessão para continuar",
+    "addAccountTitle": "Adicionar outra conta",
+    "addAccountSubtitle": "Iniciar sessão com outra conta",
+    "username": {
+      "label": "Nome de utilizador",
+      "placeholder": "Introduza o seu nome de utilizador",
+      "helper": "3-30 caracteres, apenas letras e números",
+      "required": "Por favor, introduza o seu nome de utilizador.",
+      "minLength": "O nome de utilizador deve ter pelo menos 3 caracteres."
+    },
+    "password": {
+      "label": "Palavra-passe",
+      "placeholder": "Introduza a sua palavra-passe",
+      "required": "Por favor, introduza a sua palavra-passe.",
+      "hint": "Introduza a sua palavra-passe para iniciar sessão"
+    },
+    "actions": {
+      "continue": "Continuar",
+      "back": "Voltar",
+      "signIn": "Iniciar sessão",
+      "verify": "Verificar",
+      "openAccountSwitcher": "Mudar para outra conta",
+      "openAccountSwitcherSubtitle": "{{count}} outras contas disponíveis",
+      "openAccountSwitcherSubtitle_singular": "1 outra conta disponível",
+      "openAccountSwitcherSubtitle_zero": "Revise as suas contas guardadas",
+      "manageAccounts": "Gerir contas guardadas",
+      "manageAccountsSubtitle": "Rever sessões, remover ou terminar sessão",
+      "loadingOtherAccounts": "A carregar outras contas…",
+      "switchAccountFailed": "Não foi possível mudar de conta. Por favor, tente novamente."
+    },
+    "forgotPrompt": "Esqueceu-se da palavra-passe?",
+    "security": {
+      "dataSecure": "Os seus dados estão encriptados e seguros"
+    },
+    "currentlySignedInAs": "Atualmente com sessão iniciada como",
+    "alreadySignedInWith": "Já tem sessão iniciada com",
+    "alreadySignedIn": "Já tem sessão iniciada",
+    "alreadySignedInMessage": "Esta conta já tem sessão iniciada. Continuar com esta conta?",
+    "continueWithAccount": "Continuar",
+    "currentAccount": "Atual",
+    "or": "ou",
+    "viewAllAccounts": "Ver mais {{count}}",
+    "createAccountLink": "Novo no Oxy? Crie uma conta",
+    "status": {
+      "accountSwitched": "Agora a usar {{name}}",
+      "signingIn": "A iniciar sessão…"
+    }
+  },
+  "signup": {
+    "title": "Crie a sua conta",
+    "subtitle": "Uma identidade para todo o ecossistema.",
+    "commonsHeadline": "Crie a sua identidade no Commons",
+    "commonsExplainer": "O Commons é a sua identidade Oxy com autocustódia total: uma app que funciona em todo o lado.",
+    "createInCommons": "Crie a sua identidade no Commons",
+    "passkeyAlternative": "Não tem o Commons? Crie uma chave de acesso neste dispositivo",
+    "createAccount": "Criar conta",
+    "creating": "A criar…",
+    "usernamePlaceholder": "Escolha um nome de utilizador",
+    "usernameChecking": "A verificar…",
+    "usernameAvailable": "Disponível",
+    "usernameTaken": "Este nome de utilizador já está em uso",
+    "backToSignInLink": "Já tem uma conta? Inicie sessão",
+    "hubExplainer": "Crie a sua Oxy ID numa janela segura e volte de seguida.",
+    "continueInWindow": "Continuar numa nova janela",
+    "welcome": {
+      "title": "Bem-vindo ao Oxy!",
+      "subtitle": "Crie a sua conta em poucos passos",
+      "haveAccount": "Já tem uma conta?",
+      "signInCta": "Iniciar sessão"
+    },
+    "identity": {
+      "title": "Quem é?",
+      "subtitle": "Escolha o seu nome de utilizador e introduza o seu email"
+    },
+    "username": {
+      "helper": "3-30 caracteres, apenas letras e números",
+      "required": "Por favor, introduza um nome de utilizador",
+      "minLength": "O nome de utilizador deve ter pelo menos 3 caracteres"
+    },
+    "email": {
+      "required": "Por favor, introduza um endereço de email",
+      "invalid": "Por favor, introduza um endereço de email válido",
+      "helper": "Nunca partilharemos o seu email"
+    },
+    "security": {
+      "title": "Proteja a sua conta",
+      "subtitle": "Crie uma palavra-passe forte para proteger a sua conta"
+    },
+    "password": {
+      "helper": "Pelo menos 8 caracteres",
+      "required": "Por favor, introduza uma palavra-passe",
+      "minLength": "A palavra-passe deve ter pelo menos 8 caracteres",
+      "confirmRequired": "Por favor, confirme a sua palavra-passe",
+      "mismatch": "As palavras-passe não coincidem",
+      "confirmHint": "Reintroduza a sua palavra-passe para confirmar"
+    },
+    "summary": {
+      "title": "Quase lá!",
+      "subtitle": "Revise as suas informações e crie a sua conta",
+      "sectionTitle": "Informações da conta",
+      "fields": {
+        "username": "Nome de utilizador",
+        "email": "Email",
+        "password": "Palavra-passe"
+      },
+      "notSet": "Não definido",
+      "securityTip": "Para maior segurança, ative a autenticação biométrica nas Definições da conta após criar a sua conta.",
+      "legalReminder": "Ao criar uma conta, concorda com os nossos Termos de Serviço e Política de Privacidade."
+    }
+  },
+  "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "As suas contas"
+    },
+    "loading": "A carregar contas...",
+    "qrHeadline": "Inicie sessão com a sua identidade Oxy",
+    "signInWithOxy": "Iniciar sessão com Oxy",
+    "useIdentityOnDevice": "Não tem o Commons? Use uma chave de acesso neste dispositivo",
+    "passkeySigningIn": "A iniciar sessão…",
+    "getCommons": "Obter o Commons",
+    "commonsNotInstalled": "Não tem o Commons? Obtenha a app para iniciar sessão com o seu Oxy ID.",
+    "showQrAnyway": "Tenho o Commons noutro dispositivo",
+    "switchWhileSignedInAs": "Mudar de conta, com sessão iniciada como {{name}}",
+    "manageOnDevice": "Gerir contas neste dispositivo",
+    "continueWithOxy": "Continuar com Oxy",
+    "havingTrouble": "Algum problema?",
+    "progress": {
+      "preparing": "A preparar o pedido",
+      "awaitingApproval": "A aguardar aprovação",
+      "scanWithCommons": "Digitalize com o Commons no seu telemóvel",
+      "continueInCommons": "Continue no Commons",
+      "checkCommons": "Verifique o Commons no seu telemóvel",
+      "openedInCommons": "Aberto no Commons",
+      "confirming": "A confirmar a identidade",
+      "confirmed": "Identidade confirmada"
+    }
+  },
+  "common": {
+    "actions": {
+      "back": "Voltar",
+      "continue": "Continuar",
+      "next": "Seguinte",
+      "getStarted": "Começar",
+      "createAccount": "Criar conta",
+      "signIn": "Iniciar sessão",
+      "verify": "Verificar",
+      "resetPassword": "Repor palavra-passe",
+      "signedOut": "Sessão terminada",
+      "close": "Fechar",
+      "tryAgain": "Tentar novamente"
+    },
+    "links": {
+      "recoverAccount": "Recuperar a sua conta",
+      "signUp": "Registar-se"
+    },
+    "labels": {
+      "username": "Nome de utilizador",
+      "email": "Email",
+      "password": "Palavra-passe",
+      "confirmPassword": "Confirmar palavra-passe"
+    },
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "Ocorreu um problema ao terminar sessão em todas as contas. Tente novamente."
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "subtitle": "Manage push, email, and security alerts",
+    "updateError": "Failed to update notification preferences",
+    "sections": {
+      "channels": "Channels",
+      "alerts": "Alerts",
+      "marketing": "Marketing"
+    },
+    "items": {
+      "push": {
+        "title": "Push notifications",
+        "subtitle": "Real-time alerts on your devices"
+      },
+      "emailDigest": {
+        "title": "Email digest",
+        "subtitle": "Periodic summary of your account activity"
+      },
+      "securityAlerts": {
+        "title": "Security alerts",
+        "subtitle": "Sign-ins, recovery codes, and key changes"
+      },
+      "marketingEmails": {
+        "title": "Marketing emails",
+        "subtitle": "Product news and occasional offers"
+      }
+    }
+  },
+  "preferences": {
+    "title": "Preferences",
+    "subtitle": "Theme, motion, and regional settings",
+    "sections": {
+      "appearance": "Appearance",
+      "language": "Language",
+      "region": "Region"
+    },
+    "theme": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System default"
+    },
+    "items": {
+      "theme": {
+        "title": "Theme"
+      },
+      "reduceMotion": {
+        "title": "Reduce motion",
+        "subtitle": "Minimise animations across Oxy apps",
+        "systemOn": "Following system: reduce motion is on"
+      },
+      "language": {
+        "title": "Language"
+      },
+      "timezone": {
+        "title": "Timezone",
+        "unknown": "Unable to detect timezone"
+      },
+      "about": {
+        "title": "About preferences",
+        "subtitle": "Preferences sync across every Oxy app you sign into"
+      }
+    }
+  },
+  "connectedApps": {
+    "title": "Connected apps",
+    "subtitle": "Manage third-party app access",
+    "empty": {
+      "title": "No connected apps",
+      "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
+    },
+    "item": {
+      "granted": "Concedido {{relative}}",
+      "lastUsed": "Last used {{relative}}"
+    },
+    "confirm": {
+      "title": "Revoke access",
+      "message": "Revoke {{name}}'s access to your Oxy account?"
+    },
+    "toasts": {
+      "revoked": "Revoked access for {{name}}",
+      "revokeFailed": "Failed to revoke access"
+    }
+  },
+  "accountMenu": {
+    "label": "Menu da conta",
+    "manage": "Gerir a sua conta Oxy",
+    "viewProfile": "Ver perfil",
+    "addAnother": "Adicionar outra conta",
+    "signOutAll": "Terminar sessão em todas as contas",
+    "open": "Menu da conta",
+    "openHint": "Abre o menu da conta",
+    "openWithUser": "Menu da conta de {{name}}",
+    "switching": "A mudar de conta…",
+    "signOutAccount": "Terminar sessão de {{name}}",
+    "greeting": "Olá, {{name}}!",
+    "switchAccount": "Mudar de conta",
+    "storage": {
+      "title": "Armazenamento Oxy",
+      "usage": "{{used}} de {{total}} em uso",
+      "used": "Em uso",
+      "free": "Livre",
+      "unavailable": "Detalhes de utilização indisponíveis",
+      "upgrade": "Atualizar plano",
+      "manage": "Gerir armazenamento"
+    },
+    "data": "Os seus dados no Oxy",
+    "settings": "Definições do Oxy",
+    "help": "Ajuda e feedback",
+    "signOut": "Terminar sessão",
+    "privacy": "Política de privacidade",
+    "terms": "Termos de serviço"
+  }
+}

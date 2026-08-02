@@ -1,0 +1,74 @@
+f886659fbdf022cbb4c2860bef30fad3
+"use strict";
+/**
+ * OAuth redirect-URI allowlist check.
+ *
+ * The SINGLE authority for "is this redirect_uri registered for this
+ * Application" — shared by `POST /auth/oauth/authorize`, `GET /auth/oauth/consent`,
+ * the OAuth-bound `POST /auth/session/create` binding, and the finalization of an
+ * OAuth-bound `AuthSession`. Duplicating it per call site is how one path
+ * silently drifts into accepting a prefix match, so it lives here alone.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isAllowedRedirectUri = isAllowedRedirectUri;
+const crypto = __importStar(require("crypto"));
+const oauthCode_service_1 = require("../services/oauthCode.service");
+/**
+ * Validate a redirect URI against the Application allowlist using an exact
+ * match (per OAuth2 RFC 6749 §3.1.2). Partial / prefix matching is the source
+ * of countless open-redirect vulnerabilities — we never normalise away path or
+ * query for the comparison. Constant-time equality keeps the comparison from
+ * leaking the allowlist contents via timing.
+ *
+ * Origin-only https URLs are canonicalized so `https://app.example` and
+ * `https://app.example/` match the same registered apex origin.
+ */
+function isAllowedRedirectUri(app, redirectUri) {
+    var _a;
+    const allowlist = (_a = app.redirectUris) !== null && _a !== void 0 ? _a : [];
+    if (allowlist.length === 0)
+        return false;
+    const provided = Buffer.from((0, oauthCode_service_1.canonicalizeOAuthRedirectUri)(redirectUri));
+    let matched = false;
+    for (const allowed of allowlist) {
+        const allowedBuf = Buffer.from((0, oauthCode_service_1.canonicalizeOAuthRedirectUri)(allowed));
+        if (allowedBuf.length === provided.length && crypto.timingSafeEqual(allowedBuf, provided)) {
+            matched = true;
+        }
+    }
+    return matched;
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvb2F1dGhSZWRpcmVjdC50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7O0dBUUc7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0FBZUgsb0RBZUM7QUE1QkQsK0NBQWlDO0FBQ2pDLHFFQUE2RTtBQUU3RTs7Ozs7Ozs7O0dBU0c7QUFDSCxTQUFnQixvQkFBb0IsQ0FDbEMsR0FBZ0MsRUFDaEMsV0FBbUI7O0lBRW5CLE1BQU0sU0FBUyxHQUFHLE1BQUEsR0FBRyxDQUFDLFlBQVksbUNBQUksRUFBRSxDQUFDO0lBQ3pDLElBQUksU0FBUyxDQUFDLE1BQU0sS0FBSyxDQUFDO1FBQUUsT0FBTyxLQUFLLENBQUM7SUFDekMsTUFBTSxRQUFRLEdBQUcsTUFBTSxDQUFDLElBQUksQ0FBQyxJQUFBLGdEQUE0QixFQUFDLFdBQVcsQ0FBQyxDQUFDLENBQUM7SUFDeEUsSUFBSSxPQUFPLEdBQUcsS0FBSyxDQUFDO0lBQ3BCLEtBQUssTUFBTSxPQUFPLElBQUksU0FBUyxFQUFFLENBQUM7UUFDaEMsTUFBTSxVQUFVLEdBQUcsTUFBTSxDQUFDLElBQUksQ0FBQyxJQUFBLGdEQUE0QixFQUFDLE9BQU8sQ0FBQyxDQUFDLENBQUM7UUFDdEUsSUFBSSxVQUFVLENBQUMsTUFBTSxLQUFLLFFBQVEsQ0FBQyxNQUFNLElBQUksTUFBTSxDQUFDLGVBQWUsQ0FBQyxVQUFVLEVBQUUsUUFBUSxDQUFDLEVBQUUsQ0FBQztZQUMxRixPQUFPLEdBQUcsSUFBSSxDQUFDO1FBQ2pCLENBQUM7SUFDSCxDQUFDO0lBQ0QsT0FBTyxPQUFPLENBQUM7QUFDakIsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy91dGlscy9vYXV0aFJlZGlyZWN0LnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogT0F1dGggcmVkaXJlY3QtVVJJIGFsbG93bGlzdCBjaGVjay5cbiAqXG4gKiBUaGUgU0lOR0xFIGF1dGhvcml0eSBmb3IgXCJpcyB0aGlzIHJlZGlyZWN0X3VyaSByZWdpc3RlcmVkIGZvciB0aGlzXG4gKiBBcHBsaWNhdGlvblwiIOKAlCBzaGFyZWQgYnkgYFBPU1QgL2F1dGgvb2F1dGgvYXV0aG9yaXplYCwgYEdFVCAvYXV0aC9vYXV0aC9jb25zZW50YCxcbiAqIHRoZSBPQXV0aC1ib3VuZCBgUE9TVCAvYXV0aC9zZXNzaW9uL2NyZWF0ZWAgYmluZGluZywgYW5kIHRoZSBmaW5hbGl6YXRpb24gb2YgYW5cbiAqIE9BdXRoLWJvdW5kIGBBdXRoU2Vzc2lvbmAuIER1cGxpY2F0aW5nIGl0IHBlciBjYWxsIHNpdGUgaXMgaG93IG9uZSBwYXRoXG4gKiBzaWxlbnRseSBkcmlmdHMgaW50byBhY2NlcHRpbmcgYSBwcmVmaXggbWF0Y2gsIHNvIGl0IGxpdmVzIGhlcmUgYWxvbmUuXG4gKi9cblxuaW1wb3J0ICogYXMgY3J5cHRvIGZyb20gJ2NyeXB0byc7XG5pbXBvcnQgeyBjYW5vbmljYWxpemVPQXV0aFJlZGlyZWN0VXJpIH0gZnJvbSAnLi4vc2VydmljZXMvb2F1dGhDb2RlLnNlcnZpY2UnO1xuXG4vKipcbiAqIFZhbGlkYXRlIGEgcmVkaXJlY3QgVVJJIGFnYWluc3QgdGhlIEFwcGxpY2F0aW9uIGFsbG93bGlzdCB1c2luZyBhbiBleGFjdFxuICogbWF0Y2ggKHBlciBPQXV0aDIgUkZDIDY3NDkgwqczLjEuMikuIFBhcnRpYWwgLyBwcmVmaXggbWF0Y2hpbmcgaXMgdGhlIHNvdXJjZVxuICogb2YgY291bnRsZXNzIG9wZW4tcmVkaXJlY3QgdnVsbmVyYWJpbGl0aWVzIOKAlCB3ZSBuZXZlciBub3JtYWxpc2UgYXdheSBwYXRoIG9yXG4gKiBxdWVyeSBmb3IgdGhlIGNvbXBhcmlzb24uIENvbnN0YW50LXRpbWUgZXF1YWxpdHkga2VlcHMgdGhlIGNvbXBhcmlzb24gZnJvbVxuICogbGVha2luZyB0aGUgYWxsb3dsaXN0IGNvbnRlbnRzIHZpYSB0aW1pbmcuXG4gKlxuICogT3JpZ2luLW9ubHkgaHR0cHMgVVJMcyBhcmUgY2Fub25pY2FsaXplZCBzbyBgaHR0cHM6Ly9hcHAuZXhhbXBsZWAgYW5kXG4gKiBgaHR0cHM6Ly9hcHAuZXhhbXBsZS9gIG1hdGNoIHRoZSBzYW1lIHJlZ2lzdGVyZWQgYXBleCBvcmlnaW4uXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBpc0FsbG93ZWRSZWRpcmVjdFVyaShcbiAgYXBwOiB7IHJlZGlyZWN0VXJpcz86IHN0cmluZ1tdIH0sXG4gIHJlZGlyZWN0VXJpOiBzdHJpbmdcbik6IGJvb2xlYW4ge1xuICBjb25zdCBhbGxvd2xpc3QgPSBhcHAucmVkaXJlY3RVcmlzID8/IFtdO1xuICBpZiAoYWxsb3dsaXN0Lmxlbmd0aCA9PT0gMCkgcmV0dXJuIGZhbHNlO1xuICBjb25zdCBwcm92aWRlZCA9IEJ1ZmZlci5mcm9tKGNhbm9uaWNhbGl6ZU9BdXRoUmVkaXJlY3RVcmkocmVkaXJlY3RVcmkpKTtcbiAgbGV0IG1hdGNoZWQgPSBmYWxzZTtcbiAgZm9yIChjb25zdCBhbGxvd2VkIG9mIGFsbG93bGlzdCkge1xuICAgIGNvbnN0IGFsbG93ZWRCdWYgPSBCdWZmZXIuZnJvbShjYW5vbmljYWxpemVPQXV0aFJlZGlyZWN0VXJpKGFsbG93ZWQpKTtcbiAgICBpZiAoYWxsb3dlZEJ1Zi5sZW5ndGggPT09IHByb3ZpZGVkLmxlbmd0aCAmJiBjcnlwdG8udGltaW5nU2FmZUVxdWFsKGFsbG93ZWRCdWYsIHByb3ZpZGVkKSkge1xuICAgICAgbWF0Y2hlZCA9IHRydWU7XG4gICAgfVxuICB9XG4gIHJldHVybiBtYXRjaGVkO1xufVxuIl0sInZlcnNpb24iOjN9

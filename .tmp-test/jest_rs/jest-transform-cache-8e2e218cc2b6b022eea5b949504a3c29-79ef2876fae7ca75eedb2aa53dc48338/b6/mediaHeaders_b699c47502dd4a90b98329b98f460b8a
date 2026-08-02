@@ -1,0 +1,118 @@
+1f7cedd8fbbfe1728635c17408592266
+"use strict";
+/**
+ * Media Headers Middleware
+ *
+ * Provides middleware functions for serving media files (images, videos, audio)
+ * with proper CORS and security headers to prevent browser blocking.
+ *
+ * Key features:
+ * - Prevents ERR_BLOCKED_BY_ORB (Opaque Response Blocking) errors
+ * - Enables cross-origin media loading
+ * - Supports HTTP range requests for video/audio streaming
+ * - Optimized for performance with pre-built header strings
+ *
+ * @see https://developer.chrome.com/blog/opaque-response-blocking/
+ * @see https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CACHE_DURATION = void 0;
+exports.mediaHeadersMiddleware = mediaHeadersMiddleware;
+exports.immutableCacheMiddleware = immutableCacheMiddleware;
+exports.privateCacheMiddleware = privateCacheMiddleware;
+exports.noCacheMiddleware = noCacheMiddleware;
+/**
+ * Headers for media file streaming
+ * Pre-built strings for performance optimization
+ *
+ * Note: General CORS headers (Allow-Origin, Allow-Methods, Allow-Headers,
+ * Allow-Credentials) are handled by the global CORS middleware in config/cors.ts.
+ * This middleware only adds media-specific headers.
+ */
+const MEDIA_EXPOSE_HEADERS = 'Content-Type, Content-Length, Content-Range, Accept-Ranges, Content-Disposition, Last-Modified, ETag';
+const MEDIA_ACCEPT_RANGES = 'bytes';
+/**
+ * Cache durations (in seconds)
+ */
+exports.CACHE_DURATION = {
+    /** For content-addressed immutable files (1 year) */
+    IMMUTABLE: 31536000,
+    /** For user-specific or frequently updated files (1 hour) */
+    PRIVATE: 3600,
+    /** For development/testing (no cache) */
+    NO_CACHE: 0,
+};
+/**
+ * Middleware to add appropriate headers for media file streaming.
+ * Prevents ERR_BLOCKED_BY_ORB (Opaque Response Blocking) errors in browsers.
+ *
+ * This middleware should be applied to routes that serve media files
+ * (images, videos, audio) directly to the browser.
+ *
+ * @example
+ * ```typescript
+ * router.get('/media/:id', mediaHeadersMiddleware, async (req, res) => {
+ *   // Stream media file
+ * });
+ * ```
+ */
+function mediaHeadersMiddleware(req, res, next) {
+    // Cross-Origin-Resource-Policy: defense-in-depth (also set globally via Helmet)
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    // X-Content-Type-Options: never let the browser MIME-sniff cached media into
+    // an executable type (e.g. treating a spoofed image as HTML). Defense-in-depth
+    // for the media read path (also set globally via Helmet).
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Expose media-specific headers the client needs (Content-Range, Accept-Ranges, etc.)
+    // General CORS headers are handled by the global CORS middleware.
+    res.setHeader('Access-Control-Expose-Headers', MEDIA_EXPOSE_HEADERS);
+    // Support range requests for video/audio streaming
+    res.setHeader('Accept-Ranges', MEDIA_ACCEPT_RANGES);
+    // OPTIONS preflight is owned exclusively by the global CORS middleware
+    // (`config/cors.ts`). Do not answer or cache preflights here — a
+    // `Cache-Control: public` on a bad preflight was the stale-CORS failure mode
+    // fixed in #658.
+    next();
+}
+/**
+ * Add cache headers for immutable media files.
+ * Use this for content-addressed files that never change.
+ *
+ * @example
+ * ```typescript
+ * router.get('/assets/:hash', immutableCacheMiddleware, handler);
+ * ```
+ */
+function immutableCacheMiddleware(req, res, next) {
+    res.setHeader('Cache-Control', `public, max-age=${exports.CACHE_DURATION.IMMUTABLE}, immutable`);
+    next();
+}
+/**
+ * Add cache headers for user-specific media files.
+ * Use this for files that might change or are user-specific.
+ *
+ * @example
+ * ```typescript
+ * router.get('/user/:id/avatar', privateCacheMiddleware, handler);
+ * ```
+ */
+function privateCacheMiddleware(req, res, next) {
+    res.setHeader('Cache-Control', `private, max-age=${exports.CACHE_DURATION.PRIVATE}`);
+    next();
+}
+/**
+ * Disable caching entirely.
+ * Use this for sensitive or frequently changing content.
+ *
+ * @example
+ * ```typescript
+ * router.get('/sensitive', noCacheMiddleware, handler);
+ * ```
+ */
+function noCacheMiddleware(req, res, next) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvbWlkZGxld2FyZS9tZWRpYUhlYWRlcnMudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7OztHQWNHOzs7QUF5Q0gsd0RBeUJDO0FBV0QsNERBT0M7QUFXRCx3REFPQztBQVdELDhDQVNDO0FBdEhEOzs7Ozs7O0dBT0c7QUFDSCxNQUFNLG9CQUFvQixHQUFHLHNHQUFzRyxDQUFDO0FBQ3BJLE1BQU0sbUJBQW1CLEdBQUcsT0FBTyxDQUFDO0FBRXBDOztHQUVHO0FBQ1UsUUFBQSxjQUFjLEdBQUc7SUFDNUIscURBQXFEO0lBQ3JELFNBQVMsRUFBRSxRQUFRO0lBQ25CLDZEQUE2RDtJQUM3RCxPQUFPLEVBQUUsSUFBSTtJQUNiLHlDQUF5QztJQUN6QyxRQUFRLEVBQUUsQ0FBQztDQUNILENBQUM7QUFFWDs7Ozs7Ozs7Ozs7OztHQWFHO0FBQ0gsU0FBZ0Isc0JBQXNCLENBQ3BDLEdBQVksRUFDWixHQUFhLEVBQ2IsSUFBa0I7SUFFbEIsZ0ZBQWdGO0lBQ2hGLEdBQUcsQ0FBQyxTQUFTLENBQUMsOEJBQThCLEVBQUUsY0FBYyxDQUFDLENBQUM7SUFFOUQsNkVBQTZFO0lBQzdFLCtFQUErRTtJQUMvRSwwREFBMEQ7SUFDMUQsR0FBRyxDQUFDLFNBQVMsQ0FBQyx3QkFBd0IsRUFBRSxTQUFTLENBQUMsQ0FBQztJQUVuRCxzRkFBc0Y7SUFDdEYsa0VBQWtFO0lBQ2xFLEdBQUcsQ0FBQyxTQUFTLENBQUMsK0JBQStCLEVBQUUsb0JBQW9CLENBQUMsQ0FBQztJQUVyRSxtREFBbUQ7SUFDbkQsR0FBRyxDQUFDLFNBQVMsQ0FBQyxlQUFlLEVBQUUsbUJBQW1CLENBQUMsQ0FBQztJQUVwRCx1RUFBdUU7SUFDdkUsaUVBQWlFO0lBQ2pFLDZFQUE2RTtJQUM3RSxpQkFBaUI7SUFDakIsSUFBSSxFQUFFLENBQUM7QUFDVCxDQUFDO0FBRUQ7Ozs7Ozs7O0dBUUc7QUFDSCxTQUFnQix3QkFBd0IsQ0FDdEMsR0FBWSxFQUNaLEdBQWEsRUFDYixJQUFrQjtJQUVsQixHQUFHLENBQUMsU0FBUyxDQUFDLGVBQWUsRUFBRSxtQkFBbUIsc0JBQWMsQ0FBQyxTQUFTLGFBQWEsQ0FBQyxDQUFDO0lBQ3pGLElBQUksRUFBRSxDQUFDO0FBQ1QsQ0FBQztBQUVEOzs7Ozs7OztHQVFHO0FBQ0gsU0FBZ0Isc0JBQXNCLENBQ3BDLEdBQVksRUFDWixHQUFhLEVBQ2IsSUFBa0I7SUFFbEIsR0FBRyxDQUFDLFNBQVMsQ0FBQyxlQUFlLEVBQUUsb0JBQW9CLHNCQUFjLENBQUMsT0FBTyxFQUFFLENBQUMsQ0FBQztJQUM3RSxJQUFJLEVBQUUsQ0FBQztBQUNULENBQUM7QUFFRDs7Ozs7Ozs7R0FRRztBQUNILFNBQWdCLGlCQUFpQixDQUMvQixHQUFZLEVBQ1osR0FBYSxFQUNiLElBQWtCO0lBRWxCLEdBQUcsQ0FBQyxTQUFTLENBQUMsZUFBZSxFQUFFLHVEQUF1RCxDQUFDLENBQUM7SUFDeEYsR0FBRyxDQUFDLFNBQVMsQ0FBQyxRQUFRLEVBQUUsVUFBVSxDQUFDLENBQUM7SUFDcEMsR0FBRyxDQUFDLFNBQVMsQ0FBQyxTQUFTLEVBQUUsR0FBRyxDQUFDLENBQUM7SUFDOUIsSUFBSSxFQUFFLENBQUM7QUFDVCxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL21pZGRsZXdhcmUvbWVkaWFIZWFkZXJzLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogTWVkaWEgSGVhZGVycyBNaWRkbGV3YXJlXG4gKiBcbiAqIFByb3ZpZGVzIG1pZGRsZXdhcmUgZnVuY3Rpb25zIGZvciBzZXJ2aW5nIG1lZGlhIGZpbGVzIChpbWFnZXMsIHZpZGVvcywgYXVkaW8pXG4gKiB3aXRoIHByb3BlciBDT1JTIGFuZCBzZWN1cml0eSBoZWFkZXJzIHRvIHByZXZlbnQgYnJvd3NlciBibG9ja2luZy5cbiAqIFxuICogS2V5IGZlYXR1cmVzOlxuICogLSBQcmV2ZW50cyBFUlJfQkxPQ0tFRF9CWV9PUkIgKE9wYXF1ZSBSZXNwb25zZSBCbG9ja2luZykgZXJyb3JzXG4gKiAtIEVuYWJsZXMgY3Jvc3Mtb3JpZ2luIG1lZGlhIGxvYWRpbmdcbiAqIC0gU3VwcG9ydHMgSFRUUCByYW5nZSByZXF1ZXN0cyBmb3IgdmlkZW8vYXVkaW8gc3RyZWFtaW5nXG4gKiAtIE9wdGltaXplZCBmb3IgcGVyZm9ybWFuY2Ugd2l0aCBwcmUtYnVpbHQgaGVhZGVyIHN0cmluZ3NcbiAqIFxuICogQHNlZSBodHRwczovL2RldmVsb3Blci5jaHJvbWUuY29tL2Jsb2cvb3BhcXVlLXJlc3BvbnNlLWJsb2NraW5nL1xuICogQHNlZSBodHRwczovL2RldmVsb3Blci5tb3ppbGxhLm9yZy9lbi1VUy9kb2NzL1dlYi9IVFRQL0NPUlNcbiAqL1xuXG5pbXBvcnQgdHlwZSB7IFJlcXVlc3QsIFJlc3BvbnNlLCBOZXh0RnVuY3Rpb24gfSBmcm9tICdleHByZXNzJztcblxuLyoqXG4gKiBIZWFkZXJzIGZvciBtZWRpYSBmaWxlIHN0cmVhbWluZ1xuICogUHJlLWJ1aWx0IHN0cmluZ3MgZm9yIHBlcmZvcm1hbmNlIG9wdGltaXphdGlvblxuICpcbiAqIE5vdGU6IEdlbmVyYWwgQ09SUyBoZWFkZXJzIChBbGxvdy1PcmlnaW4sIEFsbG93LU1ldGhvZHMsIEFsbG93LUhlYWRlcnMsXG4gKiBBbGxvdy1DcmVkZW50aWFscykgYXJlIGhhbmRsZWQgYnkgdGhlIGdsb2JhbCBDT1JTIG1pZGRsZXdhcmUgaW4gY29uZmlnL2NvcnMudHMuXG4gKiBUaGlzIG1pZGRsZXdhcmUgb25seSBhZGRzIG1lZGlhLXNwZWNpZmljIGhlYWRlcnMuXG4gKi9cbmNvbnN0IE1FRElBX0VYUE9TRV9IRUFERVJTID0gJ0NvbnRlbnQtVHlwZSwgQ29udGVudC1MZW5ndGgsIENvbnRlbnQtUmFuZ2UsIEFjY2VwdC1SYW5nZXMsIENvbnRlbnQtRGlzcG9zaXRpb24sIExhc3QtTW9kaWZpZWQsIEVUYWcnO1xuY29uc3QgTUVESUFfQUNDRVBUX1JBTkdFUyA9ICdieXRlcyc7XG5cbi8qKlxuICogQ2FjaGUgZHVyYXRpb25zIChpbiBzZWNvbmRzKVxuICovXG5leHBvcnQgY29uc3QgQ0FDSEVfRFVSQVRJT04gPSB7XG4gIC8qKiBGb3IgY29udGVudC1hZGRyZXNzZWQgaW1tdXRhYmxlIGZpbGVzICgxIHllYXIpICovXG4gIElNTVVUQUJMRTogMzE1MzYwMDAsXG4gIC8qKiBGb3IgdXNlci1zcGVjaWZpYyBvciBmcmVxdWVudGx5IHVwZGF0ZWQgZmlsZXMgKDEgaG91cikgKi9cbiAgUFJJVkFURTogMzYwMCxcbiAgLyoqIEZvciBkZXZlbG9wbWVudC90ZXN0aW5nIChubyBjYWNoZSkgKi9cbiAgTk9fQ0FDSEU6IDAsXG59IGFzIGNvbnN0O1xuXG4vKipcbiAqIE1pZGRsZXdhcmUgdG8gYWRkIGFwcHJvcHJpYXRlIGhlYWRlcnMgZm9yIG1lZGlhIGZpbGUgc3RyZWFtaW5nLlxuICogUHJldmVudHMgRVJSX0JMT0NLRURfQllfT1JCIChPcGFxdWUgUmVzcG9uc2UgQmxvY2tpbmcpIGVycm9ycyBpbiBicm93c2Vycy5cbiAqIFxuICogVGhpcyBtaWRkbGV3YXJlIHNob3VsZCBiZSBhcHBsaWVkIHRvIHJvdXRlcyB0aGF0IHNlcnZlIG1lZGlhIGZpbGVzXG4gKiAoaW1hZ2VzLCB2aWRlb3MsIGF1ZGlvKSBkaXJlY3RseSB0byB0aGUgYnJvd3Nlci5cbiAqIFxuICogQGV4YW1wbGVcbiAqIGBgYHR5cGVzY3JpcHRcbiAqIHJvdXRlci5nZXQoJy9tZWRpYS86aWQnLCBtZWRpYUhlYWRlcnNNaWRkbGV3YXJlLCBhc3luYyAocmVxLCByZXMpID0+IHtcbiAqICAgLy8gU3RyZWFtIG1lZGlhIGZpbGVcbiAqIH0pO1xuICogYGBgXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBtZWRpYUhlYWRlcnNNaWRkbGV3YXJlKFxuICByZXE6IFJlcXVlc3QsXG4gIHJlczogUmVzcG9uc2UsXG4gIG5leHQ6IE5leHRGdW5jdGlvblxuKTogdm9pZCB7XG4gIC8vIENyb3NzLU9yaWdpbi1SZXNvdXJjZS1Qb2xpY3k6IGRlZmVuc2UtaW4tZGVwdGggKGFsc28gc2V0IGdsb2JhbGx5IHZpYSBIZWxtZXQpXG4gIHJlcy5zZXRIZWFkZXIoJ0Nyb3NzLU9yaWdpbi1SZXNvdXJjZS1Qb2xpY3knLCAnY3Jvc3Mtb3JpZ2luJyk7XG5cbiAgLy8gWC1Db250ZW50LVR5cGUtT3B0aW9uczogbmV2ZXIgbGV0IHRoZSBicm93c2VyIE1JTUUtc25pZmYgY2FjaGVkIG1lZGlhIGludG9cbiAgLy8gYW4gZXhlY3V0YWJsZSB0eXBlIChlLmcuIHRyZWF0aW5nIGEgc3Bvb2ZlZCBpbWFnZSBhcyBIVE1MKS4gRGVmZW5zZS1pbi1kZXB0aFxuICAvLyBmb3IgdGhlIG1lZGlhIHJlYWQgcGF0aCAoYWxzbyBzZXQgZ2xvYmFsbHkgdmlhIEhlbG1ldCkuXG4gIHJlcy5zZXRIZWFkZXIoJ1gtQ29udGVudC1UeXBlLU9wdGlvbnMnLCAnbm9zbmlmZicpO1xuXG4gIC8vIEV4cG9zZSBtZWRpYS1zcGVjaWZpYyBoZWFkZXJzIHRoZSBjbGllbnQgbmVlZHMgKENvbnRlbnQtUmFuZ2UsIEFjY2VwdC1SYW5nZXMsIGV0Yy4pXG4gIC8vIEdlbmVyYWwgQ09SUyBoZWFkZXJzIGFyZSBoYW5kbGVkIGJ5IHRoZSBnbG9iYWwgQ09SUyBtaWRkbGV3YXJlLlxuICByZXMuc2V0SGVhZGVyKCdBY2Nlc3MtQ29udHJvbC1FeHBvc2UtSGVhZGVycycsIE1FRElBX0VYUE9TRV9IRUFERVJTKTtcbiAgXG4gIC8vIFN1cHBvcnQgcmFuZ2UgcmVxdWVzdHMgZm9yIHZpZGVvL2F1ZGlvIHN0cmVhbWluZ1xuICByZXMuc2V0SGVhZGVyKCdBY2NlcHQtUmFuZ2VzJywgTUVESUFfQUNDRVBUX1JBTkdFUyk7XG5cbiAgLy8gT1BUSU9OUyBwcmVmbGlnaHQgaXMgb3duZWQgZXhjbHVzaXZlbHkgYnkgdGhlIGdsb2JhbCBDT1JTIG1pZGRsZXdhcmVcbiAgLy8gKGBjb25maWcvY29ycy50c2ApLiBEbyBub3QgYW5zd2VyIG9yIGNhY2hlIHByZWZsaWdodHMgaGVyZSDigJQgYVxuICAvLyBgQ2FjaGUtQ29udHJvbDogcHVibGljYCBvbiBhIGJhZCBwcmVmbGlnaHQgd2FzIHRoZSBzdGFsZS1DT1JTIGZhaWx1cmUgbW9kZVxuICAvLyBmaXhlZCBpbiAjNjU4LlxuICBuZXh0KCk7XG59XG5cbi8qKlxuICogQWRkIGNhY2hlIGhlYWRlcnMgZm9yIGltbXV0YWJsZSBtZWRpYSBmaWxlcy5cbiAqIFVzZSB0aGlzIGZvciBjb250ZW50LWFkZHJlc3NlZCBmaWxlcyB0aGF0IG5ldmVyIGNoYW5nZS5cbiAqIFxuICogQGV4YW1wbGVcbiAqIGBgYHR5cGVzY3JpcHRcbiAqIHJvdXRlci5nZXQoJy9hc3NldHMvOmhhc2gnLCBpbW11dGFibGVDYWNoZU1pZGRsZXdhcmUsIGhhbmRsZXIpO1xuICogYGBgXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBpbW11dGFibGVDYWNoZU1pZGRsZXdhcmUoXG4gIHJlcTogUmVxdWVzdCxcbiAgcmVzOiBSZXNwb25zZSxcbiAgbmV4dDogTmV4dEZ1bmN0aW9uXG4pOiB2b2lkIHtcbiAgcmVzLnNldEhlYWRlcignQ2FjaGUtQ29udHJvbCcsIGBwdWJsaWMsIG1heC1hZ2U9JHtDQUNIRV9EVVJBVElPTi5JTU1VVEFCTEV9LCBpbW11dGFibGVgKTtcbiAgbmV4dCgpO1xufVxuXG4vKipcbiAqIEFkZCBjYWNoZSBoZWFkZXJzIGZvciB1c2VyLXNwZWNpZmljIG1lZGlhIGZpbGVzLlxuICogVXNlIHRoaXMgZm9yIGZpbGVzIHRoYXQgbWlnaHQgY2hhbmdlIG9yIGFyZSB1c2VyLXNwZWNpZmljLlxuICogXG4gKiBAZXhhbXBsZVxuICogYGBgdHlwZXNjcmlwdFxuICogcm91dGVyLmdldCgnL3VzZXIvOmlkL2F2YXRhcicsIHByaXZhdGVDYWNoZU1pZGRsZXdhcmUsIGhhbmRsZXIpO1xuICogYGBgXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBwcml2YXRlQ2FjaGVNaWRkbGV3YXJlKFxuICByZXE6IFJlcXVlc3QsXG4gIHJlczogUmVzcG9uc2UsXG4gIG5leHQ6IE5leHRGdW5jdGlvblxuKTogdm9pZCB7XG4gIHJlcy5zZXRIZWFkZXIoJ0NhY2hlLUNvbnRyb2wnLCBgcHJpdmF0ZSwgbWF4LWFnZT0ke0NBQ0hFX0RVUkFUSU9OLlBSSVZBVEV9YCk7XG4gIG5leHQoKTtcbn1cblxuLyoqXG4gKiBEaXNhYmxlIGNhY2hpbmcgZW50aXJlbHkuXG4gKiBVc2UgdGhpcyBmb3Igc2Vuc2l0aXZlIG9yIGZyZXF1ZW50bHkgY2hhbmdpbmcgY29udGVudC5cbiAqIFxuICogQGV4YW1wbGVcbiAqIGBgYHR5cGVzY3JpcHRcbiAqIHJvdXRlci5nZXQoJy9zZW5zaXRpdmUnLCBub0NhY2hlTWlkZGxld2FyZSwgaGFuZGxlcik7XG4gKiBgYGBcbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIG5vQ2FjaGVNaWRkbGV3YXJlKFxuICByZXE6IFJlcXVlc3QsXG4gIHJlczogUmVzcG9uc2UsXG4gIG5leHQ6IE5leHRGdW5jdGlvblxuKTogdm9pZCB7XG4gIHJlcy5zZXRIZWFkZXIoJ0NhY2hlLUNvbnRyb2wnLCAnbm8tc3RvcmUsIG5vLWNhY2hlLCBtdXN0LXJldmFsaWRhdGUsIHByb3h5LXJldmFsaWRhdGUnKTtcbiAgcmVzLnNldEhlYWRlcignUHJhZ21hJywgJ25vLWNhY2hlJyk7XG4gIHJlcy5zZXRIZWFkZXIoJ0V4cGlyZXMnLCAnMCcpO1xuICBuZXh0KCk7XG59XG5cbiJdLCJ2ZXJzaW9uIjozfQ==

@@ -1,0 +1,95 @@
+410e2c6fd42e0609879d691809857de4
+"use strict";
+/**
+ * Background-jobs entry point.
+ *
+ * This module is the single decision point for how scheduled background work
+ * runs:
+ *
+ *   - If BullMQ queues are enabled (`REDIS_URL` set) → start the in-process
+ *     worker and register the repeatable scheduler. The scheduler enqueues one
+ *     job per interval for the WHOLE fleet (deduped by a stable scheduler id),
+ *     and exactly one worker across the fleet processes each job. The legacy
+ *     per-replica `setInterval` is NOT started.
+ *
+ *   - If queues are disabled (no `REDIS_URL`, e.g. local dev / tests) → fall
+ *     back to the legacy in-process `setInterval` cron. This runs on every
+ *     replica, which is acceptable for single-process local development.
+ *
+ * Boot never crashes if Redis is unavailable: registration failures are logged
+ * and we fall back to the in-process cron. Connection-level errors are handled
+ * by the connection's `error` handler (see `connection.ts`) and never throw
+ * into boot.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.startBackgroundJobs = startBackgroundJobs;
+exports.stopBackgroundJobs = stopBackgroundJobs;
+const logger_1 = require("../utils/logger");
+const snooze_cron_1 = require("../cron/snooze.cron");
+const constants_1 = require("./constants");
+const queueManager_1 = require("./queueManager");
+/**
+ * Tracks which scheduling path is active so shutdown stops the right one.
+ * `stopSnoozeCron()` is itself a no-op when the interval was never started, but
+ * this flag keeps the shutdown intent explicit.
+ */
+let fallbackActive = false;
+/**
+ * Start background jobs. Chooses the durable BullMQ path when queues are
+ * enabled, otherwise the in-process fallback. Never throws.
+ */
+function startBackgroundJobs() {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (!(0, queueManager_1.isQueueEnabled)()) {
+            logger_1.logger.warn('BullMQ queues disabled (REDIS_URL unset) — using in-process cron fallback for email maintenance');
+            (0, snooze_cron_1.startSnoozeCron)();
+            fallbackActive = true;
+            return;
+        }
+        try {
+            // Worker processes the repeatable email-maintenance job using the SAME
+            // shared runner as the legacy cron — no duplicated business logic.
+            (0, queueManager_1.startWorker)(constants_1.QUEUE_NAMES.EMAIL_MAINTENANCE, () => __awaiter(this, void 0, void 0, function* () {
+                yield (0, snooze_cron_1.runEmailMaintenance)();
+            }));
+            yield (0, queueManager_1.registerRepeatableJob)(constants_1.QUEUE_NAMES.EMAIL_MAINTENANCE, constants_1.JOB_SCHEDULER_IDS.EMAIL_MAINTENANCE, { every: constants_1.EMAIL_MAINTENANCE_INTERVAL_MS }, constants_1.JOB_NAMES.EMAIL_MAINTENANCE_TICK);
+            logger_1.logger.info('Background jobs started via BullMQ (durable, fleet-wide scheduling)');
+        }
+        catch (err) {
+            // If anything about queue setup fails, do not crash boot and do not silently
+            // lose the work — fall back to the in-process cron and tear down any
+            // partially-created queue resources.
+            logger_1.logger.error('BullMQ background-jobs setup failed — falling back to in-process cron', err instanceof Error ? err : new Error(String(err)));
+            yield (0, queueManager_1.closeQueues)().catch((closeErr) => logger_1.logger.warn('Failed to clean up partial queue resources after setup error', {
+                error: closeErr instanceof Error ? closeErr.message : String(closeErr),
+            }));
+            (0, snooze_cron_1.startSnoozeCron)();
+            fallbackActive = true;
+        }
+    });
+}
+/**
+ * Stop background jobs. Closes BullMQ workers/queues/connections and stops the
+ * in-process fallback if it was started. Safe to call regardless of which path
+ * ran. Intended to be called from the server's graceful-shutdown sequence
+ * BEFORE the shared cache Redis client and MongoDB are closed.
+ */
+function stopBackgroundJobs() {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (fallbackActive) {
+            (0, snooze_cron_1.stopSnoozeCron)();
+            fallbackActive = false;
+        }
+        yield (0, queueManager_1.closeQueues)();
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcXVldWUvYmFja2dyb3VuZEpvYnMudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQW9CRzs7Ozs7Ozs7Ozs7QUE0Qkgsa0RBeUNDO0FBUUQsZ0RBTUM7QUFqRkQsNENBQXlDO0FBQ3pDLHFEQUEyRjtBQUMzRiwyQ0FLcUI7QUFDckIsaURBS3dCO0FBRXhCOzs7O0dBSUc7QUFDSCxJQUFJLGNBQWMsR0FBRyxLQUFLLENBQUM7QUFFM0I7OztHQUdHO0FBQ0gsU0FBc0IsbUJBQW1COztRQUN2QyxJQUFJLENBQUMsSUFBQSw2QkFBYyxHQUFFLEVBQUUsQ0FBQztZQUN0QixlQUFNLENBQUMsSUFBSSxDQUNULGlHQUFpRyxDQUNsRyxDQUFDO1lBQ0YsSUFBQSw2QkFBZSxHQUFFLENBQUM7WUFDbEIsY0FBYyxHQUFHLElBQUksQ0FBQztZQUN0QixPQUFPO1FBQ1QsQ0FBQztRQUVELElBQUksQ0FBQztZQUNILHVFQUF1RTtZQUN2RSxtRUFBbUU7WUFDbkUsSUFBQSwwQkFBVyxFQUFDLHVCQUFXLENBQUMsaUJBQWlCLEVBQUUsR0FBUyxFQUFFO2dCQUNwRCxNQUFNLElBQUEsaUNBQW1CLEdBQUUsQ0FBQztZQUM5QixDQUFDLENBQUEsQ0FBQyxDQUFDO1lBRUgsTUFBTSxJQUFBLG9DQUFxQixFQUN6Qix1QkFBVyxDQUFDLGlCQUFpQixFQUM3Qiw2QkFBaUIsQ0FBQyxpQkFBaUIsRUFDbkMsRUFBRSxLQUFLLEVBQUUseUNBQTZCLEVBQUUsRUFDeEMscUJBQVMsQ0FBQyxzQkFBc0IsQ0FDakMsQ0FBQztZQUVGLGVBQU0sQ0FBQyxJQUFJLENBQUMscUVBQXFFLENBQUMsQ0FBQztRQUNyRixDQUFDO1FBQUMsT0FBTyxHQUFHLEVBQUUsQ0FBQztZQUNiLDZFQUE2RTtZQUM3RSxxRUFBcUU7WUFDckUscUNBQXFDO1lBQ3JDLGVBQU0sQ0FBQyxLQUFLLENBQ1YsdUVBQXVFLEVBQ3ZFLEdBQUcsWUFBWSxLQUFLLENBQUMsQ0FBQyxDQUFDLEdBQUcsQ0FBQyxDQUFDLENBQUMsSUFBSSxLQUFLLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLENBQ3BELENBQUM7WUFDRixNQUFNLElBQUEsMEJBQVcsR0FBRSxDQUFDLEtBQUssQ0FBQyxDQUFDLFFBQVEsRUFBRSxFQUFFLENBQ3JDLGVBQU0sQ0FBQyxJQUFJLENBQUMsOERBQThELEVBQUU7Z0JBQzFFLEtBQUssRUFBRSxRQUFRLFlBQVksS0FBSyxDQUFDLENBQUMsQ0FBQyxRQUFRLENBQUMsT0FBTyxDQUFDLENBQUMsQ0FBQyxNQUFNLENBQUMsUUFBUSxDQUFDO2FBQ3ZFLENBQUMsQ0FDSCxDQUFDO1lBQ0YsSUFBQSw2QkFBZSxHQUFFLENBQUM7WUFDbEIsY0FBYyxHQUFHLElBQUksQ0FBQztRQUN4QixDQUFDO0lBQ0gsQ0FBQztDQUFBO0FBRUQ7Ozs7O0dBS0c7QUFDSCxTQUFzQixrQkFBa0I7O1FBQ3RDLElBQUksY0FBYyxFQUFFLENBQUM7WUFDbkIsSUFBQSw0QkFBYyxHQUFFLENBQUM7WUFDakIsY0FBYyxHQUFHLEtBQUssQ0FBQztRQUN6QixDQUFDO1FBQ0QsTUFBTSxJQUFBLDBCQUFXLEdBQUUsQ0FBQztJQUN0QixDQUFDO0NBQUEiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcXVldWUvYmFja2dyb3VuZEpvYnMudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBCYWNrZ3JvdW5kLWpvYnMgZW50cnkgcG9pbnQuXG4gKlxuICogVGhpcyBtb2R1bGUgaXMgdGhlIHNpbmdsZSBkZWNpc2lvbiBwb2ludCBmb3IgaG93IHNjaGVkdWxlZCBiYWNrZ3JvdW5kIHdvcmtcbiAqIHJ1bnM6XG4gKlxuICogICAtIElmIEJ1bGxNUSBxdWV1ZXMgYXJlIGVuYWJsZWQgKGBSRURJU19VUkxgIHNldCkg4oaSIHN0YXJ0IHRoZSBpbi1wcm9jZXNzXG4gKiAgICAgd29ya2VyIGFuZCByZWdpc3RlciB0aGUgcmVwZWF0YWJsZSBzY2hlZHVsZXIuIFRoZSBzY2hlZHVsZXIgZW5xdWV1ZXMgb25lXG4gKiAgICAgam9iIHBlciBpbnRlcnZhbCBmb3IgdGhlIFdIT0xFIGZsZWV0IChkZWR1cGVkIGJ5IGEgc3RhYmxlIHNjaGVkdWxlciBpZCksXG4gKiAgICAgYW5kIGV4YWN0bHkgb25lIHdvcmtlciBhY3Jvc3MgdGhlIGZsZWV0IHByb2Nlc3NlcyBlYWNoIGpvYi4gVGhlIGxlZ2FjeVxuICogICAgIHBlci1yZXBsaWNhIGBzZXRJbnRlcnZhbGAgaXMgTk9UIHN0YXJ0ZWQuXG4gKlxuICogICAtIElmIHF1ZXVlcyBhcmUgZGlzYWJsZWQgKG5vIGBSRURJU19VUkxgLCBlLmcuIGxvY2FsIGRldiAvIHRlc3RzKSDihpIgZmFsbFxuICogICAgIGJhY2sgdG8gdGhlIGxlZ2FjeSBpbi1wcm9jZXNzIGBzZXRJbnRlcnZhbGAgY3Jvbi4gVGhpcyBydW5zIG9uIGV2ZXJ5XG4gKiAgICAgcmVwbGljYSwgd2hpY2ggaXMgYWNjZXB0YWJsZSBmb3Igc2luZ2xlLXByb2Nlc3MgbG9jYWwgZGV2ZWxvcG1lbnQuXG4gKlxuICogQm9vdCBuZXZlciBjcmFzaGVzIGlmIFJlZGlzIGlzIHVuYXZhaWxhYmxlOiByZWdpc3RyYXRpb24gZmFpbHVyZXMgYXJlIGxvZ2dlZFxuICogYW5kIHdlIGZhbGwgYmFjayB0byB0aGUgaW4tcHJvY2VzcyBjcm9uLiBDb25uZWN0aW9uLWxldmVsIGVycm9ycyBhcmUgaGFuZGxlZFxuICogYnkgdGhlIGNvbm5lY3Rpb24ncyBgZXJyb3JgIGhhbmRsZXIgKHNlZSBgY29ubmVjdGlvbi50c2ApIGFuZCBuZXZlciB0aHJvd1xuICogaW50byBib290LlxuICovXG5cbmltcG9ydCB7IGxvZ2dlciB9IGZyb20gJy4uL3V0aWxzL2xvZ2dlcic7XG5pbXBvcnQgeyBydW5FbWFpbE1haW50ZW5hbmNlLCBzdGFydFNub296ZUNyb24sIHN0b3BTbm9vemVDcm9uIH0gZnJvbSAnLi4vY3Jvbi9zbm9vemUuY3Jvbic7XG5pbXBvcnQge1xuICBRVUVVRV9OQU1FUyxcbiAgSk9CX1NDSEVEVUxFUl9JRFMsXG4gIEpPQl9OQU1FUyxcbiAgRU1BSUxfTUFJTlRFTkFOQ0VfSU5URVJWQUxfTVMsXG59IGZyb20gJy4vY29uc3RhbnRzJztcbmltcG9ydCB7XG4gIGlzUXVldWVFbmFibGVkLFxuICBzdGFydFdvcmtlcixcbiAgcmVnaXN0ZXJSZXBlYXRhYmxlSm9iLFxuICBjbG9zZVF1ZXVlcyxcbn0gZnJvbSAnLi9xdWV1ZU1hbmFnZXInO1xuXG4vKipcbiAqIFRyYWNrcyB3aGljaCBzY2hlZHVsaW5nIHBhdGggaXMgYWN0aXZlIHNvIHNodXRkb3duIHN0b3BzIHRoZSByaWdodCBvbmUuXG4gKiBgc3RvcFNub296ZUNyb24oKWAgaXMgaXRzZWxmIGEgbm8tb3Agd2hlbiB0aGUgaW50ZXJ2YWwgd2FzIG5ldmVyIHN0YXJ0ZWQsIGJ1dFxuICogdGhpcyBmbGFnIGtlZXBzIHRoZSBzaHV0ZG93biBpbnRlbnQgZXhwbGljaXQuXG4gKi9cbmxldCBmYWxsYmFja0FjdGl2ZSA9IGZhbHNlO1xuXG4vKipcbiAqIFN0YXJ0IGJhY2tncm91bmQgam9icy4gQ2hvb3NlcyB0aGUgZHVyYWJsZSBCdWxsTVEgcGF0aCB3aGVuIHF1ZXVlcyBhcmVcbiAqIGVuYWJsZWQsIG90aGVyd2lzZSB0aGUgaW4tcHJvY2VzcyBmYWxsYmFjay4gTmV2ZXIgdGhyb3dzLlxuICovXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gc3RhcnRCYWNrZ3JvdW5kSm9icygpOiBQcm9taXNlPHZvaWQ+IHtcbiAgaWYgKCFpc1F1ZXVlRW5hYmxlZCgpKSB7XG4gICAgbG9nZ2VyLndhcm4oXG4gICAgICAnQnVsbE1RIHF1ZXVlcyBkaXNhYmxlZCAoUkVESVNfVVJMIHVuc2V0KSDigJQgdXNpbmcgaW4tcHJvY2VzcyBjcm9uIGZhbGxiYWNrIGZvciBlbWFpbCBtYWludGVuYW5jZSdcbiAgICApO1xuICAgIHN0YXJ0U25vb3plQ3JvbigpO1xuICAgIGZhbGxiYWNrQWN0aXZlID0gdHJ1ZTtcbiAgICByZXR1cm47XG4gIH1cblxuICB0cnkge1xuICAgIC8vIFdvcmtlciBwcm9jZXNzZXMgdGhlIHJlcGVhdGFibGUgZW1haWwtbWFpbnRlbmFuY2Ugam9iIHVzaW5nIHRoZSBTQU1FXG4gICAgLy8gc2hhcmVkIHJ1bm5lciBhcyB0aGUgbGVnYWN5IGNyb24g4oCUIG5vIGR1cGxpY2F0ZWQgYnVzaW5lc3MgbG9naWMuXG4gICAgc3RhcnRXb3JrZXIoUVVFVUVfTkFNRVMuRU1BSUxfTUFJTlRFTkFOQ0UsIGFzeW5jICgpID0+IHtcbiAgICAgIGF3YWl0IHJ1bkVtYWlsTWFpbnRlbmFuY2UoKTtcbiAgICB9KTtcblxuICAgIGF3YWl0IHJlZ2lzdGVyUmVwZWF0YWJsZUpvYihcbiAgICAgIFFVRVVFX05BTUVTLkVNQUlMX01BSU5URU5BTkNFLFxuICAgICAgSk9CX1NDSEVEVUxFUl9JRFMuRU1BSUxfTUFJTlRFTkFOQ0UsXG4gICAgICB7IGV2ZXJ5OiBFTUFJTF9NQUlOVEVOQU5DRV9JTlRFUlZBTF9NUyB9LFxuICAgICAgSk9CX05BTUVTLkVNQUlMX01BSU5URU5BTkNFX1RJQ0tcbiAgICApO1xuXG4gICAgbG9nZ2VyLmluZm8oJ0JhY2tncm91bmQgam9icyBzdGFydGVkIHZpYSBCdWxsTVEgKGR1cmFibGUsIGZsZWV0LXdpZGUgc2NoZWR1bGluZyknKTtcbiAgfSBjYXRjaCAoZXJyKSB7XG4gICAgLy8gSWYgYW55dGhpbmcgYWJvdXQgcXVldWUgc2V0dXAgZmFpbHMsIGRvIG5vdCBjcmFzaCBib290IGFuZCBkbyBub3Qgc2lsZW50bHlcbiAgICAvLyBsb3NlIHRoZSB3b3JrIOKAlCBmYWxsIGJhY2sgdG8gdGhlIGluLXByb2Nlc3MgY3JvbiBhbmQgdGVhciBkb3duIGFueVxuICAgIC8vIHBhcnRpYWxseS1jcmVhdGVkIHF1ZXVlIHJlc291cmNlcy5cbiAgICBsb2dnZXIuZXJyb3IoXG4gICAgICAnQnVsbE1RIGJhY2tncm91bmQtam9icyBzZXR1cCBmYWlsZWQg4oCUIGZhbGxpbmcgYmFjayB0byBpbi1wcm9jZXNzIGNyb24nLFxuICAgICAgZXJyIGluc3RhbmNlb2YgRXJyb3IgPyBlcnIgOiBuZXcgRXJyb3IoU3RyaW5nKGVycikpXG4gICAgKTtcbiAgICBhd2FpdCBjbG9zZVF1ZXVlcygpLmNhdGNoKChjbG9zZUVycikgPT5cbiAgICAgIGxvZ2dlci53YXJuKCdGYWlsZWQgdG8gY2xlYW4gdXAgcGFydGlhbCBxdWV1ZSByZXNvdXJjZXMgYWZ0ZXIgc2V0dXAgZXJyb3InLCB7XG4gICAgICAgIGVycm9yOiBjbG9zZUVyciBpbnN0YW5jZW9mIEVycm9yID8gY2xvc2VFcnIubWVzc2FnZSA6IFN0cmluZyhjbG9zZUVyciksXG4gICAgICB9KVxuICAgICk7XG4gICAgc3RhcnRTbm9vemVDcm9uKCk7XG4gICAgZmFsbGJhY2tBY3RpdmUgPSB0cnVlO1xuICB9XG59XG5cbi8qKlxuICogU3RvcCBiYWNrZ3JvdW5kIGpvYnMuIENsb3NlcyBCdWxsTVEgd29ya2Vycy9xdWV1ZXMvY29ubmVjdGlvbnMgYW5kIHN0b3BzIHRoZVxuICogaW4tcHJvY2VzcyBmYWxsYmFjayBpZiBpdCB3YXMgc3RhcnRlZC4gU2FmZSB0byBjYWxsIHJlZ2FyZGxlc3Mgb2Ygd2hpY2ggcGF0aFxuICogcmFuLiBJbnRlbmRlZCB0byBiZSBjYWxsZWQgZnJvbSB0aGUgc2VydmVyJ3MgZ3JhY2VmdWwtc2h1dGRvd24gc2VxdWVuY2VcbiAqIEJFRk9SRSB0aGUgc2hhcmVkIGNhY2hlIFJlZGlzIGNsaWVudCBhbmQgTW9uZ29EQiBhcmUgY2xvc2VkLlxuICovXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gc3RvcEJhY2tncm91bmRKb2JzKCk6IFByb21pc2U8dm9pZD4ge1xuICBpZiAoZmFsbGJhY2tBY3RpdmUpIHtcbiAgICBzdG9wU25vb3plQ3JvbigpO1xuICAgIGZhbGxiYWNrQWN0aXZlID0gZmFsc2U7XG4gIH1cbiAgYXdhaXQgY2xvc2VRdWV1ZXMoKTtcbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

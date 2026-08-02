@@ -1,0 +1,82 @@
+07c7d8dfbc5a9c05c954ce2a5fbdeea6
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const logger_1 = require("../utils/logger");
+const router = (0, express_1.Router)();
+// Static model definitions for the Oxy ecosystem
+const MODELS = [
+    {
+        id: 'alia-lite',
+        name: 'Alia Lite',
+        description: 'Fast and efficient for simple tasks',
+        tier: 'free',
+        category: 'general',
+        creditMultiplier: 0.5,
+        supportsTools: false,
+        supportsVision: false,
+        maxTokens: 2048,
+    },
+    {
+        id: 'alia-v1',
+        name: 'Alia V1',
+        description: 'Balanced performance and quality for everyday use',
+        tier: 'free',
+        category: 'general',
+        creditMultiplier: 1,
+        supportsTools: true,
+        supportsVision: false,
+        maxTokens: 8192,
+    },
+    {
+        id: 'alia-v1-pro',
+        name: 'Alia V1 Pro',
+        description: 'Advanced reasoning capabilities for complex tasks',
+        tier: 'pro',
+        category: 'general',
+        creditMultiplier: 3,
+        supportsTools: true,
+        supportsVision: true,
+        maxTokens: 16384,
+    },
+    {
+        id: 'alia-v1-pro-max',
+        name: 'Alia V1 Pro Max',
+        description: 'Maximum performance for demanding applications',
+        tier: 'pro',
+        category: 'general',
+        creditMultiplier: 5,
+        supportsTools: true,
+        supportsVision: true,
+        maxTokens: 32768,
+    },
+];
+/**
+ * GET /api/models/stats
+ * Returns model information and stats
+ */
+router.get('/stats', (_req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const modelStats = MODELS.map((model) => (Object.assign(Object.assign({}, model), { avgLatencyMs: 0, uptime: 100, successRate: 100, totalRequests: 0, isHealthy: true })));
+        res.json({
+            models: modelStats,
+            count: modelStats.length,
+            timestamp: new Date().toISOString(),
+        });
+    }
+    catch (error) {
+        logger_1.logger.error('Error fetching model stats:', error);
+        res.status(500).json({ error: 'Failed to fetch model statistics' });
+    }
+}));
+exports.default = router;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcm91dGVzL21vZGVscy1zdGF0cy50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7OztBQUFBLHFDQUE4RDtBQUM5RCw0Q0FBeUM7QUFFekMsTUFBTSxNQUFNLEdBQUcsSUFBQSxnQkFBTSxHQUFFLENBQUM7QUFFeEIsaURBQWlEO0FBQ2pELE1BQU0sTUFBTSxHQUFHO0lBQ2I7UUFDRSxFQUFFLEVBQUUsV0FBVztRQUNmLElBQUksRUFBRSxXQUFXO1FBQ2pCLFdBQVcsRUFBRSxxQ0FBcUM7UUFDbEQsSUFBSSxFQUFFLE1BQU07UUFDWixRQUFRLEVBQUUsU0FBUztRQUNuQixnQkFBZ0IsRUFBRSxHQUFHO1FBQ3JCLGFBQWEsRUFBRSxLQUFLO1FBQ3BCLGNBQWMsRUFBRSxLQUFLO1FBQ3JCLFNBQVMsRUFBRSxJQUFJO0tBQ2hCO0lBQ0Q7UUFDRSxFQUFFLEVBQUUsU0FBUztRQUNiLElBQUksRUFBRSxTQUFTO1FBQ2YsV0FBVyxFQUFFLG1EQUFtRDtRQUNoRSxJQUFJLEVBQUUsTUFBTTtRQUNaLFFBQVEsRUFBRSxTQUFTO1FBQ25CLGdCQUFnQixFQUFFLENBQUM7UUFDbkIsYUFBYSxFQUFFLElBQUk7UUFDbkIsY0FBYyxFQUFFLEtBQUs7UUFDckIsU0FBUyxFQUFFLElBQUk7S0FDaEI7SUFDRDtRQUNFLEVBQUUsRUFBRSxhQUFhO1FBQ2pCLElBQUksRUFBRSxhQUFhO1FBQ25CLFdBQVcsRUFBRSxtREFBbUQ7UUFDaEUsSUFBSSxFQUFFLEtBQUs7UUFDWCxRQUFRLEVBQUUsU0FBUztRQUNuQixnQkFBZ0IsRUFBRSxDQUFDO1FBQ25CLGFBQWEsRUFBRSxJQUFJO1FBQ25CLGNBQWMsRUFBRSxJQUFJO1FBQ3BCLFNBQVMsRUFBRSxLQUFLO0tBQ2pCO0lBQ0Q7UUFDRSxFQUFFLEVBQUUsaUJBQWlCO1FBQ3JCLElBQUksRUFBRSxpQkFBaUI7UUFDdkIsV0FBVyxFQUFFLGdEQUFnRDtRQUM3RCxJQUFJLEVBQUUsS0FBSztRQUNYLFFBQVEsRUFBRSxTQUFTO1FBQ25CLGdCQUFnQixFQUFFLENBQUM7UUFDbkIsYUFBYSxFQUFFLElBQUk7UUFDbkIsY0FBYyxFQUFFLElBQUk7UUFDcEIsU0FBUyxFQUFFLEtBQUs7S0FDakI7Q0FDRixDQUFDO0FBRUY7OztHQUdHO0FBQ0gsTUFBTSxDQUFDLEdBQUcsQ0FBQyxRQUFRLEVBQUUsQ0FBTyxJQUFhLEVBQUUsR0FBYSxFQUFFLEVBQUU7SUFDMUQsSUFBSSxDQUFDO1FBQ0gsTUFBTSxVQUFVLEdBQUcsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLEtBQUssRUFBRSxFQUFFLENBQUMsaUNBQ3BDLEtBQUssS0FDUixZQUFZLEVBQUUsQ0FBQyxFQUNmLE1BQU0sRUFBRSxHQUFHLEVBQ1gsV0FBVyxFQUFFLEdBQUcsRUFDaEIsYUFBYSxFQUFFLENBQUMsRUFDaEIsU0FBUyxFQUFFLElBQUksSUFDZixDQUFDLENBQUM7UUFFSixHQUFHLENBQUMsSUFBSSxDQUFDO1lBQ1AsTUFBTSxFQUFFLFVBQVU7WUFDbEIsS0FBSyxFQUFFLFVBQVUsQ0FBQyxNQUFNO1lBQ3hCLFNBQVMsRUFBRSxJQUFJLElBQUksRUFBRSxDQUFDLFdBQVcsRUFBRTtTQUNwQyxDQUFDLENBQUM7SUFDTCxDQUFDO0lBQUMsT0FBTyxLQUFLLEVBQUUsQ0FBQztRQUNmLGVBQU0sQ0FBQyxLQUFLLENBQUMsNkJBQTZCLEVBQUUsS0FBSyxDQUFDLENBQUM7UUFDbkQsR0FBRyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxJQUFJLENBQUMsRUFBRSxLQUFLLEVBQUUsa0NBQWtDLEVBQUUsQ0FBQyxDQUFDO0lBQ3RFLENBQUM7QUFDSCxDQUFDLENBQUEsQ0FBQyxDQUFDO0FBRUgsa0JBQWUsTUFBTSxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3JvdXRlcy9tb2RlbHMtc3RhdHMudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHsgUm91dGVyLCB0eXBlIFJlcXVlc3QsIHR5cGUgUmVzcG9uc2UgfSBmcm9tICdleHByZXNzJztcbmltcG9ydCB7IGxvZ2dlciB9IGZyb20gJy4uL3V0aWxzL2xvZ2dlcic7XG5cbmNvbnN0IHJvdXRlciA9IFJvdXRlcigpO1xuXG4vLyBTdGF0aWMgbW9kZWwgZGVmaW5pdGlvbnMgZm9yIHRoZSBPeHkgZWNvc3lzdGVtXG5jb25zdCBNT0RFTFMgPSBbXG4gIHtcbiAgICBpZDogJ2FsaWEtbGl0ZScsXG4gICAgbmFtZTogJ0FsaWEgTGl0ZScsXG4gICAgZGVzY3JpcHRpb246ICdGYXN0IGFuZCBlZmZpY2llbnQgZm9yIHNpbXBsZSB0YXNrcycsXG4gICAgdGllcjogJ2ZyZWUnLFxuICAgIGNhdGVnb3J5OiAnZ2VuZXJhbCcsXG4gICAgY3JlZGl0TXVsdGlwbGllcjogMC41LFxuICAgIHN1cHBvcnRzVG9vbHM6IGZhbHNlLFxuICAgIHN1cHBvcnRzVmlzaW9uOiBmYWxzZSxcbiAgICBtYXhUb2tlbnM6IDIwNDgsXG4gIH0sXG4gIHtcbiAgICBpZDogJ2FsaWEtdjEnLFxuICAgIG5hbWU6ICdBbGlhIFYxJyxcbiAgICBkZXNjcmlwdGlvbjogJ0JhbGFuY2VkIHBlcmZvcm1hbmNlIGFuZCBxdWFsaXR5IGZvciBldmVyeWRheSB1c2UnLFxuICAgIHRpZXI6ICdmcmVlJyxcbiAgICBjYXRlZ29yeTogJ2dlbmVyYWwnLFxuICAgIGNyZWRpdE11bHRpcGxpZXI6IDEsXG4gICAgc3VwcG9ydHNUb29sczogdHJ1ZSxcbiAgICBzdXBwb3J0c1Zpc2lvbjogZmFsc2UsXG4gICAgbWF4VG9rZW5zOiA4MTkyLFxuICB9LFxuICB7XG4gICAgaWQ6ICdhbGlhLXYxLXBybycsXG4gICAgbmFtZTogJ0FsaWEgVjEgUHJvJyxcbiAgICBkZXNjcmlwdGlvbjogJ0FkdmFuY2VkIHJlYXNvbmluZyBjYXBhYmlsaXRpZXMgZm9yIGNvbXBsZXggdGFza3MnLFxuICAgIHRpZXI6ICdwcm8nLFxuICAgIGNhdGVnb3J5OiAnZ2VuZXJhbCcsXG4gICAgY3JlZGl0TXVsdGlwbGllcjogMyxcbiAgICBzdXBwb3J0c1Rvb2xzOiB0cnVlLFxuICAgIHN1cHBvcnRzVmlzaW9uOiB0cnVlLFxuICAgIG1heFRva2VuczogMTYzODQsXG4gIH0sXG4gIHtcbiAgICBpZDogJ2FsaWEtdjEtcHJvLW1heCcsXG4gICAgbmFtZTogJ0FsaWEgVjEgUHJvIE1heCcsXG4gICAgZGVzY3JpcHRpb246ICdNYXhpbXVtIHBlcmZvcm1hbmNlIGZvciBkZW1hbmRpbmcgYXBwbGljYXRpb25zJyxcbiAgICB0aWVyOiAncHJvJyxcbiAgICBjYXRlZ29yeTogJ2dlbmVyYWwnLFxuICAgIGNyZWRpdE11bHRpcGxpZXI6IDUsXG4gICAgc3VwcG9ydHNUb29sczogdHJ1ZSxcbiAgICBzdXBwb3J0c1Zpc2lvbjogdHJ1ZSxcbiAgICBtYXhUb2tlbnM6IDMyNzY4LFxuICB9LFxuXTtcblxuLyoqXG4gKiBHRVQgL2FwaS9tb2RlbHMvc3RhdHNcbiAqIFJldHVybnMgbW9kZWwgaW5mb3JtYXRpb24gYW5kIHN0YXRzXG4gKi9cbnJvdXRlci5nZXQoJy9zdGF0cycsIGFzeW5jIChfcmVxOiBSZXF1ZXN0LCByZXM6IFJlc3BvbnNlKSA9PiB7XG4gIHRyeSB7XG4gICAgY29uc3QgbW9kZWxTdGF0cyA9IE1PREVMUy5tYXAoKG1vZGVsKSA9PiAoe1xuICAgICAgLi4ubW9kZWwsXG4gICAgICBhdmdMYXRlbmN5TXM6IDAsXG4gICAgICB1cHRpbWU6IDEwMCxcbiAgICAgIHN1Y2Nlc3NSYXRlOiAxMDAsXG4gICAgICB0b3RhbFJlcXVlc3RzOiAwLFxuICAgICAgaXNIZWFsdGh5OiB0cnVlLFxuICAgIH0pKTtcblxuICAgIHJlcy5qc29uKHtcbiAgICAgIG1vZGVsczogbW9kZWxTdGF0cyxcbiAgICAgIGNvdW50OiBtb2RlbFN0YXRzLmxlbmd0aCxcbiAgICAgIHRpbWVzdGFtcDogbmV3IERhdGUoKS50b0lTT1N0cmluZygpLFxuICAgIH0pO1xuICB9IGNhdGNoIChlcnJvcikge1xuICAgIGxvZ2dlci5lcnJvcignRXJyb3IgZmV0Y2hpbmcgbW9kZWwgc3RhdHM6JywgZXJyb3IpO1xuICAgIHJlcy5zdGF0dXMoNTAwKS5qc29uKHsgZXJyb3I6ICdGYWlsZWQgdG8gZmV0Y2ggbW9kZWwgc3RhdGlzdGljcycgfSk7XG4gIH1cbn0pO1xuXG5leHBvcnQgZGVmYXVsdCByb3V0ZXI7XG4iXSwidmVyc2lvbiI6M30=

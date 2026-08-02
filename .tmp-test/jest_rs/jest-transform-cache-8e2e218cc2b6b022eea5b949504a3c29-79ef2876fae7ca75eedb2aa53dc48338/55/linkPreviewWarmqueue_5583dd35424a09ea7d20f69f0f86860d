@@ -1,0 +1,210 @@
+df55373c349de843ce44daa777b560d5
+"use strict";
+/**
+ * Background warming for the link-preview service.
+ *
+ * The single decision point for HOW first-seen / stale URLs get resolved off the
+ * response path, mirroring `nodeIngest.queue.ts`:
+ *
+ *   - **BullMQ path** (`REDIS_URL` set): on-demand per-URL warm jobs deduped by a
+ *     stable per-URL jobId, so a URL already queued/active is never enqueued
+ *     twice — and the dedup is fleet-wide (cross-instance single-flight at the
+ *     queue layer, complemented by the Redis resolve lock in `linkPreviewCache`).
+ *     One in-process worker drains the queue.
+ *
+ *   - **In-process fallback** (no `REDIS_URL`, e.g. local dev / tests): a deduped
+ *     in-process pending set drained sequentially — same single-flight semantics,
+ *     no Redis required.
+ *
+ * NOTHING here is awaited on a request's read path. `enqueueLinkPreviewWarm` is a
+ * fire-and-forget hint; the actual remote I/O lives in
+ * `linkPreviewService.resolveAndStore` (SSRF-safe, background only).
+ *
+ * Queue name MUST NOT contain `:` (BullMQ throws) — `link-preview-warm`.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.linkPreviewWarmJobId = linkPreviewWarmJobId;
+exports.enqueueLinkPreviewWarm = enqueueLinkPreviewWarm;
+exports.startLinkPreviewWarmJobs = startLinkPreviewWarmJobs;
+exports.stopLinkPreviewWarmJobs = stopLinkPreviewWarmJobs;
+const node_crypto_1 = require("node:crypto");
+const bullmq_1 = require("bullmq");
+const logger_1 = require("../utils/logger");
+const connection_1 = require("./connection");
+const queueManager_1 = require("./queueManager");
+const constants_1 = require("./constants");
+const linkPreviewService_1 = require("../services/linkPreview/linkPreviewService");
+const constants_2 = require("../services/linkPreview/constants");
+/** BullMQ queue name (no `:` allowed). */
+const LINK_PREVIEW_WARM_QUEUE = 'link-preview-warm';
+/** Job name for a single-URL warm. */
+const LINK_PREVIEW_WARM_JOB = 'warm';
+/**
+ * Stable per-URL job id so a URL already queued/active is never enqueued twice.
+ *
+ * BullMQ custom job ids MUST NOT contain `:` (same family as the queue-name
+ * rule) — a `:` throws "Custom Id cannot contain :" and the enqueue fails, so the
+ * warm never runs. The id is therefore the colon-free `lp-<sha256hex>`.
+ */
+function linkPreviewWarmJobId(url) {
+    return `lp-${(0, node_crypto_1.createHash)('sha256').update(url).digest('hex')}`;
+}
+/* -------------------------------------------------------------------------- */
+/*  BullMQ path                                                               */
+/* -------------------------------------------------------------------------- */
+let queue = null;
+let worker = null;
+/* -------------------------------------------------------------------------- */
+/*  In-process fallback                                                       */
+/* -------------------------------------------------------------------------- */
+const pending = new Set();
+const inFlight = new Set();
+let draining = false;
+let stopped = false;
+/**
+ * Sequentially drain the in-process pending set (bounds outbound concurrency to
+ * one resolve at a time). Self-guards against overlapping drains and exits once
+ * `stopped`. Each resolve is non-throwing (`resolveAndStore` never throws); a
+ * stray error is still caught so the drain never dies.
+ */
+function drainInProcess() {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (draining)
+            return;
+        draining = true;
+        try {
+            while (pending.size > 0 && !stopped) {
+                const url = pending.values().next().value;
+                pending.delete(url);
+                if (inFlight.has(url))
+                    continue;
+                inFlight.add(url);
+                try {
+                    yield linkPreviewService_1.linkPreviewService.resolveAndStore(url);
+                }
+                catch (err) {
+                    logger_1.logger.error('In-process link-preview warm failed', err instanceof Error ? err : new Error(String(err)), { component: 'linkPreviewWarm', url });
+                }
+                finally {
+                    inFlight.delete(url);
+                }
+            }
+        }
+        finally {
+            draining = false;
+        }
+    });
+}
+/* -------------------------------------------------------------------------- */
+/*  Public API                                                                */
+/* -------------------------------------------------------------------------- */
+/**
+ * Schedule a background resolve for `url` — a deduped, fire-and-forget hint.
+ * With BullMQ it adds a per-URL job (jobId derived from the URL) that BullMQ
+ * ignores while one is already queued/active. In the fallback it adds to the
+ * in-process pending set (skipped if already pending or in flight) and kicks a
+ * drain on the next tick. NEVER throws into the caller.
+ */
+function enqueueLinkPreviewWarm(url) {
+    if (queue) {
+        void queue
+            .add(LINK_PREVIEW_WARM_JOB, { url }, {
+            jobId: linkPreviewWarmJobId(url),
+            removeOnComplete: constants_1.COMPLETED_JOBS_RETENTION,
+            removeOnFail: constants_1.FAILED_JOBS_RETENTION,
+        })
+            .catch((err) => logger_1.logger.warn('Failed to enqueue link-preview warm job', {
+            component: 'linkPreviewWarm',
+            error: err instanceof Error ? err.message : String(err),
+        }));
+        return;
+    }
+    if (stopped)
+        return;
+    if (pending.has(url) || inFlight.has(url))
+        return;
+    pending.add(url);
+    setImmediate(() => {
+        void drainInProcess();
+    });
+}
+/**
+ * Start the link-preview warm subsystem. BullMQ (durable, fleet-wide) when queues
+ * are enabled, otherwise the in-process pending-set fallback. Never throws — a
+ * queue setup failure logs and falls back to in-process.
+ */
+function startLinkPreviewWarmJobs() {
+    return __awaiter(this, void 0, void 0, function* () {
+        stopped = false;
+        if (!(0, queueManager_1.isQueueEnabled)()) {
+            logger_1.logger.info('Link-preview warm using in-process fallback (REDIS_URL unset)');
+            return;
+        }
+        try {
+            queue = new bullmq_1.Queue(LINK_PREVIEW_WARM_QUEUE, {
+                connection: (0, connection_1.getQueueConnectionOptions)(),
+                defaultJobOptions: {
+                    removeOnComplete: constants_1.COMPLETED_JOBS_RETENTION,
+                    removeOnFail: constants_1.FAILED_JOBS_RETENTION,
+                },
+            });
+            queue.on('error', (err) => logger_1.logger.error('Link-preview warm queue error', { error: err.message }));
+            // BullMQ defaults a Worker to concurrency 1 (serial). Fan out so a large
+            // first-seen / backfill backlog drains in parallel; per-job work is bounded.
+            worker = new bullmq_1.Worker(LINK_PREVIEW_WARM_QUEUE, (job) => __awaiter(this, void 0, void 0, function* () {
+                const url = job.data.url;
+                if (url) {
+                    yield linkPreviewService_1.linkPreviewService.resolveAndStore(url);
+                }
+            }), { connection: (0, connection_1.getQueueConnectionOptions)(), concurrency: constants_2.LINK_PREVIEW_WARM_CONCURRENCY });
+            worker.on('failed', (job, err) => logger_1.logger.error('Link-preview warm job failed', { jobId: job === null || job === void 0 ? void 0 : job.id, error: err.message }));
+            worker.on('error', (err) => logger_1.logger.error('Link-preview warm worker error', { error: err.message }));
+            logger_1.logger.info('Link-preview warm started via BullMQ (durable, fleet-wide dedup)');
+        }
+        catch (err) {
+            logger_1.logger.error('Link-preview warm BullMQ setup failed — falling back to in-process', err instanceof Error ? err : new Error(String(err)));
+            yield teardownQueue();
+        }
+    });
+}
+/** Close the BullMQ worker + queue (and the connections they own). */
+function teardownQueue() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const w = worker;
+        const q = queue;
+        worker = null;
+        queue = null;
+        if (w) {
+            yield w.close().catch((err) => logger_1.logger.warn('Link-preview warm worker close failed', {
+                error: err instanceof Error ? err.message : String(err),
+            }));
+        }
+        if (q) {
+            yield q.close().catch((err) => logger_1.logger.warn('Link-preview warm queue close failed', {
+                error: err instanceof Error ? err.message : String(err),
+            }));
+        }
+    });
+}
+/**
+ * Stop the link-preview warm subsystem. Closes BullMQ resources and clears the
+ * fallback set. Safe to call regardless of which path ran. Intended for the
+ * server's graceful-shutdown sequence (BEFORE the shared Redis client closes).
+ */
+function stopLinkPreviewWarmJobs() {
+    return __awaiter(this, void 0, void 0, function* () {
+        stopped = true;
+        pending.clear();
+        yield teardownQueue();
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcXVldWUvbGlua1ByZXZpZXdXYXJtLnF1ZXVlLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBcUJHOzs7Ozs7Ozs7OztBQTJCSCxvREFFQztBQTZERCx3REEyQkM7QUFPRCw0REErQ0M7QUE2QkQsMERBSUM7QUExTUQsNkNBQXlDO0FBQ3pDLG1DQUFpRDtBQUNqRCw0Q0FBeUM7QUFDekMsNkNBQXlEO0FBQ3pELGlEQUFnRDtBQUNoRCwyQ0FBOEU7QUFDOUUsbUZBQWdGO0FBQ2hGLGlFQUFrRjtBQUVsRiwwQ0FBMEM7QUFDMUMsTUFBTSx1QkFBdUIsR0FBRyxtQkFBbUIsQ0FBQztBQUNwRCxzQ0FBc0M7QUFDdEMsTUFBTSxxQkFBcUIsR0FBRyxNQUFNLENBQUM7QUFNckM7Ozs7OztHQU1HO0FBQ0gsU0FBZ0Isb0JBQW9CLENBQUMsR0FBVztJQUM5QyxPQUFPLE1BQU0sSUFBQSx3QkFBVSxFQUFDLFFBQVEsQ0FBQyxDQUFDLE1BQU0sQ0FBQyxHQUFHLENBQUMsQ0FBQyxNQUFNLENBQUMsS0FBSyxDQUFDLEVBQUUsQ0FBQztBQUNoRSxDQUFDO0FBRUQsZ0ZBQWdGO0FBQ2hGLGdGQUFnRjtBQUNoRixnRkFBZ0Y7QUFFaEYsSUFBSSxLQUFLLEdBQXlDLElBQUksQ0FBQztBQUN2RCxJQUFJLE1BQU0sR0FBMEMsSUFBSSxDQUFDO0FBRXpELGdGQUFnRjtBQUNoRixnRkFBZ0Y7QUFDaEYsZ0ZBQWdGO0FBRWhGLE1BQU0sT0FBTyxHQUFHLElBQUksR0FBRyxFQUFVLENBQUM7QUFDbEMsTUFBTSxRQUFRLEdBQUcsSUFBSSxHQUFHLEVBQVUsQ0FBQztBQUNuQyxJQUFJLFFBQVEsR0FBRyxLQUFLLENBQUM7QUFDckIsSUFBSSxPQUFPLEdBQUcsS0FBSyxDQUFDO0FBRXBCOzs7OztHQUtHO0FBQ0gsU0FBZSxjQUFjOztRQUMzQixJQUFJLFFBQVE7WUFBRSxPQUFP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QUFDSCxTQUFzQix1QkFBdUI7O1FBQzNDLE9BQU8sR0FBRyxJQUFJLENBQUM7UUFDZixPQUFPLENBQUMsS0FBSyxFQUFFLENBQUM7UUFDaEIsTUFBTSxhQUFhLEVBQUUsQ0FBQztJQUN4QixDQUFDO0NBQUEiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcXVldWUvbGlua1ByZXZpZXdXYXJtLnF1ZXVlLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogQmFja2dyb3VuZCB3YXJtaW5nIGZvciB0aGUgbGluay1wcmV2aWV3IHNlcnZpY2UuXG4gKlxuICogVGhlIHNpbmdsZSBkZWNpc2lvbiBwb2ludCBmb3IgSE9XIGZpcnN0LXNlZW4gLyBzdGFsZSBVUkxzIGdldCByZXNvbHZlZCBvZmYgdGhlXG4gKiByZXNwb25zZSBwYXRoLCBtaXJyb3JpbmcgYG5vZGVJbmdlc3QucXVldWUudHNgOlxuICpcbiAqICAgLSAqKkJ1bGxNUSBwYXRoKiogKGBSRURJU19VUkxgIHNldCk6IG9uLWRlbWFuZCBwZXItVVJMIHdhcm0gam9icyBkZWR1cGVkIGJ5IGFcbiAqICAgICBzdGFibGUgcGVyLVVSTCBqb2JJZCwgc28gYSBVUkwgYWxyZWFkeSBxdWV1ZWQvYWN0aXZlIGlzIG5ldmVyIGVucXVldWVkXG4gKiAgICAgdHdpY2Ug4oCUIGFuZCB0aGUgZGVkdXAgaXMgZmxlZXQtd2lkZSAoY3Jvc3MtaW5zdGFuY2Ugc2luZ2xlLWZsaWdodCBhdCB0aGVcbiAqICAgICBxdWV1ZSBsYXllciwgY29tcGxlbWVudGVkIGJ5IHRoZSBSZWRpcyByZXNvbHZlIGxvY2sgaW4gYGxpbmtQcmV2aWV3Q2FjaGVgKS5cbiAqICAgICBPbmUgaW4tcHJvY2VzcyB3b3JrZXIgZHJhaW5zIHRoZSBxdWV1ZS5cbiAqXG4gKiAgIC0gKipJbi1wcm9jZXNzIGZhbGxiYWNrKiogKG5vIGBSRURJU19VUkxgLCBlLmcuIGxvY2FsIGRldiAvIHRlc3RzKTogYSBkZWR1cGVkXG4gKiAgICAgaW4tcHJvY2VzcyBwZW5kaW5nIHNldCBkcmFpbmVkIHNlcXVlbnRpYWxseSDigJQgc2FtZSBzaW5nbGUtZmxpZ2h0IHNlbWFudGljcyxcbiAqICAgICBubyBSZWRpcyByZXF1aXJlZC5cbiAqXG4gKiBOT1RISU5HIGhlcmUgaXMgYXdhaXRlZCBvbiBhIHJlcXVlc3QncyByZWFkIHBhdGguIGBlbnF1ZXVlTGlua1ByZXZpZXdXYXJtYCBpcyBhXG4gKiBmaXJlLWFuZC1mb3JnZXQgaGludDsgdGhlIGFjdHVhbCByZW1vdGUgSS9PIGxpdmVzIGluXG4gKiBgbGlua1ByZXZpZXdTZXJ2aWNlLnJlc29sdmVBbmRTdG9yZWAgKFNTUkYtc2FmZSwgYmFja2dyb3VuZCBvbmx5KS5cbiAqXG4gKiBRdWV1ZSBuYW1lIE1VU1QgTk9UIGNvbnRhaW4gYDpgIChCdWxsTVEgdGhyb3dzKSDigJQgYGxpbmstcHJldmlldy13YXJtYC5cbiAqL1xuXG5pbXBvcnQgeyBjcmVhdGVIYXNoIH0gZnJvbSAnbm9kZTpjcnlwdG8nO1xuaW1wb3J0IHsgUXVldWUsIFdvcmtlciwgdHlwZSBKb2IgfSBmcm9tICdidWxsbXEnO1xuaW1wb3J0IHsgbG9nZ2VyIH0gZnJvbSAnLi4vdXRpbHMvbG9nZ2VyJztcbmltcG9ydCB7IGdldFF1ZXVlQ29ubmVjdGlvbk9wdGlvbnMgfSBmcm9tICcuL2Nvbm5lY3Rpb24nO1xuaW1wb3J0IHsgaXNRdWV1ZUVuYWJsZWQgfSBmcm9tICcuL3F1ZXVlTWFuYWdlcic7XG5pbXBvcnQgeyBDT01QTEVURURfSk9CU19SRVRFTlRJT04sIEZBSUxFRF9KT0JTX1JFVEVOVElPTiB9IGZyb20gJy4vY29uc3RhbnRzJztcbmltcG9ydCB7IGxpbmtQcmV2aWV3U2VydmljZSB9IGZyb20gJy4uL3NlcnZpY2VzL2xpbmtQcmV2aWV3L2xpbmtQcmV2aWV3U2VydmljZSc7XG5pbXBvcnQgeyBMSU5LX1BSRVZJRVdfV0FSTV9DT05DVVJSRU5DWSB9IGZyb20gJy4uL3NlcnZpY2VzL2xpbmtQcmV2aWV3L2NvbnN0YW50cyc7XG5cbi8qKiBCdWxsTVEgcXVldWUgbmFtZSAobm8gYDpgIGFsbG93ZWQpLiAqL1xuY29uc3QgTElOS19QUkVWSUVXX1dBUk1fUVVFVUUgPSAnbGluay1wcmV2aWV3LXdhcm0nO1xuLyoqIEpvYiBuYW1lIGZvciBhIHNpbmdsZS1VUkwgd2FybS4gKi9cbmNvbnN0IExJTktfUFJFVklFV19XQVJNX0pPQiA9ICd3YXJtJztcblxuaW50ZXJmYWNlIExpbmtQcmV2aWV3V2FybUpvYkRhdGEge1xuICB1cmw6IHN0cmluZztcbn1cblxuLyoqXG4gKiBTdGFibGUgcGVyLVVSTCBqb2IgaWQgc28gYSBVUkwgYWxyZWFkeSBxdWV1ZWQvYWN0aXZlIGlzIG5ldmVyIGVucXVldWVkIHR3aWNlLlxuICpcbiAqIEJ1bGxNUSBjdXN0b20gam9iIGlkcyBNVVNUIE5PVCBjb250YWluIGA6YCAoc2FtZSBmYW1pbHkgYXMgdGhlIHF1ZXVlLW5hbWVcbiAqIHJ1bGUpIOKAlCBhIGA6YCB0aHJvd3MgXCJDdXN0b20gSWQgY2Fubm90IGNvbnRhaW4gOlwiIGFuZCB0aGUgZW5xdWV1ZSBmYWlscywgc28gdGhlXG4gKiB3YXJtIG5ldmVyIHJ1bnMuIFRoZSBpZCBpcyB0aGVyZWZvcmUgdGhlIGNvbG9uLWZyZWUgYGxwLTxzaGEyNTZoZXg+YC5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIGxpbmtQcmV2aWV3V2FybUpvYklkKHVybDogc3RyaW5nKTogc3RyaW5nIHtcbiAgcmV0dXJuIGBscC0ke2NyZWF0ZUhhc2goJ3NoYTI1NicpLnVwZGF0ZSh1cmwpLmRpZ2VzdCgnaGV4Jyl9YDtcbn1cblxuLyogLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gKi9cbi8qICBCdWxsTVEgcGF0aCAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICovXG4vKiAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSAqL1xuXG5sZXQgcXVldWU6IFF1ZXVlPExpbmtQcmV2aWV3V2FybUpvYkRhdGE+IHwgbnVsbCA9IG51bGw7XG5sZXQgd29ya2VyOiBXb3JrZXI8TGlua1ByZXZpZXdXYXJtSm9iRGF0YT4gfCBudWxsID0gbnVsbDtcblxuLyogLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gKi9cbi8qICBJbi1wcm9jZXNzIGZhbGxiYWNrICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICovXG4vKiAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSAqL1xuXG5jb25zdCBwZW5kaW5nID0gbmV3IFNldDxzdHJpbmc+KCk7XG5jb25zdCBpbkZsaWdodCA9IG5ldyBTZXQ8c3RyaW5nPigpO1xubGV0IGRyYWluaW5nID0gZmFsc2U7XG5sZXQgc3RvcHBlZCA9IGZhbHNlO1xuXG4vKipcbiAqIFNlcXVlbnRpYWxseSBkcmFpbiB0aGUgaW4tcHJvY2VzcyBwZW5kaW5nIHNldCAoYm91bmRzIG91dGJvdW5kIGNvbmN1cnJlbmN5IHRvXG4gKiBvbmUgcmVzb2x2ZSBhdCBhIHRpbWUpLiBTZWxmLWd1YXJkcyBhZ2FpbnN0IG92ZXJsYXBwaW5nIGRyYWlucyBhbmQgZXhpdHMgb25jZVxuICogYHN0b3BwZWRgLiBFYWNoIHJlc29sdmUgaXMgbm9uLXRocm93aW5nIChgcmVzb2x2ZUFuZFN0b3JlYCBuZXZlciB0aHJvd3MpOyBhXG4gKiBzdHJheSBlcnJvciBpcyBzdGlsbCBjYXVnaHQgc28gdGhlIGRyYWluIG5ldmVyIGRpZXMuXG4gKi9cbmFzeW5jIGZ1bmN0aW9uIGRyYWluSW5Qcm9jZXNzKCk6IFByb21pc2U8dm9pZD4ge1xuICBpZiAoZHJhaW5pbmcpIHJldHVybjtcbiAgZHJhaW5pbmcgPSB0cnVlO1xuICB0cnkge1xuICAgIHdoaWxlIChwZW5kaW5nLnNpemUgPiAwICYmICFzdG9wcGVkKSB7XG4gICAgICBjb25zdCB1cmwgPSBwZW5kaW5nLnZhbHVlcygpLm5leHQoKS52YWx1ZSBhcyBzdHJpbmc7XG4gICAgICBwZW5kaW5nLmRlbGV0ZSh1cmwpO1xuICAgICAgaWYgKGluRmxpZ2h0Lmhhcyh1cmwpKSBjb250aW51ZTtcbiAgICAgIGluRmxpZ2h0LmFkZCh1cmwpO1xuICAgICAgdHJ5IHtcbiAgICAgICAgYXdhaXQgbGlua1ByZXZpZXdTZXJ2aWNlLnJlc29sdmVBbmRTdG9yZSh1cmwpO1xuICAgICAgfSBjYXRjaCAoZXJyKSB7XG4gICAgICAgIGxvZ2dlci5lcnJvcihcbiAgICAgICAgICAnSW4tcHJvY2VzcyBsaW5rLXByZXZpZXcgd2FybSBmYWlsZWQnLFxuICAgICAgICAgIGVyciBpbnN0YW5jZW9mIEVycm9yID8gZXJyIDogbmV3IEVycm9yKFN0cmluZyhlcnIpKSxcbiAgICAgICAgICB7IGNvbXBvbmVudDogJ2xpbmtQcmV2aWV3V2FybScsIHVybCB9LFxuICAgICAgICApO1xuICAgICAgfSBmaW5hbGx5IHtcbiAgICAgICAgaW5GbGlnaHQuZGVsZXRlKHVybCk7XG4gICAgICB9XG4gICAgfVxuICB9IGZpbmFsbHkge1xuICAgIGRyYWluaW5nID0gZmFsc2U7XG4gIH1cbn1cblxuLyogLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gKi9cbi8qICBQdWJsaWMgQVBJICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICovXG4vKiAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSAqL1xuXG4vKipcbiAqIFNjaGVkdWxlIGEgYmFja2dyb3VuZCByZXNvbHZlIGZvciBgdXJsYCDigJQgYSBkZWR1cGVkLCBmaXJlLWFuZC1mb3JnZXQgaGludC5cbiAqIFdpdGggQnVsbE1RIGl0IGFkZHMgYSBwZXItVVJMIGpvYiAoam9iSWQgZGVyaXZlZCBmcm9tIHRoZSBVUkwpIHRoYXQgQnVsbE1RXG4gKiBpZ25vcmVzIHdoaWxlIG9uZSBpcyBhbHJlYWR5IHF1ZXVlZC9hY3RpdmUuIEluIHRoZSBmYWxsYmFjayBpdCBhZGRzIHRvIHRoZVxuICogaW4tcHJvY2VzcyBwZW5kaW5nIHNldCAoc2tpcHBlZCBpZiBhbHJlYWR5IHBlbmRpbmcgb3IgaW4gZmxpZ2h0KSBhbmQga2lja3MgYVxuICogZHJhaW4gb24gdGhlIG5leHQgdGljay4gTkVWRVIgdGhyb3dzIGludG8gdGhlIGNhbGxlci5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIGVucXVldWVMaW5rUHJldmlld1dhcm0odXJsOiBzdHJpbmcpOiB2b2lkIHtcbiAgaWYgKHF1ZXVlKSB7XG4gICAgdm9pZCBxdWV1ZVxuICAgICAgLmFkZChcbiAgICAgICAgTElOS19QUkVWSUVXX1dBUk1fSk9CLFxuICAgICAgICB7IHVybCB9LFxuICAgICAgICB7XG4gICAgICAgICAgam9iSWQ6IGxpbmtQcmV2aWV3V2FybUpvYklkKHVybCksXG4gICAgICAgICAgcmVtb3ZlT25Db21wbGV0ZTogQ09NUExFVEVEX0pPQlNfUkVURU5USU9OLFxuICAgICAgICAgIHJlbW92ZU9uRmFpbDogRkFJTEVEX0pPQlNfUkVURU5USU9OLFxuICAgICAgICB9LFxuICAgICAgKVxuICAgICAgLmNhdGNoKChlcnI6IHVua25vd24pID0+XG4gICAgICAgIGxvZ2dlci53YXJuKCdGYWlsZWQgdG8gZW5xdWV1ZSBsaW5rLXByZXZpZXcgd2FybSBqb2InLCB7XG4gICAgICAgICAgY29tcG9uZW50OiAnbGlua1ByZXZpZXdXYXJtJyxcbiAgICAgICAgICBlcnJvcjogZXJyIGluc3RhbmNlb2YgRXJyb3IgPyBlcnIubWVzc2FnZSA6IFN0cmluZyhlcnIpLFxuICAgICAgICB9KSxcbiAgICAgICk7XG4gICAgcmV0dXJuO1xuICB9XG5cbiAgaWYgKHN0b3BwZWQpIHJldHVybjtcbiAgaWYgKHBlbmRpbmcuaGFzKHVybCkgfHwgaW5GbGlnaHQuaGFzKHVybCkpIHJldHVybjtcbiAgcGVuZGluZy5hZGQodXJsKTtcbiAgc2V0SW1tZWRpYXRlKCgpID0+IHtcbiAgICB2b2lkIGRyYWluSW5Qcm9jZXNzKCk7XG4gIH0pO1xufVxuXG4vKipcbiAqIFN0YXJ0IHRoZSBsaW5rLXByZXZpZXcgd2FybSBzdWJzeXN0ZW0uIEJ1bGxNUSAoZHVyYWJsZSwgZmxlZXQtd2lkZSkgd2hlbiBxdWV1ZXNcbiAqIGFyZSBlbmFibGVkLCBvdGhlcndpc2UgdGhlIGluLXByb2Nlc3MgcGVuZGluZy1zZXQgZmFsbGJhY2suIE5ldmVyIHRocm93cyDigJQgYVxuICogcXVldWUgc2V0dXAgZmFpbHVyZSBsb2dzIGFuZCBmYWxscyBiYWNrIHRvIGluLXByb2Nlc3MuXG4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiBzdGFydExpbmtQcmV2aWV3V2FybUpvYnMoKTogUHJvbWlzZTx2b2lkPiB7XG4gIHN0b3BwZWQgPSBmYWxzZTtcblxuICBpZiAoIWlzUXVldWVFbmFibGVkKCkpIHtcbiAgICBsb2dnZXIuaW5mbygnTGluay1wcmV2aWV3IHdhcm0gdXNpbmcgaW4tcHJvY2VzcyBmYWxsYmFjayAoUkVESVNfVVJMIHVuc2V0KScpO1xuICAgIHJldHVybjtcbiAgfVxuXG4gIHRyeSB7XG4gICAgcXVldWUgPSBuZXcgUXVldWU8TGlua1ByZXZpZXdXYXJtSm9iRGF0YT4oTElOS19QUkVWSUVXX1dBUk1fUVVFVUUsIHtcbiAgICAgIGNvbm5lY3Rpb246IGdldFF1ZXVlQ29ubmVjdGlvbk9wdGlvbnMoKSxcbiAgICAgIGRlZmF1bHRKb2JPcHRpb25zOiB7XG4gICAgICAgIHJlbW92ZU9uQ29tcGxldGU6IENPTVBMRVRFRF9KT0JTX1JFVEVOVElPTixcbiAgICAgICAgcmVtb3ZlT25GYWlsOiBGQUlMRURfSk9CU19SRVRFTlRJT04sXG4gICAgICB9LFxuICAgIH0pO1xuICAgIHF1ZXVlLm9uKCdlcnJvcicsIChlcnI6IEVycm9yKSA9PlxuICAgICAgbG9nZ2VyLmVycm9yKCdMaW5rLXByZXZpZXcgd2FybSBxdWV1ZSBlcnJvcicsIHsgZXJyb3I6IGVyci5tZXNzYWdlIH0pLFxuICAgICk7XG5cbiAgICAvLyBCdWxsTVEgZGVmYXVsdHMgYSBXb3JrZXIgdG8gY29uY3VycmVuY3kgMSAoc2VyaWFsKS4gRmFuIG91dCBzbyBhIGxhcmdlXG4gICAgLy8gZmlyc3Qtc2VlbiAvIGJhY2tmaWxsIGJhY2tsb2cgZHJhaW5zIGluIHBhcmFsbGVsOyBwZXItam9iIHdvcmsgaXMgYm91bmRlZC5cbiAgICB3b3JrZXIgPSBuZXcgV29ya2VyPExpbmtQcmV2aWV3V2FybUpvYkRhdGE+KFxuICAgICAgTElOS19QUkVWSUVXX1dBUk1fUVVFVUUsXG4gICAgICBhc3luYyAoam9iOiBKb2I8TGlua1ByZXZpZXdXYXJtSm9iRGF0YT4pID0+IHtcbiAgICAgICAgY29uc3QgdXJsID0gam9iLmRhdGEudXJsO1xuICAgICAgICBpZiAodXJsKSB7XG4gICAgICAgICAgYXdhaXQgbGlua1ByZXZpZXdTZXJ2aWNlLnJlc29sdmVBbmRTdG9yZSh1cmwpO1xuICAgICAgICB9XG4gICAgICB9LFxuICAgICAgeyBjb25uZWN0aW9uOiBnZXRRdWV1ZUNvbm5lY3Rpb25PcHRpb25zKCksIGNvbmN1cnJlbmN5OiBMSU5LX1BSRVZJRVdfV0FSTV9DT05DVVJSRU5DWSB9LFxuICAgICk7XG4gICAgd29ya2VyLm9uKCdmYWlsZWQnLCAoam9iLCBlcnI6IEVycm9yKSA9PlxuICAgICAgbG9nZ2VyLmVycm9yKCdMaW5rLXByZXZpZXcgd2FybSBqb2IgZmFpbGVkJywgeyBqb2JJZDogam9iPy5pZCwgZXJyb3I6IGVyci5tZXNzYWdlIH0pLFxuICAgICk7XG4gICAgd29ya2VyLm9uKCdlcnJvcicsIChlcnI6IEVycm9yKSA9PlxuICAgICAgbG9nZ2VyLmVycm9yKCdMaW5rLXByZXZpZXcgd2FybSB3b3JrZXIgZXJyb3InLCB7IGVycm9yOiBlcnIubWVzc2FnZSB9KSxcbiAgICApO1xuXG4gICAgbG9nZ2VyLmluZm8oJ0xpbmstcHJldmlldyB3YXJtIHN0YXJ0ZWQgdmlhIEJ1bGxNUSAoZHVyYWJsZSwgZmxlZXQtd2lkZSBkZWR1cCknKTtcbiAgfSBjYXRjaCAoZXJyKSB7XG4gICAgbG9nZ2VyLmVycm9yKFxuICAgICAgJ0xpbmstcHJldmlldyB3YXJtIEJ1bGxNUSBzZXR1cCBmYWlsZWQg4oCUIGZhbGxpbmcgYmFjayB0byBpbi1wcm9jZXNzJyxcbiAgICAgIGVyciBpbnN0YW5jZW9mIEVycm9yID8gZXJyIDogbmV3IEVycm9yKFN0cmluZyhlcnIpKSxcbiAgICApO1xuICAgIGF3YWl0IHRlYXJkb3duUXVldWUoKTtcbiAgfVxufVxuXG4vKiogQ2xvc2UgdGhlIEJ1bGxNUSB3b3JrZXIgKyBxdWV1ZSAoYW5kIHRoZSBjb25uZWN0aW9ucyB0aGV5IG93bikuICovXG5hc3luYyBmdW5jdGlvbiB0ZWFyZG93blF1ZXVlKCk6IFByb21pc2U8dm9pZD4ge1xuICBjb25zdCB3ID0gd29ya2VyO1xuICBjb25zdCBxID0gcXVldWU7XG4gIHdvcmtlciA9IG51bGw7XG4gIHF1ZXVlID0gbnVsbDtcbiAgaWYgKHcpIHtcbiAgICBhd2FpdCB3LmNsb3NlKCkuY2F0Y2goKGVycikgPT5cbiAgICAgIGxvZ2dlci53YXJuKCdMaW5rLXByZXZpZXcgd2FybSB3b3JrZXIgY2xvc2UgZmFpbGVkJywge1xuICAgICAgICBlcnJvcjogZXJyIGluc3RhbmNlb2YgRXJyb3IgPyBlcnIubWVzc2FnZSA6IFN0cmluZyhlcnIpLFxuICAgICAgfSksXG4gICAgKTtcbiAgfVxuICBpZiAocSkge1xuICAgIGF3YWl0IHEuY2xvc2UoKS5jYXRjaCgoZXJyKSA9PlxuICAgICAgbG9nZ2VyLndhcm4oJ0xpbmstcHJldmlldyB3YXJtIHF1ZXVlIGNsb3NlIGZhaWxlZCcsIHtcbiAgICAgICAgZXJyb3I6IGVyciBpbnN0YW5jZW9mIEVycm9yID8gZXJyLm1lc3NhZ2UgOiBTdHJpbmcoZXJyKSxcbiAgICAgIH0pLFxuICAgICk7XG4gIH1cbn1cblxuLyoqXG4gKiBTdG9wIHRoZSBsaW5rLXByZXZpZXcgd2FybSBzdWJzeXN0ZW0uIENsb3NlcyBCdWxsTVEgcmVzb3VyY2VzIGFuZCBjbGVhcnMgdGhlXG4gKiBmYWxsYmFjayBzZXQuIFNhZmUgdG8gY2FsbCByZWdhcmRsZXNzIG9mIHdoaWNoIHBhdGggcmFuLiBJbnRlbmRlZCBmb3IgdGhlXG4gKiBzZXJ2ZXIncyBncmFjZWZ1bC1zaHV0ZG93biBzZXF1ZW5jZSAoQkVGT1JFIHRoZSBzaGFyZWQgUmVkaXMgY2xpZW50IGNsb3NlcykuXG4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiBzdG9wTGlua1ByZXZpZXdXYXJtSm9icygpOiBQcm9taXNlPHZvaWQ+IHtcbiAgc3RvcHBlZCA9IHRydWU7XG4gIHBlbmRpbmcuY2xlYXIoKTtcbiAgYXdhaXQgdGVhcmRvd25RdWV1ZSgpO1xufVxuIl0sInZlcnNpb24iOjN9

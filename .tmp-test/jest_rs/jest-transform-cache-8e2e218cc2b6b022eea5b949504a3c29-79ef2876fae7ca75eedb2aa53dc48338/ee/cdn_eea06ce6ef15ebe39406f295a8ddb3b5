@@ -1,0 +1,101 @@
+4b1b5ba38f957d2e7e44eb1f9ab0d44f
+"use strict";
+/**
+ * Public CDN origin resolver — `GET /cdn/:id`.
+ *
+ * This is the origin endpoint behind the `cloud.oxy.so/<id>` CloudFront
+ * behavior. CloudFront is configured with `OriginPath = /cdn`, so a browser
+ * request for `https://cloud.oxy.so/<id>` is forwarded to this API as
+ * `GET /cdn/<id>`. The route resolves the file id to its `cloud.oxy.so` CDN URL
+ * and 302-redirects to it.
+ *
+ * Hard contract: this path serves ONLY public, CDN-backed assets. It has NO
+ * auth and NO CSRF (it is a public CDN origin). It NEVER streams raw bytes and
+ * NEVER exposes a private/unlisted asset — anything that is not an active, public
+ * file with a CDN-reachable (`public/`-prefixed) copy resolves to a 404. The actual
+ * "resolve public file id → cloud CDN url (or null)" decision is owned by
+ * `assetService.getPublicCdnUrl`, the SAME probe used by `GET /assets/:id/stream`
+ * (no duplicated visibility/placement logic here).
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const assetServiceSingleton_1 = require("../services/assetServiceSingleton");
+const validate_1 = require("../middleware/validate");
+const assets_schemas_1 = require("../schemas/assets.schemas");
+const asyncHandler_1 = require("../utils/asyncHandler");
+const cdn_1 = require("../config/cdn");
+const logger_1 = require("../utils/logger");
+const router = express_1.default.Router();
+/**
+ * @openapi
+ * /cdn/{id}:
+ *   get:
+ *     summary: Resolve a public asset id to its cloud.oxy.so CDN URL (302).
+ *     description: >
+ *       Public CDN origin endpoint (no auth). Redirects to the `cloud.oxy.so`
+ *       CDN URL for a PUBLIC, CDN-backed asset. Private/unlisted assets, files
+ *       that are not active, files with no public copy, and unknown ids all return 404 — this path never
+ *       streams bytes and never exposes a non-public asset.
+ *     tags: [Assets]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: variant
+ *         required: false
+ *         schema: { type: string }
+ *         description: Optional variant (e.g. `thumb`, `w320`); omitted = original.
+ *     responses:
+ *       302:
+ *         description: Redirect to the public cloud.oxy.so CDN URL.
+ *       404:
+ *         description: No public CDN-backed asset for this id.
+ */
+router.get('/:id', (0, validate_1.validate)({ params: assets_schemas_1.assetIdParams }), (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { id: fileId } = req.params;
+    const variant = typeof req.query.variant === 'string' ? req.query.variant : undefined;
+    const file = yield assetServiceSingleton_1.assetService.getFile(fileId);
+    if (!file) {
+        return res.status(404).json({ error: 'NOT_FOUND', message: 'Resource not found' });
+    }
+    if (file.status !== 'active') {
+        return res.status(404).json({ error: 'NOT_FOUND', message: 'Resource not found' });
+    }
+    // `getPublicCdnUrl` returns a `cloud.oxy.so` URL ONLY for a public file whose
+    // bytes are CDN-reachable; it returns null for private/unlisted assets and
+    // for public assets without a `public/` copy. Either non-result is a 404
+    // here — this public origin must never stream private bytes or 500.
+    let cdnUrl;
+    try {
+        cdnUrl = yield assetServiceSingleton_1.assetService.getPublicCdnUrl(file, variant);
+    }
+    catch (error) {
+        logger_1.logger.warn('CDN resolve failed for public asset', {
+            fileId,
+            variant,
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return res.status(404).json({ error: 'NOT_FOUND', message: 'Resource not found' });
+    }
+    if (!cdnUrl) {
+        return res.status(404).json({ error: 'NOT_FOUND', message: 'Resource not found' });
+    }
+    res.setHeader('Cache-Control', `public, max-age=${cdn_1.CDN_REDIRECT_MAX_AGE_SECONDS}`);
+    return res.redirect(cdnUrl);
+})));
+exports.default = router;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcm91dGVzL2Nkbi50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7R0FnQkc7Ozs7Ozs7Ozs7Ozs7O0FBRUgsc0RBQThCO0FBQzlCLDZFQUFpRTtBQUNqRSxxREFBa0Q7QUFDbEQsOERBQTBEO0FBQzFELHdEQUFxRDtBQUNyRCx1Q0FBNkQ7QUFDN0QsNENBQXlDO0FBRXpDLE1BQU0sTUFBTSxHQUFHLGlCQUFPLENBQUMsTUFBTSxFQUFFLENBQUM7QUFFaEM7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBMEJHO0FBQ0gsTUFBTSxDQUFDLEdBQUcsQ0FDUixNQUFNLEVBQ04sSUFBQSxtQkFBUSxFQUFDLEVBQUUsTUFBTSxFQUFFLDhCQUFhLEVBQUUsQ0FBQyxFQUNuQyxJQUFBLDJCQUFZLEVBQUMsQ0FBTyxHQUFvQixFQUFFLEdBQXFCLEVBQUUsRUFBRTtJQUNqRSxNQUFNLEVBQUUsRUFBRSxFQUFFLE1BQU0sRUFBRSxHQUFHLEdBQUcsQ0FBQyxNQUFNLENBQUM7SUFDbEMsTUFBTSxPQUFPLEdBQUcsT0FBTyxHQUFHLENBQUMsS0FBSyxDQUFDLE9BQU8sS0FBSyxRQUFRLENBQUMsQ0FBQyxDQUFDLEdBQUcsQ0FBQyxLQUFLLENBQUMsT0FBTyxDQUFDLENBQUMsQ0FBQyxTQUFTLENBQUM7SUFFdEYsTUFBTSxJQUFJLEdBQUcsTUFBTSxvQ0FBWSxDQUFDLE9BQU8sQ0FBQyxNQUFNLENBQUMsQ0FBQztJQUNoRCxJQUFJLENBQUMsSUFBSSxFQUFFLENBQUM7UUFDVixPQUFPLEdBQUcsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsSUFBSSxDQUFDLEVBQUUsS0FBSyxFQUFFLFdBQVcsRUFBRSxPQUFPLEVBQUUsb0JBQW9CLEVBQUUsQ0FBQyxDQUFDO0lBQ3JGLENBQUM7SUFFRCxJQUFJLElBQUksQ0FBQyxNQUFNLEtBQUssUUFBUSxFQUFFLENBQUM7UUFDN0IsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLEtBQUssRUFBRSxXQUFXLEVBQUUsT0FBTyxFQUFFLG9CQUFvQixFQUFFLENBQUMsQ0FBQztJQUNyRixDQUFDO0lBRUQsOEVBQThFO0lBQzlFLDJFQUEyRTtJQUMzRSx5RUFBeUU7SUFDekUsb0VBQW9FO0lBQ3BFLElBQUksTUFBcUIsQ0FBQztJQUMxQixJQUFJLENBQUM7UUFDSCxNQUFNLEdBQUcsTUFBTSxvQ0FBWSxDQUFDLGVBQWUsQ0FBQyxJQUFJLEVBQUUsT0FBTyxDQUFDLENBQUM7SUFDN0QsQ0FBQztJQUFDLE9BQU8sS0FBSyxFQUFFLENBQUM7UUFDZixlQUFNLENBQUMsSUFBSSxDQUFDLHFDQUFxQyxFQUFFO1lBQ2pELE1BQU07WUFDTixPQUFPO1lBQ1AsS0FBSyxFQUFFLEtBQUssWUFBWSxLQUFLLENBQUMsQ0FBQyxDQUFDLEtBQUssQ0FBQyxPQUFPLENBQUMsQ0FBQyxDQUFDLE1BQU0sQ0FBQyxLQUFLLENBQUM7U0FDOUQsQ0FBQyxDQUFDO1FBQ0gsT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLEtBQUssRUFBRSxXQUFXLEVBQUUsT0FBTyxFQUFFLG9CQUFvQixFQUFFLENBQUMsQ0FBQztJQUNyRixDQUFDO0lBRUQsSUFBSSxDQUFDLE1BQU0sRUFBRSxDQUFDO1FBQ1osT0FBTyxHQUFHLENBQUMsTUFBTSxDQUFDLEdBQUcsQ0FBQyxDQUFDLElBQUksQ0FBQyxFQUFFLEtBQUssRUFBRSxXQUFXLEVBQUUsT0FBTyxFQUFFLG9CQUFvQixFQUFFLENBQUMsQ0FBQztJQUNyRixDQUFDO0lBRUQsR0FBRyxDQUFDLFNBQVMsQ0FBQyxlQUFlLEVBQUUsbUJBQW1CLGtDQUE0QixFQUFFLENBQUMsQ0FBQztJQUNsRixPQUFPLEdBQUcsQ0FBQyxRQUFRLENBQUMsTUFBTSxDQUFDLENBQUM7QUFDOUIsQ0FBQyxDQUFBLENBQUMsQ0FDSCxDQUFDO0FBRUYsa0JBQWUsTUFBTSxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3JvdXRlcy9jZG4udHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBQdWJsaWMgQ0ROIG9yaWdpbiByZXNvbHZlciDigJQgYEdFVCAvY2RuLzppZGAuXG4gKlxuICogVGhpcyBpcyB0aGUgb3JpZ2luIGVuZHBvaW50IGJlaGluZCB0aGUgYGNsb3VkLm94eS5zby88aWQ+YCBDbG91ZEZyb250XG4gKiBiZWhhdmlvci4gQ2xvdWRGcm9udCBpcyBjb25maWd1cmVkIHdpdGggYE9yaWdpblBhdGggPSAvY2RuYCwgc28gYSBicm93c2VyXG4gKiByZXF1ZXN0IGZvciBgaHR0cHM6Ly9jbG91ZC5veHkuc28vPGlkPmAgaXMgZm9yd2FyZGVkIHRvIHRoaXMgQVBJIGFzXG4gKiBgR0VUIC9jZG4vPGlkPmAuIFRoZSByb3V0ZSByZXNvbHZlcyB0aGUgZmlsZSBpZCB0byBpdHMgYGNsb3VkLm94eS5zb2AgQ0ROIFVSTFxuICogYW5kIDMwMi1yZWRpcmVjdHMgdG8gaXQuXG4gKlxuICogSGFyZCBjb250cmFjdDogdGhpcyBwYXRoIHNlcnZlcyBPTkxZIHB1YmxpYywgQ0ROLWJhY2tlZCBhc3NldHMuIEl0IGhhcyBOT1xuICogYXV0aCBhbmQgTk8gQ1NSRiAoaXQgaXMgYSBwdWJsaWMgQ0ROIG9yaWdpbikuIEl0IE5FVkVSIHN0cmVhbXMgcmF3IGJ5dGVzIGFuZFxuICogTkVWRVIgZXhwb3NlcyBhIHByaXZhdGUvdW5saXN0ZWQgYXNzZXQg4oCUIGFueXRoaW5nIHRoYXQgaXMgbm90IGFuIGFjdGl2ZSwgcHVibGljXG4gKiBmaWxlIHdpdGggYSBDRE4tcmVhY2hhYmxlIChgcHVibGljL2AtcHJlZml4ZWQpIGNvcHkgcmVzb2x2ZXMgdG8gYSA0MDQuIFRoZSBhY3R1YWxcbiAqIFwicmVzb2x2ZSBwdWJsaWMgZmlsZSBpZCDihpIgY2xvdWQgQ0ROIHVybCAob3IgbnVsbClcIiBkZWNpc2lvbiBpcyBvd25lZCBieVxuICogYGFzc2V0U2VydmljZS5nZXRQdWJsaWNDZG5VcmxgLCB0aGUgU0FNRSBwcm9iZSB1c2VkIGJ5IGBHRVQgL2Fzc2V0cy86aWQvc3RyZWFtYFxuICogKG5vIGR1cGxpY2F0ZWQgdmlzaWJpbGl0eS9wbGFjZW1lbnQgbG9naWMgaGVyZSkuXG4gKi9cblxuaW1wb3J0IGV4cHJlc3MgZnJvbSAnZXhwcmVzcyc7XG5pbXBvcnQgeyBhc3NldFNlcnZpY2UgfSBmcm9tICcuLi9zZXJ2aWNlcy9hc3NldFNlcnZpY2VTaW5nbGV0b24nO1xuaW1wb3J0IHsgdmFsaWRhdGUgfSBmcm9tICcuLi9taWRkbGV3YXJlL3ZhbGlkYXRlJztcbmltcG9ydCB7IGFzc2V0SWRQYXJhbXMgfSBmcm9tICcuLi9zY2hlbWFzL2Fzc2V0cy5zY2hlbWFzJztcbmltcG9ydCB7IGFzeW5jSGFuZGxlciB9IGZyb20gJy4uL3V0aWxzL2FzeW5jSGFuZGxlcic7XG5pbXBvcnQgeyBDRE5fUkVESVJFQ1RfTUFYX0FHRV9TRUNPTkRTIH0gZnJvbSAnLi4vY29uZmlnL2Nkbic7XG5pbXBvcnQgeyBsb2dnZXIgfSBmcm9tICcuLi91dGlscy9sb2dnZXInO1xuXG5jb25zdCByb3V0ZXIgPSBleHByZXNzLlJvdXRlcigpO1xuXG4vKipcbiAqIEBvcGVuYXBpXG4gKiAvY2RuL3tpZH06XG4gKiAgIGdldDpcbiAqICAgICBzdW1tYXJ5OiBSZXNvbHZlIGEgcHVibGljIGFzc2V0IGlkIHRvIGl0cyBjbG91ZC5veHkuc28gQ0ROIFVSTCAoMzAyKS5cbiAqICAgICBkZXNjcmlwdGlvbjogPlxuICogICAgICAgUHVibGljIENETiBvcmlnaW4gZW5kcG9pbnQgKG5vIGF1dGgpLiBSZWRpcmVjdHMgdG8gdGhlIGBjbG91ZC5veHkuc29gXG4gKiAgICAgICBDRE4gVVJMIGZvciBhIFBVQkxJQywgQ0ROLWJhY2tlZCBhc3NldC4gUHJpdmF0ZS91bmxpc3RlZCBhc3NldHMsIGZpbGVzXG4gKiAgICAgICB0aGF0IGFyZSBub3QgYWN0aXZlLCBmaWxlcyB3aXRoIG5vIHB1YmxpYyBjb3B5LCBhbmQgdW5rbm93biBpZHMgYWxsIHJldHVybiA0MDQg4oCUIHRoaXMgcGF0aCBuZXZlclxuICogICAgICAgc3RyZWFtcyBieXRlcyBhbmQgbmV2ZXIgZXhwb3NlcyBhIG5vbi1wdWJsaWMgYXNzZXQuXG4gKiAgICAgdGFnczogW0Fzc2V0c11cbiAqICAgICBwYXJhbWV0ZXJzOlxuICogICAgICAgLSBpbjogcGF0aFxuICogICAgICAgICBuYW1lOiBpZFxuICogICAgICAgICByZXF1aXJlZDogdHJ1ZVxuICogICAgICAgICBzY2hlbWE6IHsgdHlwZTogc3RyaW5nIH1cbiAqICAgICAgIC0gaW46IHF1ZXJ5XG4gKiAgICAgICAgIG5hbWU6IHZhcmlhbnRcbiAqICAgICAgICAgcmVxdWlyZWQ6IGZhbHNlXG4gKiAgICAgICAgIHNjaGVtYTogeyB0eXBlOiBzdHJpbmcgfVxuICogICAgICAgICBkZXNjcmlwdGlvbjogT3B0aW9uYWwgdmFyaWFudCAoZS5nLiBgdGh1bWJgLCBgdzMyMGApOyBvbWl0dGVkID0gb3JpZ2luYWwuXG4gKiAgICAgcmVzcG9uc2VzOlxuICogICAgICAgMzAyOlxuICogICAgICAgICBkZXNjcmlwdGlvbjogUmVkaXJlY3QgdG8gdGhlIHB1YmxpYyBjbG91ZC5veHkuc28gQ0ROIFVSTC5cbiAqICAgICAgIDQwNDpcbiAqICAgICAgICAgZGVzY3JpcHRpb246IE5vIHB1YmxpYyBDRE4tYmFja2VkIGFzc2V0IGZvciB0aGlzIGlkLlxuICovXG5yb3V0ZXIuZ2V0KFxuICAnLzppZCcsXG4gIHZhbGlkYXRlKHsgcGFyYW1zOiBhc3NldElkUGFyYW1zIH0pLFxuICBhc3luY0hhbmRsZXIoYXN5bmMgKHJlcTogZXhwcmVzcy5SZXF1ZXN0LCByZXM6IGV4cHJlc3MuUmVzcG9uc2UpID0+IHtcbiAgICBjb25zdCB7IGlkOiBmaWxlSWQgfSA9IHJlcS5wYXJhbXM7XG4gICAgY29uc3QgdmFyaWFudCA9IHR5cGVvZiByZXEucXVlcnkudmFyaWFudCA9PT0gJ3N0cmluZycgPyByZXEucXVlcnkudmFyaWFudCA6IHVuZGVmaW5lZDtcblxuICAgIGNvbnN0IGZpbGUgPSBhd2FpdCBhc3NldFNlcnZpY2UuZ2V0RmlsZShmaWxlSWQpO1xuICAgIGlmICghZmlsZSkge1xuICAgICAgcmV0dXJuIHJlcy5zdGF0dXMoNDA0KS5qc29uKHsgZXJyb3I6ICdOT1RfRk9VTkQnLCBtZXNzYWdlOiAnUmVzb3VyY2Ugbm90IGZvdW5kJyB9KTtcbiAgICB9XG5cbiAgICBpZiAoZmlsZS5zdGF0dXMgIT09ICdhY3RpdmUnKSB7XG4gICAgICByZXR1cm4gcmVzLnN0YXR1cyg0MDQpLmpzb24oeyBlcnJvcjogJ05PVF9GT1VORCcsIG1lc3NhZ2U6ICdSZXNvdXJjZSBub3QgZm91bmQnIH0pO1xuICAgIH1cblxuICAgIC8vIGBnZXRQdWJsaWNDZG5VcmxgIHJldHVybnMgYSBgY2xvdWQub3h5LnNvYCBVUkwgT05MWSBmb3IgYSBwdWJsaWMgZmlsZSB3aG9zZVxuICAgIC8vIGJ5dGVzIGFyZSBDRE4tcmVhY2hhYmxlOyBpdCByZXR1cm5zIG51bGwgZm9yIHByaXZhdGUvdW5saXN0ZWQgYXNzZXRzIGFuZFxuICAgIC8vIGZvciBwdWJsaWMgYXNzZXRzIHdpdGhvdXQgYSBgcHVibGljL2AgY29weS4gRWl0aGVyIG5vbi1yZXN1bHQgaXMgYSA0MDRcbiAgICAvLyBoZXJlIOKAlCB0aGlzIHB1YmxpYyBvcmlnaW4gbXVzdCBuZXZlciBzdHJlYW0gcHJpdmF0ZSBieXRlcyBvciA1MDAuXG4gICAgbGV0IGNkblVybDogc3RyaW5nIHwgbnVsbDtcbiAgICB0cnkge1xuICAgICAgY2RuVXJsID0gYXdhaXQgYXNzZXRTZXJ2aWNlLmdldFB1YmxpY0NkblVybChmaWxlLCB2YXJpYW50KTtcbiAgICB9IGNhdGNoIChlcnJvcikge1xuICAgICAgbG9nZ2VyLndhcm4oJ0NETiByZXNvbHZlIGZhaWxlZCBmb3IgcHVibGljIGFzc2V0Jywge1xuICAgICAgICBmaWxlSWQsXG4gICAgICAgIHZhcmlhbnQsXG4gICAgICAgIGVycm9yOiBlcnJvciBpbnN0YW5jZW9mIEVycm9yID8gZXJyb3IubWVzc2FnZSA6IFN0cmluZyhlcnJvciksXG4gICAgICB9KTtcbiAgICAgIHJldHVybiByZXMuc3RhdHVzKDQwNCkuanNvbih7IGVycm9yOiAnTk9UX0ZPVU5EJywgbWVzc2FnZTogJ1Jlc291cmNlIG5vdCBmb3VuZCcgfSk7XG4gICAgfVxuXG4gICAgaWYgKCFjZG5VcmwpIHtcbiAgICAgIHJldHVybiByZXMuc3RhdHVzKDQwNCkuanNvbih7IGVycm9yOiAnTk9UX0ZPVU5EJywgbWVzc2FnZTogJ1Jlc291cmNlIG5vdCBmb3VuZCcgfSk7XG4gICAgfVxuXG4gICAgcmVzLnNldEhlYWRlcignQ2FjaGUtQ29udHJvbCcsIGBwdWJsaWMsIG1heC1hZ2U9JHtDRE5fUkVESVJFQ1RfTUFYX0FHRV9TRUNPTkRTfWApO1xuICAgIHJldHVybiByZXMucmVkaXJlY3QoY2RuVXJsKTtcbiAgfSlcbik7XG5cbmV4cG9ydCBkZWZhdWx0IHJvdXRlcjtcbiJdLCJ2ZXJzaW9uIjozfQ==

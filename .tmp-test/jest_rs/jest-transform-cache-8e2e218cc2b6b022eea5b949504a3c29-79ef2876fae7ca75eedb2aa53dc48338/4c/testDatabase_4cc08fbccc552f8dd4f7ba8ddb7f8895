@@ -1,0 +1,168 @@
+fc959e51a56dfb774451dd0e1481e0c5
+"use strict";
+/**
+ * Throwaway Test Database
+ *
+ * Creates a uniquely-named database on the server `TEST_DATABASE_URL` (falling
+ * back to `DATABASE_URL`) points at, applies every migration in `drizzle/`, and
+ * publishes its URL as `DATABASE_URL` so the suite's own `connectPostgres()`
+ * opens against it — a test therefore exercises the same pool, casing and
+ * schema wiring `config/postgres.ts` uses in production, not a parallel copy.
+ *
+ * Migrations are applied by shelling out to `bun run db:migrate`
+ * (`src/db/migrate.ts`), the single migration mechanism in this package. There
+ * is no second migrator: what a developer runs, what CI runs, what the test
+ * harness runs, and what the production one-shot ECS task runs are all the same
+ * code — the compiled form of that file, over the same `drizzle/` files.
+ *
+ * `DATABASE_URL` is the ONLY channel between create and drop — jest's global
+ * setup and teardown share a process, and an env var the harness already has to
+ * publish beats a second `globalThis` slot that could drift out of sync with it.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.createTestDatabase = createTestDatabase;
+exports.dropTestDatabase = dropTestDatabase;
+const node_crypto_1 = require("node:crypto");
+const node_child_process_1 = require("node:child_process");
+const node_path_1 = require("node:path");
+const postgres_1 = __importDefault(require("postgres"));
+const env_1 = require("../config/env");
+/** Bytes of randomness in a throwaway database name. */
+const NAME_ENTROPY_BYTES = 8;
+/**
+ * Every throwaway database matches this, and `dropTestDatabase` refuses
+ * anything that does not — so a misconfigured `DATABASE_URL` can never make
+ * teardown drop a real database.
+ */
+const TEST_DATABASE_NAME = /^oxy_test_[0-9a-f]{16}$/;
+/** Seconds an admin connection waits before giving up on close. */
+const ADMIN_CLOSE_TIMEOUT_SECONDS = 5;
+/** Milliseconds `bun run db:migrate` may take before the run is abandoned. */
+const MIGRATE_TIMEOUT_MS = 60000;
+/**
+ * `packages/api` — the working directory `bun run db:migrate` must run from, one
+ * level above both `src/db/` (ts-jest reading source) and `dist/db/` (the tsc
+ * build), so the same relative path is correct either way.
+ */
+const PACKAGE_ROOT = (0, node_path_1.join)(__dirname, '..', '..');
+/**
+ * Run `bun run db:migrate` against `databaseUrl`.
+ *
+ * @throws {Error} Carrying the migrator's own output when it fails — a silent
+ *   migration failure would leave every test querying an empty database and
+ *   failing for the wrong reason.
+ */
+function runMigrations(databaseUrl) {
+    return new Promise((resolve, reject) => {
+        const child = (0, node_child_process_1.spawn)('bun', ['run', 'db:migrate'], {
+            cwd: PACKAGE_ROOT,
+            env: Object.assign(Object.assign({}, process.env), { DATABASE_URL: databaseUrl }),
+            stdio: ['ignore', 'pipe', 'pipe'],
+            timeout: MIGRATE_TIMEOUT_MS,
+        });
+        let output = '';
+        child.stdout.on('data', (chunk) => { output += chunk.toString(); });
+        child.stderr.on('data', (chunk) => { output += chunk.toString(); });
+        child.on('error', (error) => {
+            reject(new Error(`Failed to run \`bun run db:migrate\`: ${error.message}`));
+        });
+        child.on('close', (code) => {
+            if (code === 0) {
+                resolve();
+                return;
+            }
+            reject(new Error(`\`bun run db:migrate\` exited with code ${code}:\n${output}`));
+        });
+    });
+}
+/**
+ * `CREATE`/`DROP DATABASE` cannot run from inside the database they target, so
+ * both go through the always-present `postgres` maintenance database.
+ */
+function maintenanceUrl(databaseUrl) {
+    const url = new URL(databaseUrl);
+    url.pathname = '/postgres';
+    return url.toString();
+}
+/**
+ * Create a migrated throwaway database and point `DATABASE_URL` at it.
+ *
+ * @returns The throwaway database's connection string.
+ * @throws {ConfigurationError} When neither `TEST_DATABASE_URL` nor
+ *   `DATABASE_URL` is set — there is no server to create the database on.
+ */
+function createTestDatabase() {
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a;
+        const baseUrl = (_a = process.env.TEST_DATABASE_URL) !== null && _a !== void 0 ? _a : process.env.DATABASE_URL;
+        if (!baseUrl) {
+            throw new env_1.ConfigurationError('TEST_DATABASE_URL (or DATABASE_URL) must point at a Postgres server so ' +
+                'a throwaway test database can be created on it. Start one with: ' +
+                'docker compose -f docker-compose.dev.yml up -d postgres');
+        }
+        // Built from a fixed prefix plus hex, so the name contains only `[a-z0-9_]`
+        // and needs no escaping beyond the quoting below — CREATE/DROP DATABASE
+        // cannot take a bound parameter.
+        const name = `oxy_test_${(0, node_crypto_1.randomBytes)(NAME_ENTROPY_BYTES).toString('hex')}`;
+        const testUrl = new URL(baseUrl);
+        testUrl.pathname = `/${name}`;
+        const url = testUrl.toString();
+        const create = (0, postgres_1.default)(maintenanceUrl(baseUrl), { max: 1 });
+        try {
+            yield create.unsafe(`create database "${name}"`);
+        }
+        finally {
+            yield create.end({ timeout: ADMIN_CLOSE_TIMEOUT_SECONDS });
+        }
+        try {
+            yield runMigrations(url);
+        }
+        catch (error) {
+            // An unmigrated database left behind would be dropped by nothing, so remove
+            // it before surfacing the failure.
+            yield dropTestDatabase(url);
+            throw error;
+        }
+        process.env.DATABASE_URL = url;
+        return url;
+    });
+}
+/**
+ * Drop a database created by `createTestDatabase`.
+ *
+ * `WITH (FORCE)` (Postgres 13+) terminates any connection a suite left behind,
+ * so a leaked handle cannot turn teardown into a hang.
+ *
+ * @throws {ConfigurationError} If `databaseUrl` does not name a throwaway
+ *   database. Teardown reads its target from the environment, so this guard is
+ *   what stops a stray `DATABASE_URL` from dropping a real database.
+ */
+function dropTestDatabase(databaseUrl) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const name = new URL(databaseUrl).pathname.replace(/^\//, '');
+        if (!TEST_DATABASE_NAME.test(name)) {
+            throw new env_1.ConfigurationError(`Refusing to drop "${name}": only throwaway databases created by ` +
+                'createTestDatabase (oxy_test_<16 hex>) may be dropped.');
+        }
+        const remove = (0, postgres_1.default)(maintenanceUrl(databaseUrl), { max: 1 });
+        try {
+            yield remove.unsafe(`drop database if exists "${name}" with (force)`);
+        }
+        finally {
+            yield remove.end({ timeout: ADMIN_CLOSE_TIMEOUT_SECONDS });
+        }
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvZGIvdGVzdERhdGFiYXNlLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBa0JHOzs7Ozs7Ozs7Ozs7OztBQStFSCxnREFxQ0M7QUFZRCw0Q0FlQztBQTdJRCw2Q0FBMEM7QUFDMUMsMkRBQTJDO0FBQzNDLHlDQUFpQztBQUNqQyx3REFBZ0M7QUFDaEMsdUNBQW1EO0FBRW5ELHdEQUF3RDtBQUN4RCxNQUFNLGtCQUFrQixHQUFHLENBQUMsQ0FBQztBQUM3Qjs7OztHQUlHO0FBQ0gsTUFBTSxrQkFBa0IsR0FBRyx5QkFBeUIsQ0FBQztBQUNyRCxtRUFBbUU7QUFDbkUsTUFBTSwyQkFBMkIsR0FBRyxDQUFDLENBQUM7QUFDdEMsOEVBQThFO0FBQzlFLE1BQU0sa0JBQWtCLEdBQUcsS0FBTSxDQUFDO0FBRWxDOzs7O0dBSUc7QUFDSCxNQUFNLFlBQVksR0FBRyxJQUFBLGdCQUFJLEVBQUMsU0FBUyxFQUFFLElBQUksRUFBRSxJQUFJLENBQUMsQ0FBQztBQUVqRDs7Ozs7O0dBTUc7QUFDSCxTQUFTLGFBQWEsQ0FBQyxXQUFtQjtJQUN4QyxPQUFPLElBQUksT0FBTyxDQUFDLENBQUMsT0FBTyxFQUFFLE1BQU0sRUFBRSxFQUFFO1FBQ3JDLE1BQU0sS0FBSyxHQUFHLElBQUEsMEJBQUssRUFBQyxLQUFLLEVBQUUsQ0FBQyxLQUFLLEVBQUUsWUFBWSxDQUFDLEVBQUU7WUFDaEQsR0FBRyxFQUFFLFlBQVk7WUFDakIsR0FBRyxrQ0FBTyxPQUFPLENBQUMsR0FBRyxLQUFFLFlBQVksRUFBRSxXQUFXLEdBQUU7WUFDbEQsS0FBSyxFQUFFLENBQUMsUUFBUSxFQUFFLE1BQU0sRUFBRSxNQUFNLENBQUM7WUFDakMsT0FBTyxFQUFFLGtCQUFrQjtTQUM1QixDQUFDLENBQUM7UUFFSCxJQUFJLE1BQU0sR0FBRyxFQUFFLENBQUM7UUFDaEIsS0FBSyxDQUFDLE1BQU0sQ0FB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R0FBRyxDQUFDO1FBQy9CLE9BQU8sR0FBRyxDQUFDO0lBQ2IsQ0FBQztDQUFBO0FBRUQ7Ozs7Ozs7OztHQVNHO0FBQ0gsU0FBc0IsZ0JBQWdCLENBQUMsV0FBbUI7O1FBQ3hELE1BQU0sSUFBSSxHQUFHLElBQUksR0FBRyxDQUFDLFdBQVcsQ0FBQyxDQUFDLFFBQVEsQ0FBQyxPQUFPLENBQUMsS0FBSyxFQUFFLEVBQUUsQ0FBQyxDQUFDO1FBQzlELElBQUksQ0FBQyxrQkFBa0IsQ0FBQyxJQUFJLENBQUMsSUFBSSxDQUFDLEVBQUUsQ0FBQztZQUNuQyxNQUFNLElBQUksd0JBQWtCLENBQzFCLHFCQUFxQixJQUFJLHlDQUF5QztnQkFDbEUsd0RBQXdELENBQ3pELENBQUM7UUFDSixDQUFDO1FBRUQsTUFBTSxNQUFNLEdBQUcsSUFBQSxrQkFBUSxFQUFDLGNBQWMsQ0FBQyxXQUFXLENBQUMsRUFBRSxFQUFFLEdBQUcsRUFBRSxDQUFDLEVBQUUsQ0FBQyxDQUFDO1FBQ2pFLElBQUksQ0FBQztZQUNILE1BQU0sTUFBTSxDQUFDLE1BQU0sQ0FBQyw0QkFBNEIsSUFBSSxnQkFBZ0IsQ0FBQyxDQUFDO1FBQ3hFLENBQUM7Z0JBQVMsQ0FBQztZQUNULE1BQU0sTUFBTSxDQUFDLEdBQUcsQ0FBQyxFQUFFLE9BQU8sRUFBRSwyQkFBMkIsRUFBRSxDQUFDLENBQUM7UUFDN0QsQ0FBQztJQUNILENBQUM7Q0FBQSIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9kYi90ZXN0RGF0YWJhc2UudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBUaHJvd2F3YXkgVGVzdCBEYXRhYmFzZVxuICpcbiAqIENyZWF0ZXMgYSB1bmlxdWVseS1uYW1lZCBkYXRhYmFzZSBvbiB0aGUgc2VydmVyIGBURVNUX0RBVEFCQVNFX1VSTGAgKGZhbGxpbmdcbiAqIGJhY2sgdG8gYERBVEFCQVNFX1VSTGApIHBvaW50cyBhdCwgYXBwbGllcyBldmVyeSBtaWdyYXRpb24gaW4gYGRyaXp6bGUvYCwgYW5kXG4gKiBwdWJsaXNoZXMgaXRzIFVSTCBhcyBgREFUQUJBU0VfVVJMYCBzbyB0aGUgc3VpdGUncyBvd24gYGNvbm5lY3RQb3N0Z3JlcygpYFxuICogb3BlbnMgYWdhaW5zdCBpdCDigJQgYSB0ZXN0IHRoZXJlZm9yZSBleGVyY2lzZXMgdGhlIHNhbWUgcG9vbCwgY2FzaW5nIGFuZFxuICogc2NoZW1hIHdpcmluZyBgY29uZmlnL3Bvc3RncmVzLnRzYCB1c2VzIGluIHByb2R1Y3Rpb24sIG5vdCBhIHBhcmFsbGVsIGNvcHkuXG4gKlxuICogTWlncmF0aW9ucyBhcmUgYXBwbGllZCBieSBzaGVsbGluZyBvdXQgdG8gYGJ1biBydW4gZGI6bWlncmF0ZWBcbiAqIChgc3JjL2RiL21pZ3JhdGUudHNgKSwgdGhlIHNpbmdsZSBtaWdyYXRpb24gbWVjaGFuaXNtIGluIHRoaXMgcGFja2FnZS4gVGhlcmVcbiAqIGlzIG5vIHNlY29uZCBtaWdyYXRvcjogd2hhdCBhIGRldmVsb3BlciBydW5zLCB3aGF0IENJIHJ1bnMsIHdoYXQgdGhlIHRlc3RcbiAqIGhhcm5lc3MgcnVucywgYW5kIHdoYXQgdGhlIHByb2R1Y3Rpb24gb25lLXNob3QgRUNTIHRhc2sgcnVucyBhcmUgYWxsIHRoZSBzYW1lXG4gKiBjb2RlIOKAlCB0aGUgY29tcGlsZWQgZm9ybSBvZiB0aGF0IGZpbGUsIG92ZXIgdGhlIHNhbWUgYGRyaXp6bGUvYCBmaWxlcy5cbiAqXG4gKiBgREFUQUJBU0VfVVJMYCBpcyB0aGUgT05MWSBjaGFubmVsIGJldHdlZW4gY3JlYXRlIGFuZCBkcm9wIOKAlCBqZXN0J3MgZ2xvYmFsXG4gKiBzZXR1cCBhbmQgdGVhcmRvd24gc2hhcmUgYSBwcm9jZXNzLCBhbmQgYW4gZW52IHZhciB0aGUgaGFybmVzcyBhbHJlYWR5IGhhcyB0b1xuICogcHVibGlzaCBiZWF0cyBhIHNlY29uZCBgZ2xvYmFsVGhpc2Agc2xvdCB0aGF0IGNvdWxkIGRyaWZ0IG91dCBvZiBzeW5jIHdpdGggaXQuXG4gKi9cblxuaW1wb3J0IHsgcmFuZG9tQnl0ZXMgfSBmcm9tICdub2RlOmNyeXB0byc7XG5pbXBvcnQgeyBzcGF3biB9IGZyb20gJ25vZGU6Y2hpbGRfcHJvY2Vzcyc7XG5pbXBvcnQgeyBqb2luIH0gZnJvbSAnbm9kZTpwYXRoJztcbmltcG9ydCBwb3N0Z3JlcyBmcm9tICdwb3N0Z3Jlcyc7XG5pbXBvcnQgeyBDb25maWd1cmF0aW9uRXJyb3IgfSBmcm9tICcuLi9jb25maWcvZW52JztcblxuLyoqIEJ5dGVzIG9mIHJhbmRvbW5lc3MgaW4gYSB0aHJvd2F3YXkgZGF0YWJhc2UgbmFtZS4gKi9cbmNvbnN0IE5BTUVfRU5UUk9QWV9CWVRFUyA9IDg7XG4vKipcbiAqIEV2ZXJ5IHRocm93YXdheSBkYXRhYmFzZSBtYXRjaGVzIHRoaXMsIGFuZCBgZHJvcFRlc3REYXRhYmFzZWAgcmVmdXNlc1xuICogYW55dGhpbmcgdGhhdCBkb2VzIG5vdCDigJQgc28gYSBtaXNjb25maWd1cmVkIGBEQVRBQkFTRV9VUkxgIGNhbiBuZXZlciBtYWtlXG4gKiB0ZWFyZG93biBkcm9wIGEgcmVhbCBkYXRhYmFzZS5cbiAqL1xuY29uc3QgVEVTVF9EQVRBQkFTRV9OQU1FID0gL15veHlfdGVzdF9bMC05YS1mXXsxNn0kLztcbi8qKiBTZWNvbmRzIGFuIGFkbWluIGNvbm5lY3Rpb24gd2FpdHMgYmVmb3JlIGdpdmluZyB1cCBvbiBjbG9zZS4gKi9cbmNvbnN0IEFETUlOX0NMT1NFX1RJTUVPVVRfU0VDT05EUyA9IDU7XG4vKiogTWlsbGlzZWNvbmRzIGBidW4gcnVuIGRiOm1pZ3JhdGVgIG1heSB0YWtlIGJlZm9yZSB0aGUgcnVuIGlzIGFiYW5kb25lZC4gKi9cbmNvbnN0IE1JR1JBVEVfVElNRU9VVF9NUyA9IDYwXzAwMDtcblxuLyoqXG4gKiBgcGFja2FnZXMvYXBpYCDigJQgdGhlIHdvcmtpbmcgZGlyZWN0b3J5IGBidW4gcnVuIGRiOm1pZ3JhdGVgIG11c3QgcnVuIGZyb20sIG9uZVxuICogbGV2ZWwgYWJvdmUgYm90aCBgc3JjL2RiL2AgKHRzLWplc3QgcmVhZGluZyBzb3VyY2UpIGFuZCBgZGlzdC9kYi9gICh0aGUgdHNjXG4gKiBidWlsZCksIHNvIHRoZSBzYW1lIHJlbGF0aXZlIHBhdGggaXMgY29ycmVjdCBlaXRoZXIgd2F5LlxuICovXG5jb25zdCBQQUNLQUdFX1JPT1QgPSBqb2luKF9fZGlybmFtZSwgJy4uJywgJy4uJyk7XG5cbi8qKlxuICogUnVuIGBidW4gcnVuIGRiOm1pZ3JhdGVgIGFnYWluc3QgYGRhdGFiYXNlVXJsYC5cbiAqXG4gKiBAdGhyb3dzIHtFcnJvcn0gQ2FycnlpbmcgdGhlIG1pZ3JhdG9yJ3Mgb3duIG91dHB1dCB3aGVuIGl0IGZhaWxzIOKAlCBhIHNpbGVudFxuICogICBtaWdyYXRpb24gZmFpbHVyZSB3b3VsZCBsZWF2ZSBldmVyeSB0ZXN0IHF1ZXJ5aW5nIGFuIGVtcHR5IGRhdGFiYXNlIGFuZFxuICogICBmYWlsaW5nIGZvciB0aGUgd3JvbmcgcmVhc29uLlxuICovXG5mdW5jdGlvbiBydW5NaWdyYXRpb25zKGRhdGFiYXNlVXJsOiBzdHJpbmcpOiBQcm9taXNlPHZvaWQ+IHtcbiAgcmV0dXJuIG5ldyBQcm9taXNlKChyZXNvbHZlLCByZWplY3QpID0+IHtcbiAgICBjb25zdCBjaGlsZCA9IHNwYXduKCdidW4nLCBbJ3J1bicsICdkYjptaWdyYXRlJ10sIHtcbiAgICAgIGN3ZDogUEFDS0FHRV9ST09ULFxuICAgICAgZW52OiB7IC4uLnByb2Nlc3MuZW52LCBEQVRBQkFTRV9VUkw6IGRhdGFiYXNlVXJsIH0sXG4gICAgICBzdGRpbzogWydpZ25vcmUnLCAncGlwZScsICdwaXBlJ10sXG4gICAgICB0aW1lb3V0OiBNSUdSQVRFX1RJTUVPVVRfTVMsXG4gICAgfSk7XG5cbiAgICBsZXQgb3V0cHV0ID0gJyc7XG4gICAgY2hpbGQuc3Rkb3V0Lm9uKCdkYXRhJywgKGNodW5rOiBCdWZmZXIpID0+IHsgb3V0cHV0ICs9IGNodW5rLnRvU3RyaW5nKCk7IH0pO1xuICAgIGNoaWxkLnN0ZGVyci5vbignZGF0YScsIChjaHVuazogQnVmZmVyKSA9PiB7IG91dHB1dCArPSBjaHVuay50b1N0cmluZygpOyB9KTtcblxuICAgIGNoaWxkLm9uKCdlcnJvcicsIChlcnJvcikgPT4ge1xuICAgICAgcmVqZWN0KG5ldyBFcnJvcihgRmFpbGVkIHRvIHJ1biBcXGBidW4gcnVuIGRiOm1pZ3JhdGVcXGA6ICR7ZXJyb3IubWVzc2FnZX1gKSk7XG4gICAgfSk7XG5cbiAgICBjaGlsZC5vbignY2xvc2UnLCAoY29kZSkgPT4ge1xuICAgICAgaWYgKGNvZGUgPT09IDApIHtcbiAgICAgICAgcmVzb2x2ZSgpO1xuICAgICAgICByZXR1cm47XG4gICAgICB9XG4gICAgICByZWplY3QobmV3IEVycm9yKGBcXGBidW4gcnVuIGRiOm1pZ3JhdGVcXGAgZXhpdGVkIHdpdGggY29kZSAke2NvZGV9OlxcbiR7b3V0cHV0fWApKTtcbiAgICB9KTtcbiAgfSk7XG59XG5cbi8qKlxuICogYENSRUFURWAvYERST1AgREFUQUJBU0VgIGNhbm5vdCBydW4gZnJvbSBpbnNpZGUgdGhlIGRhdGFiYXNlIHRoZXkgdGFyZ2V0LCBzb1xuICogYm90aCBnbyB0aHJvdWdoIHRoZSBhbHdheXMtcHJlc2VudCBgcG9zdGdyZXNgIG1haW50ZW5hbmNlIGRhdGFiYXNlLlxuICovXG5mdW5jdGlvbiBtYWludGVuYW5jZVVybChkYXRhYmFzZVVybDogc3RyaW5nKTogc3RyaW5nIHtcbiAgY29uc3QgdXJsID0gbmV3IFVSTChkYXRhYmFzZVVybCk7XG4gIHVybC5wYXRobmFtZSA9ICcvcG9zdGdyZXMnO1xuICByZXR1cm4gdXJsLnRvU3RyaW5nKCk7XG59XG5cbi8qKlxuICogQ3JlYXRlIGEgbWlncmF0ZWQgdGhyb3dhd2F5IGRhdGFiYXNlIGFuZCBwb2ludCBgREFUQUJBU0VfVVJMYCBhdCBpdC5cbiAqXG4gKiBAcmV0dXJucyBUaGUgdGhyb3dhd2F5IGRhdGFiYXNlJ3MgY29ubmVjdGlvbiBzdHJpbmcuXG4gKiBAdGhyb3dzIHtDb25maWd1cmF0aW9uRXJyb3J9IFdoZW4gbmVpdGhlciBgVEVTVF9EQVRBQkFTRV9VUkxgIG5vclxuICogICBgREFUQUJBU0VfVVJMYCBpcyBzZXQg4oCUIHRoZXJlIGlzIG5vIHNlcnZlciB0byBjcmVhdGUgdGhlIGRhdGFiYXNlIG9uLlxuICovXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gY3JlYXRlVGVzdERhdGFiYXNlKCk6IFByb21pc2U8c3RyaW5nPiB7XG4gIGNvbnN0IGJhc2VVcmwgPSBwcm9jZXNzLmVudi5URVNUX0RBVEFCQVNFX1VSTCA/PyBwcm9jZXNzLmVudi5EQVRBQkFTRV9VUkw7XG4gIGlmICghYmFzZVVybCkge1xuICAgIHRocm93IG5ldyBDb25maWd1cmF0aW9uRXJyb3IoXG4gICAgICAnVEVTVF9EQVRBQkFTRV9VUkwgKG9yIERBVEFCQVNFX1VSTCkgbXVzdCBwb2ludCBhdCBhIFBvc3RncmVzIHNlcnZlciBzbyAnICtcbiAgICAgICdhIHRocm93YXdheSB0ZXN0IGRhdGFiYXNlIGNhbiBiZSBjcmVhdGVkIG9uIGl0LiBTdGFydCBvbmUgd2l0aDogJyArXG4gICAgICAnZG9ja2VyIGNvbXBvc2UgLWYgZG9ja2VyLWNvbXBvc2UuZGV2LnltbCB1cCAtZCBwb3N0Z3JlcydcbiAgICApO1xuICB9XG5cbiAgLy8gQnVpbHQgZnJvbSBhIGZpeGVkIHByZWZpeCBwbHVzIGhleCwgc28gdGhlIG5hbWUgY29udGFpbnMgb25seSBgW2EtejAtOV9dYFxuICAvLyBhbmQgbmVlZHMgbm8gZXNjYXBpbmcgYmV5b25kIHRoZSBxdW90aW5nIGJlbG93IOKAlCBDUkVBVEUvRFJPUCBEQVRBQkFTRVxuICAvLyBjYW5ub3QgdGFrZSBhIGJvdW5kIHBhcmFtZXRlci5cbiAgY29uc3QgbmFtZSA9IGBveHlfdGVzdF8ke3JhbmRvbUJ5dGVzKE5BTUVfRU5UUk9QWV9CWVRFUykudG9TdHJpbmcoJ2hleCcpfWA7XG5cbiAgY29uc3QgdGVzdFVybCA9IG5ldyBVUkwoYmFzZVVybCk7XG4gIHRlc3RVcmwucGF0aG5hbWUgPSBgLyR7bmFtZX1gO1xuICBjb25zdCB1cmwgPSB0ZXN0VXJsLnRvU3RyaW5nKCk7XG5cbiAgY29uc3QgY3JlYXRlID0gcG9zdGdyZXMobWFpbnRlbmFuY2VVcmwoYmFzZVVybCksIHsgbWF4OiAxIH0pO1xuICB0cnkge1xuICAgIGF3YWl0IGNyZWF0ZS51bnNhZmUoYGNyZWF0ZSBkYXRhYmFzZSBcIiR7bmFtZX1cImApO1xuICB9IGZpbmFsbHkge1xuICAgIGF3YWl0IGNyZWF0ZS5lbmQoeyB0aW1lb3V0OiBBRE1JTl9DTE9TRV9USU1FT1VUX1NFQ09ORFMgfSk7XG4gIH1cblxuICB0cnkge1xuICAgIGF3YWl0IHJ1bk1pZ3JhdGlvbnModXJsKTtcbiAgfSBjYXRjaCAoZXJyb3IpIHtcbiAgICAvLyBBbiB1bm1pZ3JhdGVkIGRhdGFiYXNlIGxlZnQgYmVoaW5kIHdvdWxkIGJlIGRyb3BwZWQgYnkgbm90aGluZywgc28gcmVtb3ZlXG4gICAgLy8gaXQgYmVmb3JlIHN1cmZhY2luZyB0aGUgZmFpbHVyZS5cbiAgICBhd2FpdCBkcm9wVGVzdERhdGFiYXNlKHVybCk7XG4gICAgdGhyb3cgZXJyb3I7XG4gIH1cblxuICBwcm9jZXNzLmVudi5EQVRBQkFTRV9VUkwgPSB1cmw7XG4gIHJldHVybiB1cmw7XG59XG5cbi8qKlxuICogRHJvcCBhIGRhdGFiYXNlIGNyZWF0ZWQgYnkgYGNyZWF0ZVRlc3REYXRhYmFzZWAuXG4gKlxuICogYFdJVEggKEZPUkNFKWAgKFBvc3RncmVzIDEzKykgdGVybWluYXRlcyBhbnkgY29ubmVjdGlvbiBhIHN1aXRlIGxlZnQgYmVoaW5kLFxuICogc28gYSBsZWFrZWQgaGFuZGxlIGNhbm5vdCB0dXJuIHRlYXJkb3duIGludG8gYSBoYW5nLlxuICpcbiAqIEB0aHJvd3Mge0NvbmZpZ3VyYXRpb25FcnJvcn0gSWYgYGRhdGFiYXNlVXJsYCBkb2VzIG5vdCBuYW1lIGEgdGhyb3dhd2F5XG4gKiAgIGRhdGFiYXNlLiBUZWFyZG93biByZWFkcyBpdHMgdGFyZ2V0IGZyb20gdGhlIGVudmlyb25tZW50LCBzbyB0aGlzIGd1YXJkIGlzXG4gKiAgIHdoYXQgc3RvcHMgYSBzdHJheSBgREFUQUJBU0VfVVJMYCBmcm9tIGRyb3BwaW5nIGEgcmVhbCBkYXRhYmFzZS5cbiAqL1xuZXhwb3J0IGFzeW5jIGZ1bmN0aW9uIGRyb3BUZXN0RGF0YWJhc2UoZGF0YWJhc2VVcmw6IHN0cmluZyk6IFByb21pc2U8dm9pZD4ge1xuICBjb25zdCBuYW1lID0gbmV3IFVSTChkYXRhYmFzZVVybCkucGF0aG5hbWUucmVwbGFjZSgvXlxcLy8sICcnKTtcbiAgaWYgKCFURVNUX0RBVEFCQVNFX05BTUUudGVzdChuYW1lKSkge1xuICAgIHRocm93IG5ldyBDb25maWd1cmF0aW9uRXJyb3IoXG4gICAgICBgUmVmdXNpbmcgdG8gZHJvcCBcIiR7bmFtZX1cIjogb25seSB0aHJvd2F3YXkgZGF0YWJhc2VzIGNyZWF0ZWQgYnkgYCArXG4gICAgICAnY3JlYXRlVGVzdERhdGFiYXNlIChveHlfdGVzdF88MTYgaGV4PikgbWF5IGJlIGRyb3BwZWQuJ1xuICAgICk7XG4gIH1cblxuICBjb25zdCByZW1vdmUgPSBwb3N0Z3JlcyhtYWludGVuYW5jZVVybChkYXRhYmFzZVVybCksIHsgbWF4OiAxIH0pO1xuICB0cnkge1xuICAgIGF3YWl0IHJlbW92ZS51bnNhZmUoYGRyb3AgZGF0YWJhc2UgaWYgZXhpc3RzIFwiJHtuYW1lfVwiIHdpdGggKGZvcmNlKWApO1xuICB9IGZpbmFsbHkge1xuICAgIGF3YWl0IHJlbW92ZS5lbmQoeyB0aW1lb3V0OiBBRE1JTl9DTE9TRV9USU1FT1VUX1NFQ09ORFMgfSk7XG4gIH1cbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

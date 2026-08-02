@@ -1,0 +1,27 @@
+579dadb96e0be782d891a5cc45e359a9
+"use strict";
+/**
+ * Shared S3Service singleton.
+ *
+ * Split out of `assetServiceSingleton` so that code needing OBJECT STORAGE does
+ * not have to import the module that eagerly constructs `AssetService`.
+ *
+ * That is not a stylistic preference. `assetServiceSingleton` runs
+ * `new AssetService(...)` at module-evaluation time, so importing it from
+ * anything `assetService.ts` itself imports forms a cycle that resolves to
+ * `AssetService === undefined` — the class declaration has not been reached yet
+ * — and throws at boot. `queue/assetVariants.queue.ts` is exactly that: it is
+ * imported BY `assetService.ts` and needs the storage client to run generation.
+ * Keeping the client here gives it a dependency that owns no service.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.s3Service = void 0;
+const s3Service_1 = require("./s3Service");
+exports.s3Service = (0, s3Service_1.createS3Service)({
+    region: process.env.AWS_REGION || 'us-east-1',
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+    bucketName: process.env.AWS_S3_BUCKET || '',
+    endpointUrl: process.env.AWS_ENDPOINT_URL,
+});
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2VydmljZXMvczNTZXJ2aWNlU2luZ2xldG9uLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7OztHQWFHOzs7QUFFSCwyQ0FBOEM7QUFFakMsUUFBQSxTQUFTLEdBQUcsSUFBQSwyQkFBZSxFQUFDO0lBQ3ZDLE1BQU0sRUFBRSxPQUFPLENBQUMsR0FBRyxDQUFDLFVBQVUsSUFBSSxXQUFXO0lBQzdDLFdBQVcsRUFBRSxPQUFPLENBQUMsR0FBRyxDQUFDLGlCQUFpQixJQUFJLEVBQUU7SUFDaEQsZUFBZSxFQUFFLE9BQU8sQ0FBQyxHQUFHLENBQUMscUJBQXFCLElBQUksRUFBRTtJQUN4RCxVQUFVLEVBQUUsT0FBTyxDQUFDLEdBQUcsQ0FBQyxhQUFhLElBQUksRUFBRTtJQUMzQyxXQUFXLEVBQUUsT0FBTyxDQUFDLEdBQUcsQ0FBQyxnQkFBZ0I7Q0FDMUMsQ0FBQyxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3NlcnZpY2VzL3MzU2VydmljZVNpbmdsZXRvbi50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIFNoYXJlZCBTM1NlcnZpY2Ugc2luZ2xldG9uLlxuICpcbiAqIFNwbGl0IG91dCBvZiBgYXNzZXRTZXJ2aWNlU2luZ2xldG9uYCBzbyB0aGF0IGNvZGUgbmVlZGluZyBPQkpFQ1QgU1RPUkFHRSBkb2VzXG4gKiBub3QgaGF2ZSB0byBpbXBvcnQgdGhlIG1vZHVsZSB0aGF0IGVhZ2VybHkgY29uc3RydWN0cyBgQXNzZXRTZXJ2aWNlYC5cbiAqXG4gKiBUaGF0IGlzIG5vdCBhIHN0eWxpc3RpYyBwcmVmZXJlbmNlLiBgYXNzZXRTZXJ2aWNlU2luZ2xldG9uYCBydW5zXG4gKiBgbmV3IEFzc2V0U2VydmljZSguLi4pYCBhdCBtb2R1bGUtZXZhbHVhdGlvbiB0aW1lLCBzbyBpbXBvcnRpbmcgaXQgZnJvbVxuICogYW55dGhpbmcgYGFzc2V0U2VydmljZS50c2AgaXRzZWxmIGltcG9ydHMgZm9ybXMgYSBjeWNsZSB0aGF0IHJlc29sdmVzIHRvXG4gKiBgQXNzZXRTZXJ2aWNlID09PSB1bmRlZmluZWRgIOKAlCB0aGUgY2xhc3MgZGVjbGFyYXRpb24gaGFzIG5vdCBiZWVuIHJlYWNoZWQgeWV0XG4gKiDigJQgYW5kIHRocm93cyBhdCBib290LiBgcXVldWUvYXNzZXRWYXJpYW50cy5xdWV1ZS50c2AgaXMgZXhhY3RseSB0aGF0OiBpdCBpc1xuICogaW1wb3J0ZWQgQlkgYGFzc2V0U2VydmljZS50c2AgYW5kIG5lZWRzIHRoZSBzdG9yYWdlIGNsaWVudCB0byBydW4gZ2VuZXJhdGlvbi5cbiAqIEtlZXBpbmcgdGhlIGNsaWVudCBoZXJlIGdpdmVzIGl0IGEgZGVwZW5kZW5jeSB0aGF0IG93bnMgbm8gc2VydmljZS5cbiAqL1xuXG5pbXBvcnQgeyBjcmVhdGVTM1NlcnZpY2UgfSBmcm9tICcuL3MzU2VydmljZSc7XG5cbmV4cG9ydCBjb25zdCBzM1NlcnZpY2UgPSBjcmVhdGVTM1NlcnZpY2Uoe1xuICByZWdpb246IHByb2Nlc3MuZW52LkFXU19SRUdJT04gfHwgJ3VzLWVhc3QtMScsXG4gIGFjY2Vzc0tleUlkOiBwcm9jZXNzLmVudi5BV1NfQUNDRVNTX0tFWV9JRCB8fCAnJyxcbiAgc2VjcmV0QWNjZXNzS2V5OiBwcm9jZXNzLmVudi5BV1NfU0VDUkVUX0FDQ0VTU19LRVkgfHwgJycsXG4gIGJ1Y2tldE5hbWU6IHByb2Nlc3MuZW52LkFXU19TM19CVUNLRVQgfHwgJycsXG4gIGVuZHBvaW50VXJsOiBwcm9jZXNzLmVudi5BV1NfRU5EUE9JTlRfVVJMLFxufSk7XG4iXSwidmVyc2lvbiI6M30=

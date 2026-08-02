@@ -1,0 +1,82 @@
+f9ad8aa4243d5816f5137263d2043e7c
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.closeIO = exports.getIO = exports.initializeIO = void 0;
+exports.broadcastDeviceState = broadcastDeviceState;
+exports.broadcastSessionAccountsChanged = broadcastSessionAccountsChanged;
+exports.deviceRoomFor = deviceRoomFor;
+exports.socketRoomsFor = socketRoomsFor;
+const contracts_1 = require("@oxyhq/contracts");
+const logger_1 = require("./logger");
+let io = null;
+const initializeIO = (socketIO) => {
+    io = socketIO;
+};
+exports.initializeIO = initializeIO;
+const getIO = () => {
+    return io;
+};
+exports.getIO = getIO;
+const closeIO = () => {
+    if (io) {
+        if (typeof io.close === 'function')
+            io.close();
+        io = null;
+    }
+};
+exports.closeIO = closeIO;
+function broadcastDeviceState(state) {
+    const server = (0, exports.getIO)();
+    if (!server) {
+        logger_1.logger.debug('broadcastDeviceState: io not initialised', { deviceId: state.deviceId });
+        return;
+    }
+    server.to(`device:${state.deviceId}`).emit('session_state', state);
+}
+/**
+ * Emit the token-free `session_accounts_changed` signal to `user:<userId>` for
+ * each affected user. Unlike {@link broadcastDeviceState} (scoped to a single
+ * device/origin), this reaches ALL of a user's connected sockets across their
+ * devices/origins so every Oxy app refetches its authenticated session/account
+ * state instantly. The payload carries NO token/secret — it is a signal only.
+ *
+ * `revision` is the mutated DeviceSession revision for device-scoped reasons; for
+ * `login` (no device mutation) callers pass 0. Empty / blank ids are dropped, and
+ * duplicate ids are de-duplicated so a user is signalled at most once per call.
+ */
+function broadcastSessionAccountsChanged(userIds, revision, reason) {
+    const server = (0, exports.getIO)();
+    if (!server)
+        return;
+    const list = Array.isArray(userIds) ? userIds : [userIds];
+    const unique = new Set(list.filter((id) => typeof id === 'string' && id.length > 0));
+    for (const userId of unique) {
+        server.to(`user:${userId}`).emit(contracts_1.SESSION_ACCOUNTS_CHANGED_EVENT, { userId, revision, reason });
+    }
+}
+function deviceRoomFor(decoded) {
+    return (decoded === null || decoded === void 0 ? void 0 : decoded.deviceId) ? `device:${decoded.deviceId}` : null;
+}
+/**
+ * The rooms a connected socket should join, given its resolved identity. An
+ * AUTHENTICATED user socket joins BOTH `user:<id>` (notifications) and its
+ * `device:<deviceId>` room (JWT claim). A device-only socket joins ONLY its
+ * `device:<deviceId>` room — ids are always server-resolved, never client-supplied.
+ */
+function socketRoomsFor(identity) {
+    var _a;
+    const rooms = [];
+    if ((_a = identity.user) === null || _a === void 0 ? void 0 : _a.id) {
+        rooms.push(`user:${identity.user.id}`);
+    }
+    const deviceRoom = identity.user
+        ? deviceRoomFor(identity.user)
+        : identity.deviceId
+            ? `device:${identity.deviceId}`
+            : null;
+    if (deviceRoom) {
+        rooms.push(deviceRoom);
+    }
+    return rooms;
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvc29ja2V0LnRzIiwibWFwcGluZ3MiOiI7OztBQXNCQSxvREFPQztBQWFELDBFQVlDO0FBRUQsc0NBRUM7QUFRRCx3Q0FpQkM7QUFqRkQsZ0RBQWtFO0FBQ2xFLHFDQUFrQztBQUVsQyxJQUFJLEVBQUUsR0FBMEIsSUFBSSxDQUFDO0FBRTlCLE1BQU0sWUFBWSxHQUFHLENBQUMsUUFBd0IsRUFBRSxFQUFFO0lBQ3ZELEVBQUUsR0FBRyxRQUFRLENBQUM7QUFDaEIsQ0FBQyxDQUFDO0FBRlcsUUFBQSxZQUFZLGdCQUV2QjtBQUVLLE1BQU0sS0FBSyxHQUFHLEdBQUcsRUFBRTtJQUN4QixPQUFPLEVBQUUsQ0FBQztBQUNaLENBQUMsQ0FBQztBQUZXLFFBQUEsS0FBSyxTQUVoQjtBQUVLLE1BQU0sT0FBTyxHQUFHLEdBQUcsRUFBRTtJQUMxQixJQUFJLEVBQUUsRUFBRSxDQUFDO1FBQ1AsSUFBSSxPQUFPLEVBQUUsQ0FBQyxLQUFLLEtBQUssVUFBVTtZQUFFLEVBQUUsQ0FBQyxLQUFLLEVBQUUsQ0FBQztRQUMvQyxFQUFFLEdBQUcsSUFBSSxDQUFDO0lBQ1osQ0FBQztBQUNILENBQUMsQ0FBQztBQUxXLFFBQUEsT0FBTyxXQUtsQjtBQUVGLFNBQWdCLG9CQUFvQixDQUFDLEtBQXlCO0lBQzVELE1BQU0sTUFBTSxHQUFHLElBQUEsYUFBSyxHQUFFLENBQUM7SUFDdkIsSUFBSSxDQUFDLE1BQU0sRUFBRSxDQUFDO1FBQ1osZUFBTSxDQUFDLEtBQUssQ0FBQywwQ0FBMEMsRUFBRSxFQUFFLFFBQVEsRUFBRSxLQUFLLENBQUMsUUFBUSxFQUFFLENBQUMsQ0FBQztRQUN2RixPQUFPO0lBQ1QsQ0FBQztJQUNELE1BQU0sQ0FBQyxFQUFFLENBQUMsVUFBVSxLQUFLLENBQUMsUUFBUSxFQUFFLENBQUMsQ0FBQyxJQUFJLENBQUMsZUFBZSxFQUFFLEtBQUssQ0FBQyxDQUFDO0FBQ3JFLENBQUM7QUFFRDs7Ozs7Ozs7OztHQVVHO0FBQ0gsU0FBZ0IsK0JBQStCLENBQzdDLE9BQW1DLEVBQ25DLFFBQWdCLEVBQ2hCLE1BQW9DO0lBRXBDLE1BQU0sTUFBTSxHQUFHLElBQUEsYUFBSyxHQUFFLENBQUM7SUFDdkIsSUFBSSxDQUFDLE1BQU07UUFBRSxPQUFPO0lBQ3BCLE1BQU0sSUFBSSxHQUFHLEtBQUssQ0FBQyxPQUFPLENBQUMsT0FBTyxDQUFDLENBQUMsQ0FBQyxDQUFDLE9BQU8sQ0FBQyxDQUFDLENBQUMsQ0FBQyxPQUFpQixDQUFDLENBQUM7SUFDcEUsTUFBTSxNQUFNLEdBQUcsSUFBSSxHQUFHLENBQUMsSUFBSSxDQUFDLE1BQU0sQ0FBQyxDQUFDLEVBQUUsRUFBZ0IsRUFBRSxDQUFDLE9BQU8sRUFBRSxLQUFLLFFBQVEsSUFBSSxFQUFFLENBQUMsTUFBTSxHQUFHLENBQUMsQ0FBQyxDQUFDLENBQUM7SUFDbkcsS0FBSyxNQUFNLE1BQU0sSUFBSSxNQUFNLEVBQUUsQ0FBQztRQUM1QixNQUFNLENBQUMsRUFBRSxDQUFDLFFBQVEsTUFBTSxFQUFFLENBQUMsQ0FBQyxJQUFJLENBQUMsMENBQThCLEVBQUUsRUFBRSxNQUFNLEVBQUUsUUFBUSxFQUFFLE1BQU0sRUFBRSxDQUFDLENBQUM7SUFDakcsQ0FBQztBQUNILENBQUM7QUFFRCxTQUFnQixhQUFhLENBQUMsT0FBcUM7SUFDakUsT0FBTyxDQUFBLE9BQU8sYUFBUCxPQUFPLHVCQUFQLE9BQU8sQ0FBRSxRQUFRLEVBQUMsQ0FBQyxDQUFDLFVBQVUsT0FBTyxDQUFDLFFBQVEsRUFBRSxDQUFDLENBQUMsQ0FBQyxJQUFJLENBQUM7QUFDakUsQ0FBQztBQUVEOzs7OztHQUtHO0FBQ0gsU0FBZ0IsY0FBYyxDQUFDLFFBRzlCOztJQUNDLE1BQU0sS0FBSyxHQUFhLEVBQUUsQ0FBQztJQUMzQixJQUFJLE1BQUEsUUFBUSxDQUFDLElBQUksMENBQUUsRUFBRSxFQUFFLENBQUM7UUFDdEIsS0FBSyxDQUFDLElBQUksQ0FBQyxRQUFRLFFBQVEsQ0FBQyxJQUFJLENBQUMsRUFBRSxFQUFFLENBQUMsQ0FBQztJQUN6QyxDQUFDO0lBQ0QsTUFBTSxVQUFVLEdBQUcsUUFBUSxDQUFDLElBQUk7UUFDOUIsQ0FBQyxDQUFDLGFBQWEsQ0FBQyxRQUFRLENBQUMsSUFBSSxDQUFDO1FBQzlCLENBQUMsQ0FBQyxRQUFRLENBQUMsUUFBUTtZQUNqQixDQUFDLENBQUMsVUFBVSxRQUFRLENBQUMsUUFBUSxFQUFFO1lBQy9CLENBQUMsQ0FBQyxJQUFJLENBQUM7SUFDWCxJQUFJLFVBQVUsRUFBRSxDQUFDO1FBQ2YsS0FBSyxDQUFDLElBQUksQ0FBQyxVQUFVLENBQUMsQ0FBQztJQUN6QixDQUFDO0lBQ0QsT0FBTyxLQUFLLENBQUM7QUFDZixDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3V0aWxzL3NvY2tldC50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgdHlwZSB7IFNlcnZlciBhcyBTb2NrZXRJT1NlcnZlciB9IGZyb20gJ3NvY2tldC5pbyc7XG5pbXBvcnQgdHlwZSB7IERldmljZVNlc3Npb25TdGF0ZSwgU2Vzc2lvbkFjY291bnRzQ2hhbmdlZFJlYXNvbiB9IGZyb20gJ0BveHlocS9jb250cmFjdHMnO1xuaW1wb3J0IHsgU0VTU0lPTl9BQ0NPVU5UU19DSEFOR0VEX0VWRU5UIH0gZnJvbSAnQG94eWhxL2NvbnRyYWN0cyc7XG5pbXBvcnQgeyBsb2dnZXIgfSBmcm9tICcuL2xvZ2dlcic7XG5cbmxldCBpbzogU29ja2V0SU9TZXJ2ZXIgfCBudWxsID0gbnVsbDtcblxuZXhwb3J0IGNvbnN0IGluaXRpYWxpemVJTyA9IChzb2NrZXRJTzogU29ja2V0SU9TZXJ2ZXIpID0+IHtcbiAgaW8gPSBzb2NrZXRJTztcbn07XG5cbmV4cG9ydCBjb25zdCBnZXRJTyA9ICgpID0+IHtcbiAgcmV0dXJuIGlvO1xufTtcblxuZXhwb3J0IGNvbnN0IGNsb3NlSU8gPSAoKSA9PiB7XG4gIGlmIChpbykge1xuICAgIGlmICh0eXBlb2YgaW8uY2xvc2UgPT09ICdmdW5jdGlvbicpIGlvLmNsb3NlKCk7XG4gICAgaW8gPSBudWxsO1xuICB9XG59O1xuXG5leHBvcnQgZnVuY3Rpb24gYnJvYWRjYXN0RGV2aWNlU3RhdGUoc3RhdGU6IERldmljZVNlc3Npb25TdGF0ZSk6IHZvaWQge1xuICBjb25zdCBzZXJ2ZXIgPSBnZXRJTygpO1xuICBpZiAoIXNlcnZlcikge1xuICAgIGxvZ2dlci5kZWJ1ZygnYnJvYWRjYXN0RGV2aWNlU3RhdGU6IGlvIG5vdCBpbml0aWFsaXNlZCcsIHsgZGV2aWNlSWQ6IHN0YXRlLmRldmljZUlkIH0pO1xuICAgIHJldHVybjtcbiAgfVxuICBzZXJ2ZXIudG8oYGRldmljZToke3N0YXRlLmRldmljZUlkfWApLmVtaXQoJ3Nlc3Npb25fc3RhdGUnLCBzdGF0ZSk7XG59XG5cbi8qKlxuICogRW1pdCB0aGUgdG9rZW4tZnJlZSBgc2Vzc2lvbl9hY2NvdW50c19jaGFuZ2VkYCBzaWduYWwgdG8gYHVzZXI6PHVzZXJJZD5gIGZvclxuICogZWFjaCBhZmZlY3RlZCB1c2VyLiBVbmxpa2Uge0BsaW5rIGJyb2FkY2FzdERldmljZVN0YXRlfSAoc2NvcGVkIHRvIGEgc2luZ2xlXG4gKiBkZXZpY2Uvb3JpZ2luKSwgdGhpcyByZWFjaGVzIEFMTCBvZiBhIHVzZXIncyBjb25uZWN0ZWQgc29ja2V0cyBhY3Jvc3MgdGhlaXJcbiAqIGRldmljZXMvb3JpZ2lucyBzbyBldmVyeSBPeHkgYXBwIHJlZmV0Y2hlcyBpdHMgYXV0aGVudGljYXRlZCBzZXNzaW9uL2FjY291bnRcbiAqIHN0YXRlIGluc3RhbnRseS4gVGhlIHBheWxvYWQgY2FycmllcyBOTyB0b2tlbi9zZWNyZXQg4oCUIGl0IGlzIGEgc2lnbmFsIG9ubHkuXG4gKlxuICogYHJldmlzaW9uYCBpcyB0aGUgbXV0YXRlZCBEZXZpY2VTZXNzaW9uIHJldmlzaW9uIGZvciBkZXZpY2Utc2NvcGVkIHJlYXNvbnM7IGZvclxuICogYGxvZ2luYCAobm8gZGV2aWNlIG11dGF0aW9uKSBjYWxsZXJzIHBhc3MgMC4gRW1wdHkgLyBibGFuayBpZHMgYXJlIGRyb3BwZWQsIGFuZFxuICogZHVwbGljYXRlIGlkcyBhcmUgZGUtZHVwbGljYXRlZCBzbyBhIHVzZXIgaXMgc2lnbmFsbGVkIGF0IG1vc3Qgb25jZSBwZXIgY2FsbC5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIGJyb2FkY2FzdFNlc3Npb25BY2NvdW50c0NoYW5nZWQoXG4gIHVzZXJJZHM6IHN0cmluZyB8IHJlYWRvbmx5IHN0cmluZ1tdLFxuICByZXZpc2lvbjogbnVtYmVyLFxuICByZWFzb246IFNlc3Npb25BY2NvdW50c0NoYW5nZWRSZWFzb24sXG4pOiB2b2lkIHtcbiAgY29uc3Qgc2VydmVyID0gZ2V0SU8oKTtcbiAgaWYgKCFzZXJ2ZXIpIHJldHVybjtcbiAgY29uc3QgbGlzdCA9IEFycmF5LmlzQXJyYXkodXNlcklkcykgPyB1c2VySWRzIDogW3VzZXJJZHMgYXMgc3RyaW5nXTtcbiAgY29uc3QgdW5pcXVlID0gbmV3IFNldChsaXN0LmZpbHRlcigoaWQpOiBpZCBpcyBzdHJpbmcgPT4gdHlwZW9mIGlkID09PSAnc3RyaW5nJyAmJiBpZC5sZW5ndGggPiAwKSk7XG4gIGZvciAoY29uc3QgdXNlcklkIG9mIHVuaXF1ZSkge1xuICAgIHNlcnZlci50byhgdXNlcjoke3VzZXJJZH1gKS5lbWl0KFNFU1NJT05fQUNDT1VOVFNfQ0hBTkdFRF9FVkVOVCwgeyB1c2VySWQsIHJldmlzaW9uLCByZWFzb24gfSk7XG4gIH1cbn1cblxuZXhwb3J0IGZ1bmN0aW9uIGRldmljZVJvb21Gb3IoZGVjb2RlZDogeyBkZXZpY2VJZD86IHN0cmluZyB8IG51bGwgfSk6IHN0cmluZyB8IG51bGwge1xuICByZXR1cm4gZGVjb2RlZD8uZGV2aWNlSWQgPyBgZGV2aWNlOiR7ZGVjb2RlZC5kZXZpY2VJZH1gIDogbnVsbDtcbn1cblxuLyoqXG4gKiBUaGUgcm9vbXMgYSBjb25uZWN0ZWQgc29ja2V0IHNob3VsZCBqb2luLCBnaXZlbiBpdHMgcmVzb2x2ZWQgaWRlbnRpdHkuIEFuXG4gKiBBVVRIRU5USUNBVEVEIHVzZXIgc29ja2V0IGpvaW5zIEJPVEggYHVzZXI6PGlkPmAgKG5vdGlmaWNhdGlvbnMpIGFuZCBpdHNcbiAqIGBkZXZpY2U6PGRldmljZUlkPmAgcm9vbSAoSldUIGNsYWltKS4gQSBkZXZpY2Utb25seSBzb2NrZXQgam9pbnMgT05MWSBpdHNcbiAqIGBkZXZpY2U6PGRldmljZUlkPmAgcm9vbSDigJQgaWRzIGFyZSBhbHdheXMgc2VydmVyLXJlc29sdmVkLCBuZXZlciBjbGllbnQtc3VwcGxpZWQuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBzb2NrZXRSb29tc0ZvcihpZGVudGl0eToge1xuICB1c2VyPzogeyBpZDogc3RyaW5nOyBkZXZpY2VJZD86IHN0cmluZyB8IG51bGwgfSB8IG51bGw7XG4gIGRldmljZUlkPzogc3RyaW5nIHwgbnVsbDtcbn0pOiBzdHJpbmdbXSB7XG4gIGNvbnN0IHJvb21zOiBzdHJpbmdbXSA9IFtdO1xuICBpZiAoaWRlbnRpdHkudXNlcj8uaWQpIHtcbiAgICByb29tcy5wdXNoKGB1c2VyOiR7aWRlbnRpdHkudXNlci5pZH1gKTtcbiAgfVxuICBjb25zdCBkZXZpY2VSb29tID0gaWRlbnRpdHkudXNlclxuICAgID8gZGV2aWNlUm9vbUZvcihpZGVudGl0eS51c2VyKVxuICAgIDogaWRlbnRpdHkuZGV2aWNlSWRcbiAgICAgID8gYGRldmljZToke2lkZW50aXR5LmRldmljZUlkfWBcbiAgICAgIDogbnVsbDtcbiAgaWYgKGRldmljZVJvb20pIHtcbiAgICByb29tcy5wdXNoKGRldmljZVJvb20pO1xuICB9XG4gIHJldHVybiByb29tcztcbn0iXSwidmVyc2lvbiI6M30=

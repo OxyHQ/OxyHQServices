@@ -1,0 +1,93 @@
+47f35c41149cc4a45f2a6850accf86b0
+"use strict";
+/**
+ * Ecosystem link-preview (URL unfurl) API.
+ *
+ * Every Oxy app calls these endpoints through the SDK instead of duplicating
+ * link-metadata fetching. Oxy owns resolution AND image hosting: the `image` /
+ * `favicon` on every returned `LinkPreview` is an Oxy-hosted `cloud.oxy.so` URL
+ * (or absent), never a raw origin URL — so a client never contacts the target
+ * host and the viewer's IP is never leaked.
+ *
+ *  - `GET /links/preview?url=&wait=0|1` → a bare `LinkPreview`. `wait=0` returns
+ *    cached-or-`pending` (warms in background); `wait=1` resolves synchronously.
+ *  - `POST /links/previews` → `{ data: Record<requestedUrl, LinkPreview> }`. The
+ *    feed-hydration path (mirrors `POST /users/by-ids`): cached hits returned,
+ *    misses returned `pending` and warmed in the background.
+ *
+ * Auth: `optionalUserOrServiceAuth` — a service token (server-to-server feed
+ * hydration), a user session, or anonymous. The output is non-viewer-specific
+ * public metadata, so no scope is required. Bearer/service only (no cookie
+ * writes → no CSRF). Rate-limited per principal with a unique Redis prefix.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const contracts_1 = require("@oxyhq/contracts");
+const optionalAuth_1 = require("../middleware/optionalAuth");
+const rateLimiter_1 = require("../middleware/rateLimiter");
+const ipKey_1 = require("../utils/ipKey");
+const validate_1 = require("../middleware/validate");
+const asyncHandler_1 = require("../utils/asyncHandler");
+const linkPreviewService_1 = require("../services/linkPreview/linkPreviewService");
+const constants_1 = require("../services/linkPreview/constants");
+const links_schemas_1 = require("../schemas/links.schemas");
+const logger_1 = require("../utils/logger");
+const router = (0, express_1.Router)();
+/** Rate-limit per authenticated principal (user/service), falling back to IP. */
+function principalKey(req) {
+    var _a, _b;
+    const r = req;
+    if ((_a = r.user) === null || _a === void 0 ? void 0 : _a._id)
+        return `u:${r.user._id}`;
+    if ((_b = r.serviceApp) === null || _b === void 0 ? void 0 : _b.appId)
+        return `s:${r.serviceApp.appId}`;
+    return `ip:${(0, ipKey_1.hashedIpKey)(req)}`;
+}
+// Reads are cheap (cache-backed) and every app calls them with ONE shared
+// service token, so the per-principal ceiling must be generous (env-tunable).
+const previewLimiter = (0, rateLimiter_1.rateLimit)({
+    prefix: 'rl:links:preview:',
+    windowMs: 60000,
+    max: constants_1.LINK_PREVIEW_PREVIEW_RATE_MAX,
+    keyGenerator: principalKey,
+    message: 'Too many link-preview requests. Please slow down.',
+});
+const batchLimiter = (0, rateLimiter_1.rateLimit)({
+    prefix: 'rl:links:batch:',
+    windowMs: 60000,
+    max: constants_1.LINK_PREVIEW_BATCH_RATE_MAX,
+    keyGenerator: principalKey,
+    message: 'Too many link-preview batch requests. Please slow down.',
+});
+/**
+ * GET /links/preview?url=<url>&wait=0|1
+ * Returns a bare `LinkPreview` (per `linkPreviewResponseSchema`).
+ */
+router.get('/preview', optionalAuth_1.optionalUserOrServiceAuth, previewLimiter, (0, validate_1.validate)({ query: links_schemas_1.linkPreviewQuerySchema }), (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { url, wait } = req.query;
+    const preview = yield linkPreviewService_1.linkPreviewService.get(url, { wait: wait === '1' });
+    logger_1.logger.debug('GET /links/preview', { wait, status: preview.status });
+    res.json(contracts_1.linkPreviewResponseSchema.parse(preview));
+})));
+/**
+ * POST /links/previews  body { urls: string[] } (1..50)
+ * Returns `{ data: Record<requestedUrl, LinkPreview> }` (per
+ * `linkPreviewBatchResponseSchema`).
+ */
+router.post('/previews', optionalAuth_1.optionalUserOrServiceAuth, batchLimiter, (0, validate_1.validate)({ body: contracts_1.linkPreviewBatchRequestSchema }), (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const { urls } = req.body;
+    const data = yield linkPreviewService_1.linkPreviewService.getBatch(urls);
+    logger_1.logger.debug('POST /links/previews', { requested: urls.length });
+    res.json(contracts_1.linkPreviewBatchResponseSchema.parse({ data }));
+})));
+exports.default = router;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcm91dGVzL2xpbmtzLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQW1CRzs7Ozs7Ozs7Ozs7QUFFSCxxQ0FBOEQ7QUFFOUQsZ0RBSTBCO0FBQzFCLDZEQUdvQztBQUNwQywyREFBc0Q7QUFDdEQsMENBQTZDO0FBQzdDLHFEQUFrRDtBQUNsRCx3REFBcUQ7QUFDckQsbUZBQWdGO0FBQ2hGLGlFQUcyQztBQUMzQyw0REFBa0U7QUFDbEUsNENBQXlDO0FBRXpDLE1BQU0sTUFBTSxHQUFHLElBQUEsZ0JBQU0sR0FBRSxDQUFDO0FBRXhCLGlGQUFpRjtBQUNqRixTQUFTLFlBQVksQ0FBQyxHQUFZOztJQUNoQyxNQUFNLENBQUMsR0FBRyxHQUFtQyxDQUFDO0lBQzlDLElBQUksTUFBQSxDQUFDLENBQUMsSUFBSSwwQ0FBRSxHQUFHO1FBQUUsT0FBTyxLQUFLLENBQUMsQ0FBQyxJQUFJLENBQUMsR0FBRyxFQUFFLENBQUM7SUFDMUMsSUFBSSxNQUFBLENBQUMsQ0FBQyxVQUFVLDBDQUFFLEtBQUs7UUFBRSxPQUFPLEtBQUssQ0FBQyxDQUFDLFVBQVUsQ0FBQyxLQUFLLEVBQUUsQ0FBQztJQUMxRCxPQUFPLE1BQU0sSUFBQSxtQkFBVyxFQUFDLEdBQUcsQ0FBQyxFQUFFLENBQUM7QUFDbEMsQ0FBQztBQUVELDBFQUEwRTtBQUMxRSw4RUFBOEU7QUFDOUUsTUFBTSxjQUFjLEdBQUcsSUFBQSx1QkFBUyxFQUFDO0lBQy9CLE1BQU0sRUFBRSxtQkFBbUI7SUFDM0IsUUFBUSxFQUFFLEtBQU07SUFDaEIsR0FBRyxFQUFFLHlDQUE2QjtJQUNsQyxZQUFZLEVBQUUsWUFBWTtJQUMxQixPQUFPLEVBQUUsbURBQW1EO0NBQzdELENBQUMsQ0FBQztBQUVILE1BQU0sWUFBWSxHQUFHLElBQUEsdUJBQVMsRUFBQztJQUM3QixNQUFNLEVBQUUsaUJBQWlCO0lBQ3pCLFFBQVEsRUFBRSxLQUFNO0lBQ2hCLEdBQUcsRUFBRSx1Q0FBMkI7SUFDaEMsWUFBWSxFQUFFLFlBQVk7SUFDMUIsT0FBTyxFQUFFLHlEQUF5RDtDQUNuRSxDQUFDLENBQUM7QUFFSDs7O0dBR0c7QUFDSCxNQUFNLENBQUMsR0FBRyxDQUNSLFVBQVUsRUFDVix3Q0FBeUIsRUFDekIsY0FBYyxFQUNkLElBQUEsbUJBQVEsRUFBQyxFQUFFLEtBQUssRUFBRSxzQ0FBc0IsRUFBRSxDQUFDLEVBQzNDLElBQUEsMkJBQVksRUFBQyxDQUFPLEdBQVksRUFBRSxHQUFhLEVBQUUsRUFBRTtJQUNqRCxNQUFNLEVBQUUsR0FBRyxFQUFFLElBQUksRUFBRSxHQUFHLEdBQUcsQ0FBQyxLQUEwRCxDQUFDO0lBQ3JGLE1BQU0sT0FBTyxHQUFHLE1BQU0sdUNBQWtCLENBQUMsR0FBRyxDQUFDLEdBQUcsRUFBRSxFQUFFLElBQUksRUFBRSxJQUFJLEtBQUssR0FBRyxFQUFFLENBQUMsQ0FBQztJQUMxRSxlQUFNLENBQUMsS0FBSyxDQUFDLG9CQUFvQixFQUFFLEVBQUUsSUFBSSxFQUFFLE1BQU0sRUFBRSxPQUFPLENBQUMsTUFBTSxFQUFFLENBQUMsQ0FBQztJQUNyRSxHQUFHLENBQUMsSUFBSSxDQUFDLHFDQUF5QixDQUFDLEtBQUssQ0FBQyxPQUFPLENBQUMsQ0FBQyxDQUFDO0FBQ3JELENBQUMsQ0FBQSxDQUFDLENBQ0gsQ0FBQztBQUVGOzs7O0dBSUc7QUFDSCxNQUFNLENBQUMsSUFBSSxDQUNULFdBQVcsRUFDWCx3Q0FBeUIsRUFDekIsWUFBWSxFQUNaLElBQUEsbUJBQVEsRUFBQyxFQUFFLElBQUksRUFBRSx5Q0FBNkIsRUFBRSxDQUFDLEVBQ2pELElBQUEsMkJBQVksRUFBQyxDQUFPLEdBQVksRUFBRSxHQUFhLEVBQUUsRUFBRTtJQUNqRCxNQUFNLEVBQUUsSUFBSSxFQUFFLEdBQUcsR0FBRyxDQUFDLElBQTBCLENBQUM7SUFDaEQsTUFBTSxJQUFJLEdBQUcsTUFBTSx1Q0FBa0IsQ0FBQyxRQUFRLENBQUMsSUFBSSxDQUFDLENBQUM7SUFDckQsZUFBTSxDQUFDLEtBQUssQ0FBQyxzQkFBc0IsRUFBRSxFQUFFLFNBQVMsRUFBRSxJQUFJLENBQUMsTUFBTSxFQUFFLENBQUMsQ0FBQztJQUNqRSxHQUFHLENBQUMsSUFBSSxDQUFDLDBDQUE4QixDQUFDLEtBQUssQ0FBQyxFQUFFLElBQUksRUFBRSxDQUFDLENBQUMsQ0FBQztBQUMzRCxDQUFDLENBQUEsQ0FBQyxDQUNILENBQUM7QUFFRixrQkFBZSxNQUFNLENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcm91dGVzL2xpbmtzLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogRWNvc3lzdGVtIGxpbmstcHJldmlldyAoVVJMIHVuZnVybCkgQVBJLlxuICpcbiAqIEV2ZXJ5IE94eSBhcHAgY2FsbHMgdGhlc2UgZW5kcG9pbnRzIHRocm91Z2ggdGhlIFNESyBpbnN0ZWFkIG9mIGR1cGxpY2F0aW5nXG4gKiBsaW5rLW1ldGFkYXRhIGZldGNoaW5nLiBPeHkgb3ducyByZXNvbHV0aW9uIEFORCBpbWFnZSBob3N0aW5nOiB0aGUgYGltYWdlYCAvXG4gKiBgZmF2aWNvbmAgb24gZXZlcnkgcmV0dXJuZWQgYExpbmtQcmV2aWV3YCBpcyBhbiBPeHktaG9zdGVkIGBjbG91ZC5veHkuc29gIFVSTFxuICogKG9yIGFic2VudCksIG5ldmVyIGEgcmF3IG9yaWdpbiBVUkwg4oCUIHNvIGEgY2xpZW50IG5ldmVyIGNvbnRhY3RzIHRoZSB0YXJnZXRcbiAqIGhvc3QgYW5kIHRoZSB2aWV3ZXIncyBJUCBpcyBuZXZlciBsZWFrZWQuXG4gKlxuICogIC0gYEdFVCAvbGlua3MvcHJldmlldz91cmw9JndhaXQ9MHwxYCDihpIgYSBiYXJlIGBMaW5rUHJldmlld2AuIGB3YWl0PTBgIHJldHVybnNcbiAqICAgIGNhY2hlZC1vci1gcGVuZGluZ2AgKHdhcm1zIGluIGJhY2tncm91bmQpOyBgd2FpdD0xYCByZXNvbHZlcyBzeW5jaHJvbm91c2x5LlxuICogIC0gYFBPU1QgL2xpbmtzL3ByZXZpZXdzYCDihpIgYHsgZGF0YTogUmVjb3JkPHJlcXVlc3RlZFVybCwgTGlua1ByZXZpZXc+IH1gLiBUaGVcbiAqICAgIGZlZWQtaHlkcmF0aW9uIHBhdGggKG1pcnJvcnMgYFBPU1QgL3VzZXJzL2J5LWlkc2ApOiBjYWNoZWQgaGl0cyByZXR1cm5lZCxcbiAqICAgIG1pc3NlcyByZXR1cm5lZCBgcGVuZGluZ2AgYW5kIHdhcm1lZCBpbiB0aGUgYmFja2dyb3VuZC5cbiAqXG4gKiBBdXRoOiBgb3B0aW9uYWxVc2VyT3JTZXJ2aWNlQXV0aGAg4oCUIGEgc2VydmljZSB0b2tlbiAoc2VydmVyLXRvLXNlcnZlciBmZWVkXG4gKiBoeWRyYXRpb24pLCBhIHVzZXIgc2Vzc2lvbiwgb3IgYW5vbnltb3VzLiBUaGUgb3V0cHV0IGlzIG5vbi12aWV3ZXItc3BlY2lmaWNcbiAqIHB1YmxpYyBtZXRhZGF0YSwgc28gbm8gc2NvcGUgaXMgcmVxdWlyZWQuIEJlYXJlci9zZXJ2aWNlIG9ubHkgKG5vIGNvb2tpZVxuICogd3JpdGVzIOKGkiBubyBDU1JGKS4gUmF0ZS1saW1pdGVkIHBlciBwcmluY2lwYWwgd2l0aCBhIHVuaXF1ZSBSZWRpcyBwcmVmaXguXG4gKi9cblxuaW1wb3J0IHsgUm91dGVyLCB0eXBlIFJlcXVlc3QsIHR5cGUgUmVzcG9uc2UgfSBmcm9tICdleHByZXNzJztcbmltcG9ydCB0eXBlIHsgeiB9IGZyb20gJ3pvZCc7XG5pbXBvcnQge1xuICBsaW5rUHJldmlld0JhdGNoUmVxdWVzdFNjaGVtYSxcbiAgbGlua1ByZXZpZXdCYXRjaFJlc3BvbnNlU2NoZW1hLFxuICBsaW5rUHJldmlld1Jlc3BvbnNlU2NoZW1hLFxufSBmcm9tICdAb3h5aHEvY29udHJhY3RzJztcbmltcG9ydCB7XG4gIG9wdGlvbmFsVXNlck9yU2VydmljZUF1dGgsXG4gIHR5cGUgT3B0aW9uYWxVc2VyT3JTZXJ2aWNlUmVxdWVzdCxcbn0gZnJvbSAnLi4vbWlkZGxld2FyZS9vcHRpb25hbEF1dGgnO1xuaW1wb3J0IHsgcmF0ZUxpbWl0IH0gZnJvbSAnLi4vbWlkZGxld2FyZS9yYXRlTGltaXRlcic7XG5pbXBvcnQgeyBoYXNoZWRJcEtleSB9IGZyb20gJy4uL3V0aWxzL2lwS2V5JztcbmltcG9ydCB7IHZhbGlkYXRlIH0gZnJvbSAnLi4vbWlkZGxld2FyZS92YWxpZGF0ZSc7XG5pbXBvcnQgeyBhc3luY0hhbmRsZXIgfSBmcm9tICcuLi91dGlscy9hc3luY0hhbmRsZXInO1xuaW1wb3J0IHsgbGlua1ByZXZpZXdTZXJ2aWNlIH0gZnJvbSAnLi4vc2VydmljZXMvbGlua1ByZXZpZXcvbGlua1ByZXZpZXdTZXJ2aWNlJztcbmltcG9ydCB7XG4gIExJTktfUFJFVklFV19CQVRDSF9SQVRFX01BWCxcbiAgTElOS19QUkVWSUVXX1BSRVZJRVdfUkFURV9NQVgsXG59IGZyb20gJy4uL3NlcnZpY2VzL2xpbmtQcmV2aWV3L2NvbnN0YW50cyc7XG5pbXBvcnQgeyBsaW5rUHJldmlld1F1ZXJ5U2NoZW1hIH0gZnJvbSAnLi4vc2NoZW1hcy9saW5rcy5zY2hlbWFzJztcbmltcG9ydCB7IGxvZ2dlciB9IGZyb20gJy4uL3V0aWxzL2xvZ2dlcic7XG5cbmNvbnN0IHJvdXRlciA9IFJvdXRlcigpO1xuXG4vKiogUmF0ZS1saW1pdCBwZXIgYXV0aGVudGljYXRlZCBwcmluY2lwYWwgKHVzZXIvc2VydmljZSksIGZhbGxpbmcgYmFjayB0byBJUC4gKi9cbmZ1bmN0aW9uIHByaW5jaXBhbEtleShyZXE6IFJlcXVlc3QpOiBzdHJpbmcge1xuICBjb25zdCByID0gcmVxIGFzIE9wdGlvbmFsVXNlck9yU2VydmljZVJlcXVlc3Q7XG4gIGlmIChyLnVzZXI/Ll9pZCkgcmV0dXJuIGB1OiR7ci51c2VyLl9pZH1gO1xuICBpZiAoci5zZXJ2aWNlQXBwPy5hcHBJZCkgcmV0dXJuIGBzOiR7ci5zZXJ2aWNlQXBwLmFwcElkfWA7XG4gIHJldHVybiBgaXA6JHtoYXNoZWRJcEtleShyZXEpfWA7XG59XG5cbi8vIFJlYWRzIGFyZSBjaGVhcCAoY2FjaGUtYmFja2VkKSBhbmQgZXZlcnkgYXBwIGNhbGxzIHRoZW0gd2l0aCBPTkUgc2hhcmVkXG4vLyBzZXJ2aWNlIHRva2VuLCBzbyB0aGUgcGVyLXByaW5jaXBhbCBjZWlsaW5nIG11c3QgYmUgZ2VuZXJvdXMgKGVudi10dW5hYmxlKS5cbmNvbnN0IHByZXZpZXdMaW1pdGVyID0gcmF0ZUxpbWl0KHtcbiAgcHJlZml4OiAncmw6bGlua3M6cHJldmlldzonLFxuICB3aW5kb3dNczogNjBfMDAwLFxuICBtYXg6IExJTktfUFJFVklFV19QUkVWSUVXX1JBVEVfTUFYLFxuICBrZXlHZW5lcmF0b3I6IHByaW5jaXBhbEtleSxcbiAgbWVzc2FnZTogJ1RvbyBtYW55IGxpbmstcHJldmlldyByZXF1ZXN0cy4gUGxlYXNlIHNsb3cgZG93bi4nLFxufSk7XG5cbmNvbnN0IGJhdGNoTGltaXRlciA9IHJhdGVMaW1pdCh7XG4gIHByZWZpeDogJ3JsOmxpbmtzOmJhdGNoOicsXG4gIHdpbmRvd01zOiA2MF8wMDAsXG4gIG1heDogTElOS19QUkVWSUVXX0JBVENIX1JBVEVfTUFYLFxuICBrZXlHZW5lcmF0b3I6IHByaW5jaXBhbEtleSxcbiAgbWVzc2FnZTogJ1RvbyBtYW55IGxpbmstcHJldmlldyBiYXRjaCByZXF1ZXN0cy4gUGxlYXNlIHNsb3cgZG93bi4nLFxufSk7XG5cbi8qKlxuICogR0VUIC9saW5rcy9wcmV2aWV3P3VybD08dXJsPiZ3YWl0PTB8MVxuICogUmV0dXJucyBhIGJhcmUgYExpbmtQcmV2aWV3YCAocGVyIGBsaW5rUHJldmlld1Jlc3BvbnNlU2NoZW1hYCkuXG4gKi9cbnJvdXRlci5nZXQoXG4gICcvcHJldmlldycsXG4gIG9wdGlvbmFsVXNlck9yU2VydmljZUF1dGgsXG4gIHByZXZpZXdMaW1pdGVyLFxuICB2YWxpZGF0ZSh7IHF1ZXJ5OiBsaW5rUHJldmlld1F1ZXJ5U2NoZW1hIH0pLFxuICBhc3luY0hhbmRsZXIoYXN5bmMgKHJlcTogUmVxdWVzdCwgcmVzOiBSZXNwb25zZSkgPT4ge1xuICAgIGNvbnN0IHsgdXJsLCB3YWl0IH0gPSByZXEucXVlcnkgYXMgdW5rbm93biBhcyB6LmluZmVyPHR5cGVvZiBsaW5rUHJldmlld1F1ZXJ5U2NoZW1hPjtcbiAgICBjb25zdCBwcmV2aWV3ID0gYXdhaXQgbGlua1ByZXZpZXdTZXJ2aWNlLmdldCh1cmwsIHsgd2FpdDogd2FpdCA9PT0gJzEnIH0pO1xuICAgIGxvZ2dlci5kZWJ1ZygnR0VUIC9saW5rcy9wcmV2aWV3JywgeyB3YWl0LCBzdGF0dXM6IHByZXZpZXcuc3RhdHVzIH0pO1xuICAgIHJlcy5qc29uKGxpbmtQcmV2aWV3UmVzcG9uc2VTY2hlbWEucGFyc2UocHJldmlldykpO1xuICB9KSxcbik7XG5cbi8qKlxuICogUE9TVCAvbGlua3MvcHJldmlld3MgIGJvZHkgeyB1cmxzOiBzdHJpbmdbXSB9ICgxLi41MClcbiAqIFJldHVybnMgYHsgZGF0YTogUmVjb3JkPHJlcXVlc3RlZFVybCwgTGlua1ByZXZpZXc+IH1gIChwZXJcbiAqIGBsaW5rUHJldmlld0JhdGNoUmVzcG9uc2VTY2hlbWFgKS5cbiAqL1xucm91dGVyLnBvc3QoXG4gICcvcHJldmlld3MnLFxuICBvcHRpb25hbFVzZXJPclNlcnZpY2VBdXRoLFxuICBiYXRjaExpbWl0ZXIsXG4gIHZhbGlkYXRlKHsgYm9keTogbGlua1ByZXZpZXdCYXRjaFJlcXVlc3RTY2hlbWEgfSksXG4gIGFzeW5jSGFuZGxlcihhc3luYyAocmVxOiBSZXF1ZXN0LCByZXM6IFJlc3BvbnNlKSA9PiB7XG4gICAgY29uc3QgeyB1cmxzIH0gPSByZXEuYm9keSBhcyB7IHVybHM6IHN0cmluZ1tdIH07XG4gICAgY29uc3QgZGF0YSA9IGF3YWl0IGxpbmtQcmV2aWV3U2VydmljZS5nZXRCYXRjaCh1cmxzKTtcbiAgICBsb2dnZXIuZGVidWcoJ1BPU1QgL2xpbmtzL3ByZXZpZXdzJywgeyByZXF1ZXN0ZWQ6IHVybHMubGVuZ3RoIH0pO1xuICAgIHJlcy5qc29uKGxpbmtQcmV2aWV3QmF0Y2hSZXNwb25zZVNjaGVtYS5wYXJzZSh7IGRhdGEgfSkpO1xuICB9KSxcbik7XG5cbmV4cG9ydCBkZWZhdWx0IHJvdXRlcjtcbiJdLCJ2ZXJzaW9uIjozfQ==

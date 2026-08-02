@@ -1,0 +1,181 @@
+136bb5f419fc2aa5ec1eadb436d1f510
+"use strict";
+/**
+ * Scoped media tokens — the `?mt=` credential on private-asset stream URLs.
+ *
+ * A browser `<img src>` / `Image.getSize()` / `<a download>` cannot send an
+ * `Authorization` header, and the zero-cookie session transport means there is
+ * no ambient credential either. Private assets therefore need a credential that
+ * travels IN the URL — but the caller's access token must never be that
+ * credential: asset URLs are rendered into DOM attributes, browser network
+ * panels, HTTP caches, referrer headers, and screenshots.
+ *
+ * A media token is deliberately the weakest credential the platform issues:
+ *
+ * - **Single asset.** The `fid` claim pins the token to exactly one file id.
+ *   {@link verifyMediaToken} only accepts it when `fid` equals the file id the
+ *   request is actually asking for, so a token minted for asset A cannot open
+ *   asset B. Variants of the same asset share one access decision, so the token
+ *   is intentionally NOT pinned to a variant.
+ * - **Read-only, media-only.** The `typ: 'media'` claim plus the dedicated
+ *   signing key (below) mean it authorizes viewing that one asset and nothing
+ *   else. It carries no session id, so it cannot satisfy any other authenticated
+ *   surface.
+ * - **Short-lived.** {@link MEDIA_TOKEN_TTL_SECONDS} (15 minutes). There is no
+ *   revocation list; the short TTL IS the revocation story. Access changes
+ *   (unfollow, block, visibility flip, delete) take effect for a leaked token
+ *   within one TTL, and every fresh render re-mints through the access check.
+ *
+ * ## Key separation (why this cannot be confused with an access token)
+ *
+ * Media tokens are signed with a key DERIVED from `ACCESS_TOKEN_SECRET` rather
+ * than the secret itself:
+ *
+ *     mediaKey = HMAC-SHA256(ACCESS_TOKEN_SECRET, MEDIA_TOKEN_KEY_LABEL)
+ *
+ * This reuses a secret the deploy already requires (`config/env.ts` fails boot
+ * without `ACCESS_TOKEN_SECRET`, and it is already synced to SSM) — no new,
+ * unconfigured env var that would break the ECS boot contract — while making the
+ * two token families cryptographically disjoint:
+ *
+ * - A media token does NOT verify under `ACCESS_TOKEN_SECRET`, so `decodeToken`,
+ *   `validateSessionToken`, and `verifyServiceToken` all reject it outright. It
+ *   can never authenticate a bearer-protected route.
+ * - An access/service token does NOT verify under the derived key, so it is not
+ *   accepted in `?mt=` either. The two directions are both closed.
+ *
+ * ## Never log a token
+ *
+ * No function here logs a token value, and callers must not either — not in pino
+ * fields, error messages, or breadcrumbs. Log the `fileId` (a public id) instead.
+ */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MediaTokenNotConfiguredError = exports.MEDIA_TOKEN_QUERY_PARAM = exports.MEDIA_TOKEN_TTL_SECONDS = void 0;
+exports.signMediaToken = signMediaToken;
+exports.verifyMediaToken = verifyMediaToken;
+const node_crypto_1 = require("node:crypto");
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+/**
+ * Domain-separation label mixed into the derived signing key. Versioned so the
+ * media-token family can be rotated independently of `ACCESS_TOKEN_SECRET`
+ * (bumping the label invalidates every outstanding media token at once).
+ */
+const MEDIA_TOKEN_KEY_LABEL = 'oxy:media-token:v1';
+/**
+ * Lifetime of a scoped media token, in seconds.
+ *
+ * Long enough to cover a page of thumbnails resolving and rendering (and a slow
+ * connection finishing the byte stream); short enough that a token leaked via a
+ * DOM attribute, cache, or screenshot stops working quickly. Because there is no
+ * revocation list, this TTL is the upper bound on how long a revoked viewer can
+ * keep reading a leaked URL.
+ *
+ * MUST stay STRICTLY GREATER than the `@oxyhq/core` SDK's `assetGetUrl` response
+ * cache TTL (currently 10 minutes). The SDK caches the whole `GET /assets/:id/url`
+ * response — including the URL with this token embedded — so a URL can be served
+ * from cache up to that TTL after it was minted. A 15-minute token over a
+ * 10-minute URL cache guarantees at least ~5 minutes of remaining validity on any
+ * cached URL, so an `<img src>` never receives an already-expired token. If the
+ * SDK cache TTL is ever raised, raise this in lockstep with the same margin.
+ */
+exports.MEDIA_TOKEN_TTL_SECONDS = 900;
+/** Query parameter carrying a scoped media token on stream/download URLs. */
+exports.MEDIA_TOKEN_QUERY_PARAM = 'mt';
+/**
+ * Raised when `ACCESS_TOKEN_SECRET` is absent at mint time. `config/env.ts`
+ * requires it to boot, so this is a broken-deploy condition and must fail loudly
+ * (500) rather than silently handing back a URL that will 403 on every render.
+ */
+class MediaTokenNotConfiguredError extends Error {
+    constructor() {
+        super('Cannot mint a scoped media token: ACCESS_TOKEN_SECRET is not configured');
+        this.name = 'MediaTokenNotConfiguredError';
+    }
+}
+exports.MediaTokenNotConfiguredError = MediaTokenNotConfiguredError;
+let cachedSourceSecret;
+let cachedKey;
+/**
+ * Derive (and memoize) the media-token signing key from `ACCESS_TOKEN_SECRET`.
+ * Re-derives whenever the source secret changes so a rotated secret rotates the
+ * media key with it. Returns `null` when the source secret is unset.
+ */
+function mediaTokenKey() {
+    const secret = process.env.ACCESS_TOKEN_SECRET;
+    if (!secret) {
+        return null;
+    }
+    if (!cachedKey || cachedSourceSecret !== secret) {
+        cachedKey = (0, node_crypto_1.createHmac)('sha256', secret).update(MEDIA_TOKEN_KEY_LABEL).digest();
+        cachedSourceSecret = secret;
+    }
+    return cachedKey;
+}
+/**
+ * Mint a scoped media token authorizing `userId` to read `fileId` for the next
+ * {@link MEDIA_TOKEN_TTL_SECONDS} seconds.
+ *
+ * The CALLER is responsible for having already verified access
+ * (`assetService.canUserAccessFile`) — this function performs no authorization
+ * of its own, it only binds an already-made decision to one asset and a clock.
+ *
+ * @throws {MediaTokenNotConfiguredError} when `ACCESS_TOKEN_SECRET` is unset.
+ */
+function signMediaToken(fileId, userId) {
+    const key = mediaTokenKey();
+    if (!key) {
+        throw new MediaTokenNotConfiguredError();
+    }
+    const claims = { typ: 'media', fid: fileId, uid: userId };
+    return jsonwebtoken_1.default.sign(claims, key, {
+        algorithm: 'HS256',
+        expiresIn: exports.MEDIA_TOKEN_TTL_SECONDS,
+    });
+}
+/**
+ * Verify a scoped media token against the file id the request is asking for and
+ * return the authorized viewer's user id, or `undefined` for anything that does
+ * not verify.
+ *
+ * Rejects (all as `undefined`, never throwing): a bad/absent signature, an
+ * expired token, a token from another family (access/service tokens do not
+ * verify under the derived key), a token whose `typ` is not `'media'`, a token
+ * whose `fid` names a DIFFERENT asset, and a token with no usable `uid`.
+ *
+ * `fid` is compared with `!==` rather than a constant-time helper on purpose: a
+ * file id is a public identifier the caller already supplied in the request
+ * path, not a secret, so there is nothing to leak by timing.
+ */
+function verifyMediaToken(token, requestedFileId) {
+    const key = mediaTokenKey();
+    if (!key) {
+        return undefined;
+    }
+    let decoded;
+    try {
+        // `algorithms` is pinned so a token cannot downgrade the signature scheme.
+        decoded = jsonwebtoken_1.default.verify(token, key, { algorithms: ['HS256'] });
+    }
+    catch (_a) {
+        // Invalid signature, wrong token family, malformed JWT, or expired. All mean
+        // the same thing here — "not an authorized viewer" — and the caller's own
+        // access check still runs on the resulting anonymous viewer. Deliberately
+        // not logged: the only detail available is the token value itself, which
+        // must never reach a log.
+        return undefined;
+    }
+    if (decoded.typ !== 'media') {
+        return undefined;
+    }
+    if (typeof decoded.fid !== 'string' || decoded.fid !== requestedFileId) {
+        return undefined;
+    }
+    if (typeof decoded.uid !== 'string' || decoded.uid.length === 0) {
+        return undefined;
+    }
+    return decoded.uid;
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvbWVkaWFUb2tlbi50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztHQWdERzs7Ozs7O0FBc0ZILHdDQVdDO0FBZ0JELDRDQThCQztBQTdJRCw2Q0FBeUM7QUFDekMsZ0VBQStCO0FBRS9COzs7O0dBSUc7QUFDSCxNQUFNLHFCQUFxQixHQUFHLG9CQUFvQixDQUFDO0FBRW5EOzs7Ozs7Ozs7Ozs7Ozs7O0dBZ0JHO0FBQ1UsUUFBQSx1QkFBdUIsR0FBRyxHQUFHLENBQUM7QUFFM0MsNkVBQTZFO0FBQ2hFLFFBQUEsdUJBQXVCLEdBQUcsSUFBSSxDQUFDO0FBWTVDOzs7O0dBSUc7QUFDSCxNQUFhLDRCQUE2QixTQUFRLEtBQUs7SUFDckQ7UUFDRSxLQUFLLENBQUMseUVBQXlFLENBQUMsQ0FBQztRQUNqRixJQUFJLENBQUMsSUFBSSxHQUFHLDhCQUE4QixDQUFDO0lBQzdDLENBQUM7Q0FDRjtBQUxELG9FQUtDO0FBRUQsSUFBSSxrQkFBc0MsQ0FBQztBQUMzQyxJQUFJLFNBQTZCLENBQUM7QUFFbEM7Ozs7R0FJRztBQUNILFNBQVMsYUFBYTtJQUNwQixNQUFNLE1BQU0sR0FBRyxPQUFPLENBQUMsR0FBRyxDQUFDLG1CQUFtQixDQUFDO0lBQy9DLElBQUksQ0FBQyxNQUFNLEVBQUUsQ0FBQztRQUNaLE9BQU8sSUFBSSxDQUFDO0lBQ2QsQ0FBQztJQUNELElBQUksQ0FBQyxTQUFTLElBQUksa0JBQWtCLEtBQUssTUFBTSxFQUFFLENBQUM7UUFDaEQsU0FBUyxHQUFHLElBQUEsd0JBQVUsRUFBQyxRQUFRLEVBQUUsTUFBTSxDQUFDLENBQUMsTUFBTSxDQUFDLHFCQUFxQixDQUFDLENBQUMsTUFBTSxFQUFFLENBQUM7UUFDaEYsa0JBQWtCLEdBQUcsTUFBTSxDQUFDO0lBQzlCLENBQUM7SUFDRCxPQUFPLFNBQVMsQ0FBQztBQUNuQixDQUFDO0FBRUQ7Ozs7Ozs7OztHQVNHO0FBQ0gsU0FBZ0IsY0FBYyxDQUFDLE1BQWMsRUFBRSxNQUFjO0lBQzNELE1BQU0sR0FBRyxHQUFHLGFBQWEsRUFBRSxDQUFDO0lBQzVCLElBQUksQ0FBQyxHQUFHLEVBQUUsQ0FBQztRQUNULE1BQU0sSUFBSSw0QkFBNEIsRUFBRSxDQUFDO0lBQzNDLENBQUM7SUFFRCxNQUFNLE1BQU0sR0FBcUIsRUFBRSxHQUFHLEVBQUUsT0FBTyxFQUFFLEdBQUcsRUFBRSxNQUFNLEVBQUUsR0FBRyxFQUFFLE1BQU0sRUFBRSxDQUFDO0lBQzVFLE9BQU8sc0JBQUcsQ0FBQyxJQUFJLENBQUMsTUFBTSxFQUFFLEdBQUcsRUFBRTtRQUMzQixTQUFTLEVBQUUsT0FBTztRQUNsQixTQUFTLEVBQUUsK0JBQXVCO0tBQ25DLENBQUMsQ0FBQztBQUNMLENBQUM7QUFFRDs7Ozs7Ozs7Ozs7OztHQWFHO0FBQ0gsU0FBZ0IsZ0JBQWdCLENBQUMsS0FBYSxFQUFFLGVBQXVCO0lBQ3JFLE1BQU0sR0FBRyxHQUFHLGFBQWEsRUFBRSxDQUFDO0lBQzVCLElBQUksQ0FBQyxHQUFHLEVBQUUsQ0FBQztRQUNULE9BQU8sU0FBUyxDQUFDO0lBQ25CLENBQUM7SUFFRCxJQUFJLE9BQWtDLENBQUM7SUFDdkMsSUFBSSxDQUFDO1FBQ0gsMkVBQTJFO1FBQzNFLE9BQU8sR0FBRyxzQkFBRyxDQUFDLE1BQU0sQ0FBQyxLQUFLLEVBQUUsR0FBRyxFQUFFLEVBQUUsVUFBVSxFQUFFLENBQUMsT0FBTyxDQUFDLEVBQUUsQ0FBOEIsQ0FBQztJQUMzRixDQUFDO0lBQUMsV0FBTSxDQUFDO1FBQ1AsNkVBQTZFO1FBQzdFLDBFQUEwRTtRQUMxRSwwRUFBMEU7UUFDMUUseUVBQXlFO1FBQ3pFLDBCQUEwQjtRQUMxQixPQUFPLFNBQVMsQ0FBQztJQUNuQixDQUFDO0lBRUQsSUFBSSxPQUFPLENBQUMsR0FBRyxLQUFLLE9BQU8sRUFBRSxDQUFDO1FBQzVCLE9BQU8sU0FBUyxDQUFDO0lBQ25CLENBQUM7SUFDRCxJQUFJLE9BQU8sT0FBTyxDQUFDLEdBQUcsS0FBSyxRQUFRLElBQUksT0FBTyxDQUFDLEdBQUcsS0FBSyxlQUFlLEVBQUUsQ0FBQztRQUN2RSxPQUFPLFNBQVMsQ0FBQztJQUNuQixDQUFDO0lBQ0QsSUFBSSxPQUFPLE9BQU8sQ0FBQyxHQUFHLEtBQUssUUFBUSxJQUFJLE9BQU8sQ0FBQyxHQUFHLENBQUMsTUFBTSxLQUFLLENBQUMsRUFBRSxDQUFDO1FBQ2hFLE9BQU8sU0FBUyxDQUFDO0lBQ25CLENBQUM7SUFFRCxPQUFPLE9BQU8sQ0FBQyxHQUFHLENBQUM7QUFDckIsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy91dGlscy9tZWRpYVRva2VuLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogU2NvcGVkIG1lZGlhIHRva2VucyDigJQgdGhlIGA/bXQ9YCBjcmVkZW50aWFsIG9uIHByaXZhdGUtYXNzZXQgc3RyZWFtIFVSTHMuXG4gKlxuICogQSBicm93c2VyIGA8aW1nIHNyYz5gIC8gYEltYWdlLmdldFNpemUoKWAgLyBgPGEgZG93bmxvYWQ+YCBjYW5ub3Qgc2VuZCBhblxuICogYEF1dGhvcml6YXRpb25gIGhlYWRlciwgYW5kIHRoZSB6ZXJvLWNvb2tpZSBzZXNzaW9uIHRyYW5zcG9ydCBtZWFucyB0aGVyZSBpc1xuICogbm8gYW1iaWVudCBjcmVkZW50aWFsIGVpdGhlci4gUHJpdmF0ZSBhc3NldHMgdGhlcmVmb3JlIG5lZWQgYSBjcmVkZW50aWFsIHRoYXRcbiAqIHRyYXZlbHMgSU4gdGhlIFVSTCDigJQgYnV0IHRoZSBjYWxsZXIncyBhY2Nlc3MgdG9rZW4gbXVzdCBuZXZlciBiZSB0aGF0XG4gKiBjcmVkZW50aWFsOiBhc3NldCBVUkxzIGFyZSByZW5kZXJlZCBpbnRvIERPTSBhdHRyaWJ1dGVzLCBicm93c2VyIG5ldHdvcmtcbiAqIHBhbmVscywgSFRUUCBjYWNoZXMsIHJlZmVycmVyIGhlYWRlcnMsIGFuZCBzY3JlZW5zaG90cy5cbiAqXG4gKiBBIG1lZGlhIHRva2VuIGlzIGRlbGliZXJhdGVseSB0aGUgd2Vha2VzdCBjcmVkZW50aWFsIHRoZSBwbGF0Zm9ybSBpc3N1ZXM6XG4gKlxuICogLSAqKlNpbmdsZSBhc3NldC4qKiBUaGUgYGZpZGAgY2xhaW0gcGlucyB0aGUgdG9rZW4gdG8gZXhhY3RseSBvbmUgZmlsZSBpZC5cbiAqICAge0BsaW5rIHZlcmlmeU1lZGlhVG9rZW59IG9ubHkgYWNjZXB0cyBpdCB3aGVuIGBmaWRgIGVxdWFscyB0aGUgZmlsZSBpZCB0aGVcbiAqICAgcmVxdWVzdCBpcyBhY3R1YWxseSBhc2tpbmcgZm9yLCBzbyBhIHRva2VuIG1pbnRlZCBmb3IgYXNzZXQgQSBjYW5ub3Qgb3BlblxuICogICBhc3NldCBCLiBWYXJpYW50cyBvZiB0aGUgc2FtZSBhc3NldCBzaGFyZSBvbmUgYWNjZXNzIGRlY2lzaW9uLCBzbyB0aGUgdG9rZW5cbiAqICAgaXMgaW50ZW50aW9uYWxseSBOT1QgcGlubmVkIHRvIGEgdmFyaWFudC5cbiAqIC0gKipSZWFkLW9ubHksIG1lZGlhLW9ubHkuKiogVGhlIGB0eXA6ICdtZWRpYSdgIGNsYWltIHBsdXMgdGhlIGRlZGljYXRlZFxuICogICBzaWduaW5nIGtleSAoYmVsb3cpIG1lYW4gaXQgYXV0aG9yaXplcyB2aWV3aW5nIHRoYXQgb25lIGFzc2V0IGFuZCBub3RoaW5nXG4gKiAgIGVsc2UuIEl0IGNhcnJpZXMgbm8gc2Vzc2lvbiBpZCwgc28gaXQgY2Fubm90IHNhdGlzZnkgYW55IG90aGVyIGF1dGhlbnRpY2F0ZWRcbiAqICAgc3VyZmFjZS5cbiAqIC0gKipTaG9ydC1saXZlZC4qKiB7QGxpbmsgTUVESUFfVE9LRU5fVFRMX1NFQ09ORFN9ICgxNSBtaW51dGVzKS4gVGhlcmUgaXMgbm9cbiAqICAgcmV2b2NhdGlvbiBsaXN0OyB0aGUgc2hvcnQgVFRMIElTIHRoZSByZXZvY2F0aW9uIHN0b3J5LiBBY2Nlc3MgY2hhbmdlc1xuICogICAodW5mb2xsb3csIGJsb2NrLCB2aXNpYmlsaXR5IGZsaXAsIGRlbGV0ZSkgdGFrZSBlZmZlY3QgZm9yIGEgbGVha2VkIHRva2VuXG4gKiAgIHdpdGhpbiBvbmUgVFRMLCBhbmQgZXZlcnkgZnJlc2ggcmVuZGVyIHJlLW1pbnRzIHRocm91Z2ggdGhlIGFjY2VzcyBjaGVjay5cbiAqXG4gKiAjIyBLZXkgc2VwYXJhdGlvbiAod2h5IHRoaXMgY2Fubm90IGJlIGNvbmZ1c2VkIHdpdGggYW4gYWNjZXNzIHRva2VuKVxuICpcbiAqIE1lZGlhIHRva2VucyBhcmUgc2lnbmVkIHdpdGggYSBrZXkgREVSSVZFRCBmcm9tIGBBQ0NFU1NfVE9LRU5fU0VDUkVUYCByYXRoZXJcbiAqIHRoYW4gdGhlIHNlY3JldCBpdHNlbGY6XG4gKlxuICogICAgIG1lZGlhS2V5ID0gSE1BQy1TSEEyNTYoQUNDRVNTX1RPS0VOX1NFQ1JFVCwgTUVESUFfVE9LRU5fS0VZX0xBQkVMKVxuICpcbiAqIFRoaXMgcmV1c2VzIGEgc2VjcmV0IHRoZSBkZXBsb3kgYWxyZWFkeSByZXF1aXJlcyAoYGNvbmZpZy9lbnYudHNgIGZhaWxzIGJvb3RcbiAqIHdpdGhvdXQgYEFDQ0VTU19UT0tFTl9TRUNSRVRgLCBhbmQgaXQgaXMgYWxyZWFkeSBzeW5jZWQgdG8gU1NNKSDigJQgbm8gbmV3LFxuICogdW5jb25maWd1cmVkIGVudiB2YXIgdGhhdCB3b3VsZCBicmVhayB0aGUgRUNTIGJvb3QgY29udHJhY3Qg4oCUIHdoaWxlIG1ha2luZyB0aGVcbiAqIHR3byB0b2tlbiBmYW1pbGllcyBjcnlwdG9ncmFwaGljYWxseSBkaXNqb2ludDpcbiAqXG4gKiAtIEEgbWVkaWEgdG9rZW4gZG9lcyBOT1QgdmVyaWZ5IHVuZGVyIGBBQ0NFU1NfVE9LRU5fU0VDUkVUYCwgc28gYGRlY29kZVRva2VuYCxcbiAqICAgYHZhbGlkYXRlU2Vzc2lvblRva2VuYCwgYW5kIGB2ZXJpZnlTZXJ2aWNlVG9rZW5gIGFsbCByZWplY3QgaXQgb3V0cmlnaHQuIEl0XG4gKiAgIGNhbiBuZXZlciBhdXRoZW50aWNhdGUgYSBiZWFyZXItcHJvdGVjdGVkIHJvdXRlLlxuICogLSBBbiBhY2Nlc3Mvc2VydmljZSB0b2tlbiBkb2VzIE5PVCB2ZXJpZnkgdW5kZXIgdGhlIGRlcml2ZWQga2V5LCBzbyBpdCBpcyBub3RcbiAqICAgYWNjZXB0ZWQgaW4gYD9tdD1gIGVpdGhlci4gVGhlIHR3byBkaXJlY3Rpb25zIGFyZSBib3RoIGNsb3NlZC5cbiAqXG4gKiAjIyBOZXZlciBsb2cgYSB0b2tlblxuICpcbiAqIE5vIGZ1bmN0aW9uIGhlcmUgbG9ncyBhIHRva2VuIHZhbHVlLCBhbmQgY2FsbGVycyBtdXN0IG5vdCBlaXRoZXIg4oCUIG5vdCBpbiBwaW5vXG4gKiBmaWVsZHMsIGVycm9yIG1lc3NhZ2VzLCBvciBicmVhZGNydW1icy4gTG9nIHRoZSBgZmlsZUlkYCAoYSBwdWJsaWMgaWQpIGluc3RlYWQuXG4gKi9cblxuaW1wb3J0IHsgY3JlYXRlSG1hYyB9IGZyb20gJ25vZGU6Y3J5cHRvJztcbmltcG9ydCBqd3QgZnJvbSAnanNvbndlYnRva2VuJztcblxuLyoqXG4gKiBEb21haW4tc2VwYXJhdGlvbiBsYWJlbCBtaXhlZCBpbnRvIHRoZSBkZXJpdmVkIHNpZ25pbmcga2V5LiBWZXJzaW9uZWQgc28gdGhlXG4gKiBtZWRpYS10b2tlbiBmYW1pbHkgY2FuIGJlIHJvdGF0ZWQgaW5kZXBlbmRlbnRseSBvZiBgQUNDRVNTX1RPS0VOX1NFQ1JFVGBcbiAqIChidW1waW5nIHRoZSBsYWJlbCBpbnZhbGlkYXRlcyBldmVyeSBvdXRzdGFuZGluZyBtZWRpYSB0b2tlbiBhdCBvbmNlKS5cbiAqL1xuY29uc3QgTUVESUFfVE9LRU5fS0VZX0xBQkVMID0gJ294eTptZWRpYS10b2tlbjp2MSc7XG5cbi8qKlxuICogTGlmZXRpbWUgb2YgYSBzY29wZWQgbWVkaWEgdG9rZW4sIGluIHNlY29uZHMuXG4gKlxuICogTG9uZyBlbm91Z2ggdG8gY292ZXIgYSBwYWdlIG9mIHRodW1ibmFpbHMgcmVzb2x2aW5nIGFuZCByZW5kZXJpbmcgKGFuZCBhIHNsb3dcbiAqIGNvbm5lY3Rpb24gZmluaXNoaW5nIHRoZSBieXRlIHN0cmVhbSk7IHNob3J0IGVub3VnaCB0aGF0IGEgdG9rZW4gbGVha2VkIHZpYSBhXG4gKiBET00gYXR0cmlidXRlLCBjYWNoZSwgb3Igc2NyZWVuc2hvdCBzdG9wcyB3b3JraW5nIHF1aWNrbHkuIEJlY2F1c2UgdGhlcmUgaXMgbm9cbiAqIHJldm9jYXRpb24gbGlzdCwgdGhpcyBUVEwgaXMgdGhlIHVwcGVyIGJvdW5kIG9uIGhvdyBsb25nIGEgcmV2b2tlZCB2aWV3ZXIgY2FuXG4gKiBrZWVwIHJlYWRpbmcgYSBsZWFrZWQgVVJMLlxuICpcbiAqIE1VU1Qgc3RheSBTVFJJQ1RMWSBHUkVBVEVSIHRoYW4gdGhlIGBAb3h5aHEvY29yZWAgU0RLJ3MgYGFzc2V0R2V0VXJsYCByZXNwb25zZVxuICogY2FjaGUgVFRMIChjdXJyZW50bHkgMTAgbWludXRlcykuIFRoZSBTREsgY2FjaGVzIHRoZSB3aG9sZSBgR0VUIC9hc3NldHMvOmlkL3VybGBcbiAqIHJlc3BvbnNlIOKAlCBpbmNsdWRpbmcgdGhlIFVSTCB3aXRoIHRoaXMgdG9rZW4gZW1iZWRkZWQg4oCUIHNvIGEgVVJMIGNhbiBiZSBzZXJ2ZWRcbiAqIGZyb20gY2FjaGUgdXAgdG8gdGhhdCBUVEwgYWZ0ZXIgaXQgd2FzIG1pbnRlZC4gQSAxNS1taW51dGUgdG9rZW4gb3ZlciBhXG4gKiAxMC1taW51dGUgVVJMIGNhY2hlIGd1YXJhbnRlZXMgYXQgbGVhc3QgfjUgbWludXRlcyBvZiByZW1haW5pbmcgdmFsaWRpdHkgb24gYW55XG4gKiBjYWNoZWQgVVJMLCBzbyBhbiBgPGltZyBzcmM+YCBuZXZlciByZWNlaXZlcyBhbiBhbHJlYWR5LWV4cGlyZWQgdG9rZW4uIElmIHRoZVxuICogU0RLIGNhY2hlIFRUTCBpcyBldmVyIHJhaXNlZCwgcmFpc2UgdGhpcyBpbiBsb2Nrc3RlcCB3aXRoIHRoZSBzYW1lIG1hcmdpbi5cbiAqL1xuZXhwb3J0IGNvbnN0IE1FRElBX1RPS0VOX1RUTF9TRUNPTkRTID0gOTAwO1xuXG4vKiogUXVlcnkgcGFyYW1ldGVyIGNhcnJ5aW5nIGEgc2NvcGVkIG1lZGlhIHRva2VuIG9uIHN0cmVhbS9kb3dubG9hZCBVUkxzLiAqL1xuZXhwb3J0IGNvbnN0IE1FRElBX1RPS0VOX1FVRVJZX1BBUkFNID0gJ210JztcblxuLyoqIENsYWltcyBjYXJyaWVkIGJ5IGEgc2NvcGVkIG1lZGlhIHRva2VuLiAqL1xuaW50ZXJmYWNlIE1lZGlhVG9rZW5DbGFpbXMge1xuICAvKiogVG9rZW4gZmFtaWx5IGRpc2NyaW1pbmF0b3IuIEFsd2F5cyBgJ21lZGlhJ2AuICovXG4gIHR5cDogJ21lZGlhJztcbiAgLyoqIFRoZSBzaW5nbGUgZmlsZSBpZCB0aGlzIHRva2VuIGF1dGhvcml6ZXMuICovXG4gIGZpZDogc3RyaW5nO1xuICAvKiogVGhlIHVzZXIgd2hvc2UgYWNjZXNzIHdhcyB2ZXJpZmllZCB3aGVuIHRoZSB0b2tlbiB3YXMgbWludGVkLiAqL1xuICB1aWQ6IHN0cmluZztcbn1cblxuLyoqXG4gKiBSYWlzZWQgd2hlbiBgQUNDRVNTX1RPS0VOX1NFQ1JFVGAgaXMgYWJzZW50IGF0IG1pbnQgdGltZS4gYGNvbmZpZy9lbnYudHNgXG4gKiByZXF1aXJlcyBpdCB0byBib290LCBzbyB0aGlzIGlzIGEgYnJva2VuLWRlcGxveSBjb25kaXRpb24gYW5kIG11c3QgZmFpbCBsb3VkbHlcbiAqICg1MDApIHJhdGhlciB0aGFuIHNpbGVudGx5IGhhbmRpbmcgYmFjayBhIFVSTCB0aGF0IHdpbGwgNDAzIG9uIGV2ZXJ5IHJlbmRlci5cbiAqL1xuZXhwb3J0IGNsYXNzIE1lZGlhVG9rZW5Ob3RDb25maWd1cmVkRXJyb3IgZXh0ZW5kcyBFcnJvciB7XG4gIGNvbnN0cnVjdG9yKCkge1xuICAgIHN1cGVyKCdDYW5ub3QgbWludCBhIHNjb3BlZCBtZWRpYSB0b2tlbjogQUNDRVNTX1RPS0VOX1NFQ1JFVCBpcyBub3QgY29uZmlndXJlZCcpO1xuICAgIHRoaXMubmFtZSA9ICdNZWRpYVRva2VuTm90Q29uZmlndXJlZEVycm9yJztcbiAgfVxufVxuXG5sZXQgY2FjaGVkU291cmNlU2VjcmV0OiBzdHJpbmcgfCB1bmRlZmluZWQ7XG5sZXQgY2FjaGVkS2V5OiBCdWZmZXIgfCB1bmRlZmluZWQ7XG5cbi8qKlxuICogRGVyaXZlIChhbmQgbWVtb2l6ZSkgdGhlIG1lZGlhLXRva2VuIHNpZ25pbmcga2V5IGZyb20gYEFDQ0VTU19UT0tFTl9TRUNSRVRgLlxuICogUmUtZGVyaXZlcyB3aGVuZXZlciB0aGUgc291cmNlIHNlY3JldCBjaGFuZ2VzIHNvIGEgcm90YXRlZCBzZWNyZXQgcm90YXRlcyB0aGVcbiAqIG1lZGlhIGtleSB3aXRoIGl0LiBSZXR1cm5zIGBudWxsYCB3aGVuIHRoZSBzb3VyY2Ugc2VjcmV0IGlzIHVuc2V0LlxuICovXG5mdW5jdGlvbiBtZWRpYVRva2VuS2V5KCk6IEJ1ZmZlciB8IG51bGwge1xuICBjb25zdCBzZWNyZXQgPSBwcm9jZXNzLmVudi5BQ0NFU1NfVE9LRU5fU0VDUkVUO1xuICBpZiAoIXNlY3JldCkge1xuICAgIHJldHVybiBudWxsO1xuICB9XG4gIGlmICghY2FjaGVkS2V5IHx8IGNhY2hlZFNvdXJjZVNlY3JldCAhPT0gc2VjcmV0KSB7XG4gICAgY2FjaGVkS2V5ID0gY3JlYXRlSG1hYygnc2hhMjU2Jywgc2VjcmV0KS51cGRhdGUoTUVESUFfVE9LRU5fS0VZX0xBQkVMKS5kaWdlc3QoKTtcbiAgICBjYWNoZWRTb3VyY2VTZWNyZXQgPSBzZWNyZXQ7XG4gIH1cbiAgcmV0dXJuIGNhY2hlZEtleTtcbn1cblxuLyoqXG4gKiBNaW50IGEgc2NvcGVkIG1lZGlhIHRva2VuIGF1dGhvcml6aW5nIGB1c2VySWRgIHRvIHJlYWQgYGZpbGVJZGAgZm9yIHRoZSBuZXh0XG4gKiB7QGxpbmsgTUVESUFfVE9LRU5fVFRMX1NFQ09ORFN9IHNlY29uZHMuXG4gKlxuICogVGhlIENBTExFUiBpcyByZXNwb25zaWJsZSBmb3IgaGF2aW5nIGFscmVhZHkgdmVyaWZpZWQgYWNjZXNzXG4gKiAoYGFzc2V0U2VydmljZS5jYW5Vc2VyQWNjZXNzRmlsZWApIOKAlCB0aGlzIGZ1bmN0aW9uIHBlcmZvcm1zIG5vIGF1dGhvcml6YXRpb25cbiAqIG9mIGl0cyBvd24sIGl0IG9ubHkgYmluZHMgYW4gYWxyZWFkeS1tYWRlIGRlY2lzaW9uIHRvIG9uZSBhc3NldCBhbmQgYSBjbG9jay5cbiAqXG4gKiBAdGhyb3dzIHtNZWRpYVRva2VuTm90Q29uZmlndXJlZEVycm9yfSB3aGVuIGBBQ0NFU1NfVE9LRU5fU0VDUkVUYCBpcyB1bnNldC5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIHNpZ25NZWRpYVRva2VuKGZpbGVJZDogc3RyaW5nLCB1c2VySWQ6IHN0cmluZyk6IHN0cmluZyB7XG4gIGNvbnN0IGtleSA9IG1lZGlhVG9rZW5LZXkoKTtcbiAgaWYgKCFrZXkpIHtcbiAgICB0aHJvdyBuZXcgTWVkaWFUb2tlbk5vdENvbmZpZ3VyZWRFcnJvcigpO1xuICB9XG5cbiAgY29uc3QgY2xhaW1zOiBNZWRpYVRva2VuQ2xhaW1zID0geyB0eXA6ICdtZWRpYScsIGZpZDogZmlsZUlkLCB1aWQ6IHVzZXJJZCB9O1xuICByZXR1cm4gand0LnNpZ24oY2xhaW1zLCBrZXksIHtcbiAgICBhbGdvcml0aG06ICdIUzI1NicsXG4gICAgZXhwaXJlc0luOiBNRURJQV9UT0tFTl9UVExfU0VDT05EUyxcbiAgfSk7XG59XG5cbi8qKlxuICogVmVyaWZ5IGEgc2NvcGVkIG1lZGlhIHRva2VuIGFnYWluc3QgdGhlIGZpbGUgaWQgdGhlIHJlcXVlc3QgaXMgYXNraW5nIGZvciBhbmRcbiAqIHJldHVybiB0aGUgYXV0aG9yaXplZCB2aWV3ZXIncyB1c2VyIGlkLCBvciBgdW5kZWZpbmVkYCBmb3IgYW55dGhpbmcgdGhhdCBkb2VzXG4gKiBub3QgdmVyaWZ5LlxuICpcbiAqIFJlamVjdHMgKGFsbCBhcyBgdW5kZWZpbmVkYCwgbmV2ZXIgdGhyb3dpbmcpOiBhIGJhZC9hYnNlbnQgc2lnbmF0dXJlLCBhblxuICogZXhwaXJlZCB0b2tlbiwgYSB0b2tlbiBmcm9tIGFub3RoZXIgZmFtaWx5IChhY2Nlc3Mvc2VydmljZSB0b2tlbnMgZG8gbm90XG4gKiB2ZXJpZnkgdW5kZXIgdGhlIGRlcml2ZWQga2V5KSwgYSB0b2tlbiB3aG9zZSBgdHlwYCBpcyBub3QgYCdtZWRpYSdgLCBhIHRva2VuXG4gKiB3aG9zZSBgZmlkYCBuYW1lcyBhIERJRkZFUkVOVCBhc3NldCwgYW5kIGEgdG9rZW4gd2l0aCBubyB1c2FibGUgYHVpZGAuXG4gKlxuICogYGZpZGAgaXMgY29tcGFyZWQgd2l0aCBgIT09YCByYXRoZXIgdGhhbiBhIGNvbnN0YW50LXRpbWUgaGVscGVyIG9uIHB1cnBvc2U6IGFcbiAqIGZpbGUgaWQgaXMgYSBwdWJsaWMgaWRlbnRpZmllciB0aGUgY2FsbGVyIGFscmVhZHkgc3VwcGxpZWQgaW4gdGhlIHJlcXVlc3RcbiAqIHBhdGgsIG5vdCBhIHNlY3JldCwgc28gdGhlcmUgaXMgbm90aGluZyB0byBsZWFrIGJ5IHRpbWluZy5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIHZlcmlmeU1lZGlhVG9rZW4odG9rZW46IHN0cmluZywgcmVxdWVzdGVkRmlsZUlkOiBzdHJpbmcpOiBzdHJpbmcgfCB1bmRlZmluZWQge1xuICBjb25zdCBrZXkgPSBtZWRpYVRva2VuS2V5KCk7XG4gIGlmICgha2V5KSB7XG4gICAgcmV0dXJuIHVuZGVmaW5lZDtcbiAgfVxuXG4gIGxldCBkZWNvZGVkOiBQYXJ0aWFsPE1lZGlhVG9rZW5DbGFpbXM+O1xuICB0cnkge1xuICAgIC8vIGBhbGdvcml0aG1zYCBpcyBwaW5uZWQgc28gYSB0b2tlbiBjYW5ub3QgZG93bmdyYWRlIHRoZSBzaWduYXR1cmUgc2NoZW1lLlxuICAgIGRlY29kZWQgPSBqd3QudmVyaWZ5KHRva2VuLCBrZXksIHsgYWxnb3JpdGhtczogWydIUzI1NiddIH0pIGFzIFBhcnRpYWw8TWVkaWFUb2tlbkNsYWltcz47XG4gIH0gY2F0Y2gge1xuICAgIC8vIEludmFsaWQgc2lnbmF0dXJlLCB3cm9uZyB0b2tlbiBmYW1pbHksIG1hbGZvcm1lZCBKV1QsIG9yIGV4cGlyZWQuIEFsbCBtZWFuXG4gICAgLy8gdGhlIHNhbWUgdGhpbmcgaGVyZSDigJQgXCJub3QgYW4gYXV0aG9yaXplZCB2aWV3ZXJcIiDigJQgYW5kIHRoZSBjYWxsZXIncyBvd25cbiAgICAvLyBhY2Nlc3MgY2hlY2sgc3RpbGwgcnVucyBvbiB0aGUgcmVzdWx0aW5nIGFub255bW91cyB2aWV3ZXIuIERlbGliZXJhdGVseVxuICAgIC8vIG5vdCBsb2dnZWQ6IHRoZSBvbmx5IGRldGFpbCBhdmFpbGFibGUgaXMgdGhlIHRva2VuIHZhbHVlIGl0c2VsZiwgd2hpY2hcbiAgICAvLyBtdXN0IG5ldmVyIHJlYWNoIGEgbG9nLlxuICAgIHJldHVybiB1bmRlZmluZWQ7XG4gIH1cblxuICBpZiAoZGVjb2RlZC50eXAgIT09ICdtZWRpYScpIHtcbiAgICByZXR1cm4gdW5kZWZpbmVkO1xuICB9XG4gIGlmICh0eXBlb2YgZGVjb2RlZC5maWQgIT09ICdzdHJpbmcnIHx8IGRlY29kZWQuZmlkICE9PSByZXF1ZXN0ZWRGaWxlSWQpIHtcbiAgICByZXR1cm4gdW5kZWZpbmVkO1xuICB9XG4gIGlmICh0eXBlb2YgZGVjb2RlZC51aWQgIT09ICdzdHJpbmcnIHx8IGRlY29kZWQudWlkLmxlbmd0aCA9PT0gMCkge1xuICAgIHJldHVybiB1bmRlZmluZWQ7XG4gIH1cblxuICByZXR1cm4gZGVjb2RlZC51aWQ7XG59XG4iXSwidmVyc2lvbiI6M30=

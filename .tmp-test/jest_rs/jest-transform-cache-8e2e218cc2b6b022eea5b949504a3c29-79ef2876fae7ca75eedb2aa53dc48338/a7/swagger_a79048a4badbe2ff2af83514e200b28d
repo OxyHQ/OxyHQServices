@@ -1,0 +1,65 @@
+7a4176eec7cc7d8726ba37f9b19896f2
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const swagger_jsdoc_1 = __importDefault(require("swagger-jsdoc"));
+const package_json_1 = require("../../package.json");
+const options = {
+    definition: {
+        openapi: '3.0.0',
+        info: {
+            title: 'Oxy API',
+            version: package_json_1.version || '1.0.0',
+            description: 'API documentation for the Oxy platform',
+        },
+        servers: [
+            {
+                url: 'http://localhost:4100',
+                description: 'Development server',
+            },
+            {
+                url: 'https://api.oxy.so',
+                description: 'Production server',
+            },
+        ],
+        components: {
+            securitySchemes: {
+                bearerAuth: {
+                    type: 'http',
+                    scheme: 'bearer',
+                    bearerFormat: 'JWT',
+                    description: 'JWT access token obtained from /auth/login or /auth/verify',
+                },
+            },
+            schemas: {
+                Error: {
+                    type: 'object',
+                    properties: {
+                        error: {
+                            type: 'string',
+                            description: 'Machine-readable error code',
+                            example: 'BAD_REQUEST',
+                        },
+                        message: {
+                            type: 'string',
+                            description: 'Human-readable error message',
+                            example: 'Validation failed',
+                        },
+                        details: {
+                            type: 'object',
+                            description: 'Additional error details (optional)',
+                            additionalProperties: true,
+                        },
+                    },
+                    required: ['error', 'message'],
+                },
+            },
+        },
+    },
+    apis: ['./src/routes/*.ts'],
+};
+const swaggerSpec = (0, swagger_jsdoc_1.default)(options);
+exports.default = swaggerSpec;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY29uZmlnL3N3YWdnZXIudHMiLCJtYXBwaW5ncyI6Ijs7Ozs7QUFBQSxrRUFBeUM7QUFDekMscURBQTZDO0FBRTdDLE1BQU0sT0FBTyxHQUF5QjtJQUNwQyxVQUFVLEVBQUU7UUFDVixPQUFPLEVBQUUsT0FBTztRQUNoQixJQUFJLEVBQUU7WUFDSixLQUFLLEVBQUUsU0FBUztZQUNoQixPQUFPLEVBQUUsc0JBQU8sSUFBSSxPQUFPO1lBQzNCLFdBQVcsRUFBRSx3Q0FBd0M7U0FDdEQ7UUFDRCxPQUFPLEVBQUU7WUFDUDtnQkFDRSxHQUFHLEVBQUUsdUJBQXVCO2dCQUM1QixXQUFXLEVBQUUsb0JBQW9CO2FBQ2xDO1lBQ0Q7Z0JBQ0UsR0FBRyxFQUFFLG9CQUFvQjtnQkFDekIsV0FBVyxFQUFFLG1CQUFtQjthQUNqQztTQUNGO1FBQ0QsVUFBVSxFQUFFO1lBQ1YsZUFBZSxFQUFFO2dCQUNmLFVBQVUsRUFBRTtvQkFDVixJQUFJLEVBQUUsTUFBTTtvQkFDWixNQUFNLEVBQUUsUUFBUTtvQkFDaEIsWUFBWSxFQUFFLEtBQUs7b0JBQ25CLFdBQVcsRUFBRSw0REFBNEQ7aUJBQzFFO2FBQ0Y7WUFDRCxPQUFPLEVBQUU7Z0JBQ1AsS0FBSyxFQUFFO29CQUNMLElBQUksRUFBRSxRQUFRO29CQUNkLFVBQVUsRUFBRTt3QkFDVixLQUFLLEVBQUU7NEJBQ0wsSUFBSSxFQUFFLFFBQVE7NEJBQ2QsV0FBVyxFQUFFLDZCQUE2Qjs0QkFDMUMsT0FBTyxFQUFFLGFBQWE7eUJBQ3ZCO3dCQUNELE9BQU8sRUFBRTs0QkFDUCxJQUFJLEVBQUUsUUFBUTs0QkFDZCxXQUFXLEVBQUUsOEJBQThCOzRCQUMzQyxPQUFPLEVBQUUsbUJBQW1CO3lCQUM3Qjt3QkFDRCxPQUFPLEVBQUU7NEJBQ1AsSUFBSSxFQUFFLFFBQVE7NEJBQ2QsV0FBVyxFQUFFLHFDQUFxQzs0QkFDbEQsb0JBQW9CLEVBQUUsSUFBSTt5QkFDM0I7cUJBQ0Y7b0JBQ0QsUUFBUSxFQUFFLENBQUMsT0FBTyxFQUFFLFNBQVMsQ0FBQztpQkFDL0I7YUFDRjtTQUNGO0tBQ0Y7SUFDRCxJQUFJLEVBQUUsQ0FBQyxtQkFBbUIsQ0FBQztDQUM1QixDQUFDO0FBRUYsTUFBTSxXQUFXLEdBQUcsSUFBQSx1QkFBWSxFQUFDLE9BQU8sQ0FBQyxDQUFDO0FBRTFDLGtCQUFlLFdBQVcsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9jb25maWcvc3dhZ2dlci50cyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgc3dhZ2dlckpzZG9jIGZyb20gJ3N3YWdnZXItanNkb2MnO1xuaW1wb3J0IHsgdmVyc2lvbiB9IGZyb20gJy4uLy4uL3BhY2thZ2UuanNvbic7XG5cbmNvbnN0IG9wdGlvbnM6IHN3YWdnZXJKc2RvYy5PcHRpb25zID0ge1xuICBkZWZpbml0aW9uOiB7XG4gICAgb3BlbmFwaTogJzMuMC4wJyxcbiAgICBpbmZvOiB7XG4gICAgICB0aXRsZTogJ094eSBBUEknLFxuICAgICAgdmVyc2lvbjogdmVyc2lvbiB8fCAnMS4wLjAnLFxuICAgICAgZGVzY3JpcHRpb246ICdBUEkgZG9jdW1lbnRhdGlvbiBmb3IgdGhlIE94eSBwbGF0Zm9ybScsXG4gICAgfSxcbiAgICBzZXJ2ZXJzOiBbXG4gICAgICB7XG4gICAgICAgIHVybDogJ2h0dHA6Ly9sb2NhbGhvc3Q6NDEwMCcsXG4gICAgICAgIGRlc2NyaXB0aW9uOiAnRGV2ZWxvcG1lbnQgc2VydmVyJyxcbiAgICAgIH0sXG4gICAgICB7XG4gICAgICAgIHVybDogJ2h0dHBzOi8vYXBpLm94eS5zbycsXG4gICAgICAgIGRlc2NyaXB0aW9uOiAnUHJvZHVjdGlvbiBzZXJ2ZXInLFxuICAgICAgfSxcbiAgICBdLFxuICAgIGNvbXBvbmVudHM6IHtcbiAgICAgIHNlY3VyaXR5U2NoZW1lczoge1xuICAgICAgICBiZWFyZXJBdXRoOiB7XG4gICAgICAgICAgdHlwZTogJ2h0dHAnLFxuICAgICAgICAgIHNjaGVtZTogJ2JlYXJlcicsXG4gICAgICAgICAgYmVhcmVyRm9ybWF0OiAnSldUJyxcbiAgICAgICAgICBkZXNjcmlwdGlvbjogJ0pXVCBhY2Nlc3MgdG9rZW4gb2J0YWluZWQgZnJvbSAvYXV0aC9sb2dpbiBvciAvYXV0aC92ZXJpZnknLFxuICAgICAgICB9LFxuICAgICAgfSxcbiAgICAgIHNjaGVtYXM6IHtcbiAgICAgICAgRXJyb3I6IHtcbiAgICAgICAgICB0eXBlOiAnb2JqZWN0JyxcbiAgICAgICAgICBwcm9wZXJ0aWVzOiB7XG4gICAgICAgICAgICBlcnJvcjoge1xuICAgICAgICAgICAgICB0eXBlOiAnc3RyaW5nJyxcbiAgICAgICAgICAgICAgZGVzY3JpcHRpb246ICdNYWNoaW5lLXJlYWRhYmxlIGVycm9yIGNvZGUnLFxuICAgICAgICAgICAgICBleGFtcGxlOiAnQkFEX1JFUVVFU1QnLFxuICAgICAgICAgICAgfSxcbiAgICAgICAgICAgIG1lc3NhZ2U6IHtcbiAgICAgICAgICAgICAgdHlwZTogJ3N0cmluZycsXG4gICAgICAgICAgICAgIGRlc2NyaXB0aW9uOiAnSHVtYW4tcmVhZGFibGUgZXJyb3IgbWVzc2FnZScsXG4gICAgICAgICAgICAgIGV4YW1wbGU6ICdWYWxpZGF0aW9uIGZhaWxlZCcsXG4gICAgICAgICAgICB9LFxuICAgICAgICAgICAgZGV0YWlsczoge1xuICAgICAgICAgICAgICB0eXBlOiAnb2JqZWN0JyxcbiAgICAgICAgICAgICAgZGVzY3JpcHRpb246ICdBZGRpdGlvbmFsIGVycm9yIGRldGFpbHMgKG9wdGlvbmFsKScsXG4gICAgICAgICAgICAgIGFkZGl0aW9uYWxQcm9wZXJ0aWVzOiB0cnVlLFxuICAgICAgICAgICAgfSxcbiAgICAgICAgICB9LFxuICAgICAgICAgIHJlcXVpcmVkOiBbJ2Vycm9yJywgJ21lc3NhZ2UnXSxcbiAgICAgICAgfSxcbiAgICAgIH0sXG4gICAgfSxcbiAgfSxcbiAgYXBpczogWycuL3NyYy9yb3V0ZXMvKi50cyddLFxufTtcblxuY29uc3Qgc3dhZ2dlclNwZWMgPSBzd2FnZ2VySnNkb2Mob3B0aW9ucyk7XG5cbmV4cG9ydCBkZWZhdWx0IHN3YWdnZXJTcGVjO1xuIl0sInZlcnNpb24iOjN9

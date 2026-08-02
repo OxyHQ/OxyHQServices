@@ -1,0 +1,79 @@
+061f40ed5bc39ac1241dce656de3a93f
+"use strict";
+/**
+ * Snooze, reminder, and scheduled send processor.
+ *
+ * The actual work — `runEmailMaintenance()` — is transport-agnostic: it runs the
+ * three email-service maintenance passes, each guarded by its own try/catch so a
+ * failure in one does not skip the others. Both the BullMQ repeatable worker
+ * (the durable, fleet-wide path) and the legacy in-process `setInterval` cron
+ * (the local-dev / no-Redis fallback) call this SAME function, so there is no
+ * duplicated business logic between the two paths.
+ *
+ * The legacy `setInterval` runs on every replica and is only used when BullMQ
+ * queues are disabled (no `REDIS_URL`). See `src/queue/backgroundJobs.ts` for
+ * the gate that chooses between the two.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.runEmailMaintenance = runEmailMaintenance;
+exports.startSnoozeCron = startSnoozeCron;
+exports.stopSnoozeCron = stopSnoozeCron;
+const email_service_1 = require("../services/email.service");
+const logger_1 = require("../utils/logger");
+const constants_1 = require("../queue/constants");
+let timer = null;
+/**
+ * Run the three email-maintenance passes. Each pass is isolated so one failure
+ * does not prevent the others from running. Never throws — failures are logged.
+ *
+ * Shared by the BullMQ worker and the legacy interval. Do NOT change the
+ * business semantics here without changing both transports intentionally.
+ */
+function runEmailMaintenance() {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            yield email_service_1.emailService.processSnoozedMessages();
+        }
+        catch (err) {
+            logger_1.logger.error('Snooze cron failed', err instanceof Error ? err : new Error(String(err)));
+        }
+        try {
+            yield email_service_1.emailService.processDueReminders();
+        }
+        catch (err) {
+            logger_1.logger.error('Reminder cron failed', err instanceof Error ? err : new Error(String(err)));
+        }
+        try {
+            yield email_service_1.emailService.processScheduledMessages();
+        }
+        catch (err) {
+            logger_1.logger.error('Scheduled send cron failed', err instanceof Error ? err : new Error(String(err)));
+        }
+    });
+}
+function startSnoozeCron() {
+    var _a;
+    if (timer)
+        return; // Already running
+    timer = setInterval(() => {
+        void runEmailMaintenance();
+    }, constants_1.EMAIL_MAINTENANCE_INTERVAL_MS);
+    (_a = timer.unref) === null || _a === void 0 ? void 0 : _a.call(timer);
+    logger_1.logger.info('Snooze, reminder & scheduled send cron started (in-process fallback, 60s interval)');
+}
+function stopSnoozeCron() {
+    if (timer) {
+        clearInterval(timer);
+        timer = null;
+    }
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY3Jvbi9zbm9vemUuY3Jvbi50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7R0FhRzs7Ozs7Ozs7Ozs7QUFlSCxrREFnQkM7QUFFRCwwQ0FTQztBQUVELHdDQUtDO0FBL0NELDZEQUF5RDtBQUN6RCw0Q0FBeUM7QUFDekMsa0RBQW1FO0FBRW5FLElBQUksS0FBSyxHQUEwQyxJQUFJLENBQUM7QUFFeEQ7Ozs7OztHQU1HO0FBQ0gsU0FBc0IsbUJBQW1COztRQUN2QyxJQUFJLENBQUM7WUFDSCxNQUFNLDRCQUFZLENBQUMsc0JBQXNCLEVBQUUsQ0FBQztRQUM5QyxDQUFDO1FBQUMsT0FBTyxHQUFHLEVBQUUsQ0FBQztZQUNiLGVBQU0sQ0FBQyxLQUFLLENBQUMsb0JBQW9CLEVBQUUsR0FBRyxZQUFZLEtBQUssQ0FBQyxDQUFDLENBQUMsR0FBRyxDQUFDLENBQUMsQ0FBQyxJQUFJLEtBQUssQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsQ0FBQyxDQUFDO1FBQzFGLENBQUM7UUFDRCxJQUFJLENBQUM7WUFDSCxNQUFNLDRCQUFZLENBQUMsbUJBQW1CLEVBQUUsQ0FBQztRQUMzQyxDQUFDO1FBQUMsT0FBTyxHQUFHLEVBQUUsQ0FBQztZQUNiLGVBQU0sQ0FBQyxLQUFLLENBQUMsc0JBQXNCLEVBQUUsR0FBRyxZQUFZLEtBQUssQ0FBQyxDQUFDLENBQUMsR0FBRyxDQUFDLENBQUMsQ0FBQyxJQUFJLEtBQUssQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsQ0FBQyxDQUFDO1FBQzVGLENBQUM7UUFDRCxJQUFJLENBQUM7WUFDSCxNQUFNLDRCQUFZLENBQUMsd0JBQXdCLEVBQUUsQ0FBQztRQUNoRCxDQUFDO1FBQUMsT0FBTyxHQUFHLEVBQUUsQ0FBQztZQUNiLGVBQU0sQ0FBQyxLQUFLLENBQUMsNEJBQTRCLEVBQUUsR0FBRyxZQUFZLEtBQUssQ0FBQyxDQUFDLENBQUMsR0FBRyxDQUFDLENBQUMsQ0FBQyxJQUFJLEtBQUssQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLENBQUMsQ0FBQyxDQUFDO1FBQ2xHLENBQUM7SUFDSCxDQUFDO0NBQUE7QUFFRCxTQUFnQixlQUFlOztJQUM3QixJQUFJLEtBQUs7UUFBRSxPQUFPLENBQUMsa0JBQWtCO0lBRXJDLEtBQUssR0FBRyxXQUFXLENBQUMsR0FBRyxFQUFFO1FBQ3ZCLEtBQUssbUJBQW1CLEVBQUUsQ0FBQztJQUM3QixDQUFDLEVBQUUseUNBQTZCLENBQUMsQ0FBQztJQUNsQyxNQUFBLEtBQUssQ0FBQyxLQUFLLHFEQUFJLENBQUM7SUFFaEIsZUFBTSxDQUFDLElBQUksQ0FBQyxvRkFBb0YsQ0FBQyxDQUFDO0FBQ3BHLENBQUM7QUFFRCxTQUFnQixjQUFjO0lBQzVCLElBQUksS0FBSyxFQUFFLENBQUM7UUFDVixhQUFhLENBQUMsS0FBSyxDQUFDLENBQUM7UUFDckIsS0FBSyxHQUFHLElBQUksQ0FBQztJQUNmLENBQUM7QUFDSCxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL2Nyb24vc25vb3plLmNyb24udHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBTbm9vemUsIHJlbWluZGVyLCBhbmQgc2NoZWR1bGVkIHNlbmQgcHJvY2Vzc29yLlxuICpcbiAqIFRoZSBhY3R1YWwgd29yayDigJQgYHJ1bkVtYWlsTWFpbnRlbmFuY2UoKWAg4oCUIGlzIHRyYW5zcG9ydC1hZ25vc3RpYzogaXQgcnVucyB0aGVcbiAqIHRocmVlIGVtYWlsLXNlcnZpY2UgbWFpbnRlbmFuY2UgcGFzc2VzLCBlYWNoIGd1YXJkZWQgYnkgaXRzIG93biB0cnkvY2F0Y2ggc28gYVxuICogZmFpbHVyZSBpbiBvbmUgZG9lcyBub3Qgc2tpcCB0aGUgb3RoZXJzLiBCb3RoIHRoZSBCdWxsTVEgcmVwZWF0YWJsZSB3b3JrZXJcbiAqICh0aGUgZHVyYWJsZSwgZmxlZXQtd2lkZSBwYXRoKSBhbmQgdGhlIGxlZ2FjeSBpbi1wcm9jZXNzIGBzZXRJbnRlcnZhbGAgY3JvblxuICogKHRoZSBsb2NhbC1kZXYgLyBuby1SZWRpcyBmYWxsYmFjaykgY2FsbCB0aGlzIFNBTUUgZnVuY3Rpb24sIHNvIHRoZXJlIGlzIG5vXG4gKiBkdXBsaWNhdGVkIGJ1c2luZXNzIGxvZ2ljIGJldHdlZW4gdGhlIHR3byBwYXRocy5cbiAqXG4gKiBUaGUgbGVnYWN5IGBzZXRJbnRlcnZhbGAgcnVucyBvbiBldmVyeSByZXBsaWNhIGFuZCBpcyBvbmx5IHVzZWQgd2hlbiBCdWxsTVFcbiAqIHF1ZXVlcyBhcmUgZGlzYWJsZWQgKG5vIGBSRURJU19VUkxgKS4gU2VlIGBzcmMvcXVldWUvYmFja2dyb3VuZEpvYnMudHNgIGZvclxuICogdGhlIGdhdGUgdGhhdCBjaG9vc2VzIGJldHdlZW4gdGhlIHR3by5cbiAqL1xuXG5pbXBvcnQgeyBlbWFpbFNlcnZpY2UgfSBmcm9tICcuLi9zZXJ2aWNlcy9lbWFpbC5zZXJ2aWNlJztcbmltcG9ydCB7IGxvZ2dlciB9IGZyb20gJy4uL3V0aWxzL2xvZ2dlcic7XG5pbXBvcnQgeyBFTUFJTF9NQUlOVEVOQU5DRV9JTlRFUlZBTF9NUyB9IGZyb20gJy4uL3F1ZXVlL2NvbnN0YW50cyc7XG5cbmxldCB0aW1lcjogUmV0dXJuVHlwZTx0eXBlb2Ygc2V0SW50ZXJ2YWw+IHwgbnVsbCA9IG51bGw7XG5cbi8qKlxuICogUnVuIHRoZSB0aHJlZSBlbWFpbC1tYWludGVuYW5jZSBwYXNzZXMuIEVhY2ggcGFzcyBpcyBpc29sYXRlZCBzbyBvbmUgZmFpbHVyZVxuICogZG9lcyBub3QgcHJldmVudCB0aGUgb3RoZXJzIGZyb20gcnVubmluZy4gTmV2ZXIgdGhyb3dzIOKAlCBmYWlsdXJlcyBhcmUgbG9nZ2VkLlxuICpcbiAqIFNoYXJlZCBieSB0aGUgQnVsbE1RIHdvcmtlciBhbmQgdGhlIGxlZ2FjeSBpbnRlcnZhbC4gRG8gTk9UIGNoYW5nZSB0aGVcbiAqIGJ1c2luZXNzIHNlbWFudGljcyBoZXJlIHdpdGhvdXQgY2hhbmdpbmcgYm90aCB0cmFuc3BvcnRzIGludGVudGlvbmFsbHkuXG4gKi9cbmV4cG9ydCBhc3luYyBmdW5jdGlvbiBydW5FbWFpbE1haW50ZW5hbmNlKCk6IFByb21pc2U8dm9pZD4ge1xuICB0cnkge1xuICAgIGF3YWl0IGVtYWlsU2VydmljZS5wcm9jZXNzU25vb3plZE1lc3NhZ2VzKCk7XG4gIH0gY2F0Y2ggKGVycikge1xuICAgIGxvZ2dlci5lcnJvcignU25vb3plIGNyb24gZmFpbGVkJywgZXJyIGluc3RhbmNlb2YgRXJyb3IgPyBlcnIgOiBuZXcgRXJyb3IoU3RyaW5nKGVycikpKTtcbiAgfVxuICB0cnkge1xuICAgIGF3YWl0IGVtYWlsU2VydmljZS5wcm9jZXNzRHVlUmVtaW5kZXJzKCk7XG4gIH0gY2F0Y2ggKGVycikge1xuICAgIGxvZ2dlci5lcnJvcignUmVtaW5kZXIgY3JvbiBmYWlsZWQnLCBlcnIgaW5zdGFuY2VvZiBFcnJvciA/IGVyciA6IG5ldyBFcnJvcihTdHJpbmcoZXJyKSkpO1xuICB9XG4gIHRyeSB7XG4gICAgYXdhaXQgZW1haWxTZXJ2aWNlLnByb2Nlc3NTY2hlZHVsZWRNZXNzYWdlcygpO1xuICB9IGNhdGNoIChlcnIpIHtcbiAgICBsb2dnZXIuZXJyb3IoJ1NjaGVkdWxlZCBzZW5kIGNyb24gZmFpbGVkJywgZXJyIGluc3RhbmNlb2YgRXJyb3IgPyBlcnIgOiBuZXcgRXJyb3IoU3RyaW5nKGVycikpKTtcbiAgfVxufVxuXG5leHBvcnQgZnVuY3Rpb24gc3RhcnRTbm9vemVDcm9uKCk6IHZvaWQge1xuICBpZiAodGltZXIpIHJldHVybjsgLy8gQWxyZWFkeSBydW5uaW5nXG5cbiAgdGltZXIgPSBzZXRJbnRlcnZhbCgoKSA9PiB7XG4gICAgdm9pZCBydW5FbWFpbE1haW50ZW5hbmNlKCk7XG4gIH0sIEVNQUlMX01BSU5URU5BTkNFX0lOVEVSVkFMX01TKTtcbiAgdGltZXIudW5yZWY/LigpO1xuXG4gIGxvZ2dlci5pbmZvKCdTbm9vemUsIHJlbWluZGVyICYgc2NoZWR1bGVkIHNlbmQgY3JvbiBzdGFydGVkIChpbi1wcm9jZXNzIGZhbGxiYWNrLCA2MHMgaW50ZXJ2YWwpJyk7XG59XG5cbmV4cG9ydCBmdW5jdGlvbiBzdG9wU25vb3plQ3JvbigpOiB2b2lkIHtcbiAgaWYgKHRpbWVyKSB7XG4gICAgY2xlYXJJbnRlcnZhbCh0aW1lcik7XG4gICAgdGltZXIgPSBudWxsO1xuICB9XG59XG4iXSwidmVyc2lvbiI6M30=

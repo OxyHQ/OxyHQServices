@@ -1,0 +1,163 @@
+18d7e9c11689e04ca911ccc545df9b1d
+"use strict";
+/**
+ * `GET /health` — the ALB target-group check.
+ *
+ * ## Why this suite exists, and why the obvious version of it is worthless
+ *
+ * A 503 here DRAINS the task out of the load balancer. So the endpoint has
+ * exactly two failure modes and both are outages: report healthy while the
+ * database refuses work (a real outage reads as green and nothing rotates), or
+ * report 503 while it is fine (the ALB pulls every task).
+ *
+ * The obvious test — point `DATABASE_URL` at nothing, boot, expect 503 —
+ * SURVIVES the mutation it is supposed to catch. `checkPostgresHealth` returns
+ * `false` early when no pool has been published, so a build where the probe is
+ * `return client !== null` instead of a real `select 1` answers "down" in that
+ * setup too. The two implementations are indistinguishable when the database was
+ * never reachable in the first place.
+ *
+ * The honest shape is the one below: bring a REAL pool up against a REAL
+ * database, prove `/health` is 200, then drop the database out from under the
+ * live pool. Now the pool object still exists and the server does not answer —
+ * the only state where "there is a connection handle" and "the database works"
+ * disagree, and therefore the only state that can tell a real probe from a flag
+ * read.
+ *
+ * The suite owns its own throwaway database precisely because dropping it is the
+ * experiment.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+var _a, _b, _c, _d, _e, _f;
+var _g, _h, _j, _k, _l, _m;
+Object.defineProperty(exports, "__esModule", { value: true });
+// The run-wide setup replaces `socket.io` with a stub that has no `.use`, and
+// importing the real `server.ts` attaches middleware to a real `Server`.
+jest.unmock('socket.io');
+// `server.ts` runs `validateRequiredEnvVars()` at import and `process.exit(1)`s
+// when anything is missing — which would take the whole jest worker with it.
+// CI supplies these; a developer running `bun run test` with no `.env` does not.
+// `??=` so a real value always wins. No MONGODB_URI placeholder: it is not a
+// required var any more, and `bootGate.test.ts` is where that is held.
+(_a = (_g = process.env).ACCESS_TOKEN_SECRET) !== null && _a !== void 0 ? _a : (_g.ACCESS_TOKEN_SECRET = 'health-gate-access-token-secret-32-chars');
+(_b = (_h = process.env).REFRESH_TOKEN_SECRET) !== null && _b !== void 0 ? _b : (_h.REFRESH_TOKEN_SECRET = 'health-gate-refresh-token-secret-32-chars');
+(_c = (_j = process.env).AWS_REGION) !== null && _c !== void 0 ? _c : (_j.AWS_REGION = 'us-west-2');
+(_d = (_k = process.env).AWS_ACCESS_KEY_ID) !== null && _d !== void 0 ? _d : (_k.AWS_ACCESS_KEY_ID = 'health-gate');
+(_e = (_l = process.env).AWS_SECRET_ACCESS_KEY) !== null && _e !== void 0 ? _e : (_l.AWS_SECRET_ACCESS_KEY = 'health-gate');
+(_f = (_m = process.env).AWS_S3_BUCKET) !== null && _f !== void 0 ? _f : (_m.AWS_S3_BUCKET = 'health-gate');
+const postgres_1 = __importDefault(require("postgres"));
+const postgres_2 = require("../config/postgres");
+const testDatabase_1 = require("../db/testDatabase");
+/** Creating and migrating a database outlasts the 10s default. */
+const SLOW_STEP_TIMEOUT_MS = 120000;
+let server;
+let ownDatabaseUrl = '';
+let sharedDatabaseUrl;
+function health() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const { port } = server.address();
+        const response = yield fetch(`http://127.0.0.1:${port}/health`);
+        return { status: response.status, body: (yield response.json()) };
+    });
+}
+beforeAll(() => __awaiter(void 0, void 0, void 0, function* () {
+    sharedDatabaseUrl = process.env.DATABASE_URL;
+    ownDatabaseUrl = yield (0, testDatabase_1.createTestDatabase)();
+    yield (0, postgres_2.connectPostgres)();
+    server = (yield Promise.resolve().then(() => __importStar(require('../server')))).default;
+    yield new Promise((resolve) => {
+        server.listen(0, '127.0.0.1', resolve);
+    });
+}), SLOW_STEP_TIMEOUT_MS);
+afterAll(() => __awaiter(void 0, void 0, void 0, function* () {
+    yield new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+    });
+    yield (0, postgres_2.closePostgres)();
+    // Idempotent (`drop database if exists`) — the last case already dropped it.
+    yield (0, testDatabase_1.dropTestDatabase)(ownDatabaseUrl);
+    process.env.DATABASE_URL = sharedDatabaseUrl;
+}), SLOW_STEP_TIMEOUT_MS);
+describe('GET /health', () => {
+    it('answers 200 while the database really answers', () => __awaiter(void 0, void 0, void 0, function* () {
+        const { status, body } = yield health();
+        expect(status).toBe(200);
+        expect(body.database).toBe('connected');
+        // `operational` with Redis, `degraded` without — never `down`, which is the
+        // only value paired with a 503.
+        expect(['operational', 'degraded']).toContain(body.status);
+        expect(new Date(body.timestamp).toISOString()).toBe(body.timestamp);
+    }));
+    // MUST stay last: it destroys the database this suite is pointed at.
+    it('answers 503 once the database stops answering UNDER A LIVE POOL', () => __awaiter(void 0, void 0, void 0, function* () {
+        // The pool is open and has already served a query. Dropping the database
+        // with `FORCE` terminates its backends, so the next query on the SAME pool
+        // fails — while `client` is still a perfectly good object. A probe that
+        // reports on the handle rather than on the server cannot tell the
+        // difference, which is exactly what this asserts it does not do.
+        yield (0, testDatabase_1.dropTestDatabase)(ownDatabaseUrl);
+        const { status, body } = yield health();
+        expect(status).toBe(503);
+        expect(body.status).toBe('down');
+        expect(body.database).toBe('disconnected');
+        expect(new Date(body.timestamp).toISOString()).toBe(body.timestamp);
+    }), SLOW_STEP_TIMEOUT_MS);
+    it('keeps answering 503 — a dead database does not heal itself', () => __awaiter(void 0, void 0, void 0, function* () {
+        const { status, body } = yield health();
+        expect(status).toBe(503);
+        expect(body.status).toBe('down');
+    }));
+    it('the database really is gone, not merely reported gone', () => __awaiter(void 0, void 0, void 0, function* () {
+        // Proof the previous cases are testing the condition they claim: an
+        // independent connection to the same name is refused by the server.
+        const name = new URL(ownDatabaseUrl).pathname.replace(/^\//, '');
+        const probe = (0, postgres_1.default)(ownDatabaseUrl, { max: 1, connect_timeout: 5 });
+        yield expect(probe `select 1`).rejects.toThrow(new RegExp(`"${name}" does not exist`));
+        yield probe.end({ timeout: 5 });
+    }));
+});
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvX190ZXN0c19fL2hlYWx0aEdhdGUudGVzdC50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBMEJHOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0FBRUgsOEVBQThFO0FBQzlFLHlFQUF5RTtBQUN6RSxJQUFJLENBQUMsTUFBTSxDQUFDLFdBQVcsQ0FBQyxDQUFDO0FBRXpCLGdGQUFnRjtBQUNoRiw2RUFBNkU7QUFDN0UsaUZBQWlGO0FBQ2pGLDZFQUE2RTtBQUM3RSx1RUFBdUU7QUFDdkUsWUFBQSxPQUFPLENBQUMsR0FBRyxFQUFDLG1CQUFtQix1Q0FBbkIsbUJBQW1CLEdBQUssMENBQTBDLEVBQUM7QUFDL0UsWUFBQSxPQUFPLENBQUMsR0FBRyxFQUFDLG9CQUFvQix1Q0FBcEIsb0JBQW9CLEdBQUssMkNBQTJDLEVBQUM7QUFDakYsWUFBQSxPQUFPLENBQUMsR0FBRyxFQUFDLFVBQVUsdUNBQVYsVUFBVSxHQUFLLFdBQVcsRUFBQztBQUN2QyxZQUFBLE9BQU8sQ0FBQyxHQUFHLEVBQUMsaUJBQWlCLHVDQUFqQixpQkFBaUIsR0FBSyxhQUFhLEVBQUM7QUFDaEQsWUFBQSxPQUFPLENBQUMsR0FBRyxFQUFDLHFCQUFxQix1Q0FBckIscUJBQXFCLEdBQUssYUFBYSxFQUFDO0FBQ3BELFlBQUEsT0FBTyxDQUFDLEdBQUcsRUFBQyxhQUFhLHVDQUFiLGFBQWEsR0FBSyxhQUFhLEVBQUM7QUFHNUMsd0RBQWdDO0FBQ2hDLGlEQUFvRTtBQUNwRSxxREFBMEU7QUFVMUUsa0VBQWtFO0FBQ2xFLE1BQU0sb0JBQW9CLEdBQUcsTUFBTyxDQUFDO0FBRXJDLElBQUksTUFBNkIsQ0FBQztBQUNsQyxJQUFJLGNBQWMsR0FBRyxFQUFFLENBQUM7QUFDeEIsSUFBSSxpQkFBcUMsQ0FBQztBQUUxQyxTQUFlLE1BQU07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QUFDO1FBQ3RGLE1BQU0sS0FBSyxDQUFDLEdBQUcsQ0FBQyxFQUFFLE9BQU8sRUFBRSxDQUFDLEVBQUUsQ0FBQyxDQUFDO0lBQ2xDLENBQUMsQ0FBQSxDQUFDLENBQUM7QUFDTCxDQUFDLENBQUMsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9fX3Rlc3RzX18vaGVhbHRoR2F0ZS50ZXN0LnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogYEdFVCAvaGVhbHRoYCDigJQgdGhlIEFMQiB0YXJnZXQtZ3JvdXAgY2hlY2suXG4gKlxuICogIyMgV2h5IHRoaXMgc3VpdGUgZXhpc3RzLCBhbmQgd2h5IHRoZSBvYnZpb3VzIHZlcnNpb24gb2YgaXQgaXMgd29ydGhsZXNzXG4gKlxuICogQSA1MDMgaGVyZSBEUkFJTlMgdGhlIHRhc2sgb3V0IG9mIHRoZSBsb2FkIGJhbGFuY2VyLiBTbyB0aGUgZW5kcG9pbnQgaGFzXG4gKiBleGFjdGx5IHR3byBmYWlsdXJlIG1vZGVzIGFuZCBib3RoIGFyZSBvdXRhZ2VzOiByZXBvcnQgaGVhbHRoeSB3aGlsZSB0aGVcbiAqIGRhdGFiYXNlIHJlZnVzZXMgd29yayAoYSByZWFsIG91dGFnZSByZWFkcyBhcyBncmVlbiBhbmQgbm90aGluZyByb3RhdGVzKSwgb3JcbiAqIHJlcG9ydCA1MDMgd2hpbGUgaXQgaXMgZmluZSAodGhlIEFMQiBwdWxscyBldmVyeSB0YXNrKS5cbiAqXG4gKiBUaGUgb2J2aW91cyB0ZXN0IOKAlCBwb2ludCBgREFUQUJBU0VfVVJMYCBhdCBub3RoaW5nLCBib290LCBleHBlY3QgNTAzIOKAlFxuICogU1VSVklWRVMgdGhlIG11dGF0aW9uIGl0IGlzIHN1cHBvc2VkIHRvIGNhdGNoLiBgY2hlY2tQb3N0Z3Jlc0hlYWx0aGAgcmV0dXJuc1xuICogYGZhbHNlYCBlYXJseSB3aGVuIG5vIHBvb2wgaGFzIGJlZW4gcHVibGlzaGVkLCBzbyBhIGJ1aWxkIHdoZXJlIHRoZSBwcm9iZSBpc1xuICogYHJldHVybiBjbGllbnQgIT09IG51bGxgIGluc3RlYWQgb2YgYSByZWFsIGBzZWxlY3QgMWAgYW5zd2VycyBcImRvd25cIiBpbiB0aGF0XG4gKiBzZXR1cCB0b28uIFRoZSB0d28gaW1wbGVtZW50YXRpb25zIGFyZSBpbmRpc3Rpbmd1aXNoYWJsZSB3aGVuIHRoZSBkYXRhYmFzZSB3YXNcbiAqIG5ldmVyIHJlYWNoYWJsZSBpbiB0aGUgZmlyc3QgcGxhY2UuXG4gKlxuICogVGhlIGhvbmVzdCBzaGFwZSBpcyB0aGUgb25lIGJlbG93OiBicmluZyBhIFJFQUwgcG9vbCB1cCBhZ2FpbnN0IGEgUkVBTFxuICogZGF0YWJhc2UsIHByb3ZlIGAvaGVhbHRoYCBpcyAyMDAsIHRoZW4gZHJvcCB0aGUgZGF0YWJhc2Ugb3V0IGZyb20gdW5kZXIgdGhlXG4gKiBsaXZlIHBvb2wuIE5vdyB0aGUgcG9vbCBvYmplY3Qgc3RpbGwgZXhpc3RzIGFuZCB0aGUgc2VydmVyIGRvZXMgbm90IGFuc3dlciDigJRcbiAqIHRoZSBvbmx5IHN0YXRlIHdoZXJlIFwidGhlcmUgaXMgYSBjb25uZWN0aW9uIGhhbmRsZVwiIGFuZCBcInRoZSBkYXRhYmFzZSB3b3Jrc1wiXG4gKiBkaXNhZ3JlZSwgYW5kIHRoZXJlZm9yZSB0aGUgb25seSBzdGF0ZSB0aGF0IGNhbiB0ZWxsIGEgcmVhbCBwcm9iZSBmcm9tIGEgZmxhZ1xuICogcmVhZC5cbiAqXG4gKiBUaGUgc3VpdGUgb3ducyBpdHMgb3duIHRocm93YXdheSBkYXRhYmFzZSBwcmVjaXNlbHkgYmVjYXVzZSBkcm9wcGluZyBpdCBpcyB0aGVcbiAqIGV4cGVyaW1lbnQuXG4gKi9cblxuLy8gVGhlIHJ1bi13aWRlIHNldHVwIHJlcGxhY2VzIGBzb2NrZXQuaW9gIHdpdGggYSBzdHViIHRoYXQgaGFzIG5vIGAudXNlYCwgYW5kXG4vLyBpbXBvcnRpbmcgdGhlIHJlYWwgYHNlcnZlci50c2AgYXR0YWNoZXMgbWlkZGxld2FyZSB0byBhIHJlYWwgYFNlcnZlcmAuXG5qZXN0LnVubW9jaygnc29ja2V0LmlvJyk7XG5cbi8vIGBzZXJ2ZXIudHNgIHJ1bnMgYHZhbGlkYXRlUmVxdWlyZWRFbnZWYXJzKClgIGF0IGltcG9ydCBhbmQgYHByb2Nlc3MuZXhpdCgxKWBzXG4vLyB3aGVuIGFueXRoaW5nIGlzIG1pc3Npbmcg4oCUIHdoaWNoIHdvdWxkIHRha2UgdGhlIHdob2xlIGplc3Qgd29ya2VyIHdpdGggaXQuXG4vLyBDSSBzdXBwbGllcyB0aGVzZTsgYSBkZXZlbG9wZXIgcnVubmluZyBgYnVuIHJ1biB0ZXN0YCB3aXRoIG5vIGAuZW52YCBkb2VzIG5vdC5cbi8vIGA/Pz1gIHNvIGEgcmVhbCB2YWx1ZSBhbHdheXMgd2lucy4gTm8gTU9OR09EQl9VUkkgcGxhY2Vob2xkZXI6IGl0IGlzIG5vdCBhXG4vLyByZXF1aXJlZCB2YXIgYW55IG1vcmUsIGFuZCBgYm9vdEdhdGUudGVzdC50c2AgaXMgd2hlcmUgdGhhdCBpcyBoZWxkLlxucHJvY2Vzcy5lbnYuQUNDRVNTX1RPS0VOX1NFQ1JFVCA/Pz0gJ2hlYWx0aC1nYXRlLWFjY2Vzcy10b2tlbi1zZWNyZXQtMzItY2hhcnMnO1xucHJvY2Vzcy5lbnYuUkVGUkVTSF9UT0tFTl9TRUNSRVQgPz89ICdoZWFsdGgtZ2F0ZS1yZWZyZXNoLXRva2VuLXNlY3JldC0zMi1jaGFycyc7XG5wcm9jZXNzLmVudi5BV1NfUkVHSU9OID8/PSAndXMtd2VzdC0yJztcbnByb2Nlc3MuZW52LkFXU19BQ0NFU1NfS0VZX0lEID8/PSAnaGVhbHRoLWdhdGUnO1xucHJvY2Vzcy5lbnYuQVdTX1NFQ1JFVF9BQ0NFU1NfS0VZID8/PSAnaGVhbHRoLWdhdGUnO1xucHJvY2Vzcy5lbnYuQVdTX1MzX0JVQ0tFVCA/Pz0gJ2hlYWx0aC1nYXRlJztcblxuaW1wb3J0IHR5cGUgeyBBZGRyZXNzSW5mbyB9IGZyb20gJ25ldCc7XG5pbXBvcnQgcG9zdGdyZXMgZnJvbSAncG9zdGdyZXMnO1xuaW1wb3J0IHsgY2xvc2VQb3N0Z3JlcywgY29ubmVjdFBvc3RncmVzIH0gZnJvbSAnLi4vY29uZmlnL3Bvc3RncmVzJztcbmltcG9ydCB7IGNyZWF0ZVRlc3REYXRhYmFzZSwgZHJvcFRlc3REYXRhYmFzZSB9IGZyb20gJy4uL2RiL3Rlc3REYXRhYmFzZSc7XG5cbmludGVyZmFjZSBIZWFsdGhSZXNwb25zZSB7XG4gIHN0YXR1czogc3RyaW5nO1xuICB0aW1lc3RhbXA6IHN0cmluZztcbiAgZGF0YWJhc2U/OiBzdHJpbmc7XG4gIHJlZGlzPzogc3RyaW5nO1xuICBlcnJvcj86IHN0cmluZztcbn1cblxuLyoqIENyZWF0aW5nIGFuZCBtaWdyYXRpbmcgYSBkYXRhYmFzZSBvdXRsYXN0cyB0aGUgMTBzIGRlZmF1bHQuICovXG5jb25zdCBTTE9XX1NURVBfVElNRU9VVF9NUyA9IDEyMF8wMDA7XG5cbmxldCBzZXJ2ZXI6IGltcG9ydCgnaHR0cCcpLlNlcnZlcjtcbmxldCBvd25EYXRhYmFzZVVybCA9ICcnO1xubGV0IHNoYXJlZERhdGFiYXNlVXJsOiBzdHJpbmcgfCB1bmRlZmluZWQ7XG5cbmFzeW5jIGZ1bmN0aW9uIGhlYWx0aCgpOiBQcm9taXNlPHsgc3RhdHVzOiBudW1iZXI7IGJvZHk6IEhlYWx0aFJlc3BvbnNlIH0+IHtcbiAgY29uc3QgeyBwb3J0IH0gPSBzZXJ2ZXIuYWRkcmVzcygpIGFzIEFkZHJlc3NJbmZvO1xuICBjb25zdCByZXNwb25zZSA9IGF3YWl0IGZldGNoKGBodHRwOi8vMTI3LjAuMC4xOiR7cG9ydH0vaGVhbHRoYCk7XG4gIHJldHVybiB7IHN0YXR1czogcmVzcG9uc2Uuc3RhdHVzLCBib2R5OiAoYXdhaXQgcmVzcG9uc2UuanNvbigpKSBhcyBIZWFsdGhSZXNwb25zZSB9O1xufVxuXG5iZWZvcmVBbGwoYXN5bmMgKCkgPT4ge1xuICBzaGFyZWREYXRhYmFzZVVybCA9IHByb2Nlc3MuZW52LkRBVEFCQVNFX1VSTDtcbiAgb3duRGF0YWJhc2VVcmwgPSBhd2FpdCBjcmVhdGVUZXN0RGF0YWJhc2UoKTtcbiAgYXdhaXQgY29ubmVjdFBvc3RncmVzKCk7XG4gIHNlcnZlciA9IChhd2FpdCBpbXBvcnQoJy4uL3NlcnZlcicpKS5kZWZhdWx0O1xuICBhd2FpdCBuZXcgUHJvbWlzZTx2b2lkPigocmVzb2x2ZSkgPT4ge1xuICAgIHNlcnZlci5saXN0ZW4oMCwgJzEyNy4wLjAuMScsIHJlc29sdmUpO1xuICB9KTtcbn0sIFNMT1dfU1RFUF9USU1FT1VUX01TKTtcblxuYWZ0ZXJBbGwoYXN5bmMgKCkgPT4ge1xuICBhd2FpdCBuZXcgUHJvbWlzZTx2b2lkPigocmVzb2x2ZSwgcmVqZWN0KSA9PiB7XG4gICAgc2VydmVyLmNsb3NlKChlcnJvcikgPT4gKGVycm9yID8gcmVqZWN0KGVycm9yKSA6IHJlc29sdmUoKSkpO1xuICB9KTtcbiAgYXdhaXQgY2xvc2VQb3N0Z3JlcygpO1xuICAvLyBJZGVtcG90ZW50IChgZHJvcCBkYXRhYmFzZSBpZiBleGlzdHNgKSDigJQgdGhlIGxhc3QgY2FzZSBhbHJlYWR5IGRyb3BwZWQgaXQuXG4gIGF3YWl0IGRyb3BUZXN0RGF0YWJhc2Uob3duRGF0YWJhc2VVcmwpO1xuICBwcm9jZXNzLmVudi5EQVRBQkFTRV9VUkwgPSBzaGFyZWREYXRhYmFzZVVybDtcbn0sIFNMT1dfU1RFUF9USU1FT1VUX01TKTtcblxuZGVzY3JpYmUoJ0dFVCAvaGVhbHRoJywgKCkgPT4ge1xuICBpdCgnYW5zd2VycyAyMDAgd2hpbGUgdGhlIGRhdGFiYXNlIHJlYWxseSBhbnN3ZXJzJywgYXN5bmMgKCkgPT4ge1xuICAgIGNvbnN0IHsgc3RhdHVzLCBib2R5IH0gPSBhd2FpdCBoZWFsdGgoKTtcblxuICAgIGV4cGVjdChzdGF0dXMpLnRvQmUoMjAwKTtcbiAgICBleHBlY3QoYm9keS5kYXRhYmFzZSkudG9CZSgnY29ubmVjdGVkJyk7XG4gICAgLy8gYG9wZXJhdGlvbmFsYCB3aXRoIFJlZGlzLCBgZGVncmFkZWRgIHdpdGhvdXQg4oCUIG5ldmVyIGBkb3duYCwgd2hpY2ggaXMgdGhlXG4gICAgLy8gb25seSB2YWx1ZSBwYWlyZWQgd2l0aCBhIDUwMy5cbiAgICBleHBlY3QoWydvcGVyYXRpb25hbCcsICdkZWdyYWRlZCddKS50b0NvbnRhaW4oYm9keS5zdGF0dXMpO1xuICAgIGV4cGVjdChuZXcgRGF0ZShib2R5LnRpbWVzdGFtcCkudG9JU09TdHJpbmcoKSkudG9CZShib2R5LnRpbWVzdGFtcCk7XG4gIH0pO1xuXG4gIC8vIE1VU1Qgc3RheSBsYXN0OiBpdCBkZXN0cm95cyB0aGUgZGF0YWJhc2UgdGhpcyBzdWl0ZSBpcyBwb2ludGVkIGF0LlxuICBpdCgnYW5zd2VycyA1MDMgb25jZSB0aGUgZGF0YWJhc2Ugc3RvcHMgYW5zd2VyaW5nIFVOREVSIEEgTElWRSBQT09MJywgYXN5bmMgKCkgPT4ge1xuICAgIC8vIFRoZSBwb29sIGlzIG9wZW4gYW5kIGhhcyBhbHJlYWR5IHNlcnZlZCBhIHF1ZXJ5LiBEcm9wcGluZyB0aGUgZGF0YWJhc2VcbiAgICAvLyB3aXRoIGBGT1JDRWAgdGVybWluYXRlcyBpdHMgYmFja2VuZHMsIHNvIHRoZSBuZXh0IHF1ZXJ5IG9uIHRoZSBTQU1FIHBvb2xcbiAgICAvLyBmYWlscyDigJQgd2hpbGUgYGNsaWVudGAgaXMgc3RpbGwgYSBwZXJmZWN0bHkgZ29vZCBvYmplY3QuIEEgcHJvYmUgdGhhdFxuICAgIC8vIHJlcG9ydHMgb24gdGhlIGhhbmRsZSByYXRoZXIgdGhhbiBvbiB0aGUgc2VydmVyIGNhbm5vdCB0ZWxsIHRoZVxuICAgIC8vIGRpZmZlcmVuY2UsIHdoaWNoIGlzIGV4YWN0bHkgd2hhdCB0aGlzIGFzc2VydHMgaXQgZG9lcyBub3QgZG8uXG4gICAgYXdhaXQgZHJvcFRlc3REYXRhYmFzZShvd25EYXRhYmFzZVVybCk7XG5cbiAgICBjb25zdCB7IHN0YXR1cywgYm9keSB9ID0gYXdhaXQgaGVhbHRoKCk7XG5cbiAgICBleHBlY3Qoc3RhdHVzKS50b0JlKDUwMyk7XG4gICAgZXhwZWN0KGJvZHkuc3RhdHVzKS50b0JlKCdkb3duJyk7XG4gICAgZXhwZWN0KGJvZHkuZGF0YWJhc2UpLnRvQmUoJ2Rpc2Nvbm5lY3RlZCcpO1xuICAgIGV4cGVjdChuZXcgRGF0ZShib2R5LnRpbWVzdGFtcCkudG9JU09TdHJpbmcoKSkudG9CZShib2R5LnRpbWVzdGFtcCk7XG4gIH0sIFNMT1dfU1RFUF9USU1FT1VUX01TKTtcblxuICBpdCgna2VlcHMgYW5zd2VyaW5nIDUwMyDigJQgYSBkZWFkIGRhdGFiYXNlIGRvZXMgbm90IGhlYWwgaXRzZWxmJywgYXN5bmMgKCkgPT4ge1xuICAgIGNvbnN0IHsgc3RhdHVzLCBib2R5IH0gPSBhd2FpdCBoZWFsdGgoKTtcbiAgICBleHBlY3Qoc3RhdHVzKS50b0JlKDUwMyk7XG4gICAgZXhwZWN0KGJvZHkuc3RhdHVzKS50b0JlKCdkb3duJyk7XG4gIH0pO1xuXG4gIGl0KCd0aGUgZGF0YWJhc2UgcmVhbGx5IGlzIGdvbmUsIG5vdCBtZXJlbHkgcmVwb3J0ZWQgZ29uZScsIGFzeW5jICgpID0+IHtcbiAgICAvLyBQcm9vZiB0aGUgcHJldmlvdXMgY2FzZXMgYXJlIHRlc3RpbmcgdGhlIGNvbmRpdGlvbiB0aGV5IGNsYWltOiBhblxuICAgIC8vIGluZGVwZW5kZW50IGNvbm5lY3Rpb24gdG8gdGhlIHNhbWUgbmFtZSBpcyByZWZ1c2VkIGJ5IHRoZSBzZXJ2ZXIuXG4gICAgY29uc3QgbmFtZSA9IG5ldyBVUkwob3duRGF0YWJhc2VVcmwpLnBhdGhuYW1lLnJlcGxhY2UoL15cXC8vLCAnJyk7XG4gICAgY29uc3QgcHJvYmUgPSBwb3N0Z3Jlcyhvd25EYXRhYmFzZVVybCwgeyBtYXg6IDEsIGNvbm5lY3RfdGltZW91dDogNSB9KTtcbiAgICBhd2FpdCBleHBlY3QocHJvYmVgc2VsZWN0IDFgKS5yZWplY3RzLnRvVGhyb3cobmV3IFJlZ0V4cChgXCIke25hbWV9XCIgZG9lcyBub3QgZXhpc3RgKSk7XG4gICAgYXdhaXQgcHJvYmUuZW5kKHsgdGltZW91dDogNSB9KTtcbiAgfSk7XG59KTtcbiJdLCJ2ZXJzaW9uIjozfQ==

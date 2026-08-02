@@ -1,0 +1,74 @@
+754ea7bb32588cbdc0b1d8aba80a72e1
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.startUserCacheInvalidationSubscriber = startUserCacheInvalidationSubscriber;
+const contracts_1 = require("@oxyhq/contracts");
+const logger_1 = require("./logger");
+const userCache_1 = __importDefault(require("./userCache"));
+const LOG_COMPONENT = 'UserCacheInvalidationSubscriber';
+/**
+ * Subscribe to cross-instance identity invalidation events so every ECS task
+ * drops its in-memory user row when a peer writes, without re-publishing.
+ *
+ * Uses a dedicated `duplicate()` — the main client must stay publish-capable.
+ */
+function startUserCacheInvalidationSubscriber(redis) {
+    const subscriber = redis.duplicate();
+    subscriber.on('message', (channel, raw) => {
+        if (channel !== contracts_1.OXY_USER_INVALIDATION_CHANNEL)
+            return;
+        try {
+            const parsed = contracts_1.oxyUserInvalidationEventSchema.safeParse(JSON.parse(raw));
+            if (!parsed.success) {
+                logger_1.logger.warn('userCache: dropped invalid invalidation message', {
+                    component: LOG_COMPONENT,
+                    err: parsed.error.message,
+                });
+                return;
+            }
+            userCache_1.default.invalidateLocal(parsed.data.userId);
+        }
+        catch (error) {
+            logger_1.logger.warn('userCache: failed to handle invalidation message', {
+                component: LOG_COMPONENT,
+                err: error instanceof Error ? error.message : String(error),
+            });
+        }
+    });
+    subscriber.subscribe(contracts_1.OXY_USER_INVALIDATION_CHANNEL).catch((error) => {
+        logger_1.logger.error('userCache: failed to subscribe to invalidation channel', {
+            component: LOG_COMPONENT,
+            channel: contracts_1.OXY_USER_INVALIDATION_CHANNEL,
+            err: error instanceof Error ? error.message : String(error),
+        });
+    });
+    logger_1.logger.info('User cache invalidation subscriber enabled', {
+        component: LOG_COMPONENT,
+        channel: contracts_1.OXY_USER_INVALIDATION_CHANNEL,
+    });
+    return {
+        stop() {
+            return __awaiter(this, void 0, void 0, function* () {
+                try {
+                    yield subscriber.quit();
+                }
+                catch (_a) {
+                    subscriber.disconnect();
+                }
+            });
+        },
+    };
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvdXNlckNhY2hlSW52YWxpZGF0aW9uU3Vic2NyaWJlci50cyIsIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7OztBQWNBLG9GQWdEQztBQTlERCxnREFBaUc7QUFHakcscUNBQWtDO0FBQ2xDLDREQUFvQztBQUVwQyxNQUFNLGFBQWEsR0FBRyxpQ0FBaUMsQ0FBQztBQUV4RDs7Ozs7R0FLRztBQUNILFNBQWdCLG9DQUFvQyxDQUNsRCxLQUFZO0lBRVosTUFBTSxVQUFVLEdBQUcsS0FBSyxDQUFDLFNBQVMsRUFBRSxDQUFDO0lBRXJDLFVBQVUsQ0FBQyxFQUFFLENBQUMsU0FBUyxFQUFFLENBQUMsT0FBTyxFQUFFLEdBQUcsRUFBRSxFQUFFO1FBQ3hDLElBQUksT0FBTyxLQUFLLHlDQUE2QjtZQUFFLE9BQU87UUFFdEQsSUFBSSxDQUFDO1lBQ0gsTUFBTSxNQUFNLEdBQUcsMENBQThCLENBQUMsU0FBUyxDQUFDLElBQUksQ0FBQyxLQUFLLENBQUMsR0FBRyxDQUFDLENBQUMsQ0FBQztZQUN6RSxJQUFJLENBQUMsTUFBTSxDQUFDLE9BQU8sRUFBRSxDQUFDO2dCQUNwQixlQUFNLENBQUMsSUFBSSxDQUFDLGlEQUFpRCxFQUFFO29CQUM3RCxTQUFTLEVBQUUsYUFBYTtvQkFDeEIsR0FBRyxFQUFFLE1BQU0sQ0FBQyxLQUFLLENBQUMsT0FBTztpQkFDMUIsQ0FBQyxDQUFDO2dCQUNILE9BQU87WUFDVCxDQUFDO1lBQ0QsbUJBQVMsQ0FBQyxlQUFlLENBQUMsTUFBTSxDQUFDLElBQUksQ0FBQyxNQUFNLENBQUMsQ0FBQztRQUNoRCxDQUFDO1FBQUMsT0FBTyxLQUFLLEVBQUUsQ0FBQztZQUNmLGVBQU0sQ0FBQyxJQUFJLENBQUMsa0RBQWtELEVBQUU7Z0JBQzlELFNBQVMsRUFBRSxhQUFhO2dCQUN4QixHQUFHLEVBQUUsS0FBSyxZQUFZLEtBQUssQ0FBQyxDQUFDLENBQUMsS0FBSyxDQUFDLE9BQU8sQ0FBQyxDQUFDLENBQUMsTUFBTSxDQUFDLEtBQUssQ0FBQzthQUM1RCxDQUFDLENBQUM7UUFDTCxDQUFDO0lBQ0gsQ0FBQyxDQUFDLENBQUM7SUFFSCxVQUFVLENBQUMsU0FBUyxDQUFDLHlDQUE2QixDQUFDLENBQUMsS0FBSyxDQUFDLENBQUMsS0FBSyxFQUFFLEVBQUU7UUFDbEUsZUFBTSxDQUFDLEtBQUssQ0FBQyx3REFBd0QsRUFBRTtZQUNyRSxTQUFTLEVBQUUsYUFBYTtZQUN4QixPQUFPLEVBQUUseUNBQTZCO1lBQ3RDLEdBQUcsRUFBRSxLQUFLLFlBQVksS0FBSyxDQUFDLENBQUMsQ0FBQyxLQUFLLENBQUMsT0FBTyxDQUFDLENBQUMsQ0FBQyxNQUFNLENBQUMsS0FBSyxDQUFDO1NBQzVELENBQUMsQ0FBQztJQUNMLENBQUMsQ0FBQyxDQUFDO0lBRUgsZUFBTSxDQUFDLElBQUksQ0FBQyw0Q0FBNEMsRUFBRTtRQUN4RCxTQUFTLEVBQUUsYUFBYTtRQUN4QixPQUFPLEVBQUUseUNBQTZCO0tBQ3ZDLENBQUMsQ0FBQztJQUVILE9BQU87UUFDQyxJQUFJOztnQkFDUixJQUFJLENBQUM7b0JBQ0gsTUFBTSxVQUFVLENBQUMsSUFBSSxFQUFFLENBQUM7Z0JBQzFCLENBQUM7Z0JBQUMsV0FBTSxDQUFDO29CQUNQLFVBQVUsQ0FBQyxVQUFVLEVBQUUsQ0FBQztnQkFDMUIsQ0FBQztZQUNILENBQUM7U0FBQTtLQUNGLENBQUM7QUFDSixDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL3V0aWxzL3VzZXJDYWNoZUludmFsaWRhdGlvblN1YnNjcmliZXIudHMiXSwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0IHsgT1hZX1VTRVJfSU5WQUxJREFUSU9OX0NIQU5ORUwsIG94eVVzZXJJbnZhbGlkYXRpb25FdmVudFNjaGVtYSB9IGZyb20gJ0BveHlocS9jb250cmFjdHMnO1xuaW1wb3J0IHR5cGUgUmVkaXMgZnJvbSAnaW9yZWRpcyc7XG5cbmltcG9ydCB7IGxvZ2dlciB9IGZyb20gJy4vbG9nZ2VyJztcbmltcG9ydCB1c2VyQ2FjaGUgZnJvbSAnLi91c2VyQ2FjaGUnO1xuXG5jb25zdCBMT0dfQ09NUE9ORU5UID0gJ1VzZXJDYWNoZUludmFsaWRhdGlvblN1YnNjcmliZXInO1xuXG4vKipcbiAqIFN1YnNjcmliZSB0byBjcm9zcy1pbnN0YW5jZSBpZGVudGl0eSBpbnZhbGlkYXRpb24gZXZlbnRzIHNvIGV2ZXJ5IEVDUyB0YXNrXG4gKiBkcm9wcyBpdHMgaW4tbWVtb3J5IHVzZXIgcm93IHdoZW4gYSBwZWVyIHdyaXRlcywgd2l0aG91dCByZS1wdWJsaXNoaW5nLlxuICpcbiAqIFVzZXMgYSBkZWRpY2F0ZWQgYGR1cGxpY2F0ZSgpYCDigJQgdGhlIG1haW4gY2xpZW50IG11c3Qgc3RheSBwdWJsaXNoLWNhcGFibGUuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBzdGFydFVzZXJDYWNoZUludmFsaWRhdGlvblN1YnNjcmliZXIoXG4gIHJlZGlzOiBSZWRpcyxcbik6IHsgc3RvcDogKCkgPT4gUHJvbWlzZTx2b2lkPiB9IHtcbiAgY29uc3Qgc3Vic2NyaWJlciA9IHJlZGlzLmR1cGxpY2F0ZSgpO1xuXG4gIHN1YnNjcmliZXIub24oJ21lc3NhZ2UnLCAoY2hhbm5lbCwgcmF3KSA9PiB7XG4gICAgaWYgKGNoYW5uZWwgIT09IE9YWV9VU0VSX0lOVkFMSURBVElPTl9DSEFOTkVMKSByZXR1cm47XG5cbiAgICB0cnkge1xuICAgICAgY29uc3QgcGFyc2VkID0gb3h5VXNlckludmFsaWRhdGlvbkV2ZW50U2NoZW1hLnNhZmVQYXJzZShKU09OLnBhcnNlKHJhdykpO1xuICAgICAgaWYgKCFwYXJzZWQuc3VjY2Vzcykge1xuICAgICAgICBsb2dnZXIud2FybigndXNlckNhY2hlOiBkcm9wcGVkIGludmFsaWQgaW52YWxpZGF0aW9uIG1lc3NhZ2UnLCB7XG4gICAgICAgICAgY29tcG9uZW50OiBMT0dfQ09NUE9ORU5ULFxuICAgICAgICAgIGVycjogcGFyc2VkLmVycm9yLm1lc3NhZ2UsXG4gICAgICAgIH0pO1xuICAgICAgICByZXR1cm47XG4gICAgICB9XG4gICAgICB1c2VyQ2FjaGUuaW52YWxpZGF0ZUxvY2FsKHBhcnNlZC5kYXRhLnVzZXJJZCk7XG4gICAgfSBjYXRjaCAoZXJyb3IpIHtcbiAgICAgIGxvZ2dlci53YXJuKCd1c2VyQ2FjaGU6IGZhaWxlZCB0byBoYW5kbGUgaW52YWxpZGF0aW9uIG1lc3NhZ2UnLCB7XG4gICAgICAgIGNvbXBvbmVudDogTE9HX0NPTVBPTkVOVCxcbiAgICAgICAgZXJyOiBlcnJvciBpbnN0YW5jZW9mIEVycm9yID8gZXJyb3IubWVzc2FnZSA6IFN0cmluZyhlcnJvciksXG4gICAgICB9KTtcbiAgICB9XG4gIH0pO1xuXG4gIHN1YnNjcmliZXIuc3Vic2NyaWJlKE9YWV9VU0VSX0lOVkFMSURBVElPTl9DSEFOTkVMKS5jYXRjaCgoZXJyb3IpID0+IHtcbiAgICBsb2dnZXIuZXJyb3IoJ3VzZXJDYWNoZTogZmFpbGVkIHRvIHN1YnNjcmliZSB0byBpbnZhbGlkYXRpb24gY2hhbm5lbCcsIHtcbiAgICAgIGNvbXBvbmVudDogTE9HX0NPTVBPTkVOVCxcbiAgICAgIGNoYW5uZWw6IE9YWV9VU0VSX0lOVkFMSURBVElPTl9DSEFOTkVMLFxuICAgICAgZXJyOiBlcnJvciBpbnN0YW5jZW9mIEVycm9yID8gZXJyb3IubWVzc2FnZSA6IFN0cmluZyhlcnJvciksXG4gICAgfSk7XG4gIH0pO1xuXG4gIGxvZ2dlci5pbmZvKCdVc2VyIGNhY2hlIGludmFsaWRhdGlvbiBzdWJzY3JpYmVyIGVuYWJsZWQnLCB7XG4gICAgY29tcG9uZW50OiBMT0dfQ09NUE9ORU5ULFxuICAgIGNoYW5uZWw6IE9YWV9VU0VSX0lOVkFMSURBVElPTl9DSEFOTkVMLFxuICB9KTtcblxuICByZXR1cm4ge1xuICAgIGFzeW5jIHN0b3AoKSB7XG4gICAgICB0cnkge1xuICAgICAgICBhd2FpdCBzdWJzY3JpYmVyLnF1aXQoKTtcbiAgICAgIH0gY2F0Y2gge1xuICAgICAgICBzdWJzY3JpYmVyLmRpc2Nvbm5lY3QoKTtcbiAgICAgIH1cbiAgICB9LFxuICB9O1xufVxuIl0sInZlcnNpb24iOjN9

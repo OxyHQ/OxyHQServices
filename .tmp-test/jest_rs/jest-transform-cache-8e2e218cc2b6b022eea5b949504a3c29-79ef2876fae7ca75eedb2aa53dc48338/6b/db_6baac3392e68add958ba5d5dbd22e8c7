@@ -1,0 +1,25 @@
+217ae7f80537b4096457962b9b5b17cd
+"use strict";
+/**
+ * Database Configuration
+ *
+ * Centralizes the database naming convention so that every entry point
+ * (main server, email worker, future workers) uses the same DB name.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getDbName = getDbName;
+const APP_NAME = 'oxy';
+const ENV_DB_MAP = {
+    production: 'prod',
+    development: 'dev',
+};
+/**
+ * Returns the MongoDB database name for the current environment.
+ * Convention: "{appName}-{envSuffix}" — e.g. "oxy-prod", "oxy-dev".
+ */
+function getDbName() {
+    const nodeEnv = process.env.NODE_ENV || 'development';
+    const envSuffix = ENV_DB_MAP[nodeEnv] || nodeEnv;
+    return `${APP_NAME}-${envSuffix}`;
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY29uZmlnL2RiLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7R0FLRzs7QUFhSCw4QkFJQztBQWZELE1BQU0sUUFBUSxHQUFHLEtBQUssQ0FBQztBQUV2QixNQUFNLFVBQVUsR0FBMkI7SUFDekMsVUFBVSxFQUFFLE1BQU07SUFDbEIsV0FBVyxFQUFFLEtBQUs7Q0FDbkIsQ0FBQztBQUVGOzs7R0FHRztBQUNILFNBQWdCLFNBQVM7SUFDdkIsTUFBTSxPQUFPLEdBQUcsT0FBTyxDQUFDLEdBQUcsQ0FBQyxRQUFRLElBQUksYUFBYSxDQUFDO0lBQ3RELE1BQU0sU0FBUyxHQUFHLFVBQVUsQ0FBQyxPQUFPLENBQUMsSUFBSSxPQUFPLENBQUM7SUFDakQsT0FBTyxHQUFHLFFBQVEsSUFBSSxTQUFTLEVBQUUsQ0FBQztBQUNwQyxDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIi9ob21lL25hdGUvT3h5Ly53b3JrdHJlZXMvb3h5LWNoYW5uZWwta2luZC9wYWNrYWdlcy9hcGkvc3JjL2NvbmZpZy9kYi50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIERhdGFiYXNlIENvbmZpZ3VyYXRpb25cbiAqXG4gKiBDZW50cmFsaXplcyB0aGUgZGF0YWJhc2UgbmFtaW5nIGNvbnZlbnRpb24gc28gdGhhdCBldmVyeSBlbnRyeSBwb2ludFxuICogKG1haW4gc2VydmVyLCBlbWFpbCB3b3JrZXIsIGZ1dHVyZSB3b3JrZXJzKSB1c2VzIHRoZSBzYW1lIERCIG5hbWUuXG4gKi9cblxuY29uc3QgQVBQX05BTUUgPSAnb3h5JztcblxuY29uc3QgRU5WX0RCX01BUDogUmVjb3JkPHN0cmluZywgc3RyaW5nPiA9IHtcbiAgcHJvZHVjdGlvbjogJ3Byb2QnLFxuICBkZXZlbG9wbWVudDogJ2RldicsXG59O1xuXG4vKipcbiAqIFJldHVybnMgdGhlIE1vbmdvREIgZGF0YWJhc2UgbmFtZSBmb3IgdGhlIGN1cnJlbnQgZW52aXJvbm1lbnQuXG4gKiBDb252ZW50aW9uOiBcInthcHBOYW1lfS17ZW52U3VmZml4fVwiIOKAlCBlLmcuIFwib3h5LXByb2RcIiwgXCJveHktZGV2XCIuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBnZXREYk5hbWUoKTogc3RyaW5nIHtcbiAgY29uc3Qgbm9kZUVudiA9IHByb2Nlc3MuZW52Lk5PREVfRU5WIHx8ICdkZXZlbG9wbWVudCc7XG4gIGNvbnN0IGVudlN1ZmZpeCA9IEVOVl9EQl9NQVBbbm9kZUVudl0gfHwgbm9kZUVudjtcbiAgcmV0dXJuIGAke0FQUF9OQU1FfS0ke2VudlN1ZmZpeH1gO1xufVxuIl0sInZlcnNpb24iOjN9

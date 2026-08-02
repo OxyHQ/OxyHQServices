@@ -1,0 +1,157 @@
+7781979c6be07baa2d259a237fb22ace
+"use strict";
+/**
+ * Credit Balance Mutations — the guarded writes `user_credits` depends on
+ *
+ * `models/UserCredits.ts` declares three instance methods, and two of them are
+ * OPTIMISTIC-CONCURRENCY updates rather than plain writes: `refreshCreditsIfNeeded`
+ * compare-and-sets on `credits.lastRefresh`, and `deductCredits` runs a
+ * `$gte`-guarded `$inc`. Porting either as a read-modify-write would lose that
+ * silently — two racing deductions would both read the same balance, both decide
+ * they could afford it, and both write. The balance would go negative, or one
+ * spend would vanish, with nothing in the code to show why.
+ *
+ * So the guard travels INTO the statement. Every function here is one
+ * `UPDATE ... WHERE <guard>` whose success is decided by whether it matched a
+ * row, never by a value the caller read earlier. Under READ COMMITTED — the
+ * default — a concurrent `UPDATE` on the same row blocks on the row lock and
+ * then RE-EVALUATES its `WHERE` against the committed new version, so the loser
+ * of a race matches nothing and returns `false`. That is the whole mechanism.
+ *
+ * This module lives beside `db/expiry.ts` for the same reason that one does: it
+ * is a database MECHANISM with no DDL counterpart, defined once so no call site
+ * has to re-derive it, and it is not a service, controller or route.
+ *
+ * The CHECK constraints on `user_credits` are the second line. If some other
+ * write path ever drives a balance negative, it fails loudly there instead of
+ * being discovered in a support ticket.
+ *
+ * Every function takes `DatabaseOrTransaction`, not `Database`. A grant is
+ * frequently one half of a pair — `handleCheckoutCompleted` writes the receipt
+ * that CLAIMS the charge and then grants against it — and those two must commit
+ * or roll back together. Typed as `Database` these would refuse a `tx` and
+ * silently push the grant outside the caller's transaction, which is precisely
+ * the atomicity the pairing exists to buy.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.refreshCreditsIfNeeded = refreshCreditsIfNeeded;
+exports.addCredits = addCredits;
+exports.deductCredits = deductCredits;
+const drizzle_orm_1 = require("drizzle-orm");
+const userCredits_1 = require("./schema/userCredits");
+/**
+ * `amount` is a whole, non-negative number of credits.
+ *
+ * Both halves matter. Negative would turn a deduction into a grant that skips
+ * every balance guard — a hole `deductCredits` had in Mongoose, where
+ * `deductCredits(-100)` passed all three of its checks and ADDED 100 paid
+ * credits. Fractional would land in a `bigint` column, and what happens then
+ * depends on how the driver typed the parameter rather than on any contract:
+ * bound as text it is REJECTED (`invalid input syntax for type bigint: "1.5"`),
+ * bound as numeric it is silently ROUNDED UP. Neither is an answer to give a
+ * caller about money, so the test is written out in `numeric` space where both
+ * bindings behave identically.
+ *
+ * Expressed as a `WHERE` clause rather than a thrown error so a bad amount takes
+ * the same "this did not apply" path a rejected balance guard does — the return
+ * value is already the caller's answer.
+ */
+function wholeNonNegative(amount) {
+    return (0, drizzle_orm_1.sql) `${amount}::numeric >= 0 and ${amount}::numeric = trunc(${amount}::numeric)`;
+}
+/**
+ * Restore the free balance to its per-account limit, at most once every
+ * `CREDIT_REFRESH_INTERVAL_HOURS`.
+ *
+ * The Mongoose original read the row, computed the elapsed hours in JavaScript,
+ * and then compare-and-set on the exact `lastRefresh` value it had read. The
+ * SQL form needs neither the read nor the CAS: the elapsed-time test IS the
+ * guard, evaluated against the row under lock, so two concurrent callers can
+ * never both refresh — the second sees the advanced `credits_last_refresh` and
+ * matches nothing.
+ *
+ * @returns Whether this call performed the refresh. `false` also covers "no such
+ *   account", which is the same answer the Mongoose version gave.
+ */
+function refreshCreditsIfNeeded(db, userId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const [row] = yield db
+            .update(userCredits_1.userCredits)
+            .set({
+            // A RESET to the limit, not an increment — matching `models/UserCredits.ts:44`.
+            creditsFree: (0, drizzle_orm_1.sql) `${userCredits_1.userCredits.creditsFreeLimit}`,
+            creditsLastRefresh: (0, drizzle_orm_1.sql) `now()`,
+        })
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(userCredits_1.userCredits.userId, userId), (0, drizzle_orm_1.sql) `${userCredits_1.userCredits.creditsLastRefresh} <= now() - make_interval(hours => ${userCredits_1.CREDIT_REFRESH_INTERVAL_HOURS})`))
+            .returning({ userId: userCredits_1.userCredits.userId });
+        return row !== undefined;
+    });
+}
+/**
+ * Grant credits.
+ *
+ * A plain `$inc` in Mongoose, and a plain `+` here — an increment is already
+ * atomic under the row lock, so the only guard it needs is on the amount.
+ *
+ * @returns Whether the grant applied. `false` means either no such account or an
+ *   amount that is not a whole non-negative number of credits.
+ */
+function addCredits(db, userId, amount, kind) {
+    return __awaiter(this, void 0, void 0, function* () {
+        // The arithmetic runs in `numeric` and is cast back at the end: the guard has
+        // already established the amount is a whole number, so the cast is exact.
+        const granted = kind === 'free'
+            ? { creditsFree: (0, drizzle_orm_1.sql) `(${userCredits_1.userCredits.creditsFree} + ${amount}::numeric)::bigint` }
+            : { creditsPaid: (0, drizzle_orm_1.sql) `(${userCredits_1.userCredits.creditsPaid} + ${amount}::numeric)::bigint` };
+        const [row] = yield db
+            .update(userCredits_1.userCredits)
+            .set(granted)
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(userCredits_1.userCredits.userId, userId), wholeNonNegative(amount)))
+            .returning({ userId: userCredits_1.userCredits.userId });
+        return row !== undefined;
+    });
+}
+/**
+ * Spend credits, paid balance first, then free.
+ *
+ * The Mongoose original split the amount in JavaScript from a possibly-stale
+ * `this.credits`, then issued one of two guarded updates. Here the split is
+ * computed in the statement from the row's own values — `least(credits_paid,
+ * amount)` — so the caller never holds a number that can go stale, and there is
+ * exactly one statement to reason about instead of three branches.
+ *
+ * All `SET` expressions read the pre-update row, so the two subtractions are
+ * consistent with each other and with the guard.
+ *
+ * @returns Whether the full amount was spent. `false` means insufficient
+ *   balance, no such account, or an amount that is not a whole non-negative
+ *   number of credits — and NOTHING was spent, since the guard is part of the
+ *   same statement.
+ */
+function deductCredits(db, userId, amount) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const fromPaid = (0, drizzle_orm_1.sql) `least(${userCredits_1.userCredits.creditsPaid}, ${amount}::numeric)`;
+        const [row] = yield db
+            .update(userCredits_1.userCredits)
+            .set({
+            creditsPaid: (0, drizzle_orm_1.sql) `(${userCredits_1.userCredits.creditsPaid} - ${fromPaid})::bigint`,
+            creditsFree: (0, drizzle_orm_1.sql) `(${userCredits_1.userCredits.creditsFree} - (${amount}::numeric - ${fromPaid}))::bigint`,
+        })
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(userCredits_1.userCredits.userId, userId), wholeNonNegative(amount), 
+        // The guard the whole module exists for. Evaluated against the row under
+        // lock, so a concurrent spend that got there first is already reflected.
+        (0, drizzle_orm_1.sql) `${userCredits_1.userCredits.creditsPaid} + ${userCredits_1.userCredits.creditsFree} >= ${amount}::numeric`))
+            .returning({ userId: userCredits_1.userCredits.userId });
+        return row !== undefined;
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvZGIvY3JlZGl0cy50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0dBZ0NHOzs7Ozs7Ozs7OztBQTRDSCx3REFvQkM7QUFXRCxnQ0FvQkM7QUFtQkQsc0NBeUJDO0FBeklELDZDQUFxRDtBQUVyRCxzREFBa0Y7QUFLbEY7Ozs7Ozs7Ozs7Ozs7Ozs7R0FnQkc7QUFDSCxTQUFTLGdCQUFnQixDQUFDLE1BQWM7SUFDdEMsT0FBTyxJQUFBLGlCQUFHLEVBQUEsR0FBRyxNQUFNLHNCQUFzQixNQUFNLHFCQUFxQixNQUFNLFlBQVksQ0FBQztBQUN6RixDQUFDO0FBRUQ7Ozs7Ozs7Ozs7Ozs7R0FhRztBQUNILFNBQXNCLHNCQUFzQixDQUMxQyxFQUF5QixFQUN6QixNQUFjOztRQUVkLE1BQU0sQ0FBQyxHQUFHLENBQUMsR0FBRyxNQUFNLEVBQUU7YUFDbkIsTUFBTSxDQUFDLHlCQUFXLENBQUM7YUFDbkIsR0FBRyxDQUFDO1lBQ0gsZ0ZBQWdGO1lBQ2hGLFdBQVcsRUFBRSxJQUFBLGlCQUFHLEVBQUEsR0FBRyx5QkFBVyxDQUFDLGdCQUFnQixFQUFFO1lBQ2pELGtCQUFrQixFQUFFLElBQUEsaUJBQUcsRUFBQSxPQUFPO1NBQy9CLENBQUM7YUFDRCxLQUFLLENBQ0osSUFBQSxpQkFBRyxFQUNELElBQUEsZ0JBQUUsRUFBQyx5QkFBVyxDQUFDLE1BQU0sRUFBRSxNQUFNLENBQUMsRUFDOUIsSUFBQSxpQkFBRyxFQUFBLEdBQUcseUJBQVcsQ0FBQyxrQkFBa0Isc0NBQXNDLDJDQUE2QixHQUFHLENBQzNHLENBQ0Y7YUFDQSxTQUFTLENBQUMsRUFBRSxNQUFNLEVBQUUseUJBQVcsQ0FBQyxNQUFNLEVBQUUsQ0FBQyxDQUFDO1FBRTdDLE9BQU8sR0FBRyxLQUFLLFNBQVMsQ0FBQztJQUMzQixDQUFDO0NBQUE7QUFFRDs7Ozs7Ozs7R0FRRztBQUNILFNBQXNCLFVBQVUsQ0FDOUIsRUFBeUIsRUFDekIsTUFBYyxFQUNkLE1BQWMsRUFDZCxJQUFnQjs7UUFFaEIsOEVBQThFO1FBQzlFLDBFQUEwRTtRQUMxRSxNQUFNLE9BQU8sR0FDWCxJQUFJLEtBQUssTUFBTTtZQUNiLENBQUMsQ0FBQyxFQUFFLFdBQVcsRUFBRSxJQUFBLGlCQUFHLEVBQUEsSUFBSSx5QkFBVyxDQUFDLFdBQVcsTUFBTSxNQUFNLG9CQUFvQixFQUFFO1lBQ2pGLENBQUMsQ0FBQyxFQUFFLFdBQVcsRUFBRSxJQUFBLGlCQUFHLEVBQUEsSUFBSSx5QkFBVyxDQUFDLFdBQVcsTUFBTSxNQUFNLG9CQUFvQixFQUFFLENBQUM7UUFFdEYsTUFBTSxDQUFDLEdBQUcsQ0FBQyxHQUFHLE1BQU0sRUFBRTthQUNuQixNQUFNLENBQUMseUJBQVcsQ0FBQzthQUNuQixHQUFHLENBQUMsT0FBTyxDQUFDO2FBQ1osS0FBSyxDQUFDLElBQUEsaUJBQUcsRUFBQyxJQUFBLGdCQUFFLEVBQUMseUJBQVcsQ0FBQyxNQUFNLEVBQUUsTUFBTSxDQUFDLEVBQUUsZ0JBQWdCLENBQUMsTUFBTSxDQUFDLENBQUMsQ0FBQzthQUNwRSxTQUFTLENBQUMsRUFBRSxNQUFNLEVBQUUseUJBQVcsQ0FBQyxNQUFNLEVBQUUsQ0FBQyxDQUFDO1FBRTdDLE9BQU8sR0FBRyxLQUFLLFNBQVMsQ0FBQztJQUMzQixDQUFDO0NBQUE7QUFFRDs7Ozs7Ozs7Ozs7Ozs7OztHQWdCRztBQUNILFNBQXNCLGFBQWEsQ0FDakMsRUFBeUIsRUFDekIsTUFBYyxFQUNkLE1BQWM7O1FBRWQsTUFBTSxRQUFRLEdBQUcsSUFBQSxpQkFBRyxFQUFBLFNBQVMseUJBQVcsQ0FBQyxXQUFXLEtBQUssTUFBTSxZQUFZLENBQUM7UUFFNUUsTUFBTSxDQUFDLEdBQUcsQ0FBQyxHQUFHLE1BQU0sRUFBRTthQUNuQixNQUFNLENBQUMseUJBQVcsQ0FBQzthQUNuQixHQUFHLENBQUM7WUFDSCxXQUFXLEVBQUUsSUFBQSxpQkFBRyxFQUFBLElBQUkseUJBQVcsQ0FBQyxXQUFXLE1BQU0sUUFBUSxXQUFXO1lBQ3BFLFdBQVcsRUFBRSxJQUFBLGlCQUFHLEVBQUEsSUFBSSx5QkFBVyxDQUFDLFdBQVcsT0FBTyxNQUFNLGVBQWUsUUFBUSxZQUFZO1NBQzVGLENBQUM7YUFDRCxLQUFLLENBQ0osSUFBQSxpQkFBRyxFQUNELElBQUEsZ0JBQUUsRUFBQyx5QkFBVyxDQUFDLE1BQU0sRUFBRSxNQUFNLENBQUMsRUFDOUIsZ0JBQWdCLENBQUMsTUFBTSxDQUFDO1FBQ3hCLHlFQUF5RTtRQUN6RSx5RUFBeUU7UUFDekUsSUFBQSxpQkFBRyxFQUFBLEdBQUcseUJBQVcsQ0FBQyxXQUFXLE1BQU0seUJBQVcsQ0FBQyxXQUFXLE9BQU8sTUFBTSxXQUFXLENBQ25GLENBQ0Y7YUFDQSxTQUFTLENBQUMsRUFBRSxNQUFNLEVBQUUseUJBQVcsQ0FBQyxNQUFNLEVBQUUsQ0FBQyxDQUFDO1FBRTdDLE9BQU8sR0FBRyxLQUFLLFNBQVMsQ0FBQztJQUMzQixDQUFDO0NBQUEiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvZGIvY3JlZGl0cy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIENyZWRpdCBCYWxhbmNlIE11dGF0aW9ucyDigJQgdGhlIGd1YXJkZWQgd3JpdGVzIGB1c2VyX2NyZWRpdHNgIGRlcGVuZHMgb25cbiAqXG4gKiBgbW9kZWxzL1VzZXJDcmVkaXRzLnRzYCBkZWNsYXJlcyB0aHJlZSBpbnN0YW5jZSBtZXRob2RzLCBhbmQgdHdvIG9mIHRoZW0gYXJlXG4gKiBPUFRJTUlTVElDLUNPTkNVUlJFTkNZIHVwZGF0ZXMgcmF0aGVyIHRoYW4gcGxhaW4gd3JpdGVzOiBgcmVmcmVzaENyZWRpdHNJZk5lZWRlZGBcbiAqIGNvbXBhcmUtYW5kLXNldHMgb24gYGNyZWRpdHMubGFzdFJlZnJlc2hgLCBhbmQgYGRlZHVjdENyZWRpdHNgIHJ1bnMgYVxuICogYCRndGVgLWd1YXJkZWQgYCRpbmNgLiBQb3J0aW5nIGVpdGhlciBhcyBhIHJlYWQtbW9kaWZ5LXdyaXRlIHdvdWxkIGxvc2UgdGhhdFxuICogc2lsZW50bHkg4oCUIHR3byByYWNpbmcgZGVkdWN0aW9ucyB3b3VsZCBib3RoIHJlYWQgdGhlIHNhbWUgYmFsYW5jZSwgYm90aCBkZWNpZGVcbiAqIHRoZXkgY291bGQgYWZmb3JkIGl0LCBhbmQgYm90aCB3cml0ZS4gVGhlIGJhbGFuY2Ugd291bGQgZ28gbmVnYXRpdmUsIG9yIG9uZVxuICogc3BlbmQgd291bGQgdmFuaXNoLCB3aXRoIG5vdGhpbmcgaW4gdGhlIGNvZGUgdG8gc2hvdyB3aHkuXG4gKlxuICogU28gdGhlIGd1YXJkIHRyYXZlbHMgSU5UTyB0aGUgc3RhdGVtZW50LiBFdmVyeSBmdW5jdGlvbiBoZXJlIGlzIG9uZVxuICogYFVQREFURSAuLi4gV0hFUkUgPGd1YXJkPmAgd2hvc2Ugc3VjY2VzcyBpcyBkZWNpZGVkIGJ5IHdoZXRoZXIgaXQgbWF0Y2hlZCBhXG4gKiByb3csIG5ldmVyIGJ5IGEgdmFsdWUgdGhlIGNhbGxlciByZWFkIGVhcmxpZXIuIFVuZGVyIFJFQUQgQ09NTUlUVEVEIOKAlCB0aGVcbiAqIGRlZmF1bHQg4oCUIGEgY29uY3VycmVudCBgVVBEQVRFYCBvbiB0aGUgc2FtZSByb3cgYmxvY2tzIG9uIHRoZSByb3cgbG9jayBhbmRcbiAqIHRoZW4gUkUtRVZBTFVBVEVTIGl0cyBgV0hFUkVgIGFnYWluc3QgdGhlIGNvbW1pdHRlZCBuZXcgdmVyc2lvbiwgc28gdGhlIGxvc2VyXG4gKiBvZiBhIHJhY2UgbWF0Y2hlcyBub3RoaW5nIGFuZCByZXR1cm5zIGBmYWxzZWAuIFRoYXQgaXMgdGhlIHdob2xlIG1lY2hhbmlzbS5cbiAqXG4gKiBUaGlzIG1vZHVsZSBsaXZlcyBiZXNpZGUgYGRiL2V4cGlyeS50c2AgZm9yIHRoZSBzYW1lIHJlYXNvbiB0aGF0IG9uZSBkb2VzOiBpdFxuICogaXMgYSBkYXRhYmFzZSBNRUNIQU5JU00gd2l0aCBubyBEREwgY291bnRlcnBhcnQsIGRlZmluZWQgb25jZSBzbyBubyBjYWxsIHNpdGVcbiAqIGhhcyB0byByZS1kZXJpdmUgaXQsIGFuZCBpdCBpcyBub3QgYSBzZXJ2aWNlLCBjb250cm9sbGVyIG9yIHJvdXRlLlxuICpcbiAqIFRoZSBDSEVDSyBjb25zdHJhaW50cyBvbiBgdXNlcl9jcmVkaXRzYCBhcmUgdGhlIHNlY29uZCBsaW5lLiBJZiBzb21lIG90aGVyXG4gKiB3cml0ZSBwYXRoIGV2ZXIgZHJpdmVzIGEgYmFsYW5jZSBuZWdhdGl2ZSwgaXQgZmFpbHMgbG91ZGx5IHRoZXJlIGluc3RlYWQgb2ZcbiAqIGJlaW5nIGRpc2NvdmVyZWQgaW4gYSBzdXBwb3J0IHRpY2tldC5cbiAqXG4gKiBFdmVyeSBmdW5jdGlvbiB0YWtlcyBgRGF0YWJhc2VPclRyYW5zYWN0aW9uYCwgbm90IGBEYXRhYmFzZWAuIEEgZ3JhbnQgaXNcbiAqIGZyZXF1ZW50bHkgb25lIGhhbGYgb2YgYSBwYWlyIOKAlCBgaGFuZGxlQ2hlY2tvdXRDb21wbGV0ZWRgIHdyaXRlcyB0aGUgcmVjZWlwdFxuICogdGhhdCBDTEFJTVMgdGhlIGNoYXJnZSBhbmQgdGhlbiBncmFudHMgYWdhaW5zdCBpdCDigJQgYW5kIHRob3NlIHR3byBtdXN0IGNvbW1pdFxuICogb3Igcm9sbCBiYWNrIHRvZ2V0aGVyLiBUeXBlZCBhcyBgRGF0YWJhc2VgIHRoZXNlIHdvdWxkIHJlZnVzZSBhIGB0eGAgYW5kXG4gKiBzaWxlbnRseSBwdXNoIHRoZSBncmFudCBvdXRzaWRlIHRoZSBjYWxsZXIncyB0cmFuc2FjdGlvbiwgd2hpY2ggaXMgcHJlY2lzZWx5XG4gKiB0aGUgYXRvbWljaXR5IHRoZSBwYWlyaW5nIGV4aXN0cyB0byBidXkuXG4gKi9cblxuaW1wb3J0IHsgYW5kLCBlcSwgc3FsLCB0eXBlIFNRTCB9IGZyb20gJ2RyaXp6bGUtb3JtJztcbmltcG9ydCB0eXBlIHsgRGF0YWJhc2VPclRyYW5zYWN0aW9uIH0gZnJvbSAnLi4vY29uZmlnL3Bvc3RncmVzJztcbmltcG9ydCB7IENSRURJVF9SRUZSRVNIX0lOVEVSVkFMX0hPVVJTLCB1c2VyQ3JlZGl0cyB9IGZyb20gJy4vc2NoZW1hL3VzZXJDcmVkaXRzJztcblxuLyoqIFdoaWNoIGhhbGYgb2YgdGhlIGJhbGFuY2UgYSBncmFudCBsYW5kcyBpbi4gKi9cbmV4cG9ydCB0eXBlIENyZWRpdEtpbmQgPSAnZnJlZScgfCAncGFpZCc7XG5cbi8qKlxuICogYGFtb3VudGAgaXMgYSB3aG9sZSwgbm9uLW5lZ2F0aXZlIG51bWJlciBvZiBjcmVkaXRzLlxuICpcbiAqIEJvdGggaGFsdmVzIG1hdHRlci4gTmVnYXRpdmUgd291bGQgdHVybiBhIGRlZHVjdGlvbiBpbnRvIGEgZ3JhbnQgdGhhdCBza2lwc1xuICogZXZlcnkgYmFsYW5jZSBndWFyZCDigJQgYSBob2xlIGBkZWR1Y3RDcmVkaXRzYCBoYWQgaW4gTW9uZ29vc2UsIHdoZXJlXG4gKiBgZGVkdWN0Q3JlZGl0cygtMTAwKWAgcGFzc2VkIGFsbCB0aHJlZSBvZiBpdHMgY2hlY2tzIGFuZCBBRERFRCAxMDAgcGFpZFxuICogY3JlZGl0cy4gRnJhY3Rpb25hbCB3b3VsZCBsYW5kIGluIGEgYGJpZ2ludGAgY29sdW1uLCBhbmQgd2hhdCBoYXBwZW5zIHRoZW5cbiAqIGRlcGVuZHMgb24gaG93IHRoZSBkcml2ZXIgdHlwZWQgdGhlIHBhcmFtZXRlciByYXRoZXIgdGhhbiBvbiBhbnkgY29udHJhY3Q6XG4gKiBib3VuZCBhcyB0ZXh0IGl0IGlzIFJFSkVDVEVEIChgaW52YWxpZCBpbnB1dCBzeW50YXggZm9yIHR5cGUgYmlnaW50OiBcIjEuNVwiYCksXG4gKiBib3VuZCBhcyBudW1lcmljIGl0IGlzIHNpbGVudGx5IFJPVU5ERUQgVVAuIE5laXRoZXIgaXMgYW4gYW5zd2VyIHRvIGdpdmUgYVxuICogY2FsbGVyIGFib3V0IG1vbmV5LCBzbyB0aGUgdGVzdCBpcyB3cml0dGVuIG91dCBpbiBgbnVtZXJpY2Agc3BhY2Ugd2hlcmUgYm90aFxuICogYmluZGluZ3MgYmVoYXZlIGlkZW50aWNhbGx5LlxuICpcbiAqIEV4cHJlc3NlZCBhcyBhIGBXSEVSRWAgY2xhdXNlIHJhdGhlciB0aGFuIGEgdGhyb3duIGVycm9yIHNvIGEgYmFkIGFtb3VudCB0YWtlc1xuICogdGhlIHNhbWUgXCJ0aGlzIGRpZCBub3QgYXBwbHlcIiBwYXRoIGEgcmVqZWN0ZWQgYmFsYW5jZSBndWFyZCBkb2VzIOKAlCB0aGUgcmV0dXJuXG4gKiB2YWx1ZSBpcyBhbHJlYWR5IHRoZSBjYWxsZXIncyBhbnN3ZXIuXG4gKi9cbmZ1bmN0aW9uIHdob2xlTm9uTmVnYXRpdmUoYW1vdW50OiBudW1iZXIpOiBTUUwge1xuICByZXR1cm4gc3FsYCR7YW1vdW50fTo6bnVtZXJpYyA+PSAwIGFuZCAke2Ftb3VudH06Om51bWVyaWMgPSB0cnVuYygke2Ftb3VudH06Om51bWVyaWMpYDtcbn1cblxuLyoqXG4gKiBSZXN0b3JlIHRoZSBmcmVlIGJhbGFuY2UgdG8gaXRzIHBlci1hY2NvdW50IGxpbWl0LCBhdCBtb3N0IG9uY2UgZXZlcnlcbiAqIGBDUkVESVRfUkVGUkVTSF9JTlRFUlZBTF9IT1VSU2AuXG4gKlxuICogVGhlIE1vbmdvb3NlIG9yaWdpbmFsIHJlYWQgdGhlIHJvdywgY29tcHV0ZWQgdGhlIGVsYXBzZWQgaG91cnMgaW4gSmF2YVNjcmlwdCxcbiAqIGFuZCB0aGVuIGNvbXBhcmUtYW5kLXNldCBvbiB0aGUgZXhhY3QgYGxhc3RSZWZyZXNoYCB2YWx1ZSBpdCBoYWQgcmVhZC4gVGhlXG4gKiBTUUwgZm9ybSBuZWVkcyBuZWl0aGVyIHRoZSByZWFkIG5vciB0aGUgQ0FTOiB0aGUgZWxhcHNlZC10aW1lIHRlc3QgSVMgdGhlXG4gKiBndWFyZCwgZXZhbHVhdGVkIGFnYWluc3QgdGhlIHJvdyB1bmRlciBsb2NrLCBzbyB0d28gY29uY3VycmVudCBjYWxsZXJzIGNhblxuICogbmV2ZXIgYm90aCByZWZyZXNoIOKAlCB0aGUgc2Vjb25kIHNlZXMgdGhlIGFkdmFuY2VkIGBjcmVkaXRzX2xhc3RfcmVmcmVzaGAgYW5kXG4gKiBtYXRjaGVzIG5vdGhpbmcuXG4gKlxuICogQHJldHVybnMgV2hldGhlciB0aGlzIGNhbGwgcGVyZm9ybWVkIHRoZSByZWZyZXNoLiBgZmFsc2VgIGFsc28gY292ZXJzIFwibm8gc3VjaFxuICogICBhY2NvdW50XCIsIHdoaWNoIGlzIHRoZSBzYW1lIGFuc3dlciB0aGUgTW9uZ29vc2UgdmVyc2lvbiBnYXZlLlxuICovXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gcmVmcmVzaENyZWRpdHNJZk5lZWRlZChcbiAgZGI6IERhdGFiYXNlT3JUcmFuc2FjdGlvbixcbiAgdXNlcklkOiBzdHJpbmdcbik6IFByb21pc2U8Ym9vbGVhbj4ge1xuICBjb25zdCBbcm93XSA9IGF3YWl0IGRiXG4gICAgLnVwZGF0ZSh1c2VyQ3JlZGl0cylcbiAgICAuc2V0KHtcbiAgICAgIC8vIEEgUkVTRVQgdG8gdGhlIGxpbWl0LCBub3QgYW4gaW5jcmVtZW50IOKAlCBtYXRjaGluZyBgbW9kZWxzL1VzZXJDcmVkaXRzLnRzOjQ0YC5cbiAgICAgIGNyZWRpdHNGcmVlOiBzcWxgJHt1c2VyQ3JlZGl0cy5jcmVkaXRzRnJlZUxpbWl0fWAsXG4gICAgICBjcmVkaXRzTGFzdFJlZnJlc2g6IHNxbGBub3coKWAsXG4gICAgfSlcbiAgICAud2hlcmUoXG4gICAgICBhbmQoXG4gICAgICAgIGVxKHVzZXJDcmVkaXRzLnVzZXJJZCwgdXNlcklkKSxcbiAgICAgICAgc3FsYCR7dXNlckNyZWRpdHMuY3JlZGl0c0xhc3RSZWZyZXNofSA8PSBub3coKSAtIG1ha2VfaW50ZXJ2YWwoaG91cnMgPT4gJHtDUkVESVRfUkVGUkVTSF9JTlRFUlZBTF9IT1VSU30pYFxuICAgICAgKVxuICAgIClcbiAgICAucmV0dXJuaW5nKHsgdXNlcklkOiB1c2VyQ3JlZGl0cy51c2VySWQgfSk7XG5cbiAgcmV0dXJuIHJvdyAhPT0gdW5kZWZpbmVkO1xufVxuXG4vKipcbiAqIEdyYW50IGNyZWRpdHMuXG4gKlxuICogQSBwbGFpbiBgJGluY2AgaW4gTW9uZ29vc2UsIGFuZCBhIHBsYWluIGArYCBoZXJlIOKAlCBhbiBpbmNyZW1lbnQgaXMgYWxyZWFkeVxuICogYXRvbWljIHVuZGVyIHRoZSByb3cgbG9jaywgc28gdGhlIG9ubHkgZ3VhcmQgaXQgbmVlZHMgaXMgb24gdGhlIGFtb3VudC5cbiAqXG4gKiBAcmV0dXJucyBXaGV0aGVyIHRoZSBncmFudCBhcHBsaWVkLiBgZmFsc2VgIG1lYW5zIGVpdGhlciBubyBzdWNoIGFjY291bnQgb3IgYW5cbiAqICAgYW1vdW50IHRoYXQgaXMgbm90IGEgd2hvbGUgbm9uLW5lZ2F0aXZlIG51bWJlciBvZiBjcmVkaXRzLlxuICovXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gYWRkQ3JlZGl0cyhcbiAgZGI6IERhdGFiYXNlT3JUcmFuc2FjdGlvbixcbiAgdXNlcklkOiBzdHJpbmcsXG4gIGFtb3VudDogbnVtYmVyLFxuICBraW5kOiBDcmVkaXRLaW5kXG4pOiBQcm9taXNlPGJvb2xlYW4+IHtcbiAgLy8gVGhlIGFyaXRobWV0aWMgcnVucyBpbiBgbnVtZXJpY2AgYW5kIGlzIGNhc3QgYmFjayBhdCB0aGUgZW5kOiB0aGUgZ3VhcmQgaGFzXG4gIC8vIGFscmVhZHkgZXN0YWJsaXNoZWQgdGhlIGFtb3VudCBpcyBhIHdob2xlIG51bWJlciwgc28gdGhlIGNhc3QgaXMgZXhhY3QuXG4gIGNvbnN0IGdyYW50ZWQ6IHsgY3JlZGl0c0ZyZWU/OiBTUUw7IGNyZWRpdHNQYWlkPzogU1FMIH0gPVxuICAgIGtpbmQgPT09ICdmcmVlJ1xuICAgICAgPyB7IGNyZWRpdHNGcmVlOiBzcWxgKCR7dXNlckNyZWRpdHMuY3JlZGl0c0ZyZWV9ICsgJHthbW91bnR9OjpudW1lcmljKTo6YmlnaW50YCB9XG4gICAgICA6IHsgY3JlZGl0c1BhaWQ6IHNxbGAoJHt1c2VyQ3JlZGl0cy5jcmVkaXRzUGFpZH0gKyAke2Ftb3VudH06Om51bWVyaWMpOjpiaWdpbnRgIH07XG5cbiAgY29uc3QgW3Jvd10gPSBhd2FpdCBkYlxuICAgIC51cGRhdGUodXNlckNyZWRpdHMpXG4gICAgLnNldChncmFudGVkKVxuICAgIC53aGVyZShhbmQoZXEodXNlckNyZWRpdHMudXNlcklkLCB1c2VySWQpLCB3aG9sZU5vbk5lZ2F0aXZlKGFtb3VudCkpKVxuICAgIC5yZXR1cm5pbmcoeyB1c2VySWQ6IHVzZXJDcmVkaXRzLnVzZXJJZCB9KTtcblxuICByZXR1cm4gcm93ICE9PSB1bmRlZmluZWQ7XG59XG5cbi8qKlxuICogU3BlbmQgY3JlZGl0cywgcGFpZCBiYWxhbmNlIGZpcnN0LCB0aGVuIGZyZWUuXG4gKlxuICogVGhlIE1vbmdvb3NlIG9yaWdpbmFsIHNwbGl0IHRoZSBhbW91bnQgaW4gSmF2YVNjcmlwdCBmcm9tIGEgcG9zc2libHktc3RhbGVcbiAqIGB0aGlzLmNyZWRpdHNgLCB0aGVuIGlzc3VlZCBvbmUgb2YgdHdvIGd1YXJkZWQgdXBkYXRlcy4gSGVyZSB0aGUgc3BsaXQgaXNcbiAqIGNvbXB1dGVkIGluIHRoZSBzdGF0ZW1lbnQgZnJvbSB0aGUgcm93J3Mgb3duIHZhbHVlcyDigJQgYGxlYXN0KGNyZWRpdHNfcGFpZCxcbiAqIGFtb3VudClgIOKAlCBzbyB0aGUgY2FsbGVyIG5ldmVyIGhvbGRzIGEgbnVtYmVyIHRoYXQgY2FuIGdvIHN0YWxlLCBhbmQgdGhlcmUgaXNcbiAqIGV4YWN0bHkgb25lIHN0YXRlbWVudCB0byByZWFzb24gYWJvdXQgaW5zdGVhZCBvZiB0aHJlZSBicmFuY2hlcy5cbiAqXG4gKiBBbGwgYFNFVGAgZXhwcmVzc2lvbnMgcmVhZCB0aGUgcHJlLXVwZGF0ZSByb3csIHNvIHRoZSB0d28gc3VidHJhY3Rpb25zIGFyZVxuICogY29uc2lzdGVudCB3aXRoIGVhY2ggb3RoZXIgYW5kIHdpdGggdGhlIGd1YXJkLlxuICpcbiAqIEByZXR1cm5zIFdoZXRoZXIgdGhlIGZ1bGwgYW1vdW50IHdhcyBzcGVudC4gYGZhbHNlYCBtZWFucyBpbnN1ZmZpY2llbnRcbiAqICAgYmFsYW5jZSwgbm8gc3VjaCBhY2NvdW50LCBvciBhbiBhbW91bnQgdGhhdCBpcyBub3QgYSB3aG9sZSBub24tbmVnYXRpdmVcbiAqICAgbnVtYmVyIG9mIGNyZWRpdHMg4oCUIGFuZCBOT1RISU5HIHdhcyBzcGVudCwgc2luY2UgdGhlIGd1YXJkIGlzIHBhcnQgb2YgdGhlXG4gKiAgIHNhbWUgc3RhdGVtZW50LlxuICovXG5leHBvcnQgYXN5bmMgZnVuY3Rpb24gZGVkdWN0Q3JlZGl0cyhcbiAgZGI6IERhdGFiYXNlT3JUcmFuc2FjdGlvbixcbiAgdXNlcklkOiBzdHJpbmcsXG4gIGFtb3VudDogbnVtYmVyXG4pOiBQcm9taXNlPGJvb2xlYW4+IHtcbiAgY29uc3QgZnJvbVBhaWQgPSBzcWxgbGVhc3QoJHt1c2VyQ3JlZGl0cy5jcmVkaXRzUGFpZH0sICR7YW1vdW50fTo6bnVtZXJpYylgO1xuXG4gIGNvbnN0IFtyb3ddID0gYXdhaXQgZGJcbiAgICAudXBkYXRlKHVzZXJDcmVkaXRzKVxuICAgIC5zZXQoe1xuICAgICAgY3JlZGl0c1BhaWQ6IHNxbGAoJHt1c2VyQ3JlZGl0cy5jcmVkaXRzUGFpZH0gLSAke2Zyb21QYWlkfSk6OmJpZ2ludGAsXG4gICAgICBjcmVkaXRzRnJlZTogc3FsYCgke3VzZXJDcmVkaXRzLmNyZWRpdHNGcmVlfSAtICgke2Ftb3VudH06Om51bWVyaWMgLSAke2Zyb21QYWlkfSkpOjpiaWdpbnRgLFxuICAgIH0pXG4gICAgLndoZXJlKFxuICAgICAgYW5kKFxuICAgICAgICBlcSh1c2VyQ3JlZGl0cy51c2VySWQsIHVzZXJJZCksXG4gICAgICAgIHdob2xlTm9uTmVnYXRpdmUoYW1vdW50KSxcbiAgICAgICAgLy8gVGhlIGd1YXJkIHRoZSB3aG9sZSBtb2R1bGUgZXhpc3RzIGZvci4gRXZhbHVhdGVkIGFnYWluc3QgdGhlIHJvdyB1bmRlclxuICAgICAgICAvLyBsb2NrLCBzbyBhIGNvbmN1cnJlbnQgc3BlbmQgdGhhdCBnb3QgdGhlcmUgZmlyc3QgaXMgYWxyZWFkeSByZWZsZWN0ZWQuXG4gICAgICAgIHNxbGAke3VzZXJDcmVkaXRzLmNyZWRpdHNQYWlkfSArICR7dXNlckNyZWRpdHMuY3JlZGl0c0ZyZWV9ID49ICR7YW1vdW50fTo6bnVtZXJpY2BcbiAgICAgIClcbiAgICApXG4gICAgLnJldHVybmluZyh7IHVzZXJJZDogdXNlckNyZWRpdHMudXNlcklkIH0pO1xuXG4gIHJldHVybiByb3cgIT09IHVuZGVmaW5lZDtcbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

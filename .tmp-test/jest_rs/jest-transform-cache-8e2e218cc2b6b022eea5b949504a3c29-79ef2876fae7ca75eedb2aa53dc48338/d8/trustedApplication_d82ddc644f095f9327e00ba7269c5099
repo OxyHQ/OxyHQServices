@@ -1,0 +1,30 @@
+5aa6ca4a9f99299ce78b55feceb7fd13
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isTrustedApplication = isTrustedApplication;
+/**
+ * Pure predicate: is this Application part of the platform-trusted set?
+ *
+ * "Trusted" means a first-party / internal / system / official application whose
+ * trust fields are staff-controlled (`type`, `isOfficial`, `isInternal` are
+ * never settable via the Console / member RBAC path — see `requireStaff`).
+ * Ordinary self-service `third_party` applications are NOT trusted even while
+ * `status: 'active'`, so `status: 'active'` alone is never a trust boundary.
+ *
+ * This is the single source of truth for trust-gated decisions that must agree:
+ *  - Trusted/third-party CORS + device-first bootstrap origin derivation
+ *    (`config/dynamicOriginRegistry.ts`).
+ *  - OAuth consent auto-approve (trusted apps skip the consent screen entirely).
+ *  - Service-credential creation + service-token minting (`applications.ts`,
+ *    `auth.ts`) — bearer credentials for Oxy-to-Oxy/internal routes.
+ *  - Requiring an Origin proof before showing official branding on the device
+ *    consent UI (`auth.ts` `POST /session/create`).
+ */
+function isTrustedApplication(app) {
+    return Boolean(app.isOfficial ||
+        app.isInternal ||
+        app.type === 'first_party' ||
+        app.type === 'internal' ||
+        app.type === 'system');
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvdHJ1c3RlZEFwcGxpY2F0aW9uLnRzIiwibWFwcGluZ3MiOiI7O0FBdUJBLG9EQVVDO0FBNUJEOzs7Ozs7Ozs7Ozs7Ozs7OztHQWlCRztBQUNILFNBQWdCLG9CQUFvQixDQUNsQyxHQUEyRTtJQUUzRSxPQUFPLE9BQU8sQ0FDWixHQUFHLENBQUMsVUFBVTtRQUNaLEdBQUcsQ0FBQyxVQUFVO1FBQ2QsR0FBRyxDQUFDLElBQUksS0FBSyxhQUFhO1FBQzFCLEdBQUcsQ0FBQyxJQUFJLEtBQUssVUFBVTtRQUN2QixHQUFHLENBQUMsSUFBSSxLQUFLLFFBQVEsQ0FDeEIsQ0FBQztBQUNKLENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvdXRpbHMvdHJ1c3RlZEFwcGxpY2F0aW9uLnRzIl0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB0eXBlIHsgQVBQTElDQVRJT05fVFlQRVMgfSBmcm9tICcuLi9kYi9zY2hlbWEvYXBwbGljYXRpb25zJztcblxuLyoqIFRoZSBgYXBwbGljYXRpb25zLnR5cGVgIGNsb3NlZCB2YWx1ZSBzZXQsIGRlcml2ZWQgZnJvbSB0aGUgY29sdW1uIGl0c2VsZi4gKi9cbnR5cGUgQXBwbGljYXRpb25UeXBlID0gKHR5cGVvZiBBUFBMSUNBVElPTl9UWVBFUylbbnVtYmVyXTtcblxuLyoqXG4gKiBQdXJlIHByZWRpY2F0ZTogaXMgdGhpcyBBcHBsaWNhdGlvbiBwYXJ0IG9mIHRoZSBwbGF0Zm9ybS10cnVzdGVkIHNldD9cbiAqXG4gKiBcIlRydXN0ZWRcIiBtZWFucyBhIGZpcnN0LXBhcnR5IC8gaW50ZXJuYWwgLyBzeXN0ZW0gLyBvZmZpY2lhbCBhcHBsaWNhdGlvbiB3aG9zZVxuICogdHJ1c3QgZmllbGRzIGFyZSBzdGFmZi1jb250cm9sbGVkIChgdHlwZWAsIGBpc09mZmljaWFsYCwgYGlzSW50ZXJuYWxgIGFyZVxuICogbmV2ZXIgc2V0dGFibGUgdmlhIHRoZSBDb25zb2xlIC8gbWVtYmVyIFJCQUMgcGF0aCDigJQgc2VlIGByZXF1aXJlU3RhZmZgKS5cbiAqIE9yZGluYXJ5IHNlbGYtc2VydmljZSBgdGhpcmRfcGFydHlgIGFwcGxpY2F0aW9ucyBhcmUgTk9UIHRydXN0ZWQgZXZlbiB3aGlsZVxuICogYHN0YXR1czogJ2FjdGl2ZSdgLCBzbyBgc3RhdHVzOiAnYWN0aXZlJ2AgYWxvbmUgaXMgbmV2ZXIgYSB0cnVzdCBib3VuZGFyeS5cbiAqXG4gKiBUaGlzIGlzIHRoZSBzaW5nbGUgc291cmNlIG9mIHRydXRoIGZvciB0cnVzdC1nYXRlZCBkZWNpc2lvbnMgdGhhdCBtdXN0IGFncmVlOlxuICogIC0gVHJ1c3RlZC90aGlyZC1wYXJ0eSBDT1JTICsgZGV2aWNlLWZpcnN0IGJvb3RzdHJhcCBvcmlnaW4gZGVyaXZhdGlvblxuICogICAgKGBjb25maWcvZHluYW1pY09yaWdpblJlZ2lzdHJ5LnRzYCkuXG4gKiAgLSBPQXV0aCBjb25zZW50IGF1dG8tYXBwcm92ZSAodHJ1c3RlZCBhcHBzIHNraXAgdGhlIGNvbnNlbnQgc2NyZWVuIGVudGlyZWx5KS5cbiAqICAtIFNlcnZpY2UtY3JlZGVudGlhbCBjcmVhdGlvbiArIHNlcnZpY2UtdG9rZW4gbWludGluZyAoYGFwcGxpY2F0aW9ucy50c2AsXG4gKiAgICBgYXV0aC50c2ApIOKAlCBiZWFyZXIgY3JlZGVudGlhbHMgZm9yIE94eS10by1PeHkvaW50ZXJuYWwgcm91dGVzLlxuICogIC0gUmVxdWlyaW5nIGFuIE9yaWdpbiBwcm9vZiBiZWZvcmUgc2hvd2luZyBvZmZpY2lhbCBicmFuZGluZyBvbiB0aGUgZGV2aWNlXG4gKiAgICBjb25zZW50IFVJIChgYXV0aC50c2AgYFBPU1QgL3Nlc3Npb24vY3JlYXRlYCkuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBpc1RydXN0ZWRBcHBsaWNhdGlvbihcbiAgYXBwOiB7IGlzT2ZmaWNpYWw/OiBib29sZWFuOyBpc0ludGVybmFsPzogYm9vbGVhbjsgdHlwZT86IEFwcGxpY2F0aW9uVHlwZSB9XG4pOiBib29sZWFuIHtcbiAgcmV0dXJuIEJvb2xlYW4oXG4gICAgYXBwLmlzT2ZmaWNpYWwgfHxcbiAgICAgIGFwcC5pc0ludGVybmFsIHx8XG4gICAgICBhcHAudHlwZSA9PT0gJ2ZpcnN0X3BhcnR5JyB8fFxuICAgICAgYXBwLnR5cGUgPT09ICdpbnRlcm5hbCcgfHxcbiAgICAgIGFwcC50eXBlID09PSAnc3lzdGVtJ1xuICApO1xufVxuIl0sInZlcnNpb24iOjN9

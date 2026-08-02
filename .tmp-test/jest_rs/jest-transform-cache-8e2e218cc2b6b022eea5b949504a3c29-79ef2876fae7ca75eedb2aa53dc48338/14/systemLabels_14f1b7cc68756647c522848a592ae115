@@ -1,0 +1,51 @@
+b7be55ca9c16aab35c6e85fc9e97f108
+"use strict";
+/**
+ * The labels every mailbox has.
+ *
+ * These are part of the product, not user data: the same eight names, colours
+ * and order for everyone, referenced by name from `Message.labels` and from the
+ * default bundles' `matchLabels`. Writing a copy of them into `labels` for each
+ * user bought nothing — the rows were never edited, never differed between
+ * accounts, and had to be lazily re-seeded on every write path in case a user
+ * had somehow missed them. They live here instead; the collection now holds
+ * only the labels a user actually made.
+ *
+ * `_id` is a stable synthetic id (`system:<name>`) so a client can key a list
+ * on it exactly like a real label. It is deliberately not an ObjectId: nothing
+ * should be able to look one of these up in the database.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SYSTEM_LABELS = void 0;
+exports.isSystemLabelId = isSystemLabelId;
+exports.isSystemLabel = isSystemLabel;
+/** Prefix of every synthetic system-label id. */
+const SYSTEM_ID_PREFIX = 'system:';
+/** Whether `labelId` addresses a system label rather than a stored one. */
+function isSystemLabelId(labelId) {
+    return labelId.startsWith(SYSTEM_ID_PREFIX);
+}
+const DEFINITIONS = [
+    { name: 'Personal', color: '#1A73E8' },
+    { name: 'Work', color: '#34A853' },
+    { name: 'Finance', color: '#FBBC04' },
+    { name: 'Shopping', color: '#EA4335' },
+    { name: 'Travel', color: '#9334E6' },
+    { name: 'Social', color: '#E8710A' },
+    { name: 'Updates', color: '#607D8B' },
+    { name: 'Forums', color: '#795548' },
+];
+exports.SYSTEM_LABELS = DEFINITIONS.map((l, order) => ({
+    _id: `${SYSTEM_ID_PREFIX}${l.name.toLowerCase()}`,
+    name: l.name,
+    color: l.color,
+    order,
+    system: true,
+}));
+/** Lower-cased system label names, for case-insensitive comparison. */
+const SYSTEM_NAMES = new Set(exports.SYSTEM_LABELS.map((l) => l.name.toLowerCase()));
+/** Whether `name` is one of the system labels, ignoring case and surrounding space. */
+function isSystemLabel(name) {
+    return SYSTEM_NAMES.has(name.trim().toLowerCase());
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY29uc3RhbnRzL3N5c3RlbUxhYmVscy50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7O0dBY0c7OztBQWNILDBDQUVDO0FBeUJELHNDQUVDO0FBakNELGlEQUFpRDtBQUNqRCxNQUFNLGdCQUFnQixHQUFHLFNBQVMsQ0FBQztBQUVuQywyRUFBMkU7QUFDM0UsU0FBZ0IsZUFBZSxDQUFDLE9BQWU7SUFDN0MsT0FBTyxPQUFPLENBQUMsVUFBVSxDQUFDLGdCQUFnQixDQUFDLENBQUM7QUFDOUMsQ0FBQztBQUVELE1BQU0sV0FBVyxHQUFtRDtJQUNsRSxFQUFFLElBQUksRUFBRSxVQUFVLEVBQUUsS0FBSyxFQUFFLFNBQVMsRUFBRTtJQUN0QyxFQUFFLElBQUksRUFBRSxNQUFNLEVBQUUsS0FBSyxFQUFFLFNBQVMsRUFBRTtJQUNsQyxFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsS0FBSyxFQUFFLFNBQVMsRUFBRTtJQUNyQyxFQUFFLElBQUksRUFBRSxVQUFVLEVBQUUsS0FBSyxFQUFFLFNBQVMsRUFBRTtJQUN0QyxFQUFFLElBQUksRUFBRSxRQUFRLEVBQUUsS0FBSyxFQUFFLFNBQVMsRUFBRTtJQUNwQyxFQUFFLElBQUksRUFBRSxRQUFRLEVBQUUsS0FBSyxFQUFFLFNBQVMsRUFBRTtJQUNwQyxFQUFFLElBQUksRUFBRSxTQUFTLEVBQUUsS0FBSyxFQUFFLFNBQVMsRUFBRTtJQUNyQyxFQUFFLElBQUksRUFBRSxRQUFRLEVBQUUsS0FBSyxFQUFFLFNBQVMsRUFBRTtDQUNyQyxDQUFDO0FBRVcsUUFBQSxhQUFhLEdBQStCLFdBQVcsQ0FBQyxHQUFHLENBQUMsQ0FBQyxDQUFDLEVBQUUsS0FBSyxFQUFFLEVBQUUsQ0FBQyxDQUFDO0lBQ3RGLEdBQUcsRUFBRSxHQUFHLGdCQUFnQixHQUFHLENBQUMsQ0FBQyxJQUFJLENBQUMsV0FBVyxFQUFFLEVBQUU7SUFDakQsSUFBSSxFQUFFLENBQUMsQ0FBQyxJQUFJO0lBQ1osS0FBSyxFQUFFLENBQUMsQ0FBQyxLQUFLO0lBQ2QsS0FBSztJQUNMLE1BQU0sRUFBRSxJQUFJO0NBQ2IsQ0FBQyxDQUFDLENBQUM7QUFFSix1RUFBdUU7QUFDdkUsTUFBTSxZQUFZLEdBQUcsSUFBSSxHQUFHLENBQUMscUJBQWEsQ0FBQyxHQUFHLENBQUMsQ0FBQyxDQUFDLEVBQUUsRUFBRSxDQUFDLENBQUMsQ0FBQyxJQUFJLENBQUMsV0FBVyxFQUFFLENBQUMsQ0FBQyxDQUFDO0FBRTdFLHVGQUF1RjtBQUN2RixTQUFnQixhQUFhLENBQUMsSUFBWTtJQUN4QyxPQUFPLFlBQVksQ0FBQyxHQUFHLENBQUMsSUFBSSxDQUFDLElBQUksRUFBRSxDQUFDLFdBQVcsRUFBRSxDQUFDLENBQUM7QUFDckQsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9jb25zdGFudHMvc3lzdGVtTGFiZWxzLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogVGhlIGxhYmVscyBldmVyeSBtYWlsYm94IGhhcy5cbiAqXG4gKiBUaGVzZSBhcmUgcGFydCBvZiB0aGUgcHJvZHVjdCwgbm90IHVzZXIgZGF0YTogdGhlIHNhbWUgZWlnaHQgbmFtZXMsIGNvbG91cnNcbiAqIGFuZCBvcmRlciBmb3IgZXZlcnlvbmUsIHJlZmVyZW5jZWQgYnkgbmFtZSBmcm9tIGBNZXNzYWdlLmxhYmVsc2AgYW5kIGZyb20gdGhlXG4gKiBkZWZhdWx0IGJ1bmRsZXMnIGBtYXRjaExhYmVsc2AuIFdyaXRpbmcgYSBjb3B5IG9mIHRoZW0gaW50byBgbGFiZWxzYCBmb3IgZWFjaFxuICogdXNlciBib3VnaHQgbm90aGluZyDigJQgdGhlIHJvd3Mgd2VyZSBuZXZlciBlZGl0ZWQsIG5ldmVyIGRpZmZlcmVkIGJldHdlZW5cbiAqIGFjY291bnRzLCBhbmQgaGFkIHRvIGJlIGxhemlseSByZS1zZWVkZWQgb24gZXZlcnkgd3JpdGUgcGF0aCBpbiBjYXNlIGEgdXNlclxuICogaGFkIHNvbWVob3cgbWlzc2VkIHRoZW0uIFRoZXkgbGl2ZSBoZXJlIGluc3RlYWQ7IHRoZSBjb2xsZWN0aW9uIG5vdyBob2xkc1xuICogb25seSB0aGUgbGFiZWxzIGEgdXNlciBhY3R1YWxseSBtYWRlLlxuICpcbiAqIGBfaWRgIGlzIGEgc3RhYmxlIHN5bnRoZXRpYyBpZCAoYHN5c3RlbTo8bmFtZT5gKSBzbyBhIGNsaWVudCBjYW4ga2V5IGEgbGlzdFxuICogb24gaXQgZXhhY3RseSBsaWtlIGEgcmVhbCBsYWJlbC4gSXQgaXMgZGVsaWJlcmF0ZWx5IG5vdCBhbiBPYmplY3RJZDogbm90aGluZ1xuICogc2hvdWxkIGJlIGFibGUgdG8gbG9vayBvbmUgb2YgdGhlc2UgdXAgaW4gdGhlIGRhdGFiYXNlLlxuICovXG5cbmV4cG9ydCBpbnRlcmZhY2UgU3lzdGVtTGFiZWwge1xuICBfaWQ6IHN0cmluZztcbiAgbmFtZTogc3RyaW5nO1xuICBjb2xvcjogc3RyaW5nO1xuICBvcmRlcjogbnVtYmVyO1xuICBzeXN0ZW06IHRydWU7XG59XG5cbi8qKiBQcmVmaXggb2YgZXZlcnkgc3ludGhldGljIHN5c3RlbS1sYWJlbCBpZC4gKi9cbmNvbnN0IFNZU1RFTV9JRF9QUkVGSVggPSAnc3lzdGVtOic7XG5cbi8qKiBXaGV0aGVyIGBsYWJlbElkYCBhZGRyZXNzZXMgYSBzeXN0ZW0gbGFiZWwgcmF0aGVyIHRoYW4gYSBzdG9yZWQgb25lLiAqL1xuZXhwb3J0IGZ1bmN0aW9uIGlzU3lzdGVtTGFiZWxJZChsYWJlbElkOiBzdHJpbmcpOiBib29sZWFuIHtcbiAgcmV0dXJuIGxhYmVsSWQuc3RhcnRzV2l0aChTWVNURU1fSURfUFJFRklYKTtcbn1cblxuY29uc3QgREVGSU5JVElPTlM6IFJlYWRvbmx5QXJyYXk8eyBuYW1lOiBzdHJpbmc7IGNvbG9yOiBzdHJpbmcgfT4gPSBbXG4gIHsgbmFtZTogJ1BlcnNvbmFsJywgY29sb3I6ICcjMUE3M0U4JyB9LFxuICB7IG5hbWU6ICdXb3JrJywgY29sb3I6ICcjMzRBODUzJyB9LFxuICB7IG5hbWU6ICdGaW5hbmNlJywgY29sb3I6ICcjRkJCQzA0JyB9LFxuICB7IG5hbWU6ICdTaG9wcGluZycsIGNvbG9yOiAnI0VBNDMzNScgfSxcbiAgeyBuYW1lOiAnVHJhdmVsJywgY29sb3I6ICcjOTMzNEU2JyB9LFxuICB7IG5hbWU6ICdTb2NpYWwnLCBjb2xvcjogJyNFODcxMEEnIH0sXG4gIHsgbmFtZTogJ1VwZGF0ZXMnLCBjb2xvcjogJyM2MDdEOEInIH0sXG4gIHsgbmFtZTogJ0ZvcnVtcycsIGNvbG9yOiAnIzc5NTU0OCcgfSxcbl07XG5cbmV4cG9ydCBjb25zdCBTWVNURU1fTEFCRUxTOiBSZWFkb25seUFycmF5PFN5c3RlbUxhYmVsPiA9IERFRklOSVRJT05TLm1hcCgobCwgb3JkZXIpID0+ICh7XG4gIF9pZDogYCR7U1lTVEVNX0lEX1BSRUZJWH0ke2wubmFtZS50b0xvd2VyQ2FzZSgpfWAsXG4gIG5hbWU6IGwubmFtZSxcbiAgY29sb3I6IGwuY29sb3IsXG4gIG9yZGVyLFxuICBzeXN0ZW06IHRydWUsXG59KSk7XG5cbi8qKiBMb3dlci1jYXNlZCBzeXN0ZW0gbGFiZWwgbmFtZXMsIGZvciBjYXNlLWluc2Vuc2l0aXZlIGNvbXBhcmlzb24uICovXG5jb25zdCBTWVNURU1fTkFNRVMgPSBuZXcgU2V0KFNZU1RFTV9MQUJFTFMubWFwKChsKSA9PiBsLm5hbWUudG9Mb3dlckNhc2UoKSkpO1xuXG4vKiogV2hldGhlciBgbmFtZWAgaXMgb25lIG9mIHRoZSBzeXN0ZW0gbGFiZWxzLCBpZ25vcmluZyBjYXNlIGFuZCBzdXJyb3VuZGluZyBzcGFjZS4gKi9cbmV4cG9ydCBmdW5jdGlvbiBpc1N5c3RlbUxhYmVsKG5hbWU6IHN0cmluZyk6IGJvb2xlYW4ge1xuICByZXR1cm4gU1lTVEVNX05BTUVTLmhhcyhuYW1lLnRyaW0oKS50b0xvd2VyQ2FzZSgpKTtcbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

@@ -1,0 +1,96 @@
+f925929f71f917d01b5810dd46ee6909
+"use strict";
+/**
+ * App-signal ingest routes (`/app-signals`).
+ *
+ * Consuming apps report cross-app recommendation signals (endorsements +
+ * interest) here using a SERVICE TOKEN granted the `signals:write` scope. The
+ * source application is the token's `appId` (never a client-supplied value), so
+ * an app can only write signals scoped to itself.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_1 = require("../middleware/auth");
+const asyncHandler_1 = require("../utils/asyncHandler");
+const validate_1 = require("../middleware/validate");
+const rateLimiter_1 = require("../middleware/rateLimiter");
+const error_1 = require("../utils/error");
+const appSignals_service_1 = require("../services/appSignals.service");
+const contracts_1 = require("@oxyhq/contracts");
+const router = (0, express_1.Router)();
+const REQUIRED_SCOPE = 'signals:write';
+const WINDOW_1_MIN = 60 * 1000;
+/**
+ * Ingest limiter. Uniquely-prefixed (per the `rate-limit-redis` shared-store
+ * rule) so it never collides with another limiter's counter.
+ */
+const ingestLimiter = (0, rateLimiter_1.rateLimit)({
+    prefix: 'rl:app-signals:ingest:',
+    windowMs: WINDOW_1_MIN,
+    max: 120,
+});
+/** Assert the requesting credential carries the signals:write scope. */
+function assertSignalsScope(req) {
+    var _a, _b;
+    const scopes = (_b = (_a = req.serviceApp) === null || _a === void 0 ? void 0 : _a.scopes) !== null && _b !== void 0 ? _b : [];
+    if (!scopes.includes(REQUIRED_SCOPE)) {
+        throw new error_1.ForbiddenError(`Missing required scope: ${REQUIRED_SCOPE}`);
+    }
+}
+/**
+ * POST /app-signals/ingest
+ *
+ * Ingest endorsement and/or interest signals for the requesting application.
+ * Idempotent — re-ingesting the same edges is a no-op; an interest signal is
+ * last-write-wins.
+ */
+router.post('/ingest', ingestLimiter, auth_1.serviceAuthMiddleware, (0, validate_1.validate)({ body: contracts_1.appUserSignalIngestSchema }), (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    assertSignalsScope(req);
+    const applicationId = (_a = req.serviceApp) === null || _a === void 0 ? void 0 : _a.appId;
+    if (!applicationId) {
+        throw new error_1.BadRequestError('Service token is missing an application id');
+    }
+    const { endorsements, interests } = req.body;
+    const endorsementResult = endorsements && endorsements.length > 0
+        ? yield appSignals_service_1.appSignalsService.ingestEndorsements(applicationId, endorsements)
+        : { added: 0, removed: 0, skipped: 0, invalid: 0 };
+    const interestResult = interests && interests.length > 0
+        ? yield appSignals_service_1.appSignalsService.ingestInterests(applicationId, interests)
+        : { upserted: 0, invalid: 0 };
+    (0, asyncHandler_1.sendSuccess)(res, {
+        endorsements: endorsementResult,
+        interests: interestResult,
+    });
+})));
+/**
+ * POST /app-signals/events
+ *
+ * Ingest a batch of directed interaction-affinity events for the requesting
+ * application (`fromUserId → toUserId`, typed, optionally weighted). Each event
+ * is folded into a per-app, time-decayed affinity edge; self-edges are dropped
+ * and a supplied `eventId` is deduped. Idempotent for events carrying an
+ * `eventId`; at-least-once (additive/decayed) for events without one.
+ */
+router.post('/events', ingestLimiter, auth_1.serviceAuthMiddleware, (0, validate_1.validate)({ body: contracts_1.appAffinityEventsIngestSchema }), (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    assertSignalsScope(req);
+    const applicationId = (_a = req.serviceApp) === null || _a === void 0 ? void 0 : _a.appId;
+    if (!applicationId) {
+        throw new error_1.BadRequestError('Service token is missing an application id');
+    }
+    const { events } = req.body;
+    const affinityResult = yield appSignals_service_1.appSignalsService.ingestAffinityEvents(applicationId, events);
+    (0, asyncHandler_1.sendSuccess)(res, { affinity: affinityResult });
+})));
+exports.default = router;
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvcm91dGVzL2FwcFNpZ25hbHMudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7Ozs7O0dBT0c7Ozs7Ozs7Ozs7O0FBRUgscUNBQWdEO0FBQ2hELDZDQUFvRjtBQUNwRix3REFBa0U7QUFDbEUscURBQWtEO0FBQ2xELDJEQUFzRDtBQUN0RCwwQ0FBaUU7QUFDakUsdUVBQW1FO0FBQ25FLGdEQUE0RjtBQUU1RixNQUFNLE1BQU0sR0FBRyxJQUFBLGdCQUFNLEdBQUUsQ0FBQztBQUV4QixNQUFNLGNBQWMsR0FBRyxlQUFlLENBQUM7QUFFdkMsTUFBTSxZQUFZLEdBQUcsRUFBRSxHQUFHLElBQUksQ0FBQztBQUUvQjs7O0dBR0c7QUFDSCxNQUFNLGFBQWEsR0FBRyxJQUFBLHVCQUFTLEVBQUM7SUFDOUIsTUFBTSxFQUFFLHdCQUF3QjtJQUNoQyxRQUFRLEVBQUUsWUFBWTtJQUN0QixHQUFHLEVBQUUsR0FBRztDQUNULENBQUMsQ0FBQztBQUVILHdFQUF3RTtBQUN4RSxTQUFTLGtCQUFrQixDQUFDLEdBQXVCOztJQUNqRCxNQUFNLE1BQU0sR0FBRyxNQUFBLE1BQUEsR0FBRyxDQUFDLFVBQVUsMENBQUUsTUFBTSxtQ0FBSSxFQUFFLENBQUM7SUFDNUMsSUFBSSxDQUFDLE1BQU0sQ0FBQyxRQUFRLENBQUMsY0FBYyxDQUFDLEVBQUUsQ0FBQztRQUNyQyxNQUFNLElBQUksc0JBQWMsQ0FBQywyQkFBMkIsY0FBYyxFQUFFLENBQUMsQ0FBQztJQUN4RSxDQUFDO0FBQ0gsQ0FBQztBQUVEOzs7Ozs7R0FNRztBQUNILE1BQU0sQ0FBQyxJQUFJLENBQ1QsU0FBUyxFQUNULGFBQWEsRUFDYiw0QkFBcUIsRUFDckIsSUFBQSxtQkFBUSxFQUFDLEVBQUUsSUFBSSxFQUFFLHFDQUF5QixFQUFFLENBQUMsRUFDN0MsSUFBQSwyQkFBWSxFQUFDLENBQU8sR0FBdUIsRUFBRSxHQUFhLEVBQUUsRUFBRTs7SUFDNUQsa0JBQWtCLENBQUMsR0FBRyxDQUFDLENBQUM7SUFFeEIsTUFBTSxhQUFhLEdBQUcsTUFBQSxHQUFHLENBQUMsVUFBVSwwQ0FBRSxLQUFLLENBQUM7SUFDNUMsSUFBSSxDQUFDLGFBQWEsRUFBRSxDQUFDO1FBQ25CLE1BQU0sSUFBSSx1QkFBZSxDQUFDLDRDQUE0QyxDQUFDLENBQUM7SUFDMUUsQ0FBQztJQUVELE1BQU0sRUFBRSxZQUFZLEVBQUUsU0FBUyxFQUFFLEdBQUcsR0FBRyxDQUFDLElBQUksQ0FBQztJQUU3QyxNQUFNLGlCQUFpQixHQUNyQixZQUFZLElBQUksWUFBWSxDQUFDLE1BQU0sR0FBRyxDQUFDO1FBQ3JDLENBQUMsQ0FBQyxNQUFNLHNDQUFpQixDQUFDLGtCQUFrQixDQUFDLGFBQWEsRUFBRSxZQUFZLENBQUM7UUFDekUsQ0FBQyxDQUFDLEVBQUUsS0FBSyxFQUFFLENBQUMsRUFBRSxPQUFPLEVBQUUsQ0FBQyxFQUFFLE9BQU8sRUFBRSxDQUFDLEVBQUUsT0FBTyxFQUFFLENBQUMsRUFBRSxDQUFDO0lBRXZELE1BQU0sY0FBYyxHQUNsQixTQUFTLElBQUksU0FBUyxDQUFDLE1BQU0sR0FBRyxDQUFDO1FBQy9CLENBQUMsQ0FBQyxNQUFNLHNDQUFpQixDQUFDLGVBQWUsQ0FBQyxhQUFhLEVBQUUsU0FBUyxDQUFDO1FBQ25FLENBQUMsQ0FBQyxFQUFFLFFBQVEsRUFBRSxDQUFDLEVBQUUsT0FBTyxFQUFFLENBQUMsRUFBRSxDQUFDO0lBRWxDLElBQUEsMEJBQVcsRUFBQyxHQUFHLEVBQUU7UUFDZixZQUFZLEVBQUUsaUJBQWlCO1FBQy9CLFNBQVMsRUFBRSxjQUFjO0tBQzFCLENBQUMsQ0FBQztBQUNMLENBQUMsQ0FBQSxDQUFDLENBQ0gsQ0FBQztBQUVGOzs7Ozs7OztHQVFHO0FBQ0gsTUFBTSxDQUFDLElBQUksQ0FDVCxTQUFTLEVBQ1QsYUFBYSxFQUNiLDRCQUFxQixFQUNyQixJQUFBLG1CQUFRLEVBQUMsRUFBRSxJQUFJLEVBQUUseUNBQTZCLEVBQUUsQ0FBQyxFQUNqRCxJQUFBLDJCQUFZLEVBQUMsQ0FBTyxHQUF1QixFQUFFLEdBQWEsRUFBRSxFQUFFOztJQUM1RCxrQkFBa0IsQ0FBQyxHQUFHLENBQUMsQ0FBQztJQUV4QixNQUFNLGFBQWEsR0FBRyxNQUFBLEdBQUcsQ0FBQyxVQUFVLDBDQUFFLEtBQUssQ0FBQztJQUM1QyxJQUFJLENBQUMsYUFBYSxFQUFFLENBQUM7UUFDbkIsTUFBTSxJQUFJLHVCQUFlLENBQUMsNENBQTRDLENBQUMsQ0FBQztJQUMxRSxDQUFDO0lBRUQsTUFBTSxFQUFFLE1BQU0sRUFBRSxHQUFHLEdBQUcsQ0FBQyxJQUFJLENBQUM7SUFFNUIsTUFBTSxjQUFjLEdBQUcsTUFBTSxzQ0FBaUIsQ0FBQyxvQkFBb0IsQ0FBQyxhQUFhLEVBQUUsTUFBTSxDQUFDLENBQUM7SUFFM0YsSUFBQSwwQkFBVyxFQUFDLEdBQUcsRUFBRSxFQUFFLFFBQVEsRUFBRSxjQUFjLEVBQUUsQ0FBQyxDQUFDO0FBQ2pELENBQUMsQ0FBQSxDQUFDLENBQ0gsQ0FBQztBQUVGLGtCQUFlLE1BQU0sQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9yb3V0ZXMvYXBwU2lnbmFscy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIEFwcC1zaWduYWwgaW5nZXN0IHJvdXRlcyAoYC9hcHAtc2lnbmFsc2ApLlxuICpcbiAqIENvbnN1bWluZyBhcHBzIHJlcG9ydCBjcm9zcy1hcHAgcmVjb21tZW5kYXRpb24gc2lnbmFscyAoZW5kb3JzZW1lbnRzICtcbiAqIGludGVyZXN0KSBoZXJlIHVzaW5nIGEgU0VSVklDRSBUT0tFTiBncmFudGVkIHRoZSBgc2lnbmFsczp3cml0ZWAgc2NvcGUuIFRoZVxuICogc291cmNlIGFwcGxpY2F0aW9uIGlzIHRoZSB0b2tlbidzIGBhcHBJZGAgKG5ldmVyIGEgY2xpZW50LXN1cHBsaWVkIHZhbHVlKSwgc29cbiAqIGFuIGFwcCBjYW4gb25seSB3cml0ZSBzaWduYWxzIHNjb3BlZCB0byBpdHNlbGYuXG4gKi9cblxuaW1wb3J0IHsgUm91dGVyLCB0eXBlIFJlc3BvbnNlIH0gZnJvbSAnZXhwcmVzcyc7XG5pbXBvcnQgeyBzZXJ2aWNlQXV0aE1pZGRsZXdhcmUsIHR5cGUgU2VydmljZUF1dGhSZXF1ZXN0IH0gZnJvbSAnLi4vbWlkZGxld2FyZS9hdXRoJztcbmltcG9ydCB7IGFzeW5jSGFuZGxlciwgc2VuZFN1Y2Nlc3MgfSBmcm9tICcuLi91dGlscy9hc3luY0hhbmRsZXInO1xuaW1wb3J0IHsgdmFsaWRhdGUgfSBmcm9tICcuLi9taWRkbGV3YXJlL3ZhbGlkYXRlJztcbmltcG9ydCB7IHJhdGVMaW1pdCB9IGZyb20gJy4uL21pZGRsZXdhcmUvcmF0ZUxpbWl0ZXInO1xuaW1wb3J0IHsgRm9yYmlkZGVuRXJyb3IsIEJhZFJlcXVlc3RFcnJvciB9IGZyb20gJy4uL3V0aWxzL2Vycm9yJztcbmltcG9ydCB7IGFwcFNpZ25hbHNTZXJ2aWNlIH0gZnJvbSAnLi4vc2VydmljZXMvYXBwU2lnbmFscy5zZXJ2aWNlJztcbmltcG9ydCB7IGFwcFVzZXJTaWduYWxJbmdlc3RTY2hlbWEsIGFwcEFmZmluaXR5RXZlbnRzSW5nZXN0U2NoZW1hIH0gZnJvbSAnQG94eWhxL2NvbnRyYWN0cyc7XG5cbmNvbnN0IHJvdXRlciA9IFJvdXRlcigpO1xuXG5jb25zdCBSRVFVSVJFRF9TQ09QRSA9ICdzaWduYWxzOndyaXRlJztcblxuY29uc3QgV0lORE9XXzFfTUlOID0gNjAgKiAxMDAwO1xuXG4vKipcbiAqIEluZ2VzdCBsaW1pdGVyLiBVbmlxdWVseS1wcmVmaXhlZCAocGVyIHRoZSBgcmF0ZS1saW1pdC1yZWRpc2Agc2hhcmVkLXN0b3JlXG4gKiBydWxlKSBzbyBpdCBuZXZlciBjb2xsaWRlcyB3aXRoIGFub3RoZXIgbGltaXRlcidzIGNvdW50ZXIuXG4gKi9cbmNvbnN0IGluZ2VzdExpbWl0ZXIgPSByYXRlTGltaXQoe1xuICBwcmVmaXg6ICdybDphcHAtc2lnbmFsczppbmdlc3Q6JyxcbiAgd2luZG93TXM6IFdJTkRPV18xX01JTixcbiAgbWF4OiAxMjAsXG59KTtcblxuLyoqIEFzc2VydCB0aGUgcmVxdWVzdGluZyBjcmVkZW50aWFsIGNhcnJpZXMgdGhlIHNpZ25hbHM6d3JpdGUgc2NvcGUuICovXG5mdW5jdGlvbiBhc3NlcnRTaWduYWxzU2NvcGUocmVxOiBTZXJ2aWNlQXV0aFJlcXVlc3QpOiB2b2lkIHtcbiAgY29uc3Qgc2NvcGVzID0gcmVxLnNlcnZpY2VBcHA/LnNjb3BlcyA/PyBbXTtcbiAgaWYgKCFzY29wZXMuaW5jbHVkZXMoUkVRVUlSRURfU0NPUEUpKSB7XG4gICAgdGhyb3cgbmV3IEZvcmJpZGRlbkVycm9yKGBNaXNzaW5nIHJlcXVpcmVkIHNjb3BlOiAke1JFUVVJUkVEX1NDT1BFfWApO1xuICB9XG59XG5cbi8qKlxuICogUE9TVCAvYXBwLXNpZ25hbHMvaW5nZXN0XG4gKlxuICogSW5nZXN0IGVuZG9yc2VtZW50IGFuZC9vciBpbnRlcmVzdCBzaWduYWxzIGZvciB0aGUgcmVxdWVzdGluZyBhcHBsaWNhdGlvbi5cbiAqIElkZW1wb3RlbnQg4oCUIHJlLWluZ2VzdGluZyB0aGUgc2FtZSBlZGdlcyBpcyBhIG5vLW9wOyBhbiBpbnRlcmVzdCBzaWduYWwgaXNcbiAqIGxhc3Qtd3JpdGUtd2lucy5cbiAqL1xucm91dGVyLnBvc3QoXG4gICcvaW5nZXN0JyxcbiAgaW5nZXN0TGltaXRlcixcbiAgc2VydmljZUF1dGhNaWRkbGV3YXJlLFxuICB2YWxpZGF0ZSh7IGJvZHk6IGFwcFVzZXJTaWduYWxJbmdlc3RTY2hlbWEgfSksXG4gIGFzeW5jSGFuZGxlcihhc3luYyAocmVxOiBTZXJ2aWNlQXV0aFJlcXVlc3QsIHJlczogUmVzcG9uc2UpID0+IHtcbiAgICBhc3NlcnRTaWduYWxzU2NvcGUocmVxKTtcblxuICAgIGNvbnN0IGFwcGxpY2F0aW9uSWQgPSByZXEuc2VydmljZUFwcD8uYXBwSWQ7XG4gICAgaWYgKCFhcHBsaWNhdGlvbklkKSB7XG4gICAgICB0aHJvdyBuZXcgQmFkUmVxdWVzdEVycm9yKCdTZXJ2aWNlIHRva2VuIGlzIG1pc3NpbmcgYW4gYXBwbGljYXRpb24gaWQnKTtcbiAgICB9XG5cbiAgICBjb25zdCB7IGVuZG9yc2VtZW50cywgaW50ZXJlc3RzIH0gPSByZXEuYm9keTtcblxuICAgIGNvbnN0IGVuZG9yc2VtZW50UmVzdWx0ID1cbiAgICAgIGVuZG9yc2VtZW50cyAmJiBlbmRvcnNlbWVudHMubGVuZ3RoID4gMFxuICAgICAgICA/IGF3YWl0IGFwcFNpZ25hbHNTZXJ2aWNlLmluZ2VzdEVuZG9yc2VtZW50cyhhcHBsaWNhdGlvbklkLCBlbmRvcnNlbWVudHMpXG4gICAgICAgIDogeyBhZGRlZDogMCwgcmVtb3ZlZDogMCwgc2tpcHBlZDogMCwgaW52YWxpZDogMCB9O1xuXG4gICAgY29uc3QgaW50ZXJlc3RSZXN1bHQgPVxuICAgICAgaW50ZXJlc3RzICYmIGludGVyZXN0cy5sZW5ndGggPiAwXG4gICAgICAgID8gYXdhaXQgYXBwU2lnbmFsc1NlcnZpY2UuaW5nZXN0SW50ZXJlc3RzKGFwcGxpY2F0aW9uSWQsIGludGVyZXN0cylcbiAgICAgICAgOiB7IHVwc2VydGVkOiAwLCBpbnZhbGlkOiAwIH07XG5cbiAgICBzZW5kU3VjY2VzcyhyZXMsIHtcbiAgICAgIGVuZG9yc2VtZW50czogZW5kb3JzZW1lbnRSZXN1bHQsXG4gICAgICBpbnRlcmVzdHM6IGludGVyZXN0UmVzdWx0LFxuICAgIH0pO1xuICB9KVxuKTtcblxuLyoqXG4gKiBQT1NUIC9hcHAtc2lnbmFscy9ldmVudHNcbiAqXG4gKiBJbmdlc3QgYSBiYXRjaCBvZiBkaXJlY3RlZCBpbnRlcmFjdGlvbi1hZmZpbml0eSBldmVudHMgZm9yIHRoZSByZXF1ZXN0aW5nXG4gKiBhcHBsaWNhdGlvbiAoYGZyb21Vc2VySWQg4oaSIHRvVXNlcklkYCwgdHlwZWQsIG9wdGlvbmFsbHkgd2VpZ2h0ZWQpLiBFYWNoIGV2ZW50XG4gKiBpcyBmb2xkZWQgaW50byBhIHBlci1hcHAsIHRpbWUtZGVjYXllZCBhZmZpbml0eSBlZGdlOyBzZWxmLWVkZ2VzIGFyZSBkcm9wcGVkXG4gKiBhbmQgYSBzdXBwbGllZCBgZXZlbnRJZGAgaXMgZGVkdXBlZC4gSWRlbXBvdGVudCBmb3IgZXZlbnRzIGNhcnJ5aW5nIGFuXG4gKiBgZXZlbnRJZGA7IGF0LWxlYXN0LW9uY2UgKGFkZGl0aXZlL2RlY2F5ZWQpIGZvciBldmVudHMgd2l0aG91dCBvbmUuXG4gKi9cbnJvdXRlci5wb3N0KFxuICAnL2V2ZW50cycsXG4gIGluZ2VzdExpbWl0ZXIsXG4gIHNlcnZpY2VBdXRoTWlkZGxld2FyZSxcbiAgdmFsaWRhdGUoeyBib2R5OiBhcHBBZmZpbml0eUV2ZW50c0luZ2VzdFNjaGVtYSB9KSxcbiAgYXN5bmNIYW5kbGVyKGFzeW5jIChyZXE6IFNlcnZpY2VBdXRoUmVxdWVzdCwgcmVzOiBSZXNwb25zZSkgPT4ge1xuICAgIGFzc2VydFNpZ25hbHNTY29wZShyZXEpO1xuXG4gICAgY29uc3QgYXBwbGljYXRpb25JZCA9IHJlcS5zZXJ2aWNlQXBwPy5hcHBJZDtcbiAgICBpZiAoIWFwcGxpY2F0aW9uSWQpIHtcbiAgICAgIHRocm93IG5ldyBCYWRSZXF1ZXN0RXJyb3IoJ1NlcnZpY2UgdG9rZW4gaXMgbWlzc2luZyBhbiBhcHBsaWNhdGlvbiBpZCcpO1xuICAgIH1cblxuICAgIGNvbnN0IHsgZXZlbnRzIH0gPSByZXEuYm9keTtcblxuICAgIGNvbnN0IGFmZmluaXR5UmVzdWx0ID0gYXdhaXQgYXBwU2lnbmFsc1NlcnZpY2UuaW5nZXN0QWZmaW5pdHlFdmVudHMoYXBwbGljYXRpb25JZCwgZXZlbnRzKTtcblxuICAgIHNlbmRTdWNjZXNzKHJlcywgeyBhZmZpbml0eTogYWZmaW5pdHlSZXN1bHQgfSk7XG4gIH0pXG4pO1xuXG5leHBvcnQgZGVmYXVsdCByb3V0ZXI7XG4iXSwidmVyc2lvbiI6M30=

@@ -1,0 +1,94 @@
+4a0afae26e040d5a96d9104792636e9a
+"use strict";
+/**
+ * Device-first login finalization — shared across the first-party auth flows
+ * (`/auth/login`, `/auth/signup`, `/auth/verify`, `/security/2fa/verify-login`).
+ *
+ * ADD-ONLY: registers the freshly-credentialed session into its device's set
+ * WITHOUT stealing the active account (`activate: 'if-empty'`), and mints the
+ * rotating `deviceSecret` the client persists first-party. The client presents
+ * `deviceId` + `deviceSecret` at `POST /session/device/token` to restore the
+ * session (zero-cookie transport); the secret is the SOLE restore credential.
+ *
+ * `deviceSession.service` is imported LAZILY (only when finalizing a sign-in) so
+ * that merely importing this helper — which the hot auth controllers do at module
+ * load — never forces the `DeviceSession` Mongoose model to evaluate. This matches
+ * the existing `session.service` lazy-`import('./account.service.js')` convention
+ * and keeps unit tests that mock only the models they touch working unchanged.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.finalizeDeviceLogin = finalizeDeviceLogin;
+const socket_1 = require("../utils/socket");
+const logger_1 = require("../utils/logger");
+/**
+ * Finalize a fresh sign-in for the device-first lane: register the session into
+ * its device's set (add-only, never flips active) + broadcast, and mint the
+ * rotating `deviceSecret` for the response. Everything is best-effort — a failure
+ * here never breaks the sign-in.
+ *
+ * Returns `{ deviceSecret? }` to be merged into the auth response. The client
+ * persists it alongside the response's `deviceId` and mints access tokens via
+ * `POST /session/device/token`.
+ */
+function finalizeDeviceLogin(opts) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const { session, userId, operatedByUserId } = opts;
+        const result = {};
+        try {
+            const { deviceSessionService } = yield Promise.resolve().then(() => __importStar(require('./deviceSession.service.js')));
+            const { state, changed } = yield deviceSessionService.addAccount(session.deviceId, Object.assign({ accountId: userId, sessionId: session.sessionId }, (operatedByUserId ? { operatedByUserId } : {})), { activate: 'if-empty' });
+            if (changed)
+                (0, socket_1.broadcastDeviceState)(state);
+            const deviceSecret = yield deviceSessionService.issueDeviceSecret(session.deviceId);
+            if (deviceSecret)
+                result.deviceSecret = deviceSecret;
+        }
+        catch (error) {
+            logger_1.logger.warn('finalizeDeviceLogin: device registration failed', { userId, error });
+        }
+        return result;
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvc2VydmljZXMvZGV2aWNlTG9naW4uc2VydmljZS50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7Ozs7Ozs7Ozs7OztHQWVHOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztBQWVILGtEQTRCQztBQXpDRCw0Q0FBdUQ7QUFDdkQsNENBQXlDO0FBRXpDOzs7Ozs7Ozs7R0FTRztBQUNILFNBQXNCLG1CQUFtQixDQUFDLElBSXpDOztRQUNDLE1BQU0sRUFBRSxPQUFPLEVBQUUsTUFBTSxFQUFFLGdCQUFnQixFQUFFLEdBQUcsSUFBSSxDQUFDO1FBRW5ELE1BQU0sTUFBTSxHQUE4QixFQUFFLENBQUM7UUFFN0MsSUFBSSxDQUFDO1lBQ0gsTUFBTSxFQUFFLG9CQUFvQixFQUFFLEdBQUcsd0RBQWEsNEJBQTRCLEdBQUMsQ0FBQztZQUM1RSxNQUFNLEVBQUUsS0FBSyxFQUFFLE9BQU8sRUFBRSxHQUFHLE1BQU0sb0JBQW9CLENBQUMsVUFBVSxDQUM5RCxPQUFPLENBQUMsUUFBUSxrQkFFZCxTQUFTLEVBQUUsTUFBTSxFQUNqQixTQUFTLEVBQUUsT0FBTyxDQUFDLFNBQVMsSUFDekIsQ0FBQyxnQkFBZ0IsQ0FBQyxDQUFDLENBQUMsRUFBRSxnQkFBZ0IsRUFBRSxDQUFDLENBQUMsQ0FBQyxFQUFFLENBQUMsR0FFbkQsRUFBRSxRQUFRLEVBQUUsVUFBVSxFQUFFLENBQ3pCLENBQUM7WUFDRixJQUFJLE9BQU87Z0JBQUUsSUFBQSw2QkFBb0IsRUFBQyxLQUFLLENBQUMsQ0FBQztZQUN6QyxNQUFNLFlBQVksR0FBRyxNQUFNLG9CQUFvQixDQUFDLGlCQUFpQixDQUFDLE9BQU8sQ0FBQyxRQUFRLENBQUMsQ0FBQztZQUNwRixJQUFJLFlBQVk7Z0JBQUUsTUFBTSxDQUFDLFlBQVksR0FBRyxZQUFZLENBQUM7UUFDdkQsQ0FBQztRQUFDLE9BQU8sS0FBSyxFQUFFLENBQUM7WUFDZixlQUFNLENBQUMsSUFBSSxDQUFDLGlEQUFpRCxFQUFFLEVBQUUsTUFBTSxFQUFFLEtBQUssRUFBRSxDQUFDLENBQUM7UUFDcEYsQ0FBQztRQUVELE9BQU8sTUFBTSxDQUFDO0lBQ2hCLENBQUM7Q0FBQSIsIm5hbWVzIjpbXSwic291cmNlcyI6WyIvaG9tZS9uYXRlL094eS8ud29ya3RyZWVzL294eS1jaGFubmVsLWtpbmQvcGFja2FnZXMvYXBpL3NyYy9zZXJ2aWNlcy9kZXZpY2VMb2dpbi5zZXJ2aWNlLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogRGV2aWNlLWZpcnN0IGxvZ2luIGZpbmFsaXphdGlvbiDigJQgc2hhcmVkIGFjcm9zcyB0aGUgZmlyc3QtcGFydHkgYXV0aCBmbG93c1xuICogKGAvYXV0aC9sb2dpbmAsIGAvYXV0aC9zaWdudXBgLCBgL2F1dGgvdmVyaWZ5YCwgYC9zZWN1cml0eS8yZmEvdmVyaWZ5LWxvZ2luYCkuXG4gKlxuICogQURELU9OTFk6IHJlZ2lzdGVycyB0aGUgZnJlc2hseS1jcmVkZW50aWFsZWQgc2Vzc2lvbiBpbnRvIGl0cyBkZXZpY2UncyBzZXRcbiAqIFdJVEhPVVQgc3RlYWxpbmcgdGhlIGFjdGl2ZSBhY2NvdW50IChgYWN0aXZhdGU6ICdpZi1lbXB0eSdgKSwgYW5kIG1pbnRzIHRoZVxuICogcm90YXRpbmcgYGRldmljZVNlY3JldGAgdGhlIGNsaWVudCBwZXJzaXN0cyBmaXJzdC1wYXJ0eS4gVGhlIGNsaWVudCBwcmVzZW50c1xuICogYGRldmljZUlkYCArIGBkZXZpY2VTZWNyZXRgIGF0IGBQT1NUIC9zZXNzaW9uL2RldmljZS90b2tlbmAgdG8gcmVzdG9yZSB0aGVcbiAqIHNlc3Npb24gKHplcm8tY29va2llIHRyYW5zcG9ydCk7IHRoZSBzZWNyZXQgaXMgdGhlIFNPTEUgcmVzdG9yZSBjcmVkZW50aWFsLlxuICpcbiAqIGBkZXZpY2VTZXNzaW9uLnNlcnZpY2VgIGlzIGltcG9ydGVkIExBWklMWSAob25seSB3aGVuIGZpbmFsaXppbmcgYSBzaWduLWluKSBzb1xuICogdGhhdCBtZXJlbHkgaW1wb3J0aW5nIHRoaXMgaGVscGVyIOKAlCB3aGljaCB0aGUgaG90IGF1dGggY29udHJvbGxlcnMgZG8gYXQgbW9kdWxlXG4gKiBsb2FkIOKAlCBuZXZlciBmb3JjZXMgdGhlIGBEZXZpY2VTZXNzaW9uYCBNb25nb29zZSBtb2RlbCB0byBldmFsdWF0ZS4gVGhpcyBtYXRjaGVzXG4gKiB0aGUgZXhpc3RpbmcgYHNlc3Npb24uc2VydmljZWAgbGF6eS1gaW1wb3J0KCcuL2FjY291bnQuc2VydmljZS5qcycpYCBjb252ZW50aW9uXG4gKiBhbmQga2VlcHMgdW5pdCB0ZXN0cyB0aGF0IG1vY2sgb25seSB0aGUgbW9kZWxzIHRoZXkgdG91Y2ggd29ya2luZyB1bmNoYW5nZWQuXG4gKi9cblxuaW1wb3J0IHsgYnJvYWRjYXN0RGV2aWNlU3RhdGUgfSBmcm9tICcuLi91dGlscy9zb2NrZXQnO1xuaW1wb3J0IHsgbG9nZ2VyIH0gZnJvbSAnLi4vdXRpbHMvbG9nZ2VyJztcblxuLyoqXG4gKiBGaW5hbGl6ZSBhIGZyZXNoIHNpZ24taW4gZm9yIHRoZSBkZXZpY2UtZmlyc3QgbGFuZTogcmVnaXN0ZXIgdGhlIHNlc3Npb24gaW50b1xuICogaXRzIGRldmljZSdzIHNldCAoYWRkLW9ubHksIG5ldmVyIGZsaXBzIGFjdGl2ZSkgKyBicm9hZGNhc3QsIGFuZCBtaW50IHRoZVxuICogcm90YXRpbmcgYGRldmljZVNlY3JldGAgZm9yIHRoZSByZXNwb25zZS4gRXZlcnl0aGluZyBpcyBiZXN0LWVmZm9ydCDigJQgYSBmYWlsdXJlXG4gKiBoZXJlIG5ldmVyIGJyZWFrcyB0aGUgc2lnbi1pbi5cbiAqXG4gKiBSZXR1cm5zIGB7IGRldmljZVNlY3JldD8gfWAgdG8gYmUgbWVyZ2VkIGludG8gdGhlIGF1dGggcmVzcG9uc2UuIFRoZSBjbGllbnRcbiAqIHBlcnNpc3RzIGl0IGFsb25nc2lkZSB0aGUgcmVzcG9uc2UncyBgZGV2aWNlSWRgIGFuZCBtaW50cyBhY2Nlc3MgdG9rZW5zIHZpYVxuICogYFBPU1QgL3Nlc3Npb24vZGV2aWNlL3Rva2VuYC5cbiAqL1xuZXhwb3J0IGFzeW5jIGZ1bmN0aW9uIGZpbmFsaXplRGV2aWNlTG9naW4ob3B0czoge1xuICBzZXNzaW9uOiB7IHNlc3Npb25JZDogc3RyaW5nOyBkZXZpY2VJZDogc3RyaW5nIH07XG4gIHVzZXJJZDogc3RyaW5nO1xuICBvcGVyYXRlZEJ5VXNlcklkPzogc3RyaW5nO1xufSk6IFByb21pc2U8eyBkZXZpY2VTZWNyZXQ/OiBzdHJpbmcgfT4ge1xuICBjb25zdCB7IHNlc3Npb24sIHVzZXJJZCwgb3BlcmF0ZWRCeVVzZXJJZCB9ID0gb3B0cztcblxuICBjb25zdCByZXN1bHQ6IHsgZGV2aWNlU2VjcmV0Pzogc3RyaW5nIH0gPSB7fTtcblxuICB0cnkge1xuICAgIGNvbnN0IHsgZGV2aWNlU2Vzc2lvblNlcnZpY2UgfSA9IGF3YWl0IGltcG9ydCgnLi9kZXZpY2VTZXNzaW9uLnNlcnZpY2UuanMnKTtcbiAgICBjb25zdCB7IHN0YXRlLCBjaGFuZ2VkIH0gPSBhd2FpdCBkZXZpY2VTZXNzaW9uU2VydmljZS5hZGRBY2NvdW50KFxuICAgICAgc2Vzc2lvbi5kZXZpY2VJZCxcbiAgICAgIHtcbiAgICAgICAgYWNjb3VudElkOiB1c2VySWQsXG4gICAgICAgIHNlc3Npb25JZDogc2Vzc2lvbi5zZXNzaW9uSWQsXG4gICAgICAgIC4uLihvcGVyYXRlZEJ5VXNlcklkID8geyBvcGVyYXRlZEJ5VXNlcklkIH0gOiB7fSksXG4gICAgICB9LFxuICAgICAgeyBhY3RpdmF0ZTogJ2lmLWVtcHR5JyB9LFxuICAgICk7XG4gICAgaWYgKGNoYW5nZWQpIGJyb2FkY2FzdERldmljZVN0YXRlKHN0YXRlKTtcbiAgICBjb25zdCBkZXZpY2VTZWNyZXQgPSBhd2FpdCBkZXZpY2VTZXNzaW9uU2VydmljZS5pc3N1ZURldmljZVNlY3JldChzZXNzaW9uLmRldmljZUlkKTtcbiAgICBpZiAoZGV2aWNlU2VjcmV0KSByZXN1bHQuZGV2aWNlU2VjcmV0ID0gZGV2aWNlU2VjcmV0O1xuICB9IGNhdGNoIChlcnJvcikge1xuICAgIGxvZ2dlci53YXJuKCdmaW5hbGl6ZURldmljZUxvZ2luOiBkZXZpY2UgcmVnaXN0cmF0aW9uIGZhaWxlZCcsIHsgdXNlcklkLCBlcnJvciB9KTtcbiAgfVxuXG4gIHJldHVybiByZXN1bHQ7XG59XG4iXSwidmVyc2lvbiI6M30=

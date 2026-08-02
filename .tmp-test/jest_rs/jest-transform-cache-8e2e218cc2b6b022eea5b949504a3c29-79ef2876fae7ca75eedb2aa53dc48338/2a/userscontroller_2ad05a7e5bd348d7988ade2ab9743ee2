@@ -1,0 +1,85 @@
+3a84f59d6d8c27eb0d818acc3e9d4191
+"use strict";
+/**
+ * Users Controller
+ *
+ * Controller for user-related operations that require more complex logic
+ * or don't fit into the standard service pattern.
+ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.UsersController = void 0;
+const drizzle_orm_1 = require("drizzle-orm");
+const postgres_1 = require("../config/postgres");
+const users_1 = require("../db/schema/users");
+const logger_1 = require("../utils/logger");
+const error_1 = require("../utils/error");
+const asyncHandler_1 = require("../utils/asyncHandler");
+const profileQuery_1 = require("../utils/profileQuery");
+const publicUserProjection_1 = require("../utils/publicUserProjection");
+const userTransform_1 = require("../utils/userTransform");
+class UsersController {
+    /**
+     * POST /users/search
+     *
+     * Search for users by username or name
+     *
+     * @body {string} query - Search query string
+     * @returns {User[]} Array of matching users (max 5)
+     */
+    searchUsers(req, res, next) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const { query } = req.body;
+                if (!query || typeof query !== 'string' || query.trim().length === 0) {
+                    throw new error_1.BadRequestError('Search query is required and must be a non-empty string');
+                }
+                // Strip a single leading `@` (and trim) BEFORE sanitizing so a handle-style
+                // query matches the STORED username: an atproto handle
+                // `@adamrbjack.bsky.social` finds `adamrbjack.bsky.social@bsky.social`, and
+                // a Mastodon `@user@host` matches `user@host`. Only ONE leading `@` is
+                // removed — a mid-string `@` (the `user@host` separator) is preserved.
+                // The term is passed RAW: `peopleSearchMatch` escapes it for LIKE and
+                // binds it as a parameter, so escaping it here as well would make `a+b`
+                // search for a literal backslash.
+                const term = (0, profileQuery_1.normalizePeopleSearchTerm)(query);
+                const rows = yield (0, postgres_1.getDb)()
+                    .select(publicUserProjection_1.publicUserColumns)
+                    .from(users_1.users)
+                    .where((0, drizzle_orm_1.and)((0, profileQuery_1.peopleSearchPredicate)(), (0, profileQuery_1.peopleSearchMatch)(term)))
+                    .limit(5);
+                const formattedUsers = rows
+                    .map((row) => (0, userTransform_1.formatUserResponse)((0, publicUserProjection_1.toPublicUserView)(row)))
+                    .filter((user) => user !== null);
+                logger_1.logger.debug('User search performed', {
+                    query: term,
+                    resultsCount: formattedUsers.length,
+                });
+                (0, asyncHandler_1.sendSuccess)(res, formattedUsers);
+            }
+            catch (error) {
+                // Re-throw known errors
+                if (error instanceof error_1.BadRequestError || error instanceof error_1.InternalServerError) {
+                    throw error;
+                }
+                // Log and wrap unexpected errors
+                logger_1.logger.error('Error in searchUsers:', {
+                    error: error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                });
+                throw new error_1.InternalServerError('Failed to search users');
+            }
+        });
+    }
+}
+exports.UsersController = UsersController;
+exports.default = new UsersController();
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY29udHJvbGxlcnMvdXNlcnMuY29udHJvbGxlci50cyIsIm1hcHBpbmdzIjoiO0FBQUE7Ozs7O0dBS0c7Ozs7Ozs7Ozs7OztBQUdILDZDQUFrQztBQUNsQyxpREFBMkM7QUFDM0MsOENBQTJDO0FBQzNDLDRDQUF5QztBQUN6QywwQ0FBc0U7QUFDdEUsd0RBQW9EO0FBQ3BELHdEQUkrQjtBQUMvQix3RUFBb0Y7QUFDcEYsMERBQTREO0FBRTVELE1BQWEsZUFBZTtJQUMxQjs7Ozs7OztPQU9HO0lBQ0csV0FBVyxDQUFDLEdBQVksRUFBRSxHQUFhLEVBQUUsSUFBa0I7O1lBQy9ELElBQUksQ0FBQztnQkFDSCxNQUFNLEVBQUUsS0FBSyxFQUFFLEdBQUcsR0FBRyxDQUFDLElBQUksQ0FBQztnQkFFM0IsSUFBSSxDQUFDLEtBQUssSUFBSSxPQUFPLEtBQUssS0FBSyxRQUFRLElBQUksS0FBSyxDQUFDLElBQUksRUFBRSxDQUFDLE1BQU0sS0FBSyxDQUFDLEVBQUUsQ0FBQztvQkFDckUsTUFBTSxJQUFJLHVCQUFlLENBQUMseURBQXlELENBQUMsQ0FBQztnQkFDdkYsQ0FBQztnQkFFRCw0RUFBNEU7Z0JBQzVFLHVEQUF1RDtnQkFDdkQsNEVBQTRFO2dCQUM1RSx1RUFBdUU7Z0JBQ3ZFLHVFQUF1RTtnQkFDdkUsc0VBQXNFO2dCQUN0RSx3RUFBd0U7Z0JBQ3hFLGtDQUFrQztnQkFDbEMsTUFBTSxJQUFJLEdBQUcsSUFBQSx3Q0FBeUIsRUFBQyxLQUFLLENBQUMsQ0FBQztnQkFFOUMsTUFBTSxJQUFJLEdBQUcsTUFBTSxJQUFBLGdCQUFLLEdBQUU7cUJBQ3ZCLE1BQU0sQ0FBQyx3Q0FBaUIsQ0FBQztxQkFDekIsSUFBSSxDQUFDLGFBQUssQ0FBQztxQkFDWCxLQUFLLENBQUMsSUFBQSxpQkFBRyxFQUFDLElBQUEsb0NBQXFCLEdBQUUsRUFBRSxJQUFBLGdDQUFpQixFQUFDLElBQUksQ0FBQyxDQUFDLENBQUM7cUJBQzVELEtBQUssQ0FBQyxDQUFDLENBQUMsQ0FBQztnQkFFWixNQUFNLGNBQWMsR0FBRyxJQUFJO3FCQUN4QixHQUFHLENBQUMsQ0FBQyxHQUFHLEVBQUUsRUFBRSxDQUFDLElBQUEsa0NBQWtCLEVBQUMsSUFBQSx1Q0FBZ0IsRUFBQyxHQUFHLENBQUMsQ0FBQyxDQUFDO3FCQUN2RCxNQUFNLENBQUMsQ0FBQyxJQUFJLEVBQW9DLEVBQUUsQ0FBQyxJQUFJLEtBQUssSUFBSSxDQUFDLENBQUM7Z0JBRXJFLGVBQU0sQ0FBQyxLQUFLLENBQUMsdUJBQXVCLEVBQUU7b0JBQ3BDLEtBQUssRUFBRSxJQUFJO29CQUNYLFlBQVksRUFBRSxjQUFjLENBQUMsTUFBTTtpQkFDcEMsQ0FBQyxDQUFDO2dCQUVILElBQUEsMEJBQVcsRUFBQyxHQUFHLEVBQUUsY0FBYyxDQUFDLENBQUM7WUFDbkMsQ0FBQztZQUFDLE9BQU8sS0FBSyxFQUFFLENBQUM7Z0JBQ2Ysd0JBQXdCO2dCQUN4QixJQUFJLEtBQUssWUFBWSx1QkFBZSxJQUFJLEtBQUssWUFBWSwyQkFBbUIsRUFBRSxDQUFDO29CQUM3RSxNQUFNLEtBQUssQ0FBQztnQkFDZCxDQUFDO2dCQUVELGlDQUFpQztnQkFDakMsZUFBTSxDQUFDLEtBQUssQ0FBQyx1QkFBdUIsRUFBRTtvQkFDcEMsS0FBSyxFQUFFLEtBQUssWUFBWSxLQUFLLENBQUMsQ0FBQyxDQUFDLEtBQUssQ0FBQyxPQUFPLENBQUMsQ0FBQyxDQUFDLE1BQU0sQ0FBQyxLQUFLLENBQUM7b0JBQzdELEtBQUssRUFBRSxLQUFLLFlBQVksS0FBSyxDQUFDLENBQUMsQ0FBQyxLQUFLLENBQUMsS0FBSyxDQUFDLENBQUMsQ0FBQyxTQUFTO2lCQUN4RCxDQUFDLENBQUM7Z0JBRUgsTUFBTSxJQUFJLDJCQUFtQixDQUFDLHdCQUF3QixDQUFDLENBQUM7WUFDMUQsQ0FBQztRQUNILENBQUM7S0FBQTtDQUNGO0FBMURELDBDQTBEQztBQUVELGtCQUFlLElBQUksZUFBZSxFQUFFLENBQUMiLCJuYW1lcyI6W10sInNvdXJjZXMiOlsiL2hvbWUvbmF0ZS9PeHkvLndvcmt0cmVlcy9veHktY2hhbm5lbC1raW5kL3BhY2thZ2VzL2FwaS9zcmMvY29udHJvbGxlcnMvdXNlcnMuY29udHJvbGxlci50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIFVzZXJzIENvbnRyb2xsZXJcbiAqIFxuICogQ29udHJvbGxlciBmb3IgdXNlci1yZWxhdGVkIG9wZXJhdGlvbnMgdGhhdCByZXF1aXJlIG1vcmUgY29tcGxleCBsb2dpY1xuICogb3IgZG9uJ3QgZml0IGludG8gdGhlIHN0YW5kYXJkIHNlcnZpY2UgcGF0dGVybi5cbiAqL1xuXG5pbXBvcnQgdHlwZSB7IFJlcXVlc3QsIFJlc3BvbnNlLCBOZXh0RnVuY3Rpb24gfSBmcm9tICdleHByZXNzJztcbmltcG9ydCB7IGFuZCB9IGZyb20gJ2RyaXp6bGUtb3JtJztcbmltcG9ydCB7IGdldERiIH0gZnJvbSAnLi4vY29uZmlnL3Bvc3RncmVzJztcbmltcG9ydCB7IHVzZXJzIH0gZnJvbSAnLi4vZGIvc2NoZW1hL3VzZXJzJztcbmltcG9ydCB7IGxvZ2dlciB9IGZyb20gJy4uL3V0aWxzL2xvZ2dlcic7XG5pbXBvcnQgeyBCYWRSZXF1ZXN0RXJyb3IsIEludGVybmFsU2VydmVyRXJyb3IgfSBmcm9tICcuLi91dGlscy9lcnJvcic7XG5pbXBvcnQgeyBzZW5kU3VjY2VzcyB9IGZyb20gJy4uL3V0aWxzL2FzeW5jSGFuZGxlcic7XG5pbXBvcnQge1xuICBub3JtYWxpemVQZW9wbGVTZWFyY2hUZXJtLFxuICBwZW9wbGVTZWFyY2hNYXRjaCxcbiAgcGVvcGxlU2VhcmNoUHJlZGljYXRlLFxufSBmcm9tICcuLi91dGlscy9wcm9maWxlUXVlcnknO1xuaW1wb3J0IHsgcHVibGljVXNlckNvbHVtbnMsIHRvUHVibGljVXNlclZpZXcgfSBmcm9tICcuLi91dGlscy9wdWJsaWNVc2VyUHJvamVjdGlvbic7XG5pbXBvcnQgeyBmb3JtYXRVc2VyUmVzcG9uc2UgfSBmcm9tICcuLi91dGlscy91c2VyVHJhbnNmb3JtJztcblxuZXhwb3J0IGNsYXNzIFVzZXJzQ29udHJvbGxlciB7XG4gIC8qKlxuICAgKiBQT1NUIC91c2Vycy9zZWFyY2hcbiAgICogXG4gICAqIFNlYXJjaCBmb3IgdXNlcnMgYnkgdXNlcm5hbWUgb3IgbmFtZVxuICAgKiBcbiAgICogQGJvZHkge3N0cmluZ30gcXVlcnkgLSBTZWFyY2ggcXVlcnkgc3RyaW5nXG4gICAqIEByZXR1cm5zIHtVc2VyW119IEFycmF5IG9mIG1hdGNoaW5nIHVzZXJzIChtYXggNSlcbiAgICovXG4gIGFzeW5jIHNlYXJjaFVzZXJzKHJlcTogUmVxdWVzdCwgcmVzOiBSZXNwb25zZSwgbmV4dDogTmV4dEZ1bmN0aW9uKTogUHJvbWlzZTx2b2lkPiB7XG4gICAgdHJ5IHtcbiAgICAgIGNvbnN0IHsgcXVlcnkgfSA9IHJlcS5ib2R5O1xuXG4gICAgICBpZiAoIXF1ZXJ5IHx8IHR5cGVvZiBxdWVyeSAhPT0gJ3N0cmluZycgfHwgcXVlcnkudHJpbSgpLmxlbmd0aCA9PT0gMCkge1xuICAgICAgICB0aHJvdyBuZXcgQmFkUmVxdWVzdEVycm9yKCdTZWFyY2ggcXVlcnkgaXMgcmVxdWlyZWQgYW5kIG11c3QgYmUgYSBub24tZW1wdHkgc3RyaW5nJyk7XG4gICAgICB9XG5cbiAgICAgIC8vIFN0cmlwIGEgc2luZ2xlIGxlYWRpbmcgYEBgIChhbmQgdHJpbSkgQkVGT1JFIHNhbml0aXppbmcgc28gYSBoYW5kbGUtc3R5bGVcbiAgICAgIC8vIHF1ZXJ5IG1hdGNoZXMgdGhlIFNUT1JFRCB1c2VybmFtZTogYW4gYXRwcm90byBoYW5kbGVcbiAgICAgIC8vIGBAYWRhbXJiamFjay5ic2t5LnNvY2lhbGAgZmluZHMgYGFkYW1yYmphY2suYnNreS5zb2NpYWxAYnNreS5zb2NpYWxgLCBhbmRcbiAgICAgIC8vIGEgTWFzdG9kb24gYEB1c2VyQGhvc3RgIG1hdGNoZXMgYHVzZXJAaG9zdGAuIE9ubHkgT05FIGxlYWRpbmcgYEBgIGlzXG4gICAgICAvLyByZW1vdmVkIOKAlCBhIG1pZC1zdHJpbmcgYEBgICh0aGUgYHVzZXJAaG9zdGAgc2VwYXJhdG9yKSBpcyBwcmVzZXJ2ZWQuXG4gICAgICAvLyBUaGUgdGVybSBpcyBwYXNzZWQgUkFXOiBgcGVvcGxlU2VhcmNoTWF0Y2hgIGVzY2FwZXMgaXQgZm9yIExJS0UgYW5kXG4gICAgICAvLyBiaW5kcyBpdCBhcyBhIHBhcmFtZXRlciwgc28gZXNjYXBpbmcgaXQgaGVyZSBhcyB3ZWxsIHdvdWxkIG1ha2UgYGErYmBcbiAgICAgIC8vIHNlYXJjaCBmb3IgYSBsaXRlcmFsIGJhY2tzbGFzaC5cbiAgICAgIGNvbnN0IHRlcm0gPSBub3JtYWxpemVQZW9wbGVTZWFyY2hUZXJtKHF1ZXJ5KTtcblxuICAgICAgY29uc3Qgcm93cyA9IGF3YWl0IGdldERiKClcbiAgICAgICAgLnNlbGVjdChwdWJsaWNVc2VyQ29sdW1ucylcbiAgICAgICAgLmZyb20odXNlcnMpXG4gICAgICAgIC53aGVyZShhbmQocGVvcGxlU2VhcmNoUHJlZGljYXRlKCksIHBlb3BsZVNlYXJjaE1hdGNoKHRlcm0pKSlcbiAgICAgICAgLmxpbWl0KDUpO1xuXG4gICAgICBjb25zdCBmb3JtYXR0ZWRVc2VycyA9IHJvd3NcbiAgICAgICAgLm1hcCgocm93KSA9PiBmb3JtYXRVc2VyUmVzcG9uc2UodG9QdWJsaWNVc2VyVmlldyhyb3cpKSlcbiAgICAgICAgLmZpbHRlcigodXNlcik6IHVzZXIgaXMgTm9uTnVsbGFibGU8dHlwZW9mIHVzZXI+ID0+IHVzZXIgIT09IG51bGwpO1xuXG4gICAgICBsb2dnZXIuZGVidWcoJ1VzZXIgc2VhcmNoIHBlcmZvcm1lZCcsIHtcbiAgICAgICAgcXVlcnk6IHRlcm0sXG4gICAgICAgIHJlc3VsdHNDb3VudDogZm9ybWF0dGVkVXNlcnMubGVuZ3RoLFxuICAgICAgfSk7XG5cbiAgICAgIHNlbmRTdWNjZXNzKHJlcywgZm9ybWF0dGVkVXNlcnMpO1xuICAgIH0gY2F0Y2ggKGVycm9yKSB7XG4gICAgICAvLyBSZS10aHJvdyBrbm93biBlcnJvcnNcbiAgICAgIGlmIChlcnJvciBpbnN0YW5jZW9mIEJhZFJlcXVlc3RFcnJvciB8fCBlcnJvciBpbnN0YW5jZW9mIEludGVybmFsU2VydmVyRXJyb3IpIHtcbiAgICAgICAgdGhyb3cgZXJyb3I7XG4gICAgICB9XG5cbiAgICAgIC8vIExvZyBhbmQgd3JhcCB1bmV4cGVjdGVkIGVycm9yc1xuICAgICAgbG9nZ2VyLmVycm9yKCdFcnJvciBpbiBzZWFyY2hVc2VyczonLCB7XG4gICAgICAgIGVycm9yOiBlcnJvciBpbnN0YW5jZW9mIEVycm9yID8gZXJyb3IubWVzc2FnZSA6IFN0cmluZyhlcnJvciksXG4gICAgICAgIHN0YWNrOiBlcnJvciBpbnN0YW5jZW9mIEVycm9yID8gZXJyb3Iuc3RhY2sgOiB1bmRlZmluZWQsXG4gICAgICB9KTtcblxuICAgICAgdGhyb3cgbmV3IEludGVybmFsU2VydmVyRXJyb3IoJ0ZhaWxlZCB0byBzZWFyY2ggdXNlcnMnKTtcbiAgICB9XG4gIH1cbn1cblxuZXhwb3J0IGRlZmF1bHQgbmV3IFVzZXJzQ29udHJvbGxlcigpOyAiXSwidmVyc2lvbiI6M30=
