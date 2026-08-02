@@ -85,7 +85,9 @@ import {
   applyApplicationPlan,
   computeApplicationPlan,
   readApplicationState,
+  type MutableApplicationFields,
   type PlannedFieldChange,
+  type ReadableApplication,
 } from '../src/scripts/registerCommonsClientsPlan';
 
 // ── Mirror routes/applications.ts credential generation EXACTLY ──────────────
@@ -285,7 +287,22 @@ async function resolveTargets(dryRun: boolean): Promise<ResolvedTargets> {
   return { oxyId, ownerAccountId, ownerAccountAction, ownerMembershipAction };
 }
 
-function toReadableApplication(application: ApplicationRow) {
+function toReadableApplication(application: ApplicationRow): ReadableApplication {
+  return {
+    status: application.status,
+    type: application.type,
+    isOfficial: application.isOfficial,
+    isInternal: application.isInternal,
+    ownerAccountId: { toString: () => application.ownerAccountId },
+    redirectUris: application.redirectUris,
+    // Postgres enforces `scopes <@ APPLICATION_SCOPES`; the Drizzle select type
+    // is still `string[]`, so narrow at the boundary the plan module expects.
+    scopes: application.scopes as ApplicationScope[],
+    capabilities: application.capabilities,
+  };
+}
+
+function toMutableApplication(application: ApplicationRow): MutableApplicationFields<string> {
   return {
     status: application.status,
     type: application.type,
@@ -293,7 +310,7 @@ function toReadableApplication(application: ApplicationRow) {
     isInternal: application.isInternal,
     ownerAccountId: application.ownerAccountId,
     redirectUris: application.redirectUris,
-    scopes: application.scopes,
+    scopes: application.scopes as ApplicationScope[],
     capabilities: application.capabilities,
   };
 }
@@ -363,7 +380,7 @@ async function register(): Promise<void> {
           .returning();
         application = created;
       } else if (application && plan.changes.length > 0) {
-        const mutable = { ...toReadableApplication(application) };
+        const mutable = toMutableApplication(application);
         applyApplicationPlan(mutable, plan, requireOwnerAccountId());
         const [updated] = await getDb()
           .update(applications)
