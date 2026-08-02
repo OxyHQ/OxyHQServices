@@ -1,9 +1,13 @@
 /**
  * POST /accounts — user-scoped account creation guards.
  *
- * Channel accounts are minted only through the service provisioning surface
- * (`POST /accounts/service/channels`); the user-facing create route must refuse
- * `kind: 'channel'` so a bearer with `children:create` cannot bypass that gate.
+ * Every CHILD kind is creatable here with the caller's own bearer, `channel`
+ * included. A channel was once refused, on the reasoning that channels are
+ * service-provisioned only — but what keeps a channel safe does not depend on
+ * who creates it: `createChildAccount` writes no auth method, and
+ * `POST /accounts/:id/switch` refuses the kind, so no session can ever have a
+ * channel as its subject. `personal` stays refused, by the schema: it is a human
+ * login, minted at signup.
  */
 
 import express from 'express';
@@ -114,17 +118,65 @@ describe('POST /accounts', () => {
 
   beforeEach(() => {
     mockCreateChildAccount.mockReset();
+    // The route destructures `{ account, membership }` and builds an AccountNode
+    // from it, so a bare `jest.fn()` returning undefined would throw before any
+    // status could be asserted — a 500 that reads like a refusal.
+    mockCreateChildAccount.mockImplementation(
+      async (_parentId: string, _actorId: string, input: { kind: string; username: string }) => ({
+        account: {
+          id: 'acct-new',
+          kind: input.kind,
+          username: input.username,
+          parentAccountId: OPERATOR_ID,
+          rootAccountId: OPERATOR_ID,
+        },
+        membership: { role: 'owner', permissions: ['children:create'] },
+      })
+    );
   });
 
-  it('refuses to create a channel account (400)', async () => {
+  it('creates a channel account with the caller\'s own bearer', async () => {
     const res = await request(server, {
       kind: 'channel',
       username: 'daily-news',
       name: { displayName: 'Daily News' },
     });
 
+    expect(res.status).toBe(201);
+    // The kind reaches the service unchanged — the route neither rewrites it nor
+    // routes a channel somewhere else.
+    expect(mockCreateChildAccount).toHaveBeenCalledWith(
+      OPERATOR_ID,
+      OPERATOR_ID,
+      expect.objectContaining({ kind: 'channel', username: 'daily-news' })
+    );
+  });
+
+  it.each(['organization', 'project', 'bot'])(
+    'still creates a %s account, unchanged',
+    async (kind) => {
+      const res = await request(server, { kind, username: `acct-${kind}` });
+
+      expect(res.status).toBe(201);
+      expect(mockCreateChildAccount).toHaveBeenCalledWith(
+        OPERATOR_ID,
+        OPERATOR_ID,
+        expect.objectContaining({ kind })
+      );
+    }
+  );
+
+  /**
+   * `personal` is the one kind this route must never mint: it is a human login,
+   * created at signup. It is refused by the SCHEMA (`childAccountKindSchema`),
+   * not by a handler check — which is why it is asserted here rather than
+   * assumed. Without it, a suite that only ever sends creatable kinds cannot
+   * tell a route that validates its input from one that does not.
+   */
+  it('refuses a personal account (400)', async () => {
+    const res = await request(server, { kind: 'personal', username: 'someone' });
+
     expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/service provisioning/i);
     expect(mockCreateChildAccount).not.toHaveBeenCalled();
   });
 });
