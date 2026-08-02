@@ -145,6 +145,18 @@ describe('createBridgeRelabeller — derivations it refuses', () => {
     }))).toBeUndefined();
   });
 
+  it('matches profile hosts canonically, so a www. prefix on either side still round-trips', () => {
+    const relabeller = createBridgeRelabeller([
+      entry({ derive: upstreamHandleFromProfileField({ fieldName: 'Official', hosts: ['www.twitter.com'] }) }),
+    ]);
+    expect(relabeller.deriveNetworkIdentity(candidate({
+      fields: [{ name: 'Official', value: '<a href="https://twitter.com/WIRED" rel="me">x</a>' }],
+    }))?.federatedUsername).toBe('wired@x.com');
+    expect(relabeller.deriveNetworkIdentity(candidate({
+      fields: [{ name: 'Official', value: '<a href="https://www.twitter.com/WIRED" rel="me">x</a>' }],
+    }))?.federatedUsername).toBe('wired@x.com');
+  });
+
   it('requires the marker before trusting a naming convention', () => {
     // The bridge operator's own account lives on the same host and is not a
     // mirror of anything; relabelling it would invent an upstream person.

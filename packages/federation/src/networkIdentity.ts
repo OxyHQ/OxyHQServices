@@ -12,18 +12,19 @@
  * with a custom-domain handle is stored under `bsky.social` rather than under the
  * domain the handle happens to spell.
  *
- * WHY THIS LIVES IN THE SHARED PACKAGE AND NOT IN AN APP
+ * WHY THE MECHANISM LIVES HERE BUT THE ENTRIES DO NOT
  *
- *   Two consumers have to agree on it or the relabel cannot work at all.
- *   An app's connector DERIVES the identity at ingest, and oxy-api's
- *   `PUT /users/resolve` DECIDES WHETHER TO BELIEVE IT — that endpoint binds an
- *   actor URI's hostname to the domain the caller asserts, precisely so a service
- *   cannot claim to vouch for a user on a host it does not own. A bridged
- *   identity is the one case where those legitimately differ, and the ONLY thing
- *   that makes it legitimate rather than a forged claim is this list. If each
- *   side kept its own copy, the copies would drift, and the failure mode of that
- *   drift is oxy-api accepting an attribution nobody reviewed. One list, imported
- *   by both.
+ *   Two different questions must stay separate. An app's connector DERIVES the
+ *   identity at ingest (`createBridgeRelabeller(entries)` with entries the app
+ *   commits and answers for), and oxy-api's `PUT /users/resolve` DECIDES
+ *   WHETHER TO BELIEVE IT — that endpoint binds an actor URI's hostname to the
+ *   domain the caller asserts, precisely so a service cannot claim to vouch for
+ *   a user on a host it does not own. A bridged identity is the one case where
+ *   those legitimately differ. The shared package ships the derivation machinery
+ *   and network vocabulary; each side keeps its own reviewed list and they fail
+ *   CLOSED in both directions — an app that derives for a bridge the API does
+ *   not trust simply has its resolve refused, and a host the API trusts that no
+ *   app derives for does nothing at all.
  *
  * A WRONG ENTRY HERE MISATTRIBUTES SOMEBODY'S WRITING
  *
@@ -32,8 +33,8 @@
  *   posts under another person's name, on a network they may not even use. So
  *   every entry records what was actually VERIFIED against a live actor
  *   ({@link FederationBridgeEntry.evidence}) separately from what is merely
- *   ASSUMED ({@link FederationBridgeEntry.assumption}), and no entry may be added
- *   without a stored fixture and a test that fails if its rule stops
+ *   ASSUMED ({@link FederationBridgeEntry.assumption}), and every entry an app
+ *   ships should carry a stored fixture and a test that fails if its rule stops
  *   round-tripping. Derivation is per-ACTOR and fails closed: an actor that does
  *   not satisfy its bridge's rule keeps the bridge hostname, because a bridge's
  *   own admin and service accounts are real accounts on that host and relabelling
@@ -330,7 +331,8 @@ function profileUrlHandle(
     return undefined;
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
-  if (!allowedHosts.includes(canonicalFederationHost(url.hostname))) return undefined;
+  const host = canonicalFederationHost(url.hostname);
+  if (!allowedHosts.some((allowed) => canonicalFederationHost(allowed) === host)) return undefined;
 
   const segments = url.pathname.split('/').filter((s) => s.length > 0);
   if (segments.length !== pathPrefix.length + 1) return undefined;

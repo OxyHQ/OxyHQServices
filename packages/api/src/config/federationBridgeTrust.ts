@@ -32,6 +32,11 @@
  * it was reviewed. Matching is exact canonical-host membership — a subdomain is a
  * different server and needs its own reviewed entry.
  *
+ * This list answers ONLY whether a bridge host may vouch for a network domain
+ * at resolve time. Whether an app actually re-labels ingested actors (`relabel:
+ * 'enabled' | 'pending_dedup'`) is a separate decision on the app's bridge
+ * entries — API trust does not gate relabel timing.
+ *
  * FOLLOW-UP: the properly Oxy-shaped version of this is a staff-granted
  * `Application` capability (see `utils/applicationCapabilities.ts`) that lets a
  * registered app assert bridged identities, replacing the host list entirely.

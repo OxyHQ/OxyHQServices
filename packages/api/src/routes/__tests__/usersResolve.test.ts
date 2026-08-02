@@ -325,10 +325,10 @@ describe('PUT /users/resolve — actor-URI host binding', () => {
    * A BRIDGE republishes another network's accounts under its own hostname, so
    * for a bridged actor the host and the identity domain differ by design and
    * WebFinger can never reconcile them (x.com publishes none). The reviewed
-   * bridge policy in `@oxyhq/federation` is what makes that difference
-   * legitimate — and it is a decision this service makes, not one the caller
-   * asserts, which is the whole reason the list is imported rather than trusted
-   * off the request.
+   * trust list in `config/federationBridgeTrust` is what makes that difference
+   * legitimate — a decision THIS service makes, not one the caller asserts. The
+   * calling app's `createBridgeRelabeller([...])` entries are deliberately
+   * separate and fail closed in both directions.
    */
   it('accepts a bridged actor whose identity domain is the network it mirrors', async () => {
     const handle = `wired${token()}`;
