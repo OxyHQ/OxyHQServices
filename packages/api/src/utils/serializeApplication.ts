@@ -1,4 +1,4 @@
-import type { ApplicationType } from '../models/Application';
+import type { ApplicationType } from '../db/schema/applications';
 
 /**
  * The fields this serializer reads off an application row.

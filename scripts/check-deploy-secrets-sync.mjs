@@ -63,6 +63,14 @@ const SUPPLIED_WITHOUT_SECRET_SYNC = new Map([
 ]);
 
 /**
+ * Env vars that are production-mandatory but validated OUTSIDE the `required`
+ * array in `validateRequiredEnvVars()` — still secrets that MUST reach SSM.
+ * DEVICE_ID_SALT lives here: production boot fails without it, but dev installs
+ * a placeholder, so it cannot sit in `required` without breaking local runs.
+ */
+const PRODUCTION_MANDATORY_SYNCED_SECRETS = ['DEVICE_ID_SALT'];
+
+/**
  * Vacuity guards for the boot-contract parse — and ONLY for that parse.
  *
  * The two workflow allowlists check each OTHER, so a regex that degrades on
@@ -78,7 +86,12 @@ const SUPPLIED_WITHOUT_SECRET_SYNC = new Map([
  * covers each with a case that goes green if the guard is deleted.
  */
 const MINIMUM_REQUIRED_ENV_VARS = 5;
-const REQUIRED_ENV_SENTINEL = 'MONGODB_URI';
+// `DATABASE_URL`, not `MONGODB_URI`: the sentinel has to be a name that will
+// still be in the array. MONGODB_URI left it on 2026-08-02 when Mongo left the
+// serving path — it is still SYNCED (the backfill and the admin scripts read
+// it), which is exactly why this gate did not notice, and why the sentinel had
+// to move rather than be dropped.
+const REQUIRED_ENV_SENTINEL = 'DATABASE_URL';
 
 const problems = [];
 
@@ -183,6 +196,14 @@ for (const name of requiredEnvVars) {
   );
 }
 
+for (const name of PRODUCTION_MANDATORY_SYNCED_SECRETS) {
+  if (listed.has(name)) continue;
+  fail(
+    `${name} is production-mandatory (validateRequiredEnvVars) but deploy-aws.yml never syncs it to SSM. ` +
+    `Add \`SYNC_${name}: \${{ secrets.${name} }}\` and put ${name} in SHARED_SECRETS or API_SECRETS.`
+  );
+}
+
 for (const name of SUPPLIED_WITHOUT_SECRET_SYNC.keys()) {
   if (listed.has(name)) {
     fail(`${name} is recorded as supplied without a secret sync, but deploy-aws.yml also syncs it. Remove one of the two.`);
@@ -201,5 +222,6 @@ if (problems.length > 0) {
 
 console.log(
   `Deploy secret sync is consistent: ${syncEntries.size} SYNC_* entries match ${listed.size} listed secrets, ` +
-  `and all ${requiredEnvVars.length} boot-required env vars are accounted for.`
+  `all ${requiredEnvVars.length} boot-required env vars are accounted for, ` +
+  `and all ${PRODUCTION_MANDATORY_SYNCED_SECRETS.length} production-mandatory secrets are synced.`
 );

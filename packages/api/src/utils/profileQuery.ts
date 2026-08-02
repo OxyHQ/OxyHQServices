@@ -24,6 +24,7 @@
  */
 
 import { and, eq, gte, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { federatedUsernameFromUpstreamUrl } from '@oxyhq/federation';
 import { qualified } from '../db/casing';
 import { users } from '../db/schema/users';
 import { userLocations } from '../db/schema/userLocations';
@@ -65,6 +66,33 @@ export function peopleSearchPredicate(): SQL {
   return and(discoverableUserPredicate(), eq(users.privacyIsPrivateAccount, false)) ?? sql`true`;
 }
 
+/** Longest fuzzy/substring people-search term honoured. */
+export const MAX_PEOPLE_SEARCH_TERM_LENGTH = 100;
+
+/**
+ * Pasted profile URLs can carry long tracking query strings. They are parsed
+ * exactly, never substring-scanned, so they need a higher ceiling than fuzzy
+ * terms — truncating a pasted link at {@link MAX_PEOPLE_SEARCH_TERM_LENGTH}
+ * can slice through the handle or drop the path before parsing.
+ */
+const MAX_PASTED_PROFILE_URL_LENGTH = 2048;
+
+/**
+ * Normalise raw people-search input from every surface (`GET /search`,
+ * `GET /profiles/search`, `POST /users/search`).
+ *
+ * Strips one leading `@` (handle-style queries) and applies a length cap.
+ * URL-shaped terms keep a much higher cap so a pasted profile link with
+ * tracking parameters still parses.
+ */
+export function normalizePeopleSearchTerm(raw: string): string {
+  const trimmed = raw.trim().replace(/^@/, '');
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed.slice(0, MAX_PASTED_PROFILE_URL_LENGTH);
+  }
+  return trimmed.slice(0, MAX_PEOPLE_SEARCH_TERM_LENGTH);
+}
+
 export interface PeopleSearchMatchOptions {
   /** Include `description` (default: true). */
   includeDescription?: boolean;
@@ -92,6 +120,32 @@ export function peopleSearchMatch(
   options: PeopleSearchMatchOptions = {}
 ): SQL {
   const { includeDescription = true, includeLocations = false } = options;
+
+  // A pasted upstream profile URL is an EXACT request, not a search phrase.
+  //
+  // `https://x.com/nasa` names one account, and we hold that person under the
+  // federated username a bridge derived for them (`nasa@x.com`). Left to the
+  // substring match below the URL matches nothing at all — no username or name
+  // contains it — so pasting a link a user is looking at reports that we do not
+  // have the account, which is very often false.
+  //
+  // It REPLACES the fuzzy match rather than joining it. Someone whose bio quotes
+  // `x.com/nasa` is not who was asked for, and returning them alongside would
+  // make the precise answer harder to see. When the URL parses and we hold
+  // nobody, no rows is the correct and honest answer.
+  //
+  // The username is resolved through `@oxyhq/federation`, the same declaration
+  // the ingest path reads forwards — not a second parsing rule here, which would
+  // work for X (plain lowercasing) and fail silently for Bluesky (a default
+  // handle drops its `.bsky.social` suffix), returning nothing for accounts we
+  // do hold. The URL is never fetched.
+  const upstreamUsername = federatedUsernameFromUpstreamUrl(term);
+  if (upstreamUsername !== undefined) {
+    // Written against the expression the username unique index is built on
+    // (`lower(btrim(username))`), so this is an index seek rather than a scan.
+    return sql`lower(btrim(${users.username})) = ${upstreamUsername}`;
+  }
+
   const pattern = `%${term.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 
   const clauses: SQL[] = [

@@ -80,6 +80,8 @@ export const FILE_LIVE_STATUSES = ['active', 'trash'] as const;
 /** Who may read the asset. */
 export const FILE_VISIBILITIES = ['private', 'public', 'unlisted'] as const;
 
+export type FileVisibility = (typeof FILE_VISIBILITIES)[number];
+
 /** Classification of what the asset is FOR. */
 export const FILE_PURPOSES = ['user', 'federation-media-cache', 'link-preview'] as const;
 

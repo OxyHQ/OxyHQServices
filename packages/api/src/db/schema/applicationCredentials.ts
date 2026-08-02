@@ -43,6 +43,8 @@ export const APPLICATION_CREDENTIAL_ENVIRONMENTS = [
 /** Lifecycle. `deprecated` is the 7-day rotation grace; `revoked` is immediate. */
 export const APPLICATION_CREDENTIAL_STATUSES = ['active', 'deprecated', 'revoked'] as const;
 
+export type ApplicationCredentialStatus = (typeof APPLICATION_CREDENTIAL_STATUSES)[number];
+
 /** Renders a `const` tuple as a SQL `in (…)` list. */
 function inList(values: readonly string[]): string {
   return values.map((value) => `'${value}'`).join(', ');

@@ -62,6 +62,8 @@ export const APPLICATION_TYPES = [
   'system',
 ] as const;
 
+export type ApplicationType = (typeof APPLICATION_TYPES)[number];
+
 /** Lifecycle. `deleted` is a soft delete — the row and its OAuth history stay. */
 export const APPLICATION_STATUSES = [
   'active',

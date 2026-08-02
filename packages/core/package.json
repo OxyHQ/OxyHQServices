@@ -118,6 +118,7 @@
     "@oxyhq/contracts": "workspace:^",
     "@oxyhq/protocol": "workspace:^",
     "@scure/bip39": "^1.6.0",
+    "@types/elliptic": "catalog:",
     "buffer": "^6.0.3",
     "elliptic": "catalog:",
     "invariant": "^2.2.4",
@@ -154,7 +155,6 @@
   "devDependencies": {
     "@biomejs/biome": "catalog:",
     "@react-native-async-storage/async-storage": "^2.2.0",
-    "@types/elliptic": "catalog:",
     "@types/express": "catalog:",
     "@types/invariant": "^2.2.34",
     "@types/node": "^20.19.43",

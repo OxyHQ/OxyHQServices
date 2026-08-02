@@ -27,7 +27,7 @@
  *   ONLY_APPS='CrowdSource' bun run packages/api/scripts/seed-oxy-applications.ts
  *
  * Env:
- *   MONGODB_URI   required (injected by ECS from SSM)
+ *   DATABASE_URL  required (injected by ECS from SSM)
  *   OXY_USERNAME  owner username to resolve (default 'oxy')
  *   DRY_RUN=1|true  plan only, no writes
  *   ONLY_APPS     comma-separated application names this run may touch. Unset
@@ -37,18 +37,19 @@
  */
 
 import crypto from 'crypto';
-import mongoose from 'mongoose';
-import { Application, type IApplication } from '../src/models/Application';
-import { ApplicationCredential } from '../src/models/ApplicationCredential';
-import AccountMember from '../src/models/AccountMember';
-import { User } from '../src/models/User';
-import { permissionsForAccountRole } from '../src/utils/accountRoles';
-import { logger } from '../src/utils/logger';
+import { and, count, eq, inArray, ne, sql } from 'drizzle-orm';
+import { closePostgres, connectPostgres, getDb } from '../src/config/postgres';
+import { accountMembers } from '../src/db/schema/accountMembers';
+import { applicationCredentials } from '../src/db/schema/applicationCredentials';
+import { applications } from '../src/db/schema/applications';
+import { users } from '../src/db/schema/users';
+import { selectSeedApplications } from '../src/scripts/seedApplicationSelection';
+import { accountService } from '../src/services/account.service';
 import {
   unionValidScopes,
   type ApplicationScope,
 } from '../src/utils/applicationScopes';
-import { selectSeedApplications } from '../src/scripts/seedApplicationSelection';
+import { logger } from '../src/utils/logger';
 import { unionRedirectUris } from '../src/utils/redirectUris';
 
 // ── Mirror routes/applications.ts credential generation EXACTLY ──────────────
@@ -277,6 +278,8 @@ const SEED_APPS: SeedAppSpec[] = [
   },
 ];
 
+type ApplicationRow = typeof applications.$inferSelect;
+
 interface MappingRow {
   app: string;
   type: AppType;
@@ -288,27 +291,104 @@ interface MappingRow {
   createdCredential: boolean;
 }
 
+const DRY_RUN_PLACEHOLDER_ID = '000000000000000000000000';
+
+async function findUserByUsername(username: string): Promise<{ id: string } | null> {
+  const [owner] = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(sql`lower(btrim(${users.username})) = lower(btrim(${username}))`)
+    .limit(1);
+  return owner ?? null;
+}
+
+async function findOxyOrgAccount(
+  oxyId: string,
+  oxyAccountName: string,
+): Promise<{ id: string } | null> {
+  const [oxyOrg] = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(
+        eq(users.parentAccountId, oxyId),
+        eq(users.kind, 'organization'),
+        eq(users.nameFirst, oxyAccountName),
+      ),
+    )
+    .limit(1);
+  return oxyOrg ?? null;
+}
+
+async function resolveUniqueOrgUsername(ownerUsername: string): Promise<string> {
+  const baseUsername = `${ownerUsername}-org`;
+  let username = baseUsername;
+  for (let suffix = 1; suffix <= 1000; suffix += 1) {
+    const [taken] = await getDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(sql`lower(btrim(${users.username})) = lower(btrim(${username}))`)
+      .limit(1);
+    if (!taken) return username;
+    username = `${baseUsername}${suffix}`;
+  }
+  throw new Error(`Could not allocate a unique org username from "${baseUsername}"`);
+}
+
+async function ensureOwnerMembership(accountId: string, oxyId: string): Promise<void> {
+  const [existingOwner] = await getDb()
+    .select({ id: accountMembers.id })
+    .from(accountMembers)
+    .where(
+      and(
+        eq(accountMembers.accountId, accountId),
+        eq(accountMembers.memberUserId, oxyId),
+      ),
+    )
+    .limit(1);
+
+  if (!existingOwner) {
+    await getDb().insert(accountMembers).values({
+      accountId,
+      memberUserId: oxyId,
+      role: 'owner',
+      inherit: true,
+      status: 'active',
+      joinedAt: new Date(),
+    });
+  }
+}
+
 async function retireLegacyApplication(
-  application: mongoose.Document<unknown, object, IApplication> & IApplication,
+  application: ApplicationRow,
   dryRun: boolean,
 ): Promise<number> {
   if (dryRun) {
     return 0;
   }
 
-  application.status = 'suspended';
-  application.redirectUris = [];
-  await application.save();
+  await getDb()
+    .update(applications)
+    .set({ status: 'suspended', redirectUris: [] })
+    .where(eq(applications.id, application.id));
 
-  const result = await ApplicationCredential.updateMany(
-    {
-      applicationId: application._id,
-      status: { $ne: 'revoked' },
-    },
-    { $set: { status: 'revoked' } },
-  );
+  const revoked = await getDb()
+    .update(applicationCredentials)
+    .set({ status: 'revoked' })
+    .where(
+      and(
+        eq(applicationCredentials.applicationId, application.id),
+        ne(applicationCredentials.status, 'revoked'),
+      ),
+    )
+    .returning({ id: applicationCredentials.id });
 
-  return result.modifiedCount ?? 0;
+  return revoked.length;
+}
+
+function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
 }
 
 async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
@@ -325,72 +405,40 @@ async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
     filtered: seedApps.length !== SEED_APPS.length,
   });
 
-  const owner = await User.findOne({ username: ownerUsername }).select('_id username').lean();
-  if (!owner?._id) {
+  const owner = await findUserByUsername(ownerUsername);
+  if (!owner) {
     throw new Error(
       `Owner user "${ownerUsername}" not found — refusing to seed. ` +
         `Set OXY_USERNAME to the correct platform owner username.`,
     );
   }
-  const oxyId = owner._id as mongoose.Types.ObjectId;
-  logger.info('Resolved owner user', { username: ownerUsername, oxyId: oxyId.toString() });
+  const oxyId = owner.id;
+  logger.info('Resolved owner user', { username: ownerUsername, oxyId });
 
-  // ── Oxy organization account: every seeded official app is owned by it ──
-  // The unified Account model owns apps via `Application.ownerAccountId`. We mint
-  // (idempotently) a `kind:'organization'` account named "Oxy" parented under the
-  // `oxy` user, and make `oxy` its owner via a single AccountMember row. App
-  // access then derives from that membership — there is no per-app member row.
   const oxyAccountName = process.env.OXY_ACCOUNT_NAME || 'Oxy';
-  let oxyOrg = await User.findOne({
-    parentAccountId: oxyId,
-    kind: 'organization',
-    'name.first': oxyAccountName,
-  });
+  let oxyOrg = await findOxyOrgAccount(oxyId, oxyAccountName);
+  const createdOxyOrg = !oxyOrg;
+
   if (!oxyOrg && !dryRun) {
-    const baseUsername = `${ownerUsername}-org`;
-    let username = baseUsername;
-    for (let suffix = 1; suffix <= 1000; suffix += 1) {
-      const taken = await User.findOne({ username }).select('_id').lean();
-      if (!taken) break;
-      username = `${baseUsername}${suffix}`;
-    }
-    oxyOrg = await User.create({
+    const username = await resolveUniqueOrgUsername(ownerUsername);
+    const { account } = await accountService.createChildAccount(oxyId, oxyId, {
+      kind: 'organization',
       username,
       name: { first: oxyAccountName },
-      kind: 'organization',
-      type: 'local',
-      verified: true,
-      authMethods: [],
-      parentAccountId: oxyId,
-      ancestors: [oxyId],
-      rootAccountId: oxyId,
-      accountStatus: 'active',
     });
+    oxyOrg = account;
   }
-  const oxyOrgId = oxyOrg?._id ?? new mongoose.Types.ObjectId('000000000000000000000000');
 
-  // Owner AccountMember for oxy on the org (idempotent).
+  const oxyOrgId = oxyOrg?.id ?? DRY_RUN_PLACEHOLDER_ID;
+
   if (oxyOrg && !dryRun) {
-    const existingOwner = await AccountMember.findOne({
-      accountId: oxyOrg._id,
-      memberUserId: oxyId,
-    });
-    if (!existingOwner) {
-      await AccountMember.create({
-        accountId: oxyOrg._id,
-        memberUserId: oxyId,
-        role: 'owner',
-        permissions: permissionsForAccountRole('owner'),
-        inherit: true,
-        status: 'active',
-        joinedAt: new Date(),
-      });
-    }
+    await ensureOwnerMembership(oxyOrg.id, oxyId);
   }
+
   logger.info('Oxy organization account', {
     name: oxyAccountName,
-    ownerAccountId: oxyOrgId.toString(),
-    created: !!oxyOrg && oxyOrg.isNew,
+    ownerAccountId: oxyOrgId,
+    created: createdOxyOrg && !dryRun,
   });
 
   const mapping: MappingRow[] = [];
@@ -406,23 +454,42 @@ async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
     let createdApplication = false;
     let createdCredential = false;
 
-    // ── Application: upsert keyed by (name, createdByUserId) ──
-    // Official app renames include legacyNames so a pre-existing row is
-    // reconciled in-place instead of leaving stale redirect origins trusted.
-    let application = await Application.findOne({ name: spec.name, createdByUserId: oxyId });
+    let application =
+      (
+        await getDb()
+          .select()
+          .from(applications)
+          .where(
+            and(eq(applications.name, spec.name), eq(applications.createdByUserId, oxyId)),
+          )
+          .limit(1)
+      )[0] ?? null;
+
     const legacyApplications =
       spec.legacyNames && spec.legacyNames.length > 0
-        ? await Application.find({
-            name: { $in: spec.legacyNames },
-            createdByUserId: oxyId,
-          })
+        ? await getDb()
+            .select()
+            .from(applications)
+            .where(
+              and(
+                inArray(applications.name, spec.legacyNames),
+                eq(applications.createdByUserId, oxyId),
+              ),
+            )
         : [];
 
     if (!application && legacyApplications.length > 0) {
       application = legacyApplications[0];
-      application.name = spec.name;
+      if (!dryRun) {
+        await getDb()
+          .update(applications)
+          .set({ name: spec.name })
+          .where(eq(applications.id, application.id));
+        application = { ...application, name: spec.name };
+      }
     }
 
+    const desiredScopes = spec.scopes ?? (['user:read'] as ApplicationScope[]);
     const desiredAppFields = {
       description: spec.description,
       websiteUrl: spec.websiteUrl,
@@ -431,60 +498,69 @@ async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
       isOfficial: true,
       isInternal: spec.type === 'internal',
       redirectUris: spec.redirectUris,
-      scopes: spec.scopes ?? (['user:read'] as ApplicationScope[]),
+      scopes: desiredScopes,
       ownerAccountId: oxyOrgId,
     };
 
     if (!application) {
       createdApplication = true;
       if (!dryRun) {
-        application = await Application.create({
-          name: spec.name,
-          createdByUserId: oxyId,
-          // A brand-new official app holds no platform capabilities. Existing
-          // records are never reconciled on this field — see below.
-          capabilities: [],
-          ...desiredAppFields,
-        });
+        const [created] = await getDb()
+          .insert(applications)
+          .values({
+            name: spec.name,
+            createdByUserId: oxyId,
+            capabilities: [],
+            ...desiredAppFields,
+          })
+          .returning();
+        application = created;
       }
       appsCreated += 1;
     } else if (!dryRun) {
-      // Reconcile fields so the canonical record matches the spec without ever
-      // touching unrelated documents. Safe & idempotent (no-op after first sync).
-      application.description = desiredAppFields.description;
-      application.websiteUrl = desiredAppFields.websiteUrl;
-      application.type = desiredAppFields.type;
-      application.status = desiredAppFields.status;
-      application.isOfficial = desiredAppFields.isOfficial;
-      application.isInternal = desiredAppFields.isInternal;
-      // `capabilities` is deliberately NOT reconciled. `SeedAppSpec` has no
-      // capabilities field, so this script declares no intent about them — an
-      // authoritative overwrite here would silently STRIP a staff grant made
-      // elsewhere. Concretely: `scripts/register-commons-clients.ts` unions
-      // `identity:approval` onto "Commons by Oxy", and
-      // `services/authSessionDelivery.service.ts` selects push-delivery targets
-      // by exactly that capability — so a re-run of this seed would leave a
-      // pending sign-in request with zero eligible devices. Removing a
-      // capability is an explicit staff operation, never a side effect of a
-      // rebuild (same reasoning as `unionValidScopes` for scopes).
-      // Additive union: keep any staff-added callback URI (e.g. a staging origin
-      // or a deep link unioned by `register-commons-clients.ts`).
-      application.redirectUris = unionRedirectUris(
+      const reconciledRedirectUris = unionRedirectUris(
         application.redirectUris,
         desiredAppFields.redirectUris,
       );
-      // Additive union: keep any valid already-granted scope so a re-run never
-      // silently revokes an out-of-band grant (e.g. Mention's signals:write).
-      application.scopes = unionValidScopes(desiredAppFields.scopes, application.scopes);
-      application.ownerAccountId = desiredAppFields.ownerAccountId;
-      if (application.isModified()) {
-        await application.save();
+      const reconciledScopes = unionValidScopes(
+        desiredAppFields.scopes,
+        application.scopes,
+      );
+
+      const needsUpdate =
+        application.description !== desiredAppFields.description ||
+        application.websiteUrl !== desiredAppFields.websiteUrl ||
+        application.type !== desiredAppFields.type ||
+        application.status !== desiredAppFields.status ||
+        application.isOfficial !== desiredAppFields.isOfficial ||
+        application.isInternal !== desiredAppFields.isInternal ||
+        application.ownerAccountId !== desiredAppFields.ownerAccountId ||
+        !arraysEqual(application.redirectUris, reconciledRedirectUris) ||
+        !arraysEqual(application.scopes, reconciledScopes);
+
+      if (needsUpdate) {
+        const [updated] = await getDb()
+          .update(applications)
+          .set({
+            description: desiredAppFields.description,
+            websiteUrl: desiredAppFields.websiteUrl,
+            type: desiredAppFields.type,
+            status: desiredAppFields.status,
+            isOfficial: desiredAppFields.isOfficial,
+            isInternal: desiredAppFields.isInternal,
+            redirectUris: reconciledRedirectUris,
+            scopes: reconciledScopes,
+            ownerAccountId: desiredAppFields.ownerAccountId,
+          })
+          .where(eq(applications.id, application.id))
+          .returning();
+        application = updated;
         appsUpdated += 1;
       }
     }
 
     for (const legacyApplication of legacyApplications) {
-      if (application && legacyApplication._id.equals(application._id)) {
+      if (application && legacyApplication.id === application.id) {
         continue;
       }
 
@@ -492,35 +568,45 @@ async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
       legacyAppsRetired += 1;
     }
 
-    // In dry-run with a not-yet-existing app, synthesize a placeholder id.
-    const applicationId =
-      application?._id ?? new mongoose.Types.ObjectId('000000000000000000000000');
+    const applicationId = application?.id ?? DRY_RUN_PLACEHOLDER_ID;
 
-    // Ownership/membership is handled ONCE at the org-account level above — app
-    // access for `oxy` derives from the Oxy org `AccountMember` (no per-app row).
-
-    // ── ApplicationCredential: reuse an existing active public prod cred ──
-    let credential = await ApplicationCredential.findOne({
-      applicationId,
-      type: 'public',
-      environment: 'production',
-      status: 'active',
-    });
+    let credential: typeof applicationCredentials.$inferSelect | null = null;
+    if (application && application.id !== DRY_RUN_PLACEHOLDER_ID) {
+      credential =
+        (
+          await getDb()
+            .select()
+            .from(applicationCredentials)
+            .where(
+              and(
+                eq(applicationCredentials.applicationId, application.id),
+                eq(applicationCredentials.type, 'public'),
+                eq(applicationCredentials.environment, 'production'),
+                eq(applicationCredentials.status, 'active'),
+              ),
+            )
+            .limit(1)
+        )[0] ?? null;
+    }
 
     if (!credential) {
       createdCredential = true;
       if (!dryRun && application) {
-        credential = await ApplicationCredential.create({
-          applicationId,
-          name: 'Production',
-          publicKey: generatePublicKey(),
-          // public client → NO secret / secretHash (mirrors routes/applications.ts)
-          type: 'public',
-          environment: 'production',
-          scopes: ['user:read'],
-          status: 'active',
-          createdByUserId: oxyId,
-        });
+        const [created] = await getDb()
+          .insert(applicationCredentials)
+          .values({
+            applicationId: application.id,
+            name: 'Production',
+            publicKey: generatePublicKey(),
+            secretHash: null,
+            type: 'public',
+            environment: 'production',
+            scopes: ['user:read'],
+            status: 'active',
+            createdByUserId: oxyId,
+          })
+          .returning();
+        credential = created;
         credentialsCreated += 1;
       }
     } else {
@@ -530,7 +616,7 @@ async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
     mapping.push({
       app: spec.name,
       type: spec.type,
-      applicationId: applicationId.toString(),
+      applicationId,
       clientId: credential?.publicKey ?? (dryRun ? '(dry-run-not-minted)' : 'ERROR'),
       redirectUris: spec.redirectUris,
       websiteUrl: spec.websiteUrl,
@@ -541,8 +627,6 @@ async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
 
   logger.info('Seed summary', {
     dryRun,
-    // The apps this run actually touched, not the size of the canonical list —
-    // a bounded run must not report the blast radius it deliberately avoided.
     apps: seedApps.length,
     appsCreated,
     appsUpdated,
@@ -552,35 +636,27 @@ async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
     credentialsReused,
   });
 
-  // Read-back proof: count applications owned by oxy + list cred publicKeys.
-  const ownedAppCount = await Application.countDocuments({ createdByUserId: oxyId });
+  const [{ value: ownedAppCount }] = await getDb()
+    .select({ value: count() })
+    .from(applications)
+    .where(eq(applications.createdByUserId, oxyId));
   logger.info('Read-back: applications owned by oxy', { count: ownedAppCount });
 
-  // Emit the mapping as a single parseable JSON line.
   // eslint-disable-next-line no-console
   console.log('OXY_APP_MAPPING_JSON=' + JSON.stringify(mapping));
 }
 
 async function main(): Promise<void> {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    logger.error('MONGODB_URI is required');
-    process.exit(1);
-  }
-
-  // Resolved BEFORE connecting: a misspelled ONLY_APPS should cost nothing and
-  // must never reach the database — not even to mint the Oxy organization
-  // account as a side effect of a run that was never going to be valid.
   const seedApps = selectSeedApplications(SEED_APPS, process.env.ONLY_APPS);
 
-  await mongoose.connect(uri);
-  logger.info('Connected to MongoDB');
+  await connectPostgres();
+  logger.info('Connected to Postgres');
 
   try {
     await seed(seedApps);
   } finally {
-    await mongoose.connection.close();
-    logger.info('MongoDB connection closed');
+    await closePostgres();
+    logger.info('Postgres connection closed');
   }
 }
 

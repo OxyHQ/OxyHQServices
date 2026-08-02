@@ -2,14 +2,11 @@
  * User Types
  * 
  * Centralized type definitions for user-related operations.
- * Reuses model types to avoid duplication.
+ * The wire-facing shapes come from `@oxyhq/contracts`, so this module states
+ * only what is local to the API's own user endpoints.
  */
 
-import type { IUser } from '../models/User';
 import type { UserProfileUpdate, UserResponse } from '@oxyhq/contracts';
-
-// Reuse name structure from IUser
-export type UserName = IUser['name'];
 
 // The raw user document a public list query reads is `PublicUserDocument` in
 // `utils/publicUserProjection.ts` — it lives next to the projection that

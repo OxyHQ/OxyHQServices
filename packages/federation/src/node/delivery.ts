@@ -212,6 +212,13 @@ export interface DeliveryServiceConfig<TActor extends DeliveryActorFields> {
   buildLocalActorObject: LocalActorBuilder;
   /** Diagnostics sink. */
   logger: DeliveryLogger;
+  /**
+   * The app's per-instance domain policy (`DomainPolicy.isBlockedDomain`) — the
+   * same predicate inbound dispatch and actor resolution use. Outbound delivery
+   * must refuse blocked origins symmetrically: a domain blocked inbound must not
+   * keep receiving Follow/Undo/Accept or follower fan-out via a cached inbox.
+   */
+  isBlockedDomain(host: string): boolean;
 }
 
 /** Read a bounded prefix of a failed-delivery response body for the debug log. */
@@ -288,12 +295,31 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
 ): DeliveryService {
   const { logger, urls } = config;
 
+  /** Lowercased host of an absolute URL, or null when unparseable (fails closed). */
+  function urlHost(url: string): string | null {
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch {
+      return null;
+    }
+  }
+
+  /** True when `url`'s host is missing or on the blocked-domain policy. */
+  function isBlockedUrl(url: string): boolean {
+    const host = urlHost(url);
+    return host === null || config.isBlockedDomain(host);
+  }
+
   async function deliverActivity(
     activity: Record<string, unknown>,
     targetInbox: string,
     senderOxyUserId: string,
     senderUsername: string,
   ): Promise<boolean> {
+    if (isBlockedUrl(targetInbox)) {
+      logger.warn(`[FedDeliver] refusing outbound delivery to blocked inbox ${targetInbox}`);
+      return false;
+    }
     try {
       const { keyId } = await config.keys.getPublicKey(senderUsername);
       const body = JSON.stringify(activity);
@@ -336,6 +362,10 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
     targetInbox: string,
     senderOxyUserId: string,
   ): Promise<void> {
+    if (isBlockedUrl(targetInbox)) {
+      logger.warn(`[FedDeliver] not queueing delivery to blocked inbox ${targetInbox}`);
+      return;
+    }
     // Defense-in-depth: never enqueue a durable delivery to an unsafe inbox URL.
     // The per-send POST is already SSRF-pinned, but a blocked URL would otherwise
     // sit in the queue and be retried forever.
@@ -406,6 +436,10 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
     const mongoFallback: Array<DeliveryQueueJob & { nextAttemptAt: Date }> = [];
 
     for (const inbox of inboxes) {
+      if (isBlockedUrl(inbox)) {
+        logger.warn(`[FedDeliver] not queueing delivery to blocked inbox ${inbox}`);
+        continue;
+      }
       const guard = await config.assertSafeInboxUrl(inbox);
       if (!guard.ok) {
         logger.warn(`[FedDeliver] not queueing unsafe inbox URL ${inbox}: ${guard.reason}`);
@@ -448,7 +482,7 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
           actor = await config.actorRefresh.fetchRemoteActor(remoteActorUri);
         }
         const inbox = actor?.sharedInboxUrl ?? actor?.inboxUrl;
-        if (inbox) {
+        if (inbox && !isBlockedUrl(inbox) && !isBlockedUrl(remoteActorUri)) {
           await queueDelivery(activity, inbox, localOxyUserId);
         } else {
           logger.warn(`[FedSync] could not resolve inbox to deliver Follow to ${remoteActorUri}`);
@@ -466,6 +500,10 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
     remoteActorUri: string,
   ): Promise<{ success: boolean; pending: boolean }> {
     if (!config.federationEnabled) return { success: false, pending: false };
+    if (isBlockedUrl(remoteActorUri)) {
+      logger.warn(`[FedDeliver] refusing outbound Follow to blocked origin ${remoteActorUri}`);
+      return { success: false, pending: false };
+    }
 
     // Never block the follow request on a remote actor fetch. Use whatever is
     // cached; if the actor is unknown locally we still record the follow and
@@ -499,7 +537,7 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
     // If we know the inbox, attempt delivery in the background; otherwise queue
     // for the delivery worker, which resolves the inbox once the actor lands.
     const targetInbox = cached?.sharedInboxUrl ?? cached?.inboxUrl;
-    if (targetInbox) {
+    if (targetInbox && !isBlockedUrl(targetInbox)) {
       void deliverActivity(activity, targetInbox, localOxyUserId, localUsername)
         .then((delivered) => {
           if (!delivered) return queueDelivery(activity, targetInbox, localOxyUserId);
@@ -555,7 +593,7 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
     // are sending Undo(Follow) to always has one. When neither inbox is known the
     // local follow is already removed — just skip the outbound delivery.
     const targetInbox = actor.sharedInboxUrl ?? actor.inboxUrl;
-    if (targetInbox) {
+    if (targetInbox && !isBlockedUrl(targetInbox) && !isBlockedUrl(remoteActorUri)) {
       void deliverActivity(activity, targetInbox, localOxyUserId, localUsername)
         .then((delivered) => {
           if (!delivered) return queueDelivery(activity, targetInbox, localOxyUserId);
@@ -564,6 +602,8 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
           const message = err instanceof Error ? err.message : String(err);
           logger.warn(`[FedSync] background undo-follow delivery failed for ${remoteActorUri}: ${message}`);
         });
+    } else if (targetInbox) {
+      logger.warn(`[FedDeliver] skipping Undo(Follow) delivery to blocked origin ${remoteActorUri}`);
     }
 
     return true;
@@ -583,6 +623,10 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
     const targetInbox = actor.sharedInboxUrl ?? actor.inboxUrl;
     if (!targetInbox) {
       logger.warn(`[FedSync] cannot send Accept(Follow) to ${remoteActorUri}: actor has no inbox`);
+      return;
+    }
+    if (isBlockedUrl(targetInbox) || isBlockedUrl(remoteActorUri)) {
+      logger.warn(`[FedDeliver] refusing Accept(Follow) delivery to blocked origin ${remoteActorUri}`);
       return;
     }
 

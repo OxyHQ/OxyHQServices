@@ -40,7 +40,7 @@ import type {
   UpdatePlatform,
   UpdateStatus,
 } from '@oxyhq/contracts';
-import { s3Service } from '../assetServiceSingleton';
+import { s3Service } from '../s3ServiceSingleton';
 import { getDb, type Database } from '../../config/postgres';
 import {
   appUpdateAssets,

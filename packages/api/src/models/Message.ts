@@ -1,24 +1,14 @@
 import mongoose, { type Document, Schema } from 'mongoose';
+import type { MessageAttachment } from '../db/schema/messageAttachments';
+import type { EmailAddress } from '../db/schema/messages';
 
-export interface IEmailAddress {
-  name?: string;
-  address: string;
-}
-
-export interface IAttachment {
-  /** Canonical File _id in the Oxy file manager (AssetService / File model) */
-  fileId: string;
-  /** User-facing filename, mirrored from File.originalName at link time */
-  name: string;
-  /** Mirrored from File.mime */
-  contentType: string;
-  /** Mirrored from File.size */
-  size: number;
-  /** MIME Content-ID for inline `cid:` references in HTML bodies */
-  contentId?: string;
-  /** True if rendered inline in the HTML body, false if a standalone attachment */
-  isInline: boolean;
-}
+/**
+ * The address and attachment shapes are owned by `db/schema/messages.ts` and
+ * `db/schema/messageAttachments.ts`, beside the columns that store them.
+ * Re-imported here so this legacy model still describes the same shapes without
+ * being the source of them.
+ */
+export type { EmailAddress, MessageAttachment };
 
 export interface IMessageFlags {
   seen: boolean;
@@ -48,16 +38,16 @@ export interface IMessage extends Document {
   userId: mongoose.Types.ObjectId;
   mailboxId: mongoose.Types.ObjectId;
   messageId: string;
-  from: IEmailAddress;
-  to: IEmailAddress[];
-  cc: IEmailAddress[];
-  bcc: IEmailAddress[];
-  replyTo?: IEmailAddress;
+  from: EmailAddress;
+  to: EmailAddress[];
+  cc: EmailAddress[];
+  bcc: EmailAddress[];
+  replyTo?: EmailAddress;
   subject: string;
   text?: string;
   html?: string;
   headers: Record<string, string>;
-  attachments: IAttachment[];
+  attachments: MessageAttachment[];
   flags: IMessageFlags;
   labels: string[];
   /** Structured data card extracted by AI */

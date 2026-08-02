@@ -5,11 +5,11 @@
  * contract introduced by the Oxy File Manager migration. The route handler
  * resolves each fileId via assetService, enforces ownerUserId ownership,
  * snapshots `{name, contentType, size}` from the File
- * record into the IAttachment subdocument, and links each file to the
- * stored Message under `app: 'oxy-mail'`.
+ * record into a `MessageAttachment` (`db/schema/messageAttachments.ts`), and
+ * links each file to the stored Message under `app: 'oxy-mail'`.
  *
  * Failure modes covered:
- *   1. Happy path — valid {fileId} array sends; resolved IAttachment[]
+ *   1. Happy path — valid {fileId} array sends; resolved MessageAttachment[]
  *      reaches smtpOutbound.send AND linkFile is called for each file.
  *   2. Foreign file (ownerUserId !== sender) → 403 ForbiddenError.
  *   3. Missing file (assetService returns no record) → 400 BadRequestError.

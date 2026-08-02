@@ -57,13 +57,13 @@ import {
   STANDING_WEIGHT_FACTOR,
 } from './moderation.constants';
 import type { ConductStanding, ContributionTier, TrustTier } from '@oxyhq/contracts';
-import type { IConductStandingThreshold } from '../models/ModerationPolicy';
+import type { ConductStandingThreshold } from '../db/schema/moderationPolicyStandingThresholds';
 import type {
   ReputationContextualInfluenceSnapshot,
   ReputationInfluence,
   ReputationReliability,
   ReputationReportingSnapshot,
-} from '../models/ReputationBalance';
+} from '../db/schema/reputationBalances';
 
 /** Raw moderation counts pulled from the active ledger for one user. */
 export interface ReliabilityCounts {
@@ -177,7 +177,7 @@ export function deriveTrustTier(input: TrustTierInput): TrustTier {
  */
 export function deriveConductStanding(
   activeRisk: number,
-  thresholds: readonly IConductStandingThreshold[] = BASELINE_STANDING_THRESHOLDS
+  thresholds: readonly ConductStandingThreshold[] = BASELINE_STANDING_THRESHOLDS
 ): ConductStanding {
   const ordered = [...thresholds].sort((a, b) => b.minRisk - a.minRisk);
   for (const threshold of ordered) {

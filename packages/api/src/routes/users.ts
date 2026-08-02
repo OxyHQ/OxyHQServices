@@ -94,6 +94,7 @@ const getUserIdsFromRequestBody = (body: unknown): unknown => {
 
 import { PAGINATION } from '../utils/constants';
 import { MAX_MUTUAL_IDS, MAX_FOLLOWS_OF_FOLLOWS_IDS } from '../utils/recommendationWeights';
+import { bridgeVouchesForNetwork } from '../config/federationBridgeTrust';
 import { federationService, isOwnFederationDomain } from '../services/federation.service';
 import { isPublicGraphTarget } from '../utils/profileQuery';
 
@@ -1780,9 +1781,29 @@ router.put(
       // actors carry no host and are not WebFinger-resolvable, so this AP-only
       // check is skipped for them — the `federation:write` scope plus the
       // username↔domain binding above are the trust anchor for atproto actors.
+      //
+      // A BRIDGED identity is the one case where the two legitimately differ.
+      // `@wired@bird.makeup` is not a person on bird.makeup; it is WIRED on X,
+      // republished — so the actor URI's host is the bridge while the identity
+      // belongs to `x.com`. WebFinger cannot settle that: X publishes none, and
+      // no amount of asking bird.makeup would make it authoritative for x.com.
+      //
+      // So the question is answered from THIS service's own reviewed trust list
+      // (`config/federationBridgeTrust`) — a decision the API makes, never one the
+      // caller asserts, which is the entire point of the binding. The calling
+      // connector keeps its own list; the two are deliberately separate and NOT
+      // duplication — drift between them fails CLOSED in both directions, and
+      // consolidating them would delete that. See the note in
+      // `config/federationBridgeTrust` before "tidying" it.
+      // `bridgeVouchesForNetwork` requires BOTH
+      // halves to match, so a listed bridge can only ever claim the single
+      // network it mirrors, and an unlisted host still cannot claim anything.
+      // It is checked before the WebFinger probe purely because it is a local
+      // lookup and that is a network round trip.
       if (
         actorHostname !== null
         && !isSameFederationHost(actorHostname, normalisedDomain)
+        && !bridgeVouchesForNetwork(actorHostname, normalisedDomain)
         && !(await verifyFederatedWebFingerBinding(normalisedUsername, actorUri))
       ) {
         throw new BadRequestError('actorUri hostname does not match domain');

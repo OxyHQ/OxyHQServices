@@ -2,9 +2,9 @@ import mongoose, { type Document, Schema } from 'mongoose';
 import {
     CONDUCT_STANDINGS,
     MODERATION_SEVERITIES,
-    type ConductStanding,
     type ModerationSeverity,
 } from '@oxyhq/contracts';
+import type { ConductStandingThreshold } from '../db/schema/moderationPolicyStandingThresholds';
 
 /**
  * One IMMUTABLE version of the Oxy Conduct Policy.
@@ -38,11 +38,14 @@ export interface IModerationSeverityRule {
     riskExpiryDays: number | null;
 }
 
-/** An active-risk threshold and the standing it produces at or above it. */
-export interface IConductStandingThreshold {
-    standing: ConductStanding;
-    minRisk: number;
-}
+/**
+ * An active-risk threshold and the standing it produces at or above it.
+ *
+ * Owned by `db/schema/moderationPolicyStandingThresholds.ts`, beside the table
+ * that stores it. Re-imported here so this legacy model still describes the
+ * same shape without being the source of it.
+ */
+export type { ConductStandingThreshold };
 
 export interface IModerationPolicy extends Omit<Document, '_id'> {
     _id: mongoose.Types.ObjectId;
@@ -69,7 +72,7 @@ export interface IModerationPolicy extends Omit<Document, '_id'> {
     /** Ceiling on the multi-finding multiplier, relative to the primary effect. */
     multiFindingCap: number;
     /** Active-risk thresholds for conduct standing, highest first. */
-    standingThresholds: IConductStandingThreshold[];
+    standingThresholds: ConductStandingThreshold[];
     /**
      * Whether a decision still marked `provisional` may already move reputation.
      *
@@ -97,7 +100,7 @@ const SeverityRuleSchema = new Schema<IModerationSeverityRule>(
     { _id: false }
 );
 
-const StandingThresholdSchema = new Schema<IConductStandingThreshold>(
+const StandingThresholdSchema = new Schema<ConductStandingThreshold>(
     {
         standing: { type: String, enum: CONDUCT_STANDINGS, required: true },
         minRisk: { type: Number, required: true },

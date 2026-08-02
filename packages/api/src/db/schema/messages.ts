@@ -62,6 +62,21 @@ import { users } from './users';
 export const MESSAGE_CARD_TYPES = ['trip', 'purchase', 'event', 'bill', 'package'] as const;
 
 /**
+ * One RFC 5322 address as the mail subsystem passes it around: the optional
+ * display name and the address itself.
+ *
+ * Declared here rather than on `message_recipients` because it is not one
+ * table's shape — it is what `from_name`/`from_address` and
+ * `reply_to_name`/`reply_to_address` hold on THIS row, what each
+ * `message_recipients` row holds, and what the SMTP transport takes. `name` is
+ * optional-undefined while the columns are nullable; the read path coalesces.
+ */
+export interface EmailAddress {
+  name?: string;
+  address: string;
+}
+
+/**
  * One extracted key/value the client renders as a chip.
  *
  * Display-only: nothing filters, sorts or joins on it, which is what makes

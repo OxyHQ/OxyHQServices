@@ -95,6 +95,154 @@ export type ConductStandingGap = Exclude<ConductStanding, (typeof CONDUCT_STANDI
 /** Which open key space a reviewing-reliability row is measured over. */
 export const REVIEWING_RELIABILITY_SCOPES = ['category', 'language'] as const;
 
+/**
+ * The nine snapshot blocks, as TypeScript shapes.
+ *
+ * Declared here beside the columns that store them — each block's fields map
+ * 1:1 onto the correspondingly-prefixed columns below — so the shape
+ * `reputationService.recalculateBalance` computes and the columns it lands in
+ * cannot drift. `ReputationReviewingSnapshot` is the one that does NOT flatten
+ * into this table: its two maps are rows in `reputation_reviewing_reliability`,
+ * because their key spaces (category, language) are open.
+ */
+/**
+ * Per-category sums of ACTIVE transactions for a user. `penalties` is the
+ * absolute sum of all negative-point active transactions (across every
+ * category), surfaced as a single "how much has been deducted" figure; the
+ * named category buckets carry the signed sum of transactions in that category.
+ */
+export interface ReputationBreakdown {
+  content: number;
+  social: number;
+  trust: number;
+  moderation: number;
+  physical: number;
+  penalties: number;
+}
+
+/**
+ * Capped influence weights (#219). Every weight is clamped to
+ * [INFLUENCE_MIN, INFLUENCE_MAX]; restricted users are floored to INFLUENCE_MIN
+ * on every axis. These are consumed by downstream systems (ranking, moderation,
+ * reporting) to weight a user's contributions without letting any single user
+ * dominate.
+ */
+export interface ReputationInfluence {
+  /** General-purpose trust weight derived from the lifetime total. */
+  defaultWeight: number;
+  /** Weight applied to this user's reports (scales with report accuracy). */
+  reportWeight: number;
+  /** Weight applied to this user's moderation actions (scales with tier). */
+  moderationWeight: number;
+  /** Damped weight applied to this user's ranking feedback. */
+  rankingFeedbackWeight: number;
+}
+
+/**
+ * Reliability signals (#219) derived from the user's moderation track record in
+ * the ledger.
+ */
+export interface ReputationReliability {
+  /** Count of active transactions stamped `report_confirmed`. */
+  accurateReports: number;
+  /** Count of active transactions stamped `report_rejected`. */
+  rejectedReports: number;
+  /** accurate / (accurate + rejected), or the neutral 0.5 when no history. */
+  reportAccuracyScore: number;
+  /** Smoothed 0..1 abuse signal; high values force the `restricted` tier. */
+  abuseScore: number;
+}
+
+/**
+ * Personhood axis: whether Oxy believes this is a real, distinct person.
+ *
+ * Deliberately NOT a trust tier. Being a real person proves neither good conduct
+ * nor competence at moderating, so personhood confers nothing on the other axes
+ * — it only says the account is not a fabrication.
+ */
+export interface ReputationPersonhoodSnapshot {
+  status: PersonhoodStatusValue;
+  /** 0..1 confidence in that status. */
+  score: number;
+}
+
+/**
+ * Contribution axis: what the person built.
+ *
+ * `points` EXCLUDES conduct penalties. The penalties still count toward the
+ * legacy `total` — the ledger stays honest — but they neither lower the
+ * contribution tier nor can be bought off by it. This is one half of the
+ * separation; {@link ReputationConductSnapshot} is the other.
+ */
+export interface ReputationContributionSnapshot {
+  points: number;
+  tier: ContributionTier;
+}
+
+/**
+ * Conduct axis: the standing moderation outcomes move.
+ *
+ * `activeRisk` is the sum of risk carried by ACTIVE `ConductStrike` documents,
+ * and `standing` derives from `activeRisk` alone. That is the whole point:
+ * because standing never reads the point total, earning contribution points
+ * cannot cancel an active strike, and a single small penalty cannot restrict an
+ * account outright. Risk leaves only by expiry or by reversal.
+ */
+export interface ReputationConductSnapshot {
+  standing: ConductStanding;
+  activeRisk: number;
+  activeStrikes: number;
+  /**
+   * When the earliest-expiring active strike lapses. Absent when there is no
+   * active strike, or when every active strike requires manual recovery review
+   * (critical severity never expires on a timer).
+   */
+  nextExpiryAt?: Date;
+}
+
+/**
+ * Reporting axis: how reliable this person's reports are — and NOTHING else.
+ *
+ * The legacy `reliability.abuseScore` counted every negative transaction, so a
+ * penalty for unrelated conduct inflated a report-abuse figure that can force a
+ * restriction. This block reads only reporting outcomes, which makes that
+ * conflation impossible rather than merely discouraged. `malicious` counts
+ * CONFIRMED report abuse; a rejected report is not bad faith.
+ */
+export interface ReputationReportingSnapshot {
+  /** Smoothed 0..1 accuracy estimate (Beta posterior mean, neutral prior). */
+  reliability: number;
+  /** 0..1 confidence in that estimate, from effective sample size. */
+  confidence: number;
+  confirmed: number;
+  rejected: number;
+  malicious: number;
+}
+
+/**
+ * Reviewing axis: reliability as a REVIEWER, per category and language rather
+ * than as one global number — competence in one category says little about
+ * another.
+ */
+export interface ReputationReviewingSnapshot {
+  globalReliability: number;
+  categoryReliability: Map<string, number>;
+  languageReliability: Map<string, number>;
+}
+
+/**
+ * Contextual weights the V2 model publishes.
+ *
+ * Report priority, jury-selection probability and ranking are different
+ * questions, and none of them is the weight of a vote — a vote inside a jury is
+ * never weighted. One qualified person, one vote.
+ */
+export interface ReputationContextualInfluenceSnapshot {
+  reportPriorityWeight: number;
+  reviewSelectionWeight: number;
+  rankingWeight: number;
+}
+
 /** The neutral prior for a reliability estimate with no history behind it. */
 const NEUTRAL_RELIABILITY = 0.5;
 
