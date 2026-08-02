@@ -1609,7 +1609,21 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
       const ensured = await assetService.ensureVariant(fileId, variantType, file);
       storageKey = ensured.key;
     } catch (e: any) {
-      logger.warn('Variant ensure failed, falling back to original', { fileId, variantType, error: e?.message });
+      logger.warn('Variant ensure failed', { fileId, variantType, error: e?.message });
+      if (fallback === 'placeholder') {
+        const buf = Buffer.from(TRANSPARENT_PNG_PLACEHOLDER, 'base64');
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Length', String(buf.length));
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).end(buf);
+      }
+      if (fallback === 'icon' || fallback === 'placeholderVisible') {
+        const svg = generateMissingFilePlaceholder(fileId);
+        res.setHeader('Content-Type', 'image/svg+xml');
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).end(svg);
+      }
+      throw new NotFoundError('File not found');
     }
   }
 
@@ -1624,13 +1638,12 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
           storageKey = ensured.key;
           storageExists = await s3Service.fileExists(storageKey);
         } catch (e: any) {
-          logger.warn('Variant ensure failed after repairing original, falling back to original', {
+          logger.warn('Variant ensure failed after repairing original', {
             fileId,
             variantType,
             error: e?.message,
           });
-          storageKey = file.storageKey;
-          storageExists = await s3Service.fileExists(storageKey);
+          storageExists = false;
         }
       }
     }

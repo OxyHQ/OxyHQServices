@@ -92,6 +92,21 @@ const accountIdSchema = z
   .refine(isAccountIdFormat, 'must be an Oxy account id');
 
 /**
+ * A ROW id used as a pagination cursor — not an account id, though it validates
+ * the same way.
+ *
+ * `main` wrote this as `objectIdSchema`, which the port retired: after the
+ * cutover a row's id is a uuid v7, so a 24-hex refinement would reject every
+ * cursor the endpoint itself had just issued. `isAccountIdFormat` is the single
+ * place that knows both live shapes; the separate name is so a reader does not
+ * conclude this field carries an account.
+ */
+const entityIdSchema = z
+  .string()
+  .trim()
+  .refine(isAccountIdFormat, 'must be a live entity id');
+
+/**
  * POST /federation/follow
  *
  * Moves a single Oxy follow-graph edge on behalf of a FEDERATED actor: a remote
@@ -135,9 +150,46 @@ export const federationActorDeleteSchema = z.object({
   oxyUserId: accountIdSchema,
 });
 
+/**
+ * POST /federation/domain-purge
+ *
+ * Removes what Oxy holds for a fediverse instance an app has blocked. The app
+ * owns the blocklist; Oxy is handed ONE domain at a time and never stores which
+ * domains are blocked (see `services/federation/blockedDomainPurge.service.ts`).
+ *
+ * `dryRun` DEFAULTS TO TRUE: the safe value is the one you get by omission, so
+ * a caller that forgets the field plans instead of deleting. Deleting requires
+ * sending `dryRun: false` explicitly AND an armed deployment.
+ *
+ * `domain` is a bare host — no scheme, no port, no path — because that is what
+ * the federation engine's canonicaliser consumes. A value containing any of
+ * those is rejected here rather than being silently canonicalised into
+ * something that matches the wrong rows.
+ */
+export const federationDomainPurgeSchema = z.object({
+  domain: z
+    .string()
+    .trim()
+    .min(1, 'domain is required')
+    .max(253, 'domain exceeds the maximum DNS name length')
+    .refine((value) => !/[/:@\s]/.test(value), {
+      message: 'domain must be a bare host (no scheme, port, path or whitespace)',
+    }),
+  dryRun: z.boolean().default(true),
+  limit: z.number().int().min(1).max(1000).optional(),
+  /**
+   * Continuation cursor from the previous response's `nextCursor`. Progress is
+   * driven by this rather than by rows disappearing, because a dry run and a
+   * retained row both leave every row in place — a caller looping on "anything
+   * left?" would never terminate.
+   */
+  afterId: entityIdSchema.optional(),
+});
+
 export type PublicKeyParams = z.infer<typeof publicKeyParamsSchema>;
 export type PublicKeyQuery = z.infer<typeof publicKeyQuerySchema>;
 export type SignRequestBody = z.infer<typeof signRequestSchema>;
 export type FederationFollowBody = z.infer<typeof federationFollowSchema>;
 export type FederationActorGoneBody = z.infer<typeof federationActorGoneSchema>;
 export type FederationActorDeleteBody = z.infer<typeof federationActorDeleteSchema>;
+export type FederationDomainPurgeBody = z.infer<typeof federationDomainPurgeSchema>;

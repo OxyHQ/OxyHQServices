@@ -42,7 +42,12 @@ const fakeClient = {
   },
   createUpdate: async (body: Record<string, unknown>) => {
     createCalls.push(body);
-    return { id: `uuid-${body.platform}`, rolloutPercent: (body.rolloutPercent as number) ?? 100 };
+    const platform = body.platform as string;
+    return {
+      id: `uuid-${platform}`,
+      platform,
+      rolloutPercent: (body.rolloutPercent as number) ?? 100,
+    };
   },
 };
 
