@@ -44,11 +44,16 @@ import { applications } from '../src/db/schema/applications';
 import { users } from '../src/db/schema/users';
 import { selectSeedApplications } from '../src/scripts/seedApplicationSelection';
 import {
-  unionValidScopes,
+  applySeedApplicationPlan,
+  computeSeedApplicationPlan,
+  readSeedApplicationState,
+} from '../src/scripts/seedOxyApplicationsPlan';
+import type { ApplicationCapability } from '../src/utils/applicationCapabilities';
+import { IDENTITY_APPROVAL_CAPABILITY } from '../src/utils/applicationCapabilities';
+import {
   type ApplicationScope,
 } from '../src/utils/applicationScopes';
 import { logger } from '../src/utils/logger';
-import { unionRedirectUris } from '../src/utils/redirectUris';
 
 // ── Mirror routes/applications.ts credential generation EXACTLY ──────────────
 const CREDENTIAL_PUBLIC_KEY_PREFIX = 'oxy_dk_';
@@ -86,6 +91,12 @@ interface SeedAppSpec {
    * requires `federation:write` here.
    */
   scopes?: ApplicationScope[];
+  /**
+   * Staff-only platform capabilities. UNIONed into an existing record, never
+   * stripped. Commons carries `identity:approval` so push delivery of sign-in
+   * requests can target its installs without a separate register-commons run.
+   */
+  capabilities?: ApplicationCapability[];
 }
 
 /**
@@ -218,6 +229,7 @@ const SEED_APPS: SeedAppSpec[] = [
     // publicKey) wires into OxyProvider; the redirect surface is the app's two
     // deep-link schemes from packages/commons/app.json, so both are listed.
     redirectUris: ['commons://', 'oxycommons://'],
+    capabilities: [IDENTITY_APPROVAL_CAPABILITY],
   },
   {
     name: 'Mercaria',
@@ -328,11 +340,6 @@ async function retireLegacyApplication(
   return revoked.length;
 }
 
-function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((value, index) => value === right[index]);
-}
-
 async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
   const dryRun = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
   const ownerUsername = process.env.OXY_USERNAME || 'oxy';
@@ -414,72 +421,45 @@ async function seed(seedApps: readonly SeedAppSpec[]): Promise<void> {
     }
 
     const desiredScopes = spec.scopes ?? (['user:read'] as ApplicationScope[]);
-    const desiredAppFields = {
-      description: spec.description,
-      websiteUrl: spec.websiteUrl,
-      type: spec.type,
-      status: 'active' as const,
-      isOfficial: true,
-      isInternal: spec.type === 'internal',
-      redirectUris: spec.redirectUris,
-      scopes: desiredScopes,
-      ownerAccountId: oxyOrgId,
-    };
+    const desiredCapabilities = spec.capabilities ?? [];
+    const plan = computeSeedApplicationPlan(
+      application ? readSeedApplicationState(application) : null,
+      {
+        description: spec.description,
+        websiteUrl: spec.websiteUrl,
+        type: spec.type,
+        ownerAccountId: oxyOrgId,
+        redirectUris: spec.redirectUris,
+        scopes: desiredScopes,
+        capabilities: desiredCapabilities,
+      },
+    );
 
-    if (!application) {
+    if (plan.creates) {
       createdApplication = true;
+      appsCreated += 1;
       if (!dryRun) {
         const [created] = await getDb()
           .insert(applications)
           .values({
             name: spec.name,
             createdByUserId: oxyId,
-            capabilities: [],
-            ...desiredAppFields,
+            ...plan.desired,
           })
           .returning();
         application = created;
       }
-      appsCreated += 1;
-    } else if (!dryRun) {
-      const reconciledRedirectUris = unionRedirectUris(
-        application.redirectUris,
-        desiredAppFields.redirectUris,
-      );
-      const reconciledScopes = unionValidScopes(
-        desiredAppFields.scopes,
-        application.scopes,
-      );
-
-      const needsUpdate =
-        application.description !== desiredAppFields.description ||
-        application.websiteUrl !== desiredAppFields.websiteUrl ||
-        application.type !== desiredAppFields.type ||
-        application.status !== desiredAppFields.status ||
-        application.isOfficial !== desiredAppFields.isOfficial ||
-        application.isInternal !== desiredAppFields.isInternal ||
-        application.ownerAccountId !== desiredAppFields.ownerAccountId ||
-        !arraysEqual(application.redirectUris, reconciledRedirectUris) ||
-        !arraysEqual(application.scopes, reconciledScopes);
-
-      if (needsUpdate) {
+    } else if (plan.changes.length > 0) {
+      appsUpdated += 1;
+      if (!dryRun && application) {
+        const mutable = { ...readSeedApplicationState(application) };
+        applySeedApplicationPlan(mutable, plan);
         const [updated] = await getDb()
           .update(applications)
-          .set({
-            description: desiredAppFields.description,
-            websiteUrl: desiredAppFields.websiteUrl,
-            type: desiredAppFields.type,
-            status: desiredAppFields.status,
-            isOfficial: desiredAppFields.isOfficial,
-            isInternal: desiredAppFields.isInternal,
-            redirectUris: reconciledRedirectUris,
-            scopes: reconciledScopes,
-            ownerAccountId: desiredAppFields.ownerAccountId,
-          })
+          .set(mutable)
           .where(eq(applications.id, application.id))
           .returning();
         application = updated;
-        appsUpdated += 1;
       }
     }
 
