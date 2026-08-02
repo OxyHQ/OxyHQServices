@@ -94,6 +94,12 @@ describe('userCache.invalidate — cross-service broadcast', () => {
     expect(redis.publish).toHaveBeenCalledTimes(1);
   });
 
+  it('evicts locally without broadcasting via invalidateLocal', () => {
+    userCache.invalidateLocal('user-1');
+    expect(redis.del).toHaveBeenCalledWith('user:user-1');
+    expect(redis.publish).not.toHaveBeenCalled();
+  });
+
   it('does nothing at all for an empty user id', () => {
     userCache.invalidate('');
     expect(redis.del).not.toHaveBeenCalled();

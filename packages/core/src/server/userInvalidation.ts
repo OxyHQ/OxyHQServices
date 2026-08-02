@@ -215,6 +215,12 @@ export function createOxyUserInvalidationHandler(
  * wrong data.
  */
 export function evictOxyIdentityCache(oxy: OxyIdentityCacheEvictor, userId: string): void {
+  // Match the sweep the user mixin runs after a local profile write — session-
+  // bound and /users/me entries are keyed without the user id, so they must be
+  // prefix-swept on cross-service invalidation too.
+  oxy.clearCacheByPrefix('GET:/session/user/');
+  oxy.clearCacheByPrefix('GET:/users/me');
+  oxy.clearCacheByPrefix('GET:/auth/lookup/');
   oxy.clearCacheEntry(`GET:/users/${userId}`);
   oxy.clearCacheByPrefix('GET:/profiles/username/');
   oxy.clearCacheByPrefix('GET:/profiles/resolve');

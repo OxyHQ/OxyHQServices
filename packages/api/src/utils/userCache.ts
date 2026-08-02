@@ -77,6 +77,16 @@ class UserCache {
   }
 
   /**
+   * Drop this user from the local map and from Redis without fan-out.
+   *
+   * Used when this process received an invalidation event from a peer — the
+   * publisher already broadcast, so re-publishing would loop.
+   */
+  invalidateLocal(userId: string): void {
+    this.evict(userId);
+  }
+
+  /**
    * Drop this user from the local map and from Redis, and — when the change is
    * one consumers care about — broadcast it so every other Oxy backend can drop
    * its own copy instead of waiting out a TTL.
@@ -96,18 +106,10 @@ class UserCache {
    */
   invalidate(userId: string, reason: OxyUserChangeReason = 'profile'): void {
     if (!userId) return;
-    this.local.delete(userId);
+    this.evict(userId);
 
     const redis = getRedisClient();
     if (redis && redis.status === 'ready') {
-      redis.del(`user:${userId}`).catch((err) => {
-        logger.warn('userCache: Redis del failed', {
-          component: LOG_COMPONENT,
-          userId,
-          err: err instanceof Error ? err.message : String(err),
-        });
-      });
-
       // Fire-and-forget: this runs after a committed write, on the request path.
       // The helper swallows its own failures, and a lost message costs a consumer
       // its TTL — never correctness — so nothing here may surface as an error.
@@ -118,6 +120,22 @@ class UserCache {
           component: LOG_COMPONENT,
           userId,
           reason,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
+  }
+
+  /** Local map + Redis key eviction shared by {@link invalidate} and {@link invalidateLocal}. */
+  private evict(userId: string): void {
+    this.local.delete(userId);
+
+    const redis = getRedisClient();
+    if (redis && redis.status === 'ready') {
+      redis.del(`user:${userId}`).catch((err) => {
+        logger.warn('userCache: Redis del failed', {
+          component: LOG_COMPONENT,
+          userId,
           err: err instanceof Error ? err.message : String(err),
         });
       });

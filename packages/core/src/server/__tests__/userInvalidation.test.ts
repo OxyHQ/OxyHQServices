@@ -112,7 +112,13 @@ describe('@oxyhq/core/server createOxyUserInvalidationHandler', () => {
     createOxyUserInvalidationHandler({ oxy: evictor })(validMessage);
 
     expect(entries).toEqual(['GET:/users/user-1']);
-    expect(prefixes).toEqual(['GET:/profiles/username/', 'GET:/profiles/resolve']);
+    expect(prefixes).toEqual([
+      'GET:/session/user/',
+      'GET:/users/me',
+      'GET:/auth/lookup/',
+      'GET:/profiles/username/',
+      'GET:/profiles/resolve',
+    ]);
   });
 
   it('hands the parsed event to app-specific eviction', () => {
@@ -203,6 +209,12 @@ describe('@oxyhq/core/server evictOxyIdentityCache', () => {
     evictOxyIdentityCache(evictor, 'abc123');
 
     expect(entries).toEqual(['GET:/users/abc123']);
-    expect(prefixes).toEqual(['GET:/profiles/username/', 'GET:/profiles/resolve']);
+    expect(prefixes).toEqual([
+      'GET:/session/user/',
+      'GET:/users/me',
+      'GET:/auth/lookup/',
+      'GET:/profiles/username/',
+      'GET:/profiles/resolve',
+    ]);
   });
 });
