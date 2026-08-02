@@ -82,7 +82,7 @@ async function account(over: Partial<typeof users.$inferInsert> = {}): Promise<s
   return row.id;
 }
 
-/** An organization account — the only kind that may be a delegated subject. */
+/** An organization account — one of the kinds that may be a delegated subject. */
 async function organization(): Promise<string> {
   return account({ kind: 'organization' });
 }
@@ -446,6 +446,21 @@ describe('verifyDelegatedSubject', () => {
     const outcome = await verifyDelegatedSubject(await account(), subject);
 
     expect(outcome).toEqual({ ok: false, reason: 'personal_account' });
+    // Refused before the membership lookup is even attempted.
+    expect(mockVerifyActingAs).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The second act-as door. Blocking `POST /accounts/:id/switch` alone would
+   * leave this one open: an OAuth delegated subject is the other way an
+   * application comes to act as an account, and it is gated by its own copy of
+   * the predicate. Both now read `isActAsEligibleKind`.
+   */
+  it('refuses a CHANNEL account as a subject — nobody acts as a channel', async () => {
+    const subject = await account({ kind: 'channel' });
+    const outcome = await verifyDelegatedSubject(await account(), subject);
+
+    expect(outcome).toEqual({ ok: false, reason: 'channel_account' });
     // Refused before the membership lookup is even attempted.
     expect(mockVerifyActingAs).not.toHaveBeenCalled();
   });

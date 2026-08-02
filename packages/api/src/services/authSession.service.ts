@@ -35,6 +35,7 @@
 
 import type { Request } from 'express';
 import { and, eq, gt, sql } from 'drizzle-orm';
+import { isActAsEligibleKind } from '@oxyhq/contracts';
 import { v7 as uuidv7 } from 'uuid';
 import { getDb } from '../config/postgres';
 import { appGrants } from '../db/schema/appGrants';
@@ -145,7 +146,11 @@ export function resolveOAuthContext(
 }
 
 /** Why a delegated subject was refused. Logged; never surfaced to the client. */
-export type DelegatedSubjectRejection = 'not_found' | 'personal_account' | 'forbidden';
+export type DelegatedSubjectRejection =
+  | 'not_found'
+  | 'personal_account'
+  | 'channel_account'
+  | 'forbidden';
 
 export type DelegatedSubjectOutcome =
   | { ok: true; role: AccountRole }
@@ -161,8 +166,12 @@ export type DelegatedSubjectOutcome =
  * the same predicate `POST /accounts/:id/switch` and the managed-session
  * re-check use. No parallel permission system.
  *
- * Personal accounts are refused as subjects: assuming a human login would be
- * impersonation, exactly as on the account-switch path.
+ * Personal and channel accounts are refused as subjects, via the shared
+ * `isActAsEligibleKind` predicate — assuming a human login would be
+ * impersonation, and a channel is a content identity nobody acts as. Exactly the
+ * same rule as the account-switch path, which is why both read one predicate
+ * rather than each testing `kind === 'personal'` and silently admitting every
+ * kind added afterwards.
  *
  * A malformed `subjectAccountId` simply matches no row and comes back
  * `not_found` — the old `isValidObjectId` guard existed only to keep Mongoose
@@ -185,8 +194,11 @@ export async function verifyDelegatedSubject(
   }
   // `kind` is NOT NULL DEFAULT 'personal' here, so the Mongo-era `!account.kind`
   // branch for documents predating the field does not travel.
-  if (account.kind === 'personal') {
-    return { ok: false, reason: 'personal_account' };
+  if (!isActAsEligibleKind(account.kind)) {
+    return {
+      ok: false,
+      reason: account.kind === 'channel' ? 'channel_account' : 'personal_account',
+    };
   }
 
   const { accountService } = await import('./account.service.js');

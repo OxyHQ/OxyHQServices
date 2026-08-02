@@ -98,7 +98,7 @@ import { users } from '../../db/schema/users';
  */
 async function seedTargetAccount(values: {
   username: string;
-  kind: 'personal' | 'organization' | 'project' | 'bot';
+  kind: 'personal' | 'organization' | 'project' | 'bot' | 'channel';
   accountStatus?: 'active' | 'suspended' | 'archived';
 }): Promise<void> {
   await getDb()
@@ -242,6 +242,26 @@ describe('POST /accounts/:id/switch', () => {
   it('refuses to switch INTO a personal account (403) even with act_as', async () => {
     mockVerifyActingAs.mockResolvedValue('owner');
     await seedTargetAccount({ username: 'someone', kind: 'personal' });
+
+    const res = await post(server, `/accounts/${ORG_ID}/switch`);
+
+    expect(res.status).toBe(403);
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The structural half of "a channel can never be logged into". A channel is
+   * minted with no auth methods, but that alone only makes direct login
+   * impossible — every auth-method write (`routes/authLinking.ts`,
+   * `routes/webauthn.ts`) resolves its target from `req.user`, i.e. from the
+   * AUTHENTICATED subject, never from a parameter. So the only way to add a
+   * credential to a channel would be to hold a bearer whose subject IS the
+   * channel, and this route is the one place such a bearer could be minted.
+   * Refusing here is what closes the loop.
+   */
+  it('refuses to switch INTO a channel account (403) even with act_as', async () => {
+    mockVerifyActingAs.mockResolvedValue('owner');
+    await seedTargetAccount({ username: 'daily-news', kind: 'channel' });
 
     const res = await post(server, `/accounts/${ORG_ID}/switch`);
 

@@ -1,7 +1,9 @@
 import mongoose, { Document, Schema } from "mongoose";
 import {
+  ACCOUNT_KINDS,
   ORGANIZATION_CATEGORIES,
   TRUST_TIERS,
+  type AccountKind,
   type OrganizationCategory,
   type TrustTier,
 } from "@oxyhq/contracts";
@@ -93,12 +95,10 @@ export function buildAuthMethod(type: AuthMethodType, metadata?: AuthMethod['met
  * Account graph classification for the unified Account system. ORTHOGONAL to
  * the federation `type` field. `personal` accounts are the only ones that may
  * log in directly; the rest are operated through `AccountMember` rows.
+ *
+ * Re-export — single source of truth is `@oxyhq/contracts`.
  */
-export const ACCOUNT_KINDS = ['personal', 'organization', 'project', 'bot'] as const;
-export type AccountKind = (typeof ACCOUNT_KINDS)[number];
-
-/** Re-export — single source of truth is `@oxyhq/contracts`. */
-export { ORGANIZATION_CATEGORIES, type OrganizationCategory };
+export { ACCOUNT_KINDS, ORGANIZATION_CATEGORIES, type AccountKind, type OrganizationCategory };
 
 /** Account-graph lifecycle state (additive — non-personal accounts only). */
 export const ACCOUNT_STATUSES = ['active', 'archived'] as const;

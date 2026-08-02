@@ -11,12 +11,19 @@
  */
 
 export {
+    ACCOUNT_KINDS,
+    accountKindSchema,
+    CHILD_ACCOUNT_KINDS,
+    childAccountKindSchema,
+    isActAsEligibleKind,
     ORGANIZATION_CATEGORIES,
     organizationCategorySchema,
     createAccountRequestSchema,
 } from './accountGraph';
 
 export type {
+    AccountKind,
+    ChildAccountKind,
     OrganizationCategory,
     CreateAccountRequest,
 } from './accountGraph';
