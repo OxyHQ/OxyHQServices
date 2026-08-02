@@ -57,10 +57,10 @@ const roleLabels: Record<AccountRole, string> = {
 };
 
 const kindSubtitles: Record<AccountKind, string> = {
-  personal: 'Developer Portal',
-  organization: 'Organization',
-  project: 'Project',
-  bot: 'Bot',
+  personal: 'Personal workspace',
+  organization: 'Organization workspace',
+  project: 'Project workspace',
+  bot: 'Bot workspace',
 };
 
 /** Canonical display label: the account's `name.displayName`, else its handle. */
@@ -280,7 +280,7 @@ export function SidebarHeaderBrand() {
               sideOffset={4}
             >
               <DropdownMenuLabel className="text-muted-foreground text-xs">
-                Your accounts
+                Workspaces
               </DropdownMenuLabel>
               {yourAccounts.map((node) => renderAccountTree(node))}
 
@@ -298,7 +298,7 @@ export function SidebarHeaderBrand() {
               <DropdownMenuItem className="gap-2 p-2" asChild>
                 <Link to="/settings/account">
                   <HugeiconsIcon icon={Settings01Icon} size={14} className="text-muted-foreground" />
-                  <span>Account settings</span>
+                  <span>Workspace settings</span>
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -306,7 +306,7 @@ export function SidebarHeaderBrand() {
                 <div className="flex size-6 items-center justify-center rounded-md border bg-transparent">
                   <HugeiconsIcon icon={Add01Icon} size={14} />
                 </div>
-                <span className="text-muted-foreground font-medium">Create account</span>
+                <span className="text-muted-foreground font-medium">Create workspace</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -316,7 +316,7 @@ export function SidebarHeaderBrand() {
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create account</DialogTitle>
+            <DialogTitle>Create workspace</DialogTitle>
             <DialogDescription>
               Create a new organization account to group apps and members. Members can be added
               later.
