@@ -58,6 +58,7 @@ import {
   tablesWithoutAPlan,
 } from '../src/db/backfill/collectionMap';
 import { connectMongoSource, redactUri, type Checkpoint } from '../src/db/backfill/mongoSource';
+import { assertResetIsAllowed, planReset, resetToEmpty } from '../src/db/backfill/reset';
 import { auditWouldBlockCopy, type AuditFinding } from '../src/db/backfill/audit';
 import {
   describeRelationColumns,
@@ -88,6 +89,16 @@ interface Options {
   readonly verify: boolean;
   readonly verifyOnly: boolean;
   readonly restart: boolean;
+  /**
+   * DESTRUCTIVE: empty every table the plans write before copying.
+   *
+   * The only flag on this tool that removes anything. See `db/backfill/reset.ts`
+   * for why it exists — `ON CONFLICT DO NOTHING` makes a re-run safe but not
+   * CONVERGENT, so a copy over a partially-populated target is a mixture of two
+   * points in time, which the production rehearsal demonstrated on eleven
+   * `reputation_rules` rows.
+   */
+  readonly startFromEmpty: boolean;
   readonly batchSize: number;
   readonly stateFile: string | null;
   readonly only: readonly string[] | undefined;
@@ -116,6 +127,7 @@ function parseOptions(argv: readonly string[]): Options {
     verify: flag('verify'),
     verifyOnly: flag('verify-only'),
     restart: flag('restart'),
+    startFromEmpty: flag('start-from-empty'),
     batchSize: numeric('batch-size', DEFAULT_BATCH_SIZE),
     stateFile: value('state-file') ?? null,
     only: only === undefined ? undefined : only.split(',').map((entry) => entry.trim()),
@@ -174,6 +186,12 @@ function describeError(error: unknown): string {
 
 async function main(): Promise<number> {
   const options = parseOptions(process.argv.slice(2));
+
+  // `--audit-only` and `--verify-only` touch nothing BY CONTRACT, and the whole
+  // value of that contract is that it holds without reading the code. The
+  // refusal lives in `reset.ts` so it is one checkable function rather than a
+  // condition here that someone later re-reads and simplifies.
+  assertResetIsAllowed(options);
 
   const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) throw new Error('MONGODB_URI is not set — it names the SOURCE database');
@@ -280,9 +298,32 @@ async function main(): Promise<number> {
       return blocking.length === 0 ? 0 : 1;
     }
 
+    // ---- reset (destructive, and only when asked) ---------------------------
+    //
+    // AFTER the audit on purpose. A blocking finding must leave the target
+    // exactly as it was: destroying rows and then refusing to copy would be the
+    // worst possible order, and it is the one a reset placed earlier would take.
+    if (options.startFromEmpty) {
+      if (blocking.length > 0) {
+        heading('REFUSED');
+        say(
+          `  --start-from-empty was requested, but ${blocking.length} finding(s) ` +
+            'BLOCK the copy. Nothing was destroyed: emptying the target and then ' +
+            'refusing to fill it would leave less than there is now.'
+        );
+        return 1;
+      }
+      await emptyTheTarget(db, options.only);
+    }
+
     // ---- copy -------------------------------------------------------------
     heading('COPY');
-    const state = await loadState(options.stateFile, options.restart);
+    // A reset invalidates every checkpoint: `completed` would make the copy SKIP
+    // a collection whose rows were just removed, which is the one way this flag
+    // could lose data rather than replace it.
+    const state = options.startFromEmpty
+      ? emptyState()
+      : await loadState(options.stateFile, options.restart);
     const summary = await runBackfill(
       {
         db,
@@ -339,6 +380,52 @@ async function main(): Promise<number> {
   }
 
   return exitCode;
+}
+
+/**
+ * Empty every table the plans write, after saying exactly what that destroys.
+ *
+ * The manifest is printed BEFORE the truncate and carries real counts, because
+ * this is the number an operator is authorising — see `db/backfill/reset.ts` for
+ * why the flag exists at all, and why the migration ledger has to survive it.
+ *
+ * `--only` deliberately does NOT narrow it. The flag means "start this cutover
+ * from nothing", and emptying a subset while leaving the rest of an earlier
+ * attempt in place would produce precisely the mixture it exists to remove; a
+ * restricted copy against a reset target is a decision to state, not to infer.
+ */
+async function emptyTheTarget(
+  db: Awaited<ReturnType<typeof connectPostgres>>,
+  only: readonly string[] | undefined
+): Promise<void> {
+  heading('START FROM EMPTY — THIS DESTROYS DATA');
+  const plan = await planReset(db, COLLECTION_PLANS);
+  const populated = plan.tables.filter((entry) => entry.rows > 0);
+
+  say(
+    `  ${plan.tables.length} table(s) will be TRUNCATED — every table the plans ` +
+      `write. ${populated.length} of them hold data today, ` +
+      `${plan.totalRows} row(s) in total, and all of it is about to be removed.`
+  );
+  for (const entry of populated) {
+    say(`    ${entry.table.padEnd(44)} ${entry.rows} row(s)`);
+  }
+  if (populated.length === 0) {
+    say('    (every one of them is already empty — this is a no-op)');
+  }
+  say(
+    `  The applied-migration ledger (${plan.ledgerRows} row(s)) is NOT touched, ` +
+      'and the reset refuses if it moves.'
+  );
+  if (only !== undefined) {
+    say(
+      `  NOTE: --only=${only.join(',')} restricts the COPY, not this reset. Every ` +
+        'table above is emptied; only the listed collections are then refilled.'
+    );
+  }
+
+  await resetToEmpty(db, COLLECTION_PLANS, plan);
+  say('  Done — the target is empty and the ledger is intact.');
 }
 
 /**

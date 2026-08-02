@@ -172,7 +172,18 @@ describe('isDatabaseReachable — the /health probe', () => {
     // probe must nonetheless answer false.
     expect(isDatabaseConnected()).toBe(true);
     expect(await isDatabaseReachable()).toBe(false);
-  }, 20_000);
+
+    // 20s was not enough, and the reason is `dropProbeDatabase`, not the probe.
+    // `DROP DATABASE` forces a checkpoint, so under a loaded parallel run — the
+    // backfill suites COPY hundreds of thousands of rows concurrently — it waits
+    // for one. Measured against this same server: 45ms idle, and 43,185ms /
+    // 21,374ms / 4,051ms on consecutive attempts while those suites ran. The
+    // budget is what this test spends WAITING for a housekeeping operation, and
+    // it was tight enough that any additional write load made it flake.
+    //
+    // Raised rather than removed: the thing it guards is a probe that never
+    // answers, and a hang is unbounded, so a finite budget still catches it.
+  }, 120_000);
 });
 
 describe('waitForDatabaseConnection — the startup gate', () => {
