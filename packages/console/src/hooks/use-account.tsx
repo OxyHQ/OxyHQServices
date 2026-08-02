@@ -189,9 +189,11 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const createAccountMutation = useMutation({
     mutationFn: (data: CreateAccountInput): Promise<AccountNode> => oxyServices.createAccount(data),
     onSuccess: (created) => {
+      queryClient.setQueryData<Array<AccountNode>>(accountQueryKeys.all, (existing) =>
+        existing ? [...existing, created] : [created],
+      );
       queryClient.invalidateQueries({ queryKey: accountQueryKeys.all });
-      setSelectedId(created.accountId);
-      persistAccountId(created.accountId);
+      void setCurrentAccount(created);
     },
   });
 

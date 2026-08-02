@@ -1,4 +1,4 @@
-import { Link, createFileRoute } from '@tanstack/react-router';
+import { Link, createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { getNormalizedUserHandle } from '@oxyhq/core';
@@ -98,9 +98,12 @@ function shortUserId(userId: string): string {
 }
 
 function AccountSettingsPage() {
+  const navigate = useNavigate();
   const { user, oxyServices } = useAuth();
   const {
+    accounts,
     currentAccount,
+    setCurrentAccount,
     updateAccount,
     archiveAccount,
     canEditAccount,
@@ -321,9 +324,16 @@ function AccountSettingsPage() {
     setIsDeleting(true);
     try {
       await archiveAccount(accountId);
+      if (user?.id === accountId) {
+        const personal = accounts.find((node) => node.relationship === 'self');
+        if (personal) {
+          await setCurrentAccount(personal).catch(() => undefined);
+        }
+      }
       toast.success('Account archived');
       setShowDeleteDialog(false);
       setDeleteConfirmation('');
+      void navigate({ to: '/dashboard' });
     } catch (error) {
       // The API returns 409 when the account still owns applications.
       toast.error(

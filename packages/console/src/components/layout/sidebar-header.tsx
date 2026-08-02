@@ -162,7 +162,7 @@ export function SidebarHeaderBrand() {
   };
 
   const handleSelectAccount = async (account: AccountNode) => {
-    if (switchingAccountId !== null || account.accountId === currentAccount.accountId) {
+    if (switchingAccountId !== null || account.accountId === currentAccount?.accountId) {
       return;
     }
 
