@@ -80,6 +80,20 @@ export {
 export type { InboxEmailPushData } from './inboxPush';
 
 export {
+    OXY_USER_INVALIDATION_CHANNEL,
+    OXY_USER_CHANGE_REASONS,
+    OXY_PUBLISHED_USER_CHANGE_REASONS,
+    isPublishedOxyUserChangeReason,
+    oxyUserInvalidationEventSchema,
+} from './userInvalidation';
+
+export type {
+    OxyUserChangeReason,
+    PublishedOxyUserChangeReason,
+    OxyUserInvalidationEvent,
+} from './userInvalidation';
+
+export {
     // Schemas
     recommendationExcludeTypeSchema,
     recommendationBoostSchema,
