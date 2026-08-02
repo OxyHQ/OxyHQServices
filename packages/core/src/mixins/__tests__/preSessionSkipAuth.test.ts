@@ -204,4 +204,28 @@ describe('pre-session public endpoints use skipAuth', () => {
       user: { id: 'u1', username: 'alice', avatar: 'file-1' },
     });
   });
+
+  it('getOAuthUserInfo reads the flat OIDC userinfo response', async () => {
+    makeRequest.mockResolvedValueOnce({
+      sub: '507f1f77bcf86cd799439011',
+      preferred_username: 'alice',
+      name: 'Alice Example',
+      picture: 'https://api.oxy.so/assets/file-1/stream',
+    });
+
+    const result = await oxy.getOAuthUserInfo();
+
+    expect(makeRequest).toHaveBeenCalledWith(
+      'GET',
+      '/auth/oauth/userinfo',
+      undefined,
+      expect.objectContaining({ cache: false }),
+    );
+    expect(result).toEqual({
+      sub: '507f1f77bcf86cd799439011',
+      preferred_username: 'alice',
+      name: 'Alice Example',
+      picture: 'https://api.oxy.so/assets/file-1/stream',
+    });
+  });
 });

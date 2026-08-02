@@ -43,6 +43,26 @@ export function extractTokenFromRequest(req: Request): string | undefined {
 }
 
 /**
+ * Resolve an OAuth access token for the userinfo endpoint.
+ *
+ * OIDC Core §5.3.1 requires POST support; clients may send the token in the
+ * `Authorization` header (preferred) or as `access_token` in a form body.
+ * Query-string tokens are explicitly rejected by the userinfo handler.
+ */
+export function extractOAuthUserinfoToken(req: Request): string | undefined {
+  const headerToken = extractTokenFromRequest(req);
+  if (headerToken) {
+    return headerToken;
+  }
+  if (req.method !== 'POST') {
+    return undefined;
+  }
+  const body = req.body as { access_token?: unknown } | undefined;
+  const bodyToken = body?.access_token;
+  return typeof bodyToken === 'string' && bodyToken.length > 0 ? bodyToken : undefined;
+}
+
+/**
  * Decode JWT token
  */
 export function decodeToken(token: string): TokenDecoded | null {

@@ -107,4 +107,36 @@ describe('HttpService form-urlencoded bodies', () => {
     expect(claimCall?.init?.body).toBe(JSON.stringify({ sessionToken: 'abc' }));
     expect(readHeaders(claimCall?.init)['Content-Type']).toBe('application/json');
   });
+
+  it('prefers OAuth error_description over the bare error code', async () => {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith('/csrf-token')) {
+        return jsonResponse({ csrfToken: 'csrf-test' });
+      }
+      return new Response(
+        JSON.stringify({
+          error: 'invalid_grant',
+          error_description: 'The authorization code has expired.',
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      );
+    };
+
+    const http = new HttpService({ baseURL: 'https://api.oxy.so', enableRetry: false });
+    let caught: unknown;
+    try {
+      await http.post(
+        '/auth/oauth/token',
+        new URLSearchParams({ grant_type: 'authorization_code', code: 'expired' }),
+        { skipAuth: true, cache: false, deduplicate: false, retry: false },
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeDefined();
+    expect(String((caught as { message?: string })?.message ?? caught)).toContain(
+      'The authorization code has expired.',
+    );
+  });
 });

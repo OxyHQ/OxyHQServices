@@ -15,7 +15,8 @@ import express from 'express';
 import http from 'http';
 import type { AddressInfo } from 'net';
 
-const mockAuthenticateRequestNonBlocking = jest.fn();
+const mockDecodeToken = jest.fn();
+const mockValidateSessionToken = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: jest.fn(),
@@ -23,12 +24,14 @@ jest.mock('../../middleware/auth', () => ({
   rejectQueryToken: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
-jest.mock('../../middleware/authUtils', () => ({
-  authenticateRequestNonBlocking: (...args: unknown[]) =>
-    mockAuthenticateRequestNonBlocking(...args),
-  extractTokenFromRequest: jest.fn(),
-  decodeToken: jest.fn(),
-}));
+jest.mock('../../middleware/authUtils', () => {
+  const actual = jest.requireActual('../../middleware/authUtils') as Record<string, unknown>;
+  return {
+    ...actual,
+    decodeToken: (...args: unknown[]) => mockDecodeToken(...args),
+    validateSessionToken: (...args: unknown[]) => mockValidateSessionToken(...args),
+  };
+});
 
 jest.mock('../../middleware/rateLimiter', () => ({
   rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
@@ -153,6 +156,7 @@ async function request(
   method: 'GET' | 'POST',
   path: string,
   headers: Record<string, string> = {},
+  body?: string,
 ): Promise<UserinfoResponse> {
   const address = server.address() as AddressInfo;
   return new Promise((resolve, reject) => {
@@ -174,6 +178,11 @@ async function request(
       },
     );
     req.on('error', reject);
+    if (body !== undefined) {
+      req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+      req.setHeader('Content-Length', Buffer.byteLength(body));
+      req.write(body);
+    }
     req.end();
   });
 }
@@ -203,16 +212,14 @@ afterAll((done) => {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // `authenticateRequestNonBlocking` returns the NORMALIZED user, whose `_id`
-  // is always the ObjectId string (never the publicKey) — see `normalizeUser`.
-  mockAuthenticateRequestNonBlocking.mockResolvedValue({
-    user: {
-      _id: USER_OBJECT_ID,
-      username: 'nate',
-      name: { first: 'Nate', last: 'Isern' },
-      avatar: 'file-abc123',
-    },
-    source: 'header',
+  mockDecodeToken.mockReturnValue({ sessionId: 'session-1' });
+  // `validateSessionToken` returns the NORMALIZED user, whose `_id` is always the
+  // ObjectId string (never the publicKey) — see `normalizeUser`.
+  mockValidateSessionToken.mockResolvedValue({
+    _id: USER_OBJECT_ID,
+    username: 'nate',
+    name: { first: 'Nate', last: 'Isern' },
+    avatar: 'file-abc123',
   });
 });
 
@@ -231,9 +238,9 @@ describe('GET /auth/oauth/userinfo — claims', () => {
   });
 
   it('uses the Mongo _id as `sub`, NEVER the username', async () => {
-    mockAuthenticateRequestNonBlocking.mockResolvedValueOnce({
-      user: { _id: USER_OBJECT_ID, username: 'Nate' },
-      source: 'header',
+    mockValidateSessionToken.mockResolvedValueOnce({
+      _id: USER_OBJECT_ID,
+      username: 'Nate',
     });
 
     const res = await request(server, 'GET', '/auth/oauth/userinfo', BEARER);
@@ -251,9 +258,9 @@ describe('GET /auth/oauth/userinfo — claims', () => {
   it('keeps `sub` stable when the username changes', async () => {
     const before = await request(server, 'GET', '/auth/oauth/userinfo', BEARER);
 
-    mockAuthenticateRequestNonBlocking.mockResolvedValueOnce({
-      user: { _id: USER_OBJECT_ID, username: 'renamed-handle' },
-      source: 'header',
+    mockValidateSessionToken.mockResolvedValueOnce({
+      _id: USER_OBJECT_ID,
+      username: 'renamed-handle',
     });
     const after = await request(server, 'GET', '/auth/oauth/userinfo', BEARER);
 
@@ -262,9 +269,9 @@ describe('GET /auth/oauth/userinfo — claims', () => {
   });
 
   it('omits `name` for an account with no real name — it is never synthesized from the handle', async () => {
-    mockAuthenticateRequestNonBlocking.mockResolvedValueOnce({
-      user: { _id: USER_OBJECT_ID, username: 'handle-only' },
-      source: 'header',
+    mockValidateSessionToken.mockResolvedValueOnce({
+      _id: USER_OBJECT_ID,
+      username: 'handle-only',
     });
 
     const res = await request(server, 'GET', '/auth/oauth/userinfo', BEARER);
@@ -275,13 +282,10 @@ describe('GET /auth/oauth/userinfo — claims', () => {
   });
 
   it('prefers an explicit displayName over the composed first/last name', async () => {
-    mockAuthenticateRequestNonBlocking.mockResolvedValueOnce({
-      user: {
-        _id: USER_OBJECT_ID,
-        username: 'nate',
-        name: { first: 'Nate', last: 'Isern', displayName: 'Lady' },
-      },
-      source: 'header',
+    mockValidateSessionToken.mockResolvedValueOnce({
+      _id: USER_OBJECT_ID,
+      username: 'nate',
+      name: { first: 'Nate', last: 'Isern', displayName: 'Lady' },
     });
 
     const res = await request(server, 'GET', '/auth/oauth/userinfo', BEARER);
@@ -290,9 +294,9 @@ describe('GET /auth/oauth/userinfo — claims', () => {
   });
 
   it('omits `picture` for an account with no avatar', async () => {
-    mockAuthenticateRequestNonBlocking.mockResolvedValueOnce({
-      user: { _id: USER_OBJECT_ID, username: 'nate' },
-      source: 'header',
+    mockValidateSessionToken.mockResolvedValueOnce({
+      _id: USER_OBJECT_ID,
+      username: 'nate',
     });
 
     const res = await request(server, 'GET', '/auth/oauth/userinfo', BEARER);
@@ -301,13 +305,10 @@ describe('GET /auth/oauth/userinfo — claims', () => {
   });
 
   it('passes an already-absolute avatar URL through unchanged (federated accounts)', async () => {
-    mockAuthenticateRequestNonBlocking.mockResolvedValueOnce({
-      user: {
-        _id: USER_OBJECT_ID,
-        username: 'remote',
-        avatar: 'https://remote.example/avatars/remote.png',
-      },
-      source: 'header',
+    mockValidateSessionToken.mockResolvedValueOnce({
+      _id: USER_OBJECT_ID,
+      username: 'remote',
+      avatar: 'https://remote.example/avatars/remote.png',
     });
 
     const res = await request(server, 'GET', '/auth/oauth/userinfo', BEARER);
@@ -322,6 +323,20 @@ describe('GET /auth/oauth/userinfo — claims', () => {
     expect(res.body.sub).toBe(USER_OBJECT_ID);
   });
 
+  it('accepts POST with access_token in the form body', async () => {
+    const res = await request(
+      server,
+      'POST',
+      '/auth/oauth/userinfo',
+      {},
+      'access_token=valid-access-token',
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.sub).toBe(USER_OBJECT_ID);
+    expect(mockValidateSessionToken).toHaveBeenCalledWith('valid-access-token');
+  });
+
   it('sends the claims `no-store`', async () => {
     const res = await request(server, 'GET', '/auth/oauth/userinfo', BEARER);
 
@@ -331,7 +346,7 @@ describe('GET /auth/oauth/userinfo — claims', () => {
 
 describe('GET /auth/oauth/userinfo — RFC 6750 failures', () => {
   it('rejects an invalid token with a Bearer challenge', async () => {
-    mockAuthenticateRequestNonBlocking.mockResolvedValueOnce({ user: null, source: 'header' });
+    mockValidateSessionToken.mockResolvedValueOnce(null);
 
     const res = await request(server, 'GET', '/auth/oauth/userinfo', {
       authorization: 'Bearer expired-or-revoked',
@@ -347,7 +362,7 @@ describe('GET /auth/oauth/userinfo — RFC 6750 failures', () => {
   });
 
   it('answers a request with no Authorization header identically', async () => {
-    mockAuthenticateRequestNonBlocking.mockResolvedValueOnce({ user: null, source: null });
+    mockDecodeToken.mockReturnValueOnce(null);
 
     const res = await request(server, 'GET', '/auth/oauth/userinfo');
 
@@ -368,6 +383,6 @@ describe('GET /auth/oauth/userinfo — RFC 6750 failures', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('invalid_request');
     // Never even attempted: a URL token must not be honoured, only refused.
-    expect(mockAuthenticateRequestNonBlocking).not.toHaveBeenCalled();
+    expect(mockValidateSessionToken).not.toHaveBeenCalled();
   });
 });

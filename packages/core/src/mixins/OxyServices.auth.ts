@@ -66,6 +66,14 @@ export interface PublicKeyCheckResponse {
   message: string;
 }
 
+/** OpenID Connect userinfo claims returned by `GET /auth/oauth/userinfo`. */
+export interface OAuthUserInfoResponse {
+  sub: string;
+  preferred_username?: string;
+  name?: string;
+  picture?: string;
+}
+
 // ===========================================================================
 // "Sign in with Oxy" — cross-device QR / app-to-app handoff (Workstream C)
 // ===========================================================================
@@ -1747,6 +1755,39 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
             username: typeof userObj.username === 'string' ? userObj.username : undefined,
             avatar: typeof userObj.avatar === 'string' ? userObj.avatar : undefined,
           },
+        };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Fetch OpenID Connect userinfo for the current bearer (`GET /auth/oauth/userinfo`).
+     * The response is a flat JSON document — no `{ data }` wrapper.
+     */
+    async getOAuthUserInfo(): Promise<OAuthUserInfoResponse> {
+      try {
+        const res = await this.makeRequest<unknown>(
+          'GET',
+          '/auth/oauth/userinfo',
+          undefined,
+          { cache: false },
+        );
+        if (!res || typeof res !== 'object') {
+          throw new Error('auth/oauth/userinfo returned an unexpected response shape');
+        }
+        const record = res as Record<string, unknown>;
+        const sub = typeof record.sub === 'string' ? record.sub : undefined;
+        if (!sub) {
+          throw new Error('auth/oauth/userinfo returned a response without sub');
+        }
+        return {
+          sub,
+          ...(typeof record.preferred_username === 'string'
+            ? { preferred_username: record.preferred_username }
+            : {}),
+          ...(typeof record.name === 'string' ? { name: record.name } : {}),
+          ...(typeof record.picture === 'string' ? { picture: record.picture } : {}),
         };
       } catch (error) {
         throw this.handleError(error);

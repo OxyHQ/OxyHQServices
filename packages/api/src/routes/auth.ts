@@ -54,9 +54,10 @@ import {
 import { isAllowedRedirectUri } from '../utils/oauthRedirect';
 import Session from '../models/Session';
 import {
-  authenticateRequestNonBlocking,
   extractTokenFromRequest,
+  extractOAuthUserinfoToken,
   decodeToken,
+  validateSessionToken,
 } from '../middleware/authUtils';
 import {
   registerPublicKeySchema,
@@ -2814,8 +2815,9 @@ function resolveUserinfoPicture(req: express.Request, avatar: unknown): string |
  *
  * Bearer-authenticated, and — like the token endpoint — answers with a FLAT
  * JSON document and RFC 6750 challenge headers rather than the house envelopes.
- * Registered for both GET and POST because OIDC Core §5.3.1 requires both; the
- * access token is only ever read from the `Authorization` header.
+ * Registered for both GET and POST because OIDC Core §5.3.1 requires both.
+ * The access token is read from the `Authorization` header, or — on POST only —
+ * from an `application/x-www-form-urlencoded` `access_token` parameter.
  */
 async function handleOAuthUserinfo(req: express.Request, res: express.Response): Promise<void> {
   // RFC 6750 §2.3 permits the token as a URI query parameter; Oxy does not.
@@ -2828,7 +2830,14 @@ async function handleOAuthUserinfo(req: express.Request, res: express.Response):
     );
   }
 
-  const { user } = await authenticateRequestNonBlocking(req);
+  const token = extractOAuthUserinfoToken(req);
+  let user = null;
+  if (token) {
+    const decoded = decodeToken(token);
+    if (decoded?.sessionId) {
+      user = await validateSessionToken(token);
+    }
+  }
   if (!user) {
     // RFC 6750 §3.1 says a request carrying NO credentials SHOULD omit the
     // error code. We report `invalid_token` for that case too, deliberately:

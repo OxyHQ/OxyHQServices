@@ -416,21 +416,20 @@ https://auth.oxy.so/authorize
    - `GET /auth/oauth/consent` decide si hace falta consent (`third_party` → casi siempre la primera vez)
    - Usuario acepta → `POST /auth/oauth/authorize` (Bearer del usuario IdP) → code single-use
 4. Redirect: `https://merchant.co/auth/callback?code=…&state=…`
-5. RP valida `state`, intercambia code:
+5. RP valida `state`, intercambia code (RFC 6749 §4.1.3 — **form-urlencoded**, no JSON):
 
 ```http
 POST https://api.oxy.so/auth/oauth/token
-Content-Type: application/json
+Content-Type: application/x-www-form-urlencoded
 
-{
-  "code": "...",
-  "clientId": "oxy_dk_...",
-  "redirectUri": "https://merchant.co/auth/callback",
-  "codeVerifier": "<pkce_verifier>"
-}
+grant_type=authorization_code
+&code=...
+&redirect_uri=https://merchant.co/auth/callback
+&client_id=oxy_dk_...
+&code_verifier=<pkce_verifier>
 ```
 
-6. Respuesta: `{ access_token, deviceId, deviceSecret, session_id, user }` — **tokens nunca en la URL**.
+6. Respuesta plana (sin envoltorio `{ data }`): `{ access_token, token_type, expires_in, scope?, session_id, deviceId, deviceSecret, user }` — **tokens nunca en la URL**. Errores: `{ error, error_description }` (§5.2).
 7. RP guarda `access_token` y el par `deviceId` + `deviceSecret` en storage local; restaura la sesión vía `POST /session/device/token`.
 
 **Backend propio del third party** (Node/Express):
@@ -452,13 +451,16 @@ Mismo redirect a `auth.oxy.so`, pero el **intercambio code→token ocurre en el 
 
 ```http
 POST https://api.oxy.so/auth/oauth/token
-{
-  "code": "...",
-  "clientId": "oxy_dk_...",
-  "redirectUri": "https://merchant.co/auth/callback",
-  "clientSecret": "<secret>"
-}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code
+&code=...
+&redirect_uri=https://merchant.co/auth/callback
+&client_id=oxy_dk_...
+&client_secret=<secret>
 ```
+
+(O bien `Authorization: Basic` con `client_id:client_secret` y el mismo cuerpo sin `client_secret`.)
 
 El secret **nunca** va al browser. El backend emite su propia cookie de sesión de app o JWT propio si lo necesita — eso es responsabilidad del RP, no de Oxy.
 

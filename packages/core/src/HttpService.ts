@@ -637,10 +637,17 @@ export class HttpService {
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
             try {
-              const errorData = await response.json() as { message?: string; error?: string } | null;
+              const errorData = await response.json() as {
+                message?: string;
+                error?: string;
+                error_description?: string;
+              } | null;
               // Accept either structured error field from API responses.
               if (errorData?.message) {
                 errorMessage = errorData.message;
+              } else if (errorData?.error_description) {
+                // RFC 6749 §5.2 / RFC 6750 §3 — OAuth endpoints surface human text here.
+                errorMessage = errorData.error_description;
               } else if (errorData?.error) {
                 errorMessage = errorData.error;
               }
