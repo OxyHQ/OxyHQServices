@@ -56,7 +56,13 @@ import {
   type Translate,
 } from './types';
 
-const AnimatedCssView = styled(Animated.View);
+type AnimatedCssViewProps = React.ComponentProps<typeof Animated.View> & {
+  className?: string;
+};
+
+const AnimatedCssView = styled(
+  Animated.View as React.ComponentType<AnimatedCssViewProps>,
+);
 
 /**
  * Leading glyph for the rows that live in a Bloom grouped section (the MENU
