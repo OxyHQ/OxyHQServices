@@ -91,9 +91,21 @@ module.exports = {
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', {
-      // Hybrid moduleKind in tsconfig emits TS151002 on every file; ignore it —
-      // isolatedModules is intentionally off for this package's tsc build.
-      diagnostics: { ignoreCodes: [151002] },
+      // OFF, not `{ ignoreCodes: [...] }`. The two are not "the same setting
+      // with a filter": `false` disables type-checking in the transform
+      // entirely, while ANY object turns the full check ON and merely excludes
+      // the listed codes. Narrowing it to silence the TS151002 config warning
+      // therefore enabled type-checking across a suite that has never had it,
+      // and 165 of 295 suites stopped running — TS2550 `Property 'cause' does
+      // not exist on type 'Error'` (a `lib` question), TS2307 for
+      // `@oxyhq/federation` (whose `dist` this job does not build), TS2339,
+      // TS7006. None of them is a test failure; the suites never execute.
+      //
+      // `tsc --noEmit` is where this package's types are gated. Turning the
+      // check on here as well is a defensible goal, but it is a real project —
+      // those 165 suites have to be fixed first — not a side effect of quieting
+      // a warning. The TS151002 line is noise on stderr and costs nothing.
+      diagnostics: false,
     }],
   },
   testMatch: ['**/__tests__/**/*.ts', '**/*.test.ts'],
