@@ -108,7 +108,7 @@ export function resolveFileMediaMetadata(
  * Stage the canonical media summary on `metadata.media` (single write
  * chokepoint). The caller persists `file.metadata` afterwards — the two are
  * written together so a rendition set and the dimensions derived from the same
- * decode pass can never be stored apart (`fileRepository.replaceVariants`).
+ * decode pass can never be stored apart (`fileRepository.upsertVariantSet`).
  */
 export function applyCanonicalMediaMetadata(
   file: Pick<FileRecord, 'metadata'>,

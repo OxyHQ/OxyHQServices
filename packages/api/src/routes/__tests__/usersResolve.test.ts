@@ -321,6 +321,71 @@ describe('PUT /users/resolve — actor-URI host binding', () => {
     expect(await storedByActorUri(actorUri)).toBeUndefined();
   });
 
+  /**
+   * A BRIDGE republishes another network's accounts under its own hostname, so
+   * for a bridged actor the host and the identity domain differ by design and
+   * WebFinger can never reconcile them (x.com publishes none). The reviewed
+   * trust list in `config/federationBridgeTrust` is what makes that difference
+   * legitimate — a decision THIS service makes, not one the caller asserts. The
+   * calling app's `createBridgeRelabeller([...])` entries are deliberately
+   * separate and fail closed in both directions.
+   */
+  it('accepts a bridged actor whose identity domain is the network it mirrors', async () => {
+    const handle = `wired${token()}`;
+    const actorUri = `https://bird.makeup/users/${handle}`;
+
+    const res = await resolveUser({
+      type: 'federated',
+      username: `${handle}@x.com`,
+      actorUri,
+      domain: 'x.com',
+    });
+
+    expect(res.status).toBe(200);
+    // The bridge policy is a local lookup, so no WebFinger round trip is spent.
+    expect(mockSafeFetch).not.toHaveBeenCalled();
+    const stored = await storedByActorUri(actorUri);
+    expect(stored.username).toBe(`${handle}@x.com`);
+    expect(stored.federationDomain).toBe('x.com');
+    // The actor URI stays the address we actually reach the account at.
+    expect(stored.federationActorUri).toBe(actorUri);
+  });
+
+  it('400s when a listed bridge claims a network it does not mirror', async () => {
+    const handle = `wired${token()}`;
+    const actorUri = `https://bird.makeup/users/${handle}`;
+
+    // bird.makeup mirrors X. Being a known bridge is not a licence to vouch for
+    // Instagram, so this falls through to WebFinger and is refused like any
+    // other mismatched pair.
+    const res = await resolveUser({
+      type: 'federated',
+      username: `${handle}@instagram.com`,
+      actorUri,
+      domain: 'instagram.com',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/actorUri hostname/i);
+    expect(await storedByActorUri(actorUri)).toBeUndefined();
+  });
+
+  it('400s when a host that is not a reviewed bridge claims a network domain', async () => {
+    const handle = `wired${token()}`;
+    const actorUri = `https://attacker.example/users/${handle}`;
+
+    const res = await resolveUser({
+      type: 'federated',
+      username: `${handle}@x.com`,
+      actorUri,
+      domain: 'x.com',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/actorUri hostname/i);
+    expect(await storedByActorUri(actorUri)).toBeUndefined();
+  });
+
   it('accepts an actor on the www host of the asserted domain without a WebFinger probe', async () => {
     const handle = `alice${token()}`;
     const actorUri = `https://www.mastodon.social/users/${handle}`;

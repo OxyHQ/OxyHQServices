@@ -12,12 +12,13 @@ import { users } from '../db/schema/users';
 import { logger } from '../utils/logger';
 import { BadRequestError, InternalServerError } from '../utils/error';
 import { sendSuccess } from '../utils/asyncHandler';
-import { peopleSearchMatch, peopleSearchPredicate } from '../utils/profileQuery';
+import {
+  normalizePeopleSearchTerm,
+  peopleSearchMatch,
+  peopleSearchPredicate,
+} from '../utils/profileQuery';
 import { publicUserColumns, toPublicUserView } from '../utils/publicUserProjection';
 import { formatUserResponse } from '../utils/userTransform';
-
-/** Longest search term honoured — matches the other two people-search surfaces. */
-const MAX_SEARCH_TERM_LENGTH = 100;
 
 export class UsersController {
   /**
@@ -44,7 +45,7 @@ export class UsersController {
       // The term is passed RAW: `peopleSearchMatch` escapes it for LIKE and
       // binds it as a parameter, so escaping it here as well would make `a+b`
       // search for a literal backslash.
-      const term = query.trim().replace(/^@/, '').slice(0, MAX_SEARCH_TERM_LENGTH);
+      const term = normalizePeopleSearchTerm(query);
 
       const rows = await getDb()
         .select(publicUserColumns)

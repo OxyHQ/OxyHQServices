@@ -4,6 +4,7 @@ import { getDb } from '../config/postgres';
 import { users } from '../db/schema/users';
 import { logger } from '../utils/logger';
 import {
+  normalizePeopleSearchTerm,
   peopleSearchMatch,
   peopleSearchOrder,
   peopleSearchPredicate,
@@ -14,9 +15,6 @@ import { publicUserColumns, toPublicUserView } from '../utils/publicUserProjecti
 import { formatUserResponse } from '../utils/userTransform';
 
 const router = express.Router();
-
-/** Longest search term honoured; anything past it is a scan nobody asked for. */
-const MAX_SEARCH_TERM_LENGTH = 100;
 
 type ValidatedSearchQuery = {
   query?: string;
@@ -35,7 +33,7 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
     // passed RAW from here: `peopleSearchMatch` escapes it for LIKE and binds it
     // as a parameter, so escaping it a second time on the way in would make
     // `a+b` search for a literal backslash.
-    const term = ((query as string) || '').trim().replace(/^@/, '').slice(0, MAX_SEARCH_TERM_LENGTH);
+    const term = normalizePeopleSearchTerm((query as string) || '');
 
     const results: {
       users: NonNullable<ReturnType<typeof formatUserResponse>>[];

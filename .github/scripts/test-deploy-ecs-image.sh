@@ -19,6 +19,10 @@ trap cleanup_test_directory EXIT
 
 export DEPLOY_TEST_LOG=""
 export DEPLOY_TEST_EXPECT_METRICS_ARN=false
+# The SSM parameter path a case feeds to INTERNAL_METRICS_PARAMETER, and from
+# which the mocked register-task-definition derives the ARN it demands. A case
+# overrides it to cover a path shape the default does not.
+export DEPLOY_TEST_METRICS_PARAMETER=/oxy/sampleapp/INTERNAL_METRICS_TOKEN
 export DEPLOY_TEST_TASK_EXIT_CODE=0
 export DEPLOY_TEST_EXPECT_TASK_SECRET_ARN=false
 export DEPLOY_TEST_SERVICE_DESIRED_COUNT=1
@@ -31,7 +35,7 @@ aws() {
     "failures": [],
     "services": [{
       "status": "ACTIVE",
-      "taskDefinition": "arn:aws:ecs:test:task-definition/oxy-api-test:1",
+      "taskDefinition": "arn:aws:ecs:test:task-definition/deploy-test:1",
       "desiredCount": 1,
       "networkConfiguration": {
         "awsvpcConfiguration": {
@@ -43,7 +47,7 @@ aws() {
       "deployments": [
         {
           "id": "ecs-deploy-test-2",
-          "taskDefinition": "arn:aws:ecs:test:task-definition/oxy-api-test:2",
+          "taskDefinition": "arn:aws:ecs:test:task-definition/deploy-test:2",
           "status": "PRIMARY",
           "rolloutState": "COMPLETED",
           "runningCount": 1,
@@ -51,7 +55,7 @@ aws() {
         },
         {
           "id": "ecs-deploy-test-1",
-          "taskDefinition": "arn:aws:ecs:test:task-definition/oxy-api-test:1",
+          "taskDefinition": "arn:aws:ecs:test:task-definition/deploy-test:1",
           "status": "ACTIVE",
           "rolloutState": "COMPLETED",
           "runningCount": 1,
@@ -121,19 +125,19 @@ aws() {
       ;;
     "ecs describe-task-definition")
       printf '%s\n' '{
-        "family": "oxy-api-test",
+        "family": "deploy-test",
         "networkMode": "awsvpc",
         "requiresCompatibilities": ["FARGATE"],
         "cpu": "256",
         "memory": "512",
         "containerDefinitions": [{
-          "name": "oxy-api-test",
-          "image": "example.invalid/oxy-api-test:old",
+          "name": "deploy-test",
+          "image": "example.invalid/deploy-test:old",
           "essential": true,
           "logConfiguration": {
             "logDriver": "awslogs",
             "options": {
-              "awslogs-group": "/ecs/oxy-api-test",
+              "awslogs-group": "/ecs/deploy-test",
               "awslogs-stream-prefix": "ecs"
             }
           }
@@ -152,16 +156,31 @@ aws() {
           fi
           previous_argument="$argument"
         done
-        jq -e '
+        # The verdict is written to the log rather than left to `set -e`. A
+        # command that fails in the MIDDLE of this function does not abort the
+        # run -- measured, and it holds whether the function is exported or
+        # local -- because the caller consumes it as `v="$(aws ...)"` and only
+        # the function's LAST command reaches that assignment's exit status. An
+        # assertion whose only effect is its own exit status therefore cannot
+        # fail, which is what this one did: pointing it at an ARN no case uses
+        # left the suite green. Logging a distinct token instead puts the
+        # mismatch in the expected.log diff, where it names itself.
+        if jq -e \
+          --arg expected \
+          "arn:aws:ssm:test:123456789012:parameter${DEPLOY_TEST_METRICS_PARAMETER}" \
+          '
           .containerDefinitions[]
-          | select(.name == "oxy-api-test")
+          | select(.name == "deploy-test")
           | .secrets[]
           | select(
               .name == "INTERNAL_METRICS_TOKEN" and
-              .valueFrom == "arn:aws:ssm:test:123456789012:parameter/oxy/oxy-api/INTERNAL_METRICS_TOKEN"
+              .valueFrom == $expected
             )
-        ' "$input_json" >/dev/null
-        printf 'metrics:arn\n' >>"$DEPLOY_TEST_LOG"
+        ' "$input_json" >/dev/null; then
+          printf 'metrics:arn\n' >>"$DEPLOY_TEST_LOG"
+        else
+          printf 'metrics:arn:MISMATCH\n' >>"$DEPLOY_TEST_LOG"
+        fi
       fi
       if [[ "$DEPLOY_TEST_EXPECT_TASK_SECRET_ARN" == "true" ]]; then
         local previous_argument=""
@@ -174,18 +193,23 @@ aws() {
           fi
           previous_argument="$argument"
         done
-        jq -e '
+        # Same reason as the metrics assertion above: log the verdict, do not
+        # rely on this function's exit status.
+        if jq -e '
           .containerDefinitions[]
-          | select(.name == "oxy-api-test")
+          | select(.name == "deploy-test")
           | .secrets[]
           | select(
               .name == "EXTRA_TASK_SECRET" and
-              .valueFrom == "arn:aws:ssm:test:123456789012:parameter/oxy/oxy-api/EXTRA_TASK_SECRET"
+              .valueFrom == "arn:aws:ssm:test:123456789012:parameter/oxy/sample-app/EXTRA_TASK_SECRET"
             )
-        ' "$input_json" >/dev/null
-        printf 'task-secret:arn\n' >>"$DEPLOY_TEST_LOG"
+        ' "$input_json" >/dev/null; then
+          printf 'task-secret:arn\n' >>"$DEPLOY_TEST_LOG"
+        else
+          printf 'task-secret:arn:MISMATCH\n' >>"$DEPLOY_TEST_LOG"
+        fi
       fi
-      printf '%s\n' "arn:aws:ecs:test:task-definition/oxy-api-test:2"
+      printf '%s\n' "arn:aws:ecs:test:task-definition/deploy-test:2"
       ;;
     "ecs update-service")
       local previous_argument=""
@@ -205,7 +229,7 @@ aws() {
         echo "Mocked update-service requires an explicit --desired-count." >&2
         return 1
       fi
-      if [[ "$task_definition" == "arn:aws:ecs:test:task-definition/oxy-api-test:1" ]]; then
+      if [[ "$task_definition" == "arn:aws:ecs:test:task-definition/deploy-test:1" ]]; then
         output_json="$(jq -n \
           --arg id "$DEPLOY_TEST_ROLLBACK_DEPLOYMENT_ID" \
           --arg task "$task_definition" \
@@ -252,7 +276,7 @@ aws() {
       printf 'reconcile\n' >>"$DEPLOY_TEST_LOG"
       printf '%s\n' '{
         "failures": [],
-        "tasks": [{"taskArn": "arn:aws:ecs:test:task/oxy-api-reconcile"}]
+        "tasks": [{"taskArn": "arn:aws:ecs:test:task/deploy-test-reconcile"}]
       }'
       ;;
     "ecs describe-tasks")
@@ -262,7 +286,7 @@ aws() {
           "lastStatus": "STOPPED",
           "stoppedReason": "Essential container exited",
           "containers": [{
-            "name": "oxy-api-test",
+            "name": "deploy-test",
             "exitCode": %s
           }]
         }]
@@ -293,6 +317,7 @@ run_release() {
   local inject_task_secret="${6:-false}"
   local service_desired_count="${7:-1}"
   local rollout_scenario="${8:-healthy}"
+  local smoke_exit_code="${9:-0}"
   local case_directory="$test_directory/$case_name"
   local output_file="$case_directory/output.log"
   local smoke_script="$case_directory/smoke.sh"
@@ -312,20 +337,23 @@ run_release() {
   export DEPLOY_TEST_DEPLOYMENT_ID
   export DEPLOY_TEST_ROLLBACK_DEPLOYMENT_ID
 
-  # The generated smoke fixture expands this variable when it runs.
+  # The generated smoke fixture expands DEPLOY_TEST_LOG when it runs; its exit
+  # code is the entire interface deploy-ecs-image.sh reads, so each case picks
+  # one. 75 is the "failed, but a rollback cannot repair it" code.
   # shellcheck disable=SC2016
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'printf "smoke\n" >>"$DEPLOY_TEST_LOG"' \
+    "exit $smoke_exit_code" \
     >"$smoke_script"
 
   local -a release_environment=(
     AWS_REGION=test
     AWS_ACCOUNT_ID=123456789012
-    CLUSTER=oxy-api-test
-    APP=oxy-api-test
-    CONTAINER_NAME=oxy-api-test
-    IMAGE_URI="example.invalid/oxy-api-test@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    CLUSTER=deploy-test
+    APP=deploy-test
+    CONTAINER_NAME=deploy-test
+    IMAGE_URI="example.invalid/deploy-test@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     MAX_WAIT_SECS=5
     POLL_INTERVAL=1
     RUN_MIGRATIONS="$run_migrations"
@@ -334,12 +362,12 @@ run_release() {
   )
   if [[ "$inject_internal_metrics" == "true" ]]; then
     release_environment+=(
-      INTERNAL_METRICS_PARAMETER=/oxy/oxy-api/INTERNAL_METRICS_TOKEN
+      INTERNAL_METRICS_PARAMETER="$DEPLOY_TEST_METRICS_PARAMETER"
     )
   fi
   if [[ "$inject_task_secret" == "true" ]]; then
     release_environment+=(
-      TASK_SECRET_OVERRIDES_JSON='{"EXTRA_TASK_SECRET":"arn:aws:ssm:test:123456789012:parameter/oxy/oxy-api/EXTRA_TASK_SECRET"}'
+      TASK_SECRET_OVERRIDES_JSON='{"EXTRA_TASK_SECRET":"arn:aws:ssm:test:123456789012:parameter/oxy/sample-app/EXTRA_TASK_SECRET"}'
     )
   fi
 
@@ -360,7 +388,7 @@ run_release() {
 run_release success true false true
 printf '%s\n' \
   metrics:arn \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:2:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:2:desired=1' \
   smoke \
   reconcile \
   >"$test_directory/success/expected.log"
@@ -368,10 +396,33 @@ diff -u \
   "$test_directory/success/expected.log" \
   "$test_directory/success/aws.log"
 
+# A hyphen in the parameter path is its own case because it is its own bug: the
+# bracket expression validating this name once matched every character EXCEPT a
+# hyphen, so an app whose path had none deployed and an app whose path had one
+# did not -- and the only repo with a smoke fixture at the time was one of the
+# former, which is why nothing here caught it.
+#
+# KEEP BOTH, and keep the plain one's app segment hyphen-FREE. That asymmetry is
+# the entire test: rename them to two spellings that both contain a hyphen and
+# this pair silently stops discriminating, while the suite still passes and still
+# goes red under a mutation -- just for the wrong case.
+DEPLOY_TEST_METRICS_PARAMETER=/oxy/sample-app/INTERNAL_METRICS_TOKEN
+run_release hyphenated-metrics-parameter true false true
+DEPLOY_TEST_METRICS_PARAMETER=/oxy/sampleapp/INTERNAL_METRICS_TOKEN
+printf '%s\n' \
+  metrics:arn \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:2:desired=1' \
+  smoke \
+  reconcile \
+  >"$test_directory/hyphenated-metrics-parameter/expected.log"
+diff -u \
+  "$test_directory/hyphenated-metrics-parameter/expected.log" \
+  "$test_directory/hyphenated-metrics-parameter/aws.log"
+
 run_release explicit-task-secret true false false 0 true
 printf '%s\n' \
   task-secret:arn \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:2:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:2:desired=1' \
   smoke \
   reconcile \
   >"$test_directory/explicit-task-secret/expected.log"
@@ -381,11 +432,11 @@ diff -u \
 
 run_release reconciliation-failure false false false 1
 printf '%s\n' \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:2:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:2:desired=1' \
   smoke \
   reconcile \
   tasklogs \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:1:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:1:desired=1' \
   >"$test_directory/reconciliation-failure/expected.log"
 diff -u \
   "$test_directory/reconciliation-failure/expected.log" \
@@ -420,7 +471,7 @@ fi
 
 run_release transient-zero-deployment true false false 0 false 1 transient-zero-deployment
 printf '%s\n' \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:2:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:2:desired=1' \
   smoke \
   reconcile \
   >"$test_directory/transient-zero-deployment/expected.log"
@@ -434,21 +485,21 @@ grep -F \
 
 run_release zero-service-during-deploy false false false 0 false 1 zero-service-during-deploy
 printf '%s\n' \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:2:desired=1' \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:1:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:2:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:1:desired=1' \
   >"$test_directory/zero-service-during-deploy/expected.log"
 diff -u \
   "$test_directory/zero-service-during-deploy/expected.log" \
   "$test_directory/zero-service-during-deploy/aws.log"
 grep -F \
-  "service oxy-api-test reached desiredCount=0 during the deployment rollout" \
+  "service deploy-test reached desiredCount=0 during the deployment rollout" \
   "$test_directory/zero-service-during-deploy/output.log" \
   >/dev/null
 
 run_release completed-zero-deployment false false false 0 false 1 completed-zero-deployment
 printf '%s\n' \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:2:desired=1' \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:1:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:2:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:1:desired=1' \
   >"$test_directory/completed-zero-deployment/expected.log"
 diff -u \
   "$test_directory/completed-zero-deployment/expected.log" \
@@ -460,8 +511,8 @@ grep -F \
 
 run_release circuit-breaker-rollback false false false 0 false 1 circuit-breaker-rollback
 printf '%s\n' \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:2:desired=1' \
-  'service:arn:aws:ecs:test:task-definition/oxy-api-test:1:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:2:desired=1' \
+  'service:arn:aws:ecs:test:task-definition/deploy-test:1:desired=1' \
   >"$test_directory/circuit-breaker-rollback/expected.log"
 diff -u \
   "$test_directory/circuit-breaker-rollback/expected.log" \
