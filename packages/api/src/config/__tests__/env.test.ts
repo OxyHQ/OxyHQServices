@@ -106,9 +106,24 @@ describe('validateRequiredEnvVars — DATABASE_URL', () => {
     expect(warnCalls).toMatch(/DATABASE_URL/);
   });
 
-  it('does NOT relax the Mongo requirement — both databases are required', () => {
+  // The inverse of the assertion this replaces, and the point of the change:
+  // the API used to REFUSE TO BOOT without a Mongo connection string, months
+  // after it stopped reading Mongo to serve a request. Nothing in `src/`
+  // outside `scripts/` and `db/backfill/` touches Mongo now, so requiring one
+  // was requiring a dependency the process does not have.
+  it('boots with no MONGODB_URI at all — Mongo left the serving path', () => {
     delete process.env.MONGODB_URI;
-    expect(() => validateRequiredEnvVars()).toThrow(/MONGODB_URI/);
+    expect(() => validateRequiredEnvVars()).not.toThrow();
+  });
+
+  // MONGODB_URI is still SUPPLIED (the backfill and the one-shot admin scripts
+  // read it, and Mongo is the rollback source), so a malformed one must still
+  // be called out — dropping the requirement must not drop the diagnosis.
+  it('still warns when a supplied MONGODB_URI is not a Mongo URI', () => {
+    process.env.MONGODB_URI = 'postgres://oxy@localhost:5432/oxy';
+    expect(() => validateRequiredEnvVars()).not.toThrow();
+    const warnCalls = JSON.stringify((logger.warn as jest.Mock).mock.calls);
+    expect(warnCalls).toMatch(/MONGODB_URI/);
   });
 });
 

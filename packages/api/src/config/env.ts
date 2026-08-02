@@ -13,13 +13,23 @@ import { logger } from '../utils/logger';
  * Required environment variables
  */
 export interface RequiredEnvVars {
-  // Database
-  MONGODB_URI: string;
+  // MongoDB connection string. OPTIONAL since 2026-08-02: nothing in the
+  // serving path reads Mongo any more. The API had served every request from
+  // Postgres since the cutover on 2026-07-31, but three things still tied the
+  // PROCESS to Mongo — a boot-time `mongoose.connect` in `server.ts`, this
+  // entry in the `required` list below, and eleven type-only imports of
+  // `models/*` — and all three are gone. `src/models/` itself stays, because
+  // `src/scripts/` and `src/db/backfill/` (the migration, and the read-only
+  // `mongoSource` proxy) still use it: MongoDB is the ROLLBACK SOURCE.
+  //
+  // So this is still synced to SSM and still reaches the ECS task — a one-shot
+  // backfill or admin task needs it. It is simply no longer a condition of the
+  // API starting, which is the whole difference between "Postgres serves the
+  // traffic" and "Mongo is not in the serving path".
+  MONGODB_URI?: string;
 
   // PostgreSQL connection string, consumed by `config/postgres.ts` (Drizzle
-  // over postgres.js) and by the migrator (`db/migrate.ts`). Required alongside
-  // MONGODB_URI while the Mongo→Postgres port is in flight; Mongo is still the
-  // live store.
+  // over postgres.js) and by the migrator (`db/migrate.ts`). The live store.
   //
   // Every name in the `required` list below must reach the ECS task, which
   // means being synced to SSM by `.github/workflows/deploy-aws.yml`. CI job
@@ -138,7 +148,6 @@ export function isValidHostname(value: string): boolean {
  */
 export function validateRequiredEnvVars(): void {
   const required: (keyof RequiredEnvVars)[] = [
-    'MONGODB_URI',
     'DATABASE_URL',
     'ACCESS_TOKEN_SECRET',
     'REFRESH_TOKEN_SECRET',
@@ -157,7 +166,9 @@ export function validateRequiredEnvVars(): void {
     }
   }
 
-  // Check for commonly misconfigured variables
+  // Check for commonly misconfigured variables. MONGODB_URI is no longer
+  // required, but a backfill or admin task that IS given one still deserves to
+  // hear that it is malformed before it fails to connect.
   if (process.env.MONGODB_URI && !process.env.MONGODB_URI.startsWith('mongodb')) {
     warnings.push('MONGODB_URI should start with "mongodb://" or "mongodb+srv://"');
   }

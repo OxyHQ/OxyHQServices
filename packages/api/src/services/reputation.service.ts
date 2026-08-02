@@ -53,23 +53,21 @@ import { reporterReputationProfiles } from '../db/schema/reporterReputationProfi
 import {
   reputationBalances,
   reputationReviewingReliability,
+  type ReputationBreakdown,
+  type ReputationConductSnapshot,
+  type ReputationContextualInfluenceSnapshot,
+  type ReputationContributionSnapshot,
+  type ReputationInfluence,
+  type ReputationPersonhoodSnapshot,
+  type ReputationReliability,
+  type ReputationReportingSnapshot,
+  type ReputationReviewingSnapshot,
 } from '../db/schema/reputationBalances';
 import { reputationDisputes } from '../db/schema/reputationDisputes';
 import { reputationRules } from '../db/schema/reputationRules';
 import { reputationTransactions } from '../db/schema/reputationTransactions';
 import { reviewerReputationProfiles } from '../db/schema/reviewerReputationProfiles';
 import { users } from '../db/schema/users';
-import type {
-  ReputationBreakdown,
-  ReputationConductSnapshot,
-  ReputationContextualInfluenceSnapshot,
-  ReputationContributionSnapshot,
-  ReputationInfluence,
-  ReputationPersonhoodSnapshot,
-  ReputationReliability,
-  ReputationReportingSnapshot,
-  ReputationReviewingSnapshot,
-} from '../models/ReputationBalance';
 import {
   REPORT_CONFIRMED_ACTION,
   REPORT_REJECTED_ACTION,

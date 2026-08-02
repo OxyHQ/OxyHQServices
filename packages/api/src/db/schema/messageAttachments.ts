@@ -34,6 +34,30 @@ import { generatedId } from './columns';
 import { files } from './files';
 import { messages } from './messages';
 
+/**
+ * One attachment as the mail subsystem passes it around — the row's own fields
+ * without its id, `message_id` or `ord`.
+ *
+ * Declared here beside the columns, so what the send path resolves, what
+ * storage writes, and what the SMTP transport reads are one shape.
+ * `contentId` is optional-undefined while the column is nullable; the read path
+ * coalesces.
+ */
+export interface MessageAttachment {
+  /** Canonical `files` row id in the Oxy file manager. */
+  fileId: string;
+  /** User-facing filename, mirrored from `files.original_name` at link time. */
+  name: string;
+  /** Mirrored from `files.mime`. */
+  contentType: string;
+  /** Mirrored from `files.size`. */
+  size: number;
+  /** MIME Content-ID for inline `cid:` references in HTML bodies. */
+  contentId?: string;
+  /** True if rendered inline in the HTML body, false if a standalone download. */
+  isInline: boolean;
+}
+
 export const messageAttachments = pgTable(
   'message_attachments',
   {

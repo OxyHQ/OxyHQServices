@@ -25,6 +25,7 @@ import type {
     ModerationSeverity,
     ReputationCategory,
 } from '@oxyhq/contracts';
+import type { ConductStandingThreshold } from '../db/schema/moderationPolicyStandingThresholds';
 
 // =============================================================================
 // LEDGER ACTION KEYS
@@ -167,7 +168,7 @@ export const BASELINE_MULTI_FINDING_CAP = 1.5;
  * `limited`, critical (20) → `restricted`. A single low incident (1) lands on
  * `watch`, not on a restriction.
  */
-export const BASELINE_STANDING_THRESHOLDS: readonly { standing: ConductStanding; minRisk: number }[] =
+export const BASELINE_STANDING_THRESHOLDS: readonly ConductStandingThreshold[] =
     [
         { standing: 'restricted', minRisk: 20 },
         { standing: 'limited', minRisk: 8 },

@@ -15,7 +15,7 @@ import { getDb } from '../config/postgres';
 import { messageRecipients } from '../db/schema/messageRecipients';
 import { messages } from '../db/schema/messages';
 import { users } from '../db/schema/users';
-import type { IAttachment } from '../models/Message';
+import type { MessageAttachment } from '../db/schema/messageAttachments';
 import type { FileRecord } from '../types/file.types';
 import {
   BadRequestError,
@@ -39,19 +39,19 @@ function getOptionalQueryString(value: unknown, name: string): string | undefine
 
 /**
  * Resolve user-supplied { fileId, contentId?, isInline? } references into the
- * canonical IAttachment shape persisted on Message. Each fileId MUST:
+ * canonical MessageAttachment shape persisted on Message. Each fileId MUST:
  *   - exist
  *   - be in status 'active' (not trash/deleted)
  *   - be owned by the requesting user
  *
- * The IAttachment is built from the FileRecord so the Message subdocument carries
+ * The MessageAttachment is built from the FileRecord so the Message subdocument carries
  * a stable snapshot of name/contentType/size at send time, regardless of any
  * later changes to the underlying file's originalName.
  */
 async function resolveAttachmentInputs(
   inputs: AttachmentInput[],
   userId: string
-): Promise<{ resolved: IAttachment[]; files: FileRecord[] }> {
+): Promise<{ resolved: MessageAttachment[]; files: FileRecord[] }> {
   const fileIds = inputs.map((a) => a.fileId);
   const files = await assetService.getFilesByIds(fileIds);
   const byId = new Map<string, FileRecord>();
@@ -61,7 +61,7 @@ async function resolveAttachmentInputs(
     }
   }
 
-  const resolved: IAttachment[] = [];
+  const resolved: MessageAttachment[] = [];
   const usedFiles: FileRecord[] = [];
 
   for (const input of inputs) {
@@ -456,12 +456,12 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
 
   const allRecipients = [...to, ...(cc ?? []), ...(bcc ?? [])];
 
-  // Resolve { fileId } references → canonical IAttachment[] for storage and
+  // Resolve { fileId } references → canonical MessageAttachment[] for storage and
   // outbound transport. Throws 400/403 on missing / non-active / unauthorized
   // fileIds before any side effects.
   const { resolved: resolvedAttachments, files: attachedFiles } = attachments && attachments.length > 0
     ? await resolveAttachmentInputs(attachments, userId)
-    : { resolved: [] as IAttachment[], files: [] as FileRecord[] };
+    : { resolved: [] as MessageAttachment[], files: [] as FileRecord[] };
 
   if (scheduledAt) {
     const scheduledDate = new Date(scheduledAt);

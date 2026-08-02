@@ -160,7 +160,7 @@ const truncatedContract = createFixture();
 edit(truncatedContract, ENV_MODULE, 'truncated-boot-contract', (text) =>
   text.replace(
     /const required: \(keyof RequiredEnvVars\)\[\] = \[[\s\S]*?\];/,
-    "const required: (keyof RequiredEnvVars)[] = [\n    'MONGODB_URI',\n  ];",
+    "const required: (keyof RequiredEnvVars)[] = [\n    'DATABASE_URL',\n  ];",
   ));
 expectVerdict('truncated-boot-contract', truncatedContract, 1, 'required env vars parsed out of');
 
@@ -176,7 +176,7 @@ edit(wrongContractArray, ENV_MODULE, 'wrong-boot-contract-array', (text) =>
     "    'STRIPE_SECRET_KEY',\n    'STRIPE_WEBHOOK_SECRET',\n    'ALIA_API_KEY',\n" +
     "    'DKIM_PRIVATE_KEY',\n    'DEVICE_ID_SALT',\n    'OXY_PUBLIC_KEY',\n  ];",
   ));
-expectVerdict('wrong-boot-contract-array', wrongContractArray, 1, 'MONGODB_URI was not among the parsed required env vars');
+expectVerdict('wrong-boot-contract-array', wrongContractArray, 1, 'DATABASE_URL was not among the parsed required env vars');
 
 for (const fixture of createdFixtures) {
   if (fixture.startsWith(fixturePrefix)) rmSync(fixture, { recursive: true, force: true });

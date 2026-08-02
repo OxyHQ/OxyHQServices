@@ -42,7 +42,8 @@ import {
   publicColumns,
   USERS_PROTECTED_COLUMNS,
 } from '../db/schema/protectedColumns';
-import type { AccountKind, OrganizationCategory } from '../models/User';
+import type { AccountKind } from '../db/schema/users';
+import type { OrganizationCategory } from '@oxyhq/contracts';
 import {
   permissionsForAccountRole,
   roleCanActAs,

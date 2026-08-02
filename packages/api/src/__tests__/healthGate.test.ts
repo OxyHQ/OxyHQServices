@@ -33,8 +33,8 @@ jest.unmock('socket.io');
 // `server.ts` runs `validateRequiredEnvVars()` at import and `process.exit(1)`s
 // when anything is missing — which would take the whole jest worker with it.
 // CI supplies these; a developer running `bun run test` with no `.env` does not.
-// `??=` so a real value always wins.
-process.env.MONGODB_URI ??= 'mongodb://127.0.0.1:27017/unused-by-the-api-process';
+// `??=` so a real value always wins. No MONGODB_URI placeholder: it is not a
+// required var any more, and `bootGate.test.ts` is where that is held.
 process.env.ACCESS_TOKEN_SECRET ??= 'health-gate-access-token-secret-32-chars';
 process.env.REFRESH_TOKEN_SECRET ??= 'health-gate-refresh-token-secret-32-chars';
 process.env.AWS_REGION ??= 'us-west-2';

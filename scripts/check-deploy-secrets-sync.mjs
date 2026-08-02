@@ -78,7 +78,12 @@ const SUPPLIED_WITHOUT_SECRET_SYNC = new Map([
  * covers each with a case that goes green if the guard is deleted.
  */
 const MINIMUM_REQUIRED_ENV_VARS = 5;
-const REQUIRED_ENV_SENTINEL = 'MONGODB_URI';
+// `DATABASE_URL`, not `MONGODB_URI`: the sentinel has to be a name that will
+// still be in the array. MONGODB_URI left it on 2026-08-02 when Mongo left the
+// serving path — it is still SYNCED (the backfill and the admin scripts read
+// it), which is exactly why this gate did not notice, and why the sentinel had
+// to move rather than be dropped.
+const REQUIRED_ENV_SENTINEL = 'DATABASE_URL';
 
 const problems = [];
 

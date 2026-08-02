@@ -37,14 +37,13 @@ import { emailFilters, incompleteEmailFilters } from '../db/schema/emailFilters'
 import { emailTemplates } from '../db/schema/emailTemplates';
 import { labels as labelsTable } from '../db/schema/labels';
 import { mailboxes } from '../db/schema/mailboxes';
-import { messageAttachments } from '../db/schema/messageAttachments';
+import { messageAttachments, type MessageAttachment } from '../db/schema/messageAttachments';
 import { messageRecipients } from '../db/schema/messageRecipients';
-import { messages, type MessageHighlight } from '../db/schema/messages';
+import { messages, type EmailAddress, type MessageHighlight } from '../db/schema/messages';
 import { MESSAGES_PROTECTED_COLUMNS, publicColumns } from '../db/schema/protectedColumns';
 import { reminders } from '../db/schema/reminders';
 import { billingSubscriptions } from '../db/schema/billingSubscriptions';
 import { users } from '../db/schema/users';
-import type { IEmailAddress, IAttachment } from '../models/Message';
 import { SYSTEM_LABELS, isSystemLabel, isSystemLabelId } from '../constants/systemLabels';
 import { getAvatarPathsBatch } from './senderAvatar.service';
 import {
@@ -494,11 +493,11 @@ async function loadAttachments(
 /**
  * Attachments in the shape the outbound transport takes.
  *
- * `IAttachment.contentId` is optional-undefined while the column is nullable,
+ * `MessageAttachment.contentId` is optional-undefined while the column is nullable,
  * so the two shapes are not assignable to each other — the conversion belongs
  * at the boundary, once, rather than as a `.map()` at every send site.
  */
-async function loadOutboundAttachments(db: Database, messageId: string): Promise<IAttachment[]> {
+async function loadOutboundAttachments(db: Database, messageId: string): Promise<MessageAttachment[]> {
   const rows = await db
     .select({
       fileId: messageAttachments.fileId,
@@ -906,8 +905,8 @@ async function loadSenderIdentity(
 async function insertMessageWithChildren(
   db: Database,
   values: typeof messages.$inferInsert,
-  recipients: { to?: IEmailAddress[]; cc?: IEmailAddress[]; bcc?: IEmailAddress[] },
-  attachments: IAttachment[],
+  recipients: { to?: EmailAddress[]; cc?: EmailAddress[]; bcc?: EmailAddress[] },
+  attachments: MessageAttachment[],
 ): Promise<string> {
   return db.transaction(async (tx) => {
     const [row] = await tx.insert(messages).values(values).returning({ id: messages.id });
@@ -1679,9 +1678,9 @@ class EmailService {
 
   async storeIncomingMessage(params: {
     recipientUsername: string;
-    from: IEmailAddress;
-    to: IEmailAddress[];
-    cc?: IEmailAddress[];
+    from: EmailAddress;
+    to: EmailAddress[];
+    cc?: EmailAddress[];
     subject: string;
     text?: string;
     html?: string;
@@ -1727,7 +1726,7 @@ class EmailService {
     // Upload attachments to the Oxy file manager (canonical asset storage).
     // The message persists a reference {fileId, name, contentType, size, ...};
     // the actual blob lives in the File model + S3 via assetService.
-    const storedAttachments: IAttachment[] = [];
+    const storedAttachments: MessageAttachment[] = [];
     const uploadedFiles: Array<{ fileId: string }> = [];
     if (params.attachments && params.attachments.length > 0) {
       for (const att of params.attachments) {
@@ -1917,9 +1916,9 @@ class EmailService {
   async saveDraft(
     userId: string,
     draft: {
-      to?: IEmailAddress[];
-      cc?: IEmailAddress[];
-      bcc?: IEmailAddress[];
+      to?: EmailAddress[];
+      cc?: EmailAddress[];
+      bcc?: EmailAddress[];
       subject?: string;
       text?: string;
       html?: string;
@@ -2025,16 +2024,16 @@ class EmailService {
     userId: string,
     messageData: {
       messageId: string;
-      from: IEmailAddress;
-      to: IEmailAddress[];
-      cc?: IEmailAddress[];
-      bcc?: IEmailAddress[];
+      from: EmailAddress;
+      to: EmailAddress[];
+      cc?: EmailAddress[];
+      bcc?: EmailAddress[];
       subject: string;
       text?: string;
       html?: string;
       inReplyTo?: string;
       references?: string[];
-      attachments?: IAttachment[];
+      attachments?: MessageAttachment[];
       size: number;
     }
   ): Promise<MessageDto> {
@@ -2177,16 +2176,16 @@ class EmailService {
   async scheduleMessage(
     userId: string,
     params: {
-      from: IEmailAddress;
-      to: IEmailAddress[];
-      cc?: IEmailAddress[];
-      bcc?: IEmailAddress[];
+      from: EmailAddress;
+      to: EmailAddress[];
+      cc?: EmailAddress[];
+      bcc?: EmailAddress[];
       subject: string;
       text?: string;
       html?: string;
       inReplyTo?: string;
       references?: string[];
-      attachments?: IAttachment[];
+      attachments?: MessageAttachment[];
       scheduledAt: Date;
     }
   ): Promise<MessageDto> {
@@ -3070,11 +3069,11 @@ class EmailService {
       try {
         const parsed = await simpleParser(file.buffer);
 
-        const from: IEmailAddress = parsed.from?.value?.[0]
+        const from: EmailAddress = parsed.from?.value?.[0]
           ? { name: parsed.from.value[0].name || '', address: parsed.from.value[0].address || '' }
           : { name: '', address: 'unknown@unknown' };
 
-        const mapAddresses = (addrs: typeof parsed.to): IEmailAddress[] => {
+        const mapAddresses = (addrs: typeof parsed.to): EmailAddress[] => {
           if (!addrs) return [];
           const addrArray = Array.isArray(addrs) ? addrs : [addrs];
           return addrArray.flatMap((group) =>
@@ -3091,7 +3090,7 @@ class EmailService {
         const rawSize = file.buffer.length;
 
         // Upload attachments to the Oxy file manager
-        const storedAttachments: IAttachment[] = [];
+        const storedAttachments: MessageAttachment[] = [];
         const importedFileIds: string[] = [];
         const parsedAttachments = parsed.attachments || [];
         const attachmentBytes = parsedAttachments.reduce(

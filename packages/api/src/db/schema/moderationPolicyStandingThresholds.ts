@@ -16,9 +16,21 @@
 
 import { sql } from 'drizzle-orm';
 import { check, doublePrecision, foreignKey, pgTable, text, unique } from 'drizzle-orm/pg-core';
-import { CONDUCT_STANDINGS } from '@oxyhq/contracts';
+import { CONDUCT_STANDINGS, type ConductStanding } from '@oxyhq/contracts';
 import { generatedId } from './columns';
 import { moderationPolicies } from './moderationPolicies';
+
+/**
+ * One standing band, as the policy states it.
+ *
+ * The two fields the band actually IS, without the row's own id or its policy
+ * link — which is what a caller deriving a standing holds: the baseline tuple
+ * in `utils/moderation.constants.ts` has no row behind it at all.
+ */
+export interface ConductStandingThreshold {
+  standing: ConductStanding;
+  minRisk: number;
+}
 
 export const moderationPolicyStandingThresholds = pgTable(
   'moderation_policy_standing_thresholds',

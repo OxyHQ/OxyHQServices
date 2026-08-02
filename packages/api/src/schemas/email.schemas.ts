@@ -81,8 +81,8 @@ export const updateLabelSchema = z.object({
 });
 
 // Canonical recipient shape used across the inbound path (storeIncomingMessage),
-// the Mongoose Message model (IEmailAddress), the outbound transporter
-// (smtpOutbound.send), and the inbox UI. RFC 5321 address-spec is required;
+// the stored form (`EmailAddress` in `db/schema/messages.ts`), the outbound
+// transporter (smtpOutbound.send), and the inbox UI. RFC 5321 address-spec is required;
 // display name is optional. We do NOT accept bare strings or "Name <addr>"
 // — clients must parse and submit the canonical object.
 const recipientSchema = z.object({

@@ -26,6 +26,28 @@ import { boolean, check, doublePrecision, index, integer, pgTable, text } from '
 import { createdAt, generatedId, updatedAt } from './columns';
 import { users } from './users';
 
+/**
+ * The signal sub-scores behind the personhood score (audit / UI breakdown).
+ *
+ * Declared here beside the `breakdown_*` columns that store it, so the shape
+ * `personhoodDerive.personhoodScore` produces and the columns it lands in
+ * cannot drift. The six fields map 1:1 onto those columns.
+ */
+export interface PersonhoodBreakdown {
+  /** Saturated [0,1] vouch signal from the weighted vouch sum. */
+  vouchSignal: number;
+  /** Saturated [0,1] real-life-attestation signal. */
+  realLifeSignal: number;
+  /** 1 when the account is biometric-bound, else 0. */
+  biometricSignal: number;
+  /** Weighted blend of the three signals before the sybil penalty. */
+  evidence: number;
+  /** The [0,1] sybil penalty subtracted (multiplicatively) from the evidence. */
+  sybilPenalty: number;
+  /** True when the score came from the seed-verifier genesis short-circuit. */
+  seed: boolean;
+}
+
 export const personhoodStatuses = pgTable(
   'personhood_statuses',
   {

@@ -118,6 +118,8 @@ export const USER_TYPES = ['local', 'federated', 'agent', 'automated'] as const;
  */
 export const ACCOUNT_KINDS = ['personal', 'organization', 'project', 'bot'] as const;
 
+export type AccountKind = (typeof ACCOUNT_KINDS)[number];
+
 /** Account-graph lifecycle. `archived` accounts keep their tree edges. */
 export const ACCOUNT_STATUSES = ['active', 'archived'] as const;
 
