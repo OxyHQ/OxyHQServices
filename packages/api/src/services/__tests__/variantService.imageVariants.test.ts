@@ -180,3 +180,76 @@ describe('VariantService imageVariants — w128 variant', () => {
     );
   });
 });
+
+/**
+ * The same size taxonomy applied to a VIDEO, rendered from its poster frame.
+ *
+ * These cover the branch that needs no ffmpeg — the poster already exists, so
+ * only the Sharp resize runs. The decode itself (and the whole HTTP path down
+ * from `GET /cdn/:id?variant=…`) is covered end to end with a real clip in
+ * `src/routes/__tests__/cdnVideoImageVariant.test.ts`.
+ */
+describe('VariantService.ensureVideoImageVariant — sizes derived from the poster', () => {
+  const POSTER_KEY = 'public/variants/2026/08/bb/poster.jpg';
+
+  function makeVideoFileWithPoster(): IFile {
+    return {
+      _id: 'test-video-id',
+      sha256: 'b'.repeat(64),
+      mime: 'video/mp4',
+      visibility: 'public',
+      storageKey: 'public/content/2026/08/bb/original.mp4',
+      variants: [{ type: 'poster', key: POSTER_KEY, readyAt: new Date() }],
+    } as unknown as IFile;
+  }
+
+  /**
+   * A poster-shaped source: portrait, like the vertical clips that dominate the
+   * corpus, so a square output would be visible in the assertion.
+   */
+  async function makePortraitJpeg(width: number, height: number): Promise<Buffer> {
+    return sharp({
+      create: { width, height, channels: 3, background: { r: 30, g: 90, b: 160 } },
+    })
+      .jpeg()
+      .toBuffer();
+  }
+
+  it('renders a size from the existing poster instead of re-decoding the video', async () => {
+    const poster = await makePortraitJpeg(1080, 1920);
+    const fakeS3 = makeFakeS3(poster);
+    // The poster is already ready in storage, so the reuse probe must find it.
+    fakeS3.fileExists.mockImplementation((key: string) => Promise.resolve(key === POSTER_KEY));
+
+    const service = new VariantService(fakeS3 as unknown as S3Service);
+    const variant = await service.ensureVideoImageVariant(makeVideoFileWithPoster(), 'w320');
+
+    expect(variant.type).toBe('w320');
+    // The POSTER is the source — never the video's own storage key, which sharp
+    // could not decode anyway.
+    expect(fakeS3.downloadBuffer).toHaveBeenCalledWith(POSTER_KEY);
+
+    const uploaded = fakeS3.uploads.find(u => u.key.endsWith('/w320.webp'));
+    expect(uploaded).toBeDefined();
+    const meta = await sharp(uploaded?.buffer).metadata();
+    expect(meta.format).toBe('webp');
+    expect(meta.width).toBe(320);
+    // Aspect preserved (1080×1920 → 320×569), so a portrait video is never
+    // squashed into a square thumbnail.
+    expect(meta.height).toBe(569);
+  });
+
+  it('rejects a variant key that is not a real size (keeps the 404 for a bogus name)', async () => {
+    const poster = await makePortraitJpeg(1080, 1920);
+    const fakeS3 = makeFakeS3(poster);
+    fakeS3.fileExists.mockImplementation((key: string) => Promise.resolve(key === POSTER_KEY));
+
+    const service = new VariantService(fakeS3 as unknown as S3Service);
+
+    await expect(
+      service.ensureVideoImageVariant(makeVideoFileWithPoster(), 'not-a-real-variant'),
+    ).rejects.toThrow(/Unsupported video image variant/);
+    // A rejected name must never reach storage.
+    expect(fakeS3.uploads).toHaveLength(0);
+  });
+});
