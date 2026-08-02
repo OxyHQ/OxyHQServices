@@ -136,11 +136,11 @@ wait_for_task_stop() {
 }
 
 wait_for_service_rollout() {
-  local task_definition="$1"
+  local deployment_id="$1"
   local label="$2"
   local elapsed=0
   local deployment_json="$service_json"
-  local deployment_state rollout_state running desired service_desired
+  local ours rollout_state running desired state service_desired
 
   while (( elapsed < MAX_WAIT_SECS )); do
     if ! deployment_json="$(aws ecs describe-services \
@@ -157,55 +157,59 @@ wait_for_service_rollout() {
       elapsed=$((elapsed + POLL_INTERVAL))
       continue
     fi
-    if ! deployment_state="$(jq -r --arg task "$task_definition" '
-      .services[0] as $service
-      |
-      [
-        $service.deployments[]
-        | select(.taskDefinition == $task and .status == "PRIMARY")
-        | [.rolloutState, .runningCount, .desiredCount, $service.desiredCount]
-        | @tsv
-      ][0] // empty
-    ' <<<"$deployment_json")"; then
-      echo "::warning::ECS returned malformed rollout data for $label; retrying."
-      sleep "$POLL_INTERVAL"
-      elapsed=$((elapsed + POLL_INTERVAL))
-      continue
+
+    ours="$(jq -c --arg id "$deployment_id" '
+      .services[0].deployments[]? | select(.id == $id)
+    ' <<<"$deployment_json")"
+    service_desired="$(jq -r '.services[0].desiredCount // empty' <<<"$deployment_json")"
+
+    if [[ -z "$ours" || "$ours" == "null" ]]; then
+      echo "::error::$label deployment $deployment_id is no longer on the service (rolled back or superseded)."
+      echo "::group::Recent ECS service events"
+      jq -r '
+        .services[0].events[:10][]?
+        | "\(.createdAt // "unknown") \(.message // "unknown")"
+      ' <<<"$deployment_json"
+      echo "::endgroup::"
+      return 1
     fi
 
-    if [[ -z "$deployment_state" ]]; then
-      echo "($elapsed s) waiting for the $label PRIMARY deployment"
-    else
-      IFS=$'\t' read -r rollout_state running desired service_desired <<<"$deployment_state"
-      echo "($elapsed s) $label rolloutState=$rollout_state running=$running desired=$desired serviceDesired=$service_desired"
-      if ! [[ "$running" =~ ^[0-9]+$ &&
-              "$desired" =~ ^[0-9]+$ &&
-              "$service_desired" =~ ^[0-9]+$ ]]; then
-        echo "::warning::ECS returned non-numeric task counts for the $label rollout; retrying."
-      elif (( service_desired < 1 )); then
-        echo "::error::ECS service $APP reached desiredCount=0 during the $label rollout."
-        return 1
-      elif [[ "$rollout_state" == "COMPLETED" ]]; then
-        if (( desired < 1 )); then
-          echo "::error::ECS $label rollout for $APP completed at desiredCount=0; refusing to accept a zero-task steady state."
-          return 1
-        fi
-        if [[ "$running" == "$desired" ]]; then
-          return 0
-        fi
-      elif (( desired < 1 )); then
-        echo "::warning::ECS has not assigned desired tasks to the $label PRIMARY deployment yet; waiting."
-      fi
-      if [[ "$rollout_state" == "FAILED" ]]; then
-        echo "::error::ECS $label rollout for $APP failed."
-        echo "::group::Recent ECS service events"
-        jq -r '
-          .services[0].events[:10][]?
-          | "\(.createdAt // "unknown") \(.message // "unknown")"
-        ' <<<"$deployment_json"
-        echo "::endgroup::"
+    rollout_state="$(jq -r '.rolloutState // "IN_PROGRESS"' <<<"$ours")"
+    running="$(jq -r '.runningCount // 0' <<<"$ours")"
+    desired="$(jq -r '.desiredCount // 0' <<<"$ours")"
+    state="$(jq -r '.status // "UNKNOWN"' <<<"$ours")"
+    echo "($elapsed s) $label deployment=$deployment_id status=$state rolloutState=$rollout_state running=$running desired=$desired serviceDesired=$service_desired"
+
+    if ! [[ "$running" =~ ^[0-9]+$ &&
+            "$desired" =~ ^[0-9]+$ &&
+            "$service_desired" =~ ^[0-9]+$ ]]; then
+      echo "::warning::ECS returned non-numeric task counts for the $label rollout; retrying."
+    elif (( service_desired < 1 )); then
+      echo "::error::ECS service $APP reached desiredCount=0 during the $label rollout."
+      return 1
+    elif [[ "$rollout_state" == "FAILED" ]]; then
+      echo "::error::ECS $label rollout for $APP failed."
+      echo "::group::Recent ECS service events"
+      jq -r '
+        .services[0].events[:10][]?
+        | "\(.createdAt // "unknown") \(.message // "unknown")"
+      ' <<<"$deployment_json"
+      echo "::endgroup::"
+      return 1
+    elif [[ "$rollout_state" == "COMPLETED" ]]; then
+      if [[ "$state" != "PRIMARY" ]]; then
+        echo "::error::$label deployment $deployment_id completed but is $state, not PRIMARY — it was superseded or rolled back."
         return 1
       fi
+      if (( desired < 1 )); then
+        echo "::error::ECS $label rollout for $APP completed at desiredCount=0; refusing to accept a zero-task steady state."
+        return 1
+      fi
+      if [[ "$running" == "$desired" ]]; then
+        return 0
+      fi
+    elif (( desired < 1 )); then
+      echo "::warning::ECS has not assigned desired tasks to the $label deployment yet; waiting."
     fi
 
     sleep "$POLL_INTERVAL"
@@ -220,6 +224,23 @@ wait_for_service_rollout() {
   ' <<<"$deployment_json"
   echo "::endgroup::"
   return 1
+}
+
+extract_primary_deployment_id() {
+  local update_json="$1"
+  local label="$2"
+  local deployment_id
+
+  deployment_id="$(jq -r '
+    .service.deployments[]
+    | select(.status == "PRIMARY")
+    | .id
+  ' <<<"$update_json" | head -1)"
+  if [[ -z "$deployment_id" || "$deployment_id" == "null" ]]; then
+    echo "::error::ECS update-service returned no PRIMARY deployment id for $label."
+    return 1
+  fi
+  printf '%s\n' "$deployment_id"
 }
 
 print_one_shot_logs() {
@@ -317,8 +338,10 @@ run_one_shot_command() {
 }
 
 rollback_service() {
+  local rollback_json rollback_deployment_id
+
   echo "::warning::Rolling $APP back to $current_task_definition."
-  if ! aws ecs update-service \
+  if ! rollback_json="$(aws ecs update-service \
     --cluster "$CLUSTER" \
     --service "$APP" \
     --task-definition "$current_task_definition" \
@@ -328,11 +351,14 @@ rollback_service() {
       "minimumHealthyPercent": 100,
       "maximumPercent": 200
     }' \
-    >/dev/null; then
+    --output json)"; then
     echo "::error::ECS rejected the rollback to $current_task_definition."
     return 1
   fi
-  wait_for_service_rollout "$current_task_definition" "rollback"
+  if ! rollback_deployment_id="$(extract_primary_deployment_id "$rollback_json" "rollback")"; then
+    return 1
+  fi
+  wait_for_service_rollout "$rollback_deployment_id" "rollback"
 }
 
 internal_metrics_secret_arn=""
@@ -463,12 +489,13 @@ fi
 if [[ "$RUN_MIGRATIONS" == "true" ]]; then
   if ! run_one_shot_command \
     "Migration" \
-    '["bun","packages/backend/dist/scripts/migrate.js"]'; then
+    '["node","packages/api/dist/db/migrate.js"]'; then
     exit 1
   fi
 fi
 
-if ! aws ecs update-service \
+deploy_update_json=""
+if ! deploy_update_json="$(aws ecs update-service \
   --cluster "$CLUSTER" \
   --service "$APP" \
   --task-definition "$new_task_definition" \
@@ -478,7 +505,7 @@ if ! aws ecs update-service \
     "minimumHealthyPercent": 100,
     "maximumPercent": 200
   }' \
-  >/dev/null; then
+  --output json)"; then
   echo "::error::ECS rejected the service update; restoring the previous task definition defensively."
   if ! rollback_service; then
     echo "::error::The defensive rollback also failed; manual intervention is required."
@@ -486,9 +513,17 @@ if ! aws ecs update-service \
   exit 1
 fi
 
-echo "Deploying immutable image $IMAGE_URI with task definition $new_task_definition"
+deploy_deployment_id=""
+if ! deploy_deployment_id="$(extract_primary_deployment_id "$deploy_update_json" "deployment")"; then
+  if ! rollback_service; then
+    echo "::error::The defensive rollback also failed; manual intervention is required."
+  fi
+  exit 1
+fi
 
-if ! wait_for_service_rollout "$new_task_definition" "deployment"; then
+echo "Deploying immutable image $IMAGE_URI with task definition $new_task_definition (deployment $deploy_deployment_id)"
+
+if ! wait_for_service_rollout "$deploy_deployment_id" "deployment"; then
   if ! rollback_service; then
     echo "::error::Deployment and explicit rollback both failed; manual intervention is required."
   fi
