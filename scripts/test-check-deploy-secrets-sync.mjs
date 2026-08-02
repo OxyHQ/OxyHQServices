@@ -146,8 +146,8 @@ expectVerdict(
 // definition does not read silently rots.
 const duplicated = createFixture();
 edit(duplicated, WORKFLOW, 'name-in-both-lists', (text) =>
-  text.replace('SHARED_SECRETS="AWS_ACCESS_KEY_ID', 'SHARED_SECRETS="MONGODB_URI AWS_ACCESS_KEY_ID'));
-expectVerdict('name-in-both-lists', duplicated, 1, 'MONGODB_URI appears in both');
+  text.replace('SHARED_SECRETS="AWS_ACCESS_KEY_ID', 'SHARED_SECRETS="DATABASE_URL AWS_ACCESS_KEY_ID'));
+expectVerdict('name-in-both-lists', duplicated, 1, 'DATABASE_URL appears in both');
 
 // A list the gate can no longer read must be reported as such, not treated as
 // an empty allowlist.

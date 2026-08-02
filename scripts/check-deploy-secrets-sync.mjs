@@ -87,10 +87,9 @@ const PRODUCTION_MANDATORY_SYNCED_SECRETS = ['DEVICE_ID_SALT'];
  */
 const MINIMUM_REQUIRED_ENV_VARS = 5;
 // `DATABASE_URL`, not `MONGODB_URI`: the sentinel has to be a name that will
-// still be in the array. MONGODB_URI left it on 2026-08-02 when Mongo left the
-// serving path — it is still SYNCED (the backfill and the admin scripts read
-// it), which is exactly why this gate did not notice, and why the sentinel had
-// to move rather than be dropped.
+// still be in the required array. MONGODB_URI left the serving path on
+// 2026-08-02 and is no longer synced to ECS — only backfill/admin scripts read
+// it locally — so the sentinel moved rather than being dropped.
 const REQUIRED_ENV_SENTINEL = 'DATABASE_URL';
 
 const problems = [];
