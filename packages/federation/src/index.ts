@@ -64,6 +64,7 @@ export {
   upstreamProfileUrl,
   parseUpstreamProfileUrl,
   upstreamHandleFromProfileField,
+  upstreamHandleFromAlsoKnownAs,
   upstreamHandleFromPreferredUsername,
   type FederationNetwork,
   type FederationBridgeEntry,

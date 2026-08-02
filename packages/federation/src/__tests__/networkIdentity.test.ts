@@ -16,6 +16,7 @@ import {
   stripBridgeBoilerplate,
   upstreamHandleFromPreferredUsername,
   upstreamHandleFromProfileField,
+  upstreamHandleFromAlsoKnownAs,
   upstreamProfileUrl,
   type FederationBridgeEntry,
   type NetworkIdentityCandidate,
@@ -155,6 +156,33 @@ describe('createBridgeRelabeller — derivations it refuses', () => {
     expect(relabeller.deriveNetworkIdentity(candidate({
       fields: [{ name: 'Official', value: '<a href="https://www.twitter.com/WIRED" rel="me">x</a>' }],
     }))?.federatedUsername).toBe('wired@x.com');
+  });
+
+  it('derives a Bluesky handle from alsoKnownAs profile URLs (Bridgy Fed pattern)', () => {
+    const relabeller = createBridgeRelabeller([
+      entry({
+        host: 'bsky.brid.gy',
+        network: FEDERATION_NETWORKS.bluesky,
+        derive: (c) => {
+          const raw = upstreamHandleFromAlsoKnownAs({
+            hosts: ['bsky.app'],
+            pathPrefix: ['profile'],
+          })(c);
+          return raw === undefined ? undefined : blueskyUsernameFromHandle(raw);
+        },
+      }),
+    ]);
+    expect(relabeller.deriveNetworkIdentity(candidate({
+      host: 'bsky.brid.gy',
+      acct: 'jay.bsky.team@bsky.brid.gy',
+      preferredUsername: 'jay.bsky.team',
+      alsoKnownAs: [
+        'at://did:plc:abc123',
+        'https://bsky.app/profile/jay.bsky.team',
+      ],
+      fields: [],
+      bio: '',
+    }))?.federatedUsername).toBe('jay.bsky.team@bsky.social');
   });
 
   it('requires the marker before trusting a naming convention', () => {

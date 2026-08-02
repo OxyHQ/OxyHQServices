@@ -381,6 +381,26 @@ export function upstreamHandleFromProfileField(options: {
 }
 
 /**
+ * Read the upstream handle out of `alsoKnownAs` profile URLs — the Bridgy Fed
+ * pattern, where the actor publishes a rel="me" bsky.app profile link (and often
+ * an atproto DID) rather than embedding the assertion in a named profile field.
+ */
+export function upstreamHandleFromAlsoKnownAs(options: {
+  readonly hosts: readonly string[];
+  /** Fixed path segments before the handle (`bsky.app/profile/<handle>` ⇒ `['profile']`). */
+  readonly pathPrefix?: readonly string[];
+}): BridgeDerivation {
+  const prefix = options.pathPrefix ?? [];
+  return (candidate) => {
+    for (const href of candidate.alsoKnownAs) {
+      const handle = profileUrlHandle(href, options.hosts, prefix);
+      if (handle !== undefined && handle.length > 0) return handle;
+    }
+    return undefined;
+  };
+}
+
+/**
  * Use the actor's own `preferredUsername` as the upstream handle, but ONLY for an
  * actor that carries one of the bridge's mirror notices.
  *
