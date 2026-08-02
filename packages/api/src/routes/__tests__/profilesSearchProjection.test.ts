@@ -86,6 +86,9 @@ async function seedUserWithEverySecret(
       emailSignature: `signature_secret_${term}`,
       autoForwardTo: `forward_secret_${term}@example.com`,
       autoForwardKeepCopy: false,
+      accountStatus: 'active',
+      reputationTier: 'trusted',
+      reputationRankWeight: 1.25,
       ...overrides,
     })
     .returning({ id: users.id });
@@ -212,6 +215,21 @@ describe('GET /profiles/search — protected columns', () => {
     expect(res.status).toBe(200);
     expect(res.body.data?.[0]?.id).toBe(seeded.id);
     expectNoSecrets(res, seeded.values);
+  });
+
+  it('emits none of the ordering/gate columns the query reads', async () => {
+    const seeded = await seedUserWithEverySecret({
+      accountStatus: 'active',
+      reputationTier: 'trusted',
+      reputationRankWeight: 1.25,
+    });
+
+    const res = await search(seeded.term);
+
+    const row = res.body.data?.[0];
+    expect(row).not.toHaveProperty('accountStatus');
+    expect(row).not.toHaveProperty('reputationTier');
+    expect(row).not.toHaveProperty('reputationRankWeight');
   });
 
   it('still emits the public fields the search row renders', async () => {
