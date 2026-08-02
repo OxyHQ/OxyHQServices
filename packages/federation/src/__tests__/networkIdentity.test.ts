@@ -247,6 +247,7 @@ describe('upstream profile URLs — one declaration, both directions', () => {
   it('recognises a network by its aliases, not only its canonical host', () => {
     expect(parseUpstreamProfileUrl('https://twitter.com/nasa')?.network.id).toBe('x');
     expect(parseUpstreamProfileUrl('https://x.com/nasa')?.network.id).toBe('x');
+    expect(parseUpstreamProfileUrl('https://mobile.x.com/nasa')?.network.id).toBe('x');
     expect(parseUpstreamProfileUrl('https://www.instagram.com/nasa')?.network.id).toBe('instagram');
   });
 
@@ -290,6 +291,7 @@ describe('federatedUsernameFromUpstreamUrl — the search direction', () => {
   it('resolves a pasted URL to the username Oxy stores', () => {
     expect(federatedUsernameFromUpstreamUrl('https://x.com/nasa')).toBe('nasa@x.com');
     expect(federatedUsernameFromUpstreamUrl('https://twitter.com/nasa')).toBe('nasa@x.com');
+    expect(federatedUsernameFromUpstreamUrl('https://mobile.x.com/nasa')).toBe('nasa@x.com');
     expect(federatedUsernameFromUpstreamUrl('https://www.instagram.com/natgeo'))
       .toBe('natgeo@instagram.com');
   });

@@ -66,6 +66,33 @@ export function peopleSearchPredicate(): SQL {
   return and(discoverableUserPredicate(), eq(users.privacyIsPrivateAccount, false)) ?? sql`true`;
 }
 
+/** Longest fuzzy/substring people-search term honoured. */
+export const MAX_PEOPLE_SEARCH_TERM_LENGTH = 100;
+
+/**
+ * Pasted profile URLs can carry long tracking query strings. They are parsed
+ * exactly, never substring-scanned, so they need a higher ceiling than fuzzy
+ * terms — truncating a pasted link at {@link MAX_PEOPLE_SEARCH_TERM_LENGTH}
+ * can slice through the handle or drop the path before parsing.
+ */
+const MAX_PASTED_PROFILE_URL_LENGTH = 2048;
+
+/**
+ * Normalise raw people-search input from every surface (`GET /search`,
+ * `GET /profiles/search`, `POST /users/search`).
+ *
+ * Strips one leading `@` (handle-style queries) and applies a length cap.
+ * URL-shaped terms keep a much higher cap so a pasted profile link with
+ * tracking parameters still parses.
+ */
+export function normalizePeopleSearchTerm(raw: string): string {
+  const trimmed = raw.trim().replace(/^@/, '');
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed.slice(0, MAX_PASTED_PROFILE_URL_LENGTH);
+  }
+  return trimmed.slice(0, MAX_PEOPLE_SEARCH_TERM_LENGTH);
+}
+
 export interface PeopleSearchMatchOptions {
   /** Include `description` (default: true). */
   includeDescription?: boolean;

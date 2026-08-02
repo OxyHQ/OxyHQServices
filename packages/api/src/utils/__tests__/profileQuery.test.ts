@@ -46,6 +46,7 @@ import {
   peopleSearchMatch,
   peopleSearchOrder,
   peopleSearchPredicate,
+  normalizePeopleSearchTerm,
   profileQualityPredicate,
 } from '../profileQuery';
 
@@ -133,6 +134,22 @@ describe('peopleSearchPredicate', () => {
   });
 });
 
+describe('normalizePeopleSearchTerm', () => {
+  it('strips one leading @ and caps fuzzy terms at 100 characters', () => {
+    const fuzzy = 'a'.repeat(120);
+    expect(normalizePeopleSearchTerm(`@${fuzzy}`)).toHaveLength(100);
+    expect(normalizePeopleSearchTerm(`@${fuzzy}`)).toBe(fuzzy.slice(0, 100));
+  });
+
+  it('keeps pasted profile URLs long enough for tracking parameters to parse', () => {
+    const marker = uniqueId().slice(0, 8);
+    const tracking = 't='.concat('x'.repeat(150));
+    const url = `https://x.com/${marker}?s=20&${tracking}`;
+    expect(url.length).toBeGreaterThan(100);
+    expect(normalizePeopleSearchTerm(url)).toBe(url);
+  });
+});
+
 describe('peopleSearchMatch — a pasted upstream profile URL', () => {
   /**
    * The owner's ask: paste an x.com / instagram.com / bsky.app profile link into
@@ -151,12 +168,14 @@ describe('peopleSearchMatch — a pasted upstream profile URL', () => {
       .toEqual([bridged]);
   });
 
-  it('treats twitter.com as the same network, and ignores case', async () => {
+  it('treats twitter.com and mobile.x.com as the same network, and ignores case', async () => {
     const marker = uniqueId().slice(0, 10);
     const bridged = await makeUser({ username: `${marker}@x.com`, type: 'federated' });
     const scope = [bridged];
 
     expect(await idsMatching(peopleSearchMatch(`https://twitter.com/${marker}`), scope))
+      .toEqual([bridged]);
+    expect(await idsMatching(peopleSearchMatch(`https://mobile.x.com/${marker}`), scope))
       .toEqual([bridged]);
     expect(await idsMatching(peopleSearchMatch(`https://x.com/${marker.toUpperCase()}`), scope))
       .toEqual([bridged]);

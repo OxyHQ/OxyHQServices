@@ -107,7 +107,7 @@ export const FEDERATION_NETWORKS = {
     id: 'x',
     name: 'X',
     domain: 'x.com',
-    profileHosts: ['x.com', 'twitter.com', 'mobile.twitter.com'],
+    profileHosts: ['x.com', 'twitter.com', 'mobile.twitter.com', 'mobile.x.com'],
     profilePathPrefix: [],
     storedUsername: (handle) => handle.trim().toLowerCase(),
   },
