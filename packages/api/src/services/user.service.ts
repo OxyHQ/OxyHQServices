@@ -1163,8 +1163,11 @@ export class UserService {
         graphCache.invalidate(followerId),
         graphCache.invalidate(targetId),
       ]);
-      userCache.invalidate(followerId);
-      userCache.invalidate(targetId);
+      // `'graph'` — only the follow counts moved. Identity is untouched, so this
+      // is not broadcast to other backends; follows are far too frequent to put
+      // on a channel every Oxy service subscribes to.
+      userCache.invalidate(followerId, 'graph');
+      userCache.invalidate(targetId, 'graph');
     }
 
     const counts = await this.readFollowCounts(targetId, followerId);
@@ -1215,8 +1218,9 @@ export class UserService {
         graphCache.invalidate(followerId),
         graphCache.invalidate(targetId),
       ]);
-      userCache.invalidate(followerId);
-      userCache.invalidate(targetId);
+      // Counts only — not broadcast. See `followUser`.
+      userCache.invalidate(followerId, 'graph');
+      userCache.invalidate(targetId, 'graph');
     }
 
     const counts = await this.readFollowCounts(targetId, followerId);
@@ -1422,9 +1426,12 @@ export class UserService {
         graphCache.invalidate(currentUserId),
         ...newlyFollowedIds.map((id) => graphCache.invalidate(id)),
       ]);
-      userCache.invalidate(currentUserId);
+      // Counts only — not broadcast. See `followUser`. This is the site the
+      // suppression exists for: one bulk call moves up to 200 edges, which
+      // would otherwise be a 200-message burst every subscriber discards.
+      userCache.invalidate(currentUserId, 'graph');
       for (const id of newlyFollowedIds) {
-        userCache.invalidate(id);
+        userCache.invalidate(id, 'graph');
       }
     }
 
@@ -1564,9 +1571,10 @@ export class UserService {
           graphCache.invalidate(currentUserId),
           ...actuallyRemovedIds.map((id) => graphCache.invalidate(id)),
         ]);
-        userCache.invalidate(currentUserId);
+        // Counts only — not broadcast. See `bulkFollow`.
+        userCache.invalidate(currentUserId, 'graph');
         for (const id of actuallyRemovedIds) {
-          userCache.invalidate(id);
+          userCache.invalidate(id, 'graph');
         }
       }
     }
@@ -1667,9 +1675,11 @@ export class UserService {
 
     blockCache.invalidateUser(userId);
     restrictCache.invalidateUser(userId);
+    // The subject's account is going away — that IS an identity change, so it
+    // broadcasts. The counterparties only lose an edge, so they do not.
     userCache.invalidate(userId);
     for (const counterpartyId of [...followedCounterpartyIds, ...followerCounterpartyIds]) {
-      userCache.invalidate(counterpartyId);
+      userCache.invalidate(counterpartyId, 'graph');
     }
     const graphIdsToInvalidate = new Set<string>([
       userId,

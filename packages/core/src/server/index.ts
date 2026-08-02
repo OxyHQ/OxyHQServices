@@ -82,6 +82,19 @@ export type {
 // Constant-time secret comparison.
 export { verifySecret } from './verifySecret';
 
+// Cross-service user-invalidation signal: oxy-api publishes when identity
+// changes, every consuming backend sweeps its caches instead of waiting out a TTL.
+export {
+  createOxyUserInvalidationHandler,
+  evictOxyIdentityCache,
+  publishOxyUserInvalidation,
+} from './userInvalidation';
+export type {
+  OxyIdentityCacheEvictor,
+  OxyInvalidationPublisher,
+  OxyUserInvalidationHandlerOptions,
+} from './userInvalidation';
+
 // Registrable-apex (eTLD+1) derivation via the Public Suffix List — the SINGLE
 // SOURCE OF TRUTH shared with the IdP worker and the client FAPI auto-detect.
 // Pure host handling (no browser deps), so it is safe on the server subpath and

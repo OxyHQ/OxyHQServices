@@ -110,9 +110,16 @@ describe('UserService.bulkUnfollow', () => {
       { userId: targetDeleted.toHexString(), success: true, wasFollowing: true },
       { userId: targetRaced.toHexString(), success: true, wasFollowing: false },
     ]);
-    expect(mockUserCacheInvalidate).toHaveBeenCalledWith(currentUserId);
-    expect(mockUserCacheInvalidate).toHaveBeenCalledWith(targetDeleted.toHexString());
-    expect(mockUserCacheInvalidate).not.toHaveBeenCalledWith(targetRaced.toHexString());
+    // Tagged `'graph'` so nothing goes on the cross-service invalidation
+    // channel: this call moves up to 200 edges and none of them touch identity.
+    // Asserting the tag (not just the id) is what keeps a future edit from
+    // silently turning one bulk unfollow into a 200-message broadcast.
+    expect(mockUserCacheInvalidate).toHaveBeenCalledWith(currentUserId, 'graph');
+    expect(mockUserCacheInvalidate).toHaveBeenCalledWith(targetDeleted.toHexString(), 'graph');
+    expect(mockUserCacheInvalidate).not.toHaveBeenCalledWith(
+      targetRaced.toHexString(),
+      'graph',
+    );
   });
 
   it('does not decrement counters when all observed follows were already removed by a race', async () => {

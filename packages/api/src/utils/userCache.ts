@@ -1,3 +1,6 @@
+import type { OxyUserChangeReason } from '@oxyhq/contracts';
+import { publishOxyUserInvalidation } from '@oxyhq/core/server';
+
 import { getRedisClient } from '../config/redis';
 import type { IUser } from '../models/User';
 import { logger } from './logger';
@@ -73,7 +76,25 @@ class UserCache {
     }
   }
 
-  invalidate(userId: string): void {
+  /**
+   * Drop this user from the local map and from Redis, and — when the change is
+   * one consumers care about — broadcast it so every other Oxy backend can drop
+   * its own copy instead of waiting out a TTL.
+   *
+   * This method is the chokepoint the whole ecosystem's identity freshness hangs
+   * off, and it got that job by already having it: every route that mutates user
+   * state already calls it, and the house rule already requires new ones to. A
+   * second "and also notify" call at each of those ~25 sites would be one more
+   * thing to forget, which is exactly how the staleness this fixes came about.
+   *
+   * @param userId - The user whose cached record is now wrong.
+   * @param reason - What kind of change this was. DEFAULTS to `'profile'`, the
+   *   broadcast-worthy one, so a caller that does not classify itself
+   *   over-broadcasts (a wasted eviction) rather than under-broadcasts (stale
+   *   identity nobody can see is stale). Only high-frequency, non-identity
+   *   churn should opt down to `'graph'`.
+   */
+  invalidate(userId: string, reason: OxyUserChangeReason = 'profile'): void {
     if (!userId) return;
     this.local.delete(userId);
 
@@ -83,6 +104,20 @@ class UserCache {
         logger.warn('userCache: Redis del failed', {
           component: LOG_COMPONENT,
           userId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      });
+
+      // Fire-and-forget: this runs after a committed write, on the request path.
+      // The helper swallows its own failures, and a lost message costs a consumer
+      // its TTL — never correctness — so nothing here may surface as an error.
+      // `getRedisClient()` is never put in subscriber mode (the Socket.IO adapter
+      // takes `duplicate()`s), so PUBLISH on it is legal.
+      publishOxyUserInvalidation(redis, userId, reason, (err: unknown) => {
+        logger.warn('userCache: invalidation publish failed', {
+          component: LOG_COMPONENT,
+          userId,
+          reason,
           err: err instanceof Error ? err.message : String(err),
         });
       });
