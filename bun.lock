@@ -426,6 +426,7 @@
         "@oxyhq/contracts": "workspace:^",
         "@oxyhq/protocol": "workspace:^",
         "@scure/bip39": "^1.6.0",
+        "@types/elliptic": "catalog:",
         "buffer": "^6.0.3",
         "elliptic": "catalog:",
         "invariant": "^2.2.4",
@@ -437,7 +438,6 @@
       "devDependencies": {
         "@biomejs/biome": "catalog:",
         "@react-native-async-storage/async-storage": "^2.2.0",
-        "@types/elliptic": "catalog:",
         "@types/express": "catalog:",
         "@types/invariant": "^2.2.34",
         "@types/node": "^20.19.43",
@@ -506,7 +506,7 @@
     },
     "packages/federation": {
       "name": "@oxyhq/federation",
-      "version": "0.6.0",
+      "version": "0.8.0",
       "dependencies": {
         "@oxyhq/core": "workspace:^",
       },

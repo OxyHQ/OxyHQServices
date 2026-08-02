@@ -130,32 +130,43 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
       - name: Build and push (linux/arm64)
         id: build
+        env:
+          COMMIT_TAG: ${{ github.sha }}
         run: |
           IMG=$ECR_REGISTRY/oxy/$APP
-          docker build -f "$DOCKERFILE" -t "$IMG:${{ github.sha }}" -t "$IMG:latest" .
-          docker push "$IMG:${{ github.sha }}"
+          # --metadata-file is the only addition to this build: the digest comes
+          # out of the build itself. Resolving it afterwards with
+          # `aws ecr describe-images` is not an option here: oxy-github-deploy
+          # has no ecr:DescribeImages, confirmed with
+          # `aws iam simulate-principal-policy` (implicitDeny), so that call
+          # fails at deploy time behind a green build.
+          docker buildx build \
+            --platform linux/arm64 \
+            --cache-from type=gha,scope=$APP-backend \
+            --cache-to type=gha,scope=$APP-backend,mode=max \
+            -f "$DOCKERFILE" \
+            -t "$IMG:$COMMIT_TAG" \
+            -t "$IMG:latest" \
+            --metadata-file "$RUNNER_TEMP/build-metadata.json" \
+            --push \
+            .
+
           # :latest is still moved, but nothing that deploys reads it. It exists
           # so a from-scratch `terraform apply` -- whose app-service module
           # declares `<repo>:latest` as the task definition's bootstrap image --
           # creates the service on a current build rather than an ancient one.
-          docker push "$IMG:latest"
-
-          # Resolve the digest from the per-commit tag, which no other build
-          # ever reuses. This is the artefact the rollout pins: a tag is a
-          # mutable pointer, and a task definition pinned to one silently
-          # re-pulls whatever that tag means at task-placement time.
-          DIGEST=$(aws ecr describe-images \
-            --repository-name "oxy/$APP" \
-            --image-ids imageTag=${{ github.sha }} \
-            --query 'imageDetails[0].imageDigest' --output text)
+          DIGEST=$(jq -r '.["containerimage.digest"] // empty' "$RUNNER_TEMP/build-metadata.json")
           if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::ECR returned no usable digest for ${{ github.sha }} (got: ${DIGEST:-<empty>})"
+            echo "::error::buildx produced no usable image digest (got: ${DIGEST:-<empty>})"
             exit 1
           fi
-          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
-          echo "Resolved ${{ github.sha }} -> $DIGEST"
+          echo "digest=$DIGEST" >>"$GITHUB_OUTPUT"
+          echo "Built $COMMIT_TAG -> $DIGEST"
 
       - name: Register immutable task definition and deploy
         env:

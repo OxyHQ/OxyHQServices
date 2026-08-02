@@ -41,6 +41,17 @@ interface FFprobeMetadata {
   format?: FFprobeFormat;
 }
 
+/** Persisted under `files.metadata.video` or probed from the source via ffprobe. */
+type VideoProbeMetadata = {
+  duration?: number;
+  width?: number;
+  height?: number;
+  bitrate?: number;
+  fps?: number;
+  codec?: string;
+  audioCodec?: string;
+};
+
 // Get FFmpeg and FFprobe paths - use static binaries if available, otherwise fallback to system
 function getFfmpegPath(): string {
   try {
@@ -877,15 +888,7 @@ export class VariantService {
   /**
    * Extract video metadata from S3 URL (for presigned URLs)
    */
-  private async extractVideoMetadataFromUrl(videoUrl: string): Promise<{
-    duration?: number;
-    width?: number;
-    height?: number;
-    bitrate?: number;
-    fps?: number;
-    codec?: string;
-    audioCodec?: string;
-  }> {
+  private async extractVideoMetadataFromUrl(videoUrl: string): Promise<VideoProbeMetadata> {
     try {
       // Validate URL to prevent command injection
       this.validateMediaPath(videoUrl);
@@ -1439,7 +1442,9 @@ export class VariantService {
     }
 
     const videoUrl = await this.s3Service.getPresignedDownloadUrl(file.storageKey, 3600);
-    const metadata = file.metadata?.video ?? await this.extractVideoMetadataFromUrl(videoUrl);
+    const storedVideo = file.metadata?.video as VideoProbeMetadata | undefined;
+    const metadata: VideoProbeMetadata =
+      storedVideo ?? await this.extractVideoMetadataFromUrl(videoUrl);
 
     if (metadata.width && config.width && config.width > metadata.width) {
       throw new Error(

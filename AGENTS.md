@@ -166,6 +166,18 @@ Both `@oxyhq/core` and `@oxyhq/contracts` ship dual CJS + ESM builds. The ESM bu
 - Guard any unavoidable `require()` with `typeof require !== 'undefined'`
 - For platform-specific crypto: use `isReactNative()` → expo-crypto, `isNodeJS()` → node crypto, else → Web Crypto API
 
+## Ambient `declare module` shims (core — critical)
+
+**Never hand-write a `declare module '<pkg>'` for a package that ships types or has an `@types/<pkg>`.** An ambient module declaration SHADOWS the resolved types for every program that includes the declaring file — and `packages/core/tsconfig.json` includes it (`include: ["src"]`) while no consumer's tsconfig does. The result is a package that typechecks against a private view of its dependencies: core's own `tsc` passes, and any consumer compiling core SOURCE gets a different, sometimes broken, program.
+
+This is not hypothetical — it took main's whole `packages/api` jest run down (`TS2305: Module '"elliptic"' has no exported member 'ECKeyPair'`, `Tests: 0 total`). api's jest maps `@oxyhq/core` to source, so it compiled `keyManager.ts` under api's tsconfig, where core's `src/types/elliptic.d.ts` was absent and the real `@types/elliptic` (which has no `ECKeyPair`) applied. The symptom looks environmental — one package builds, another cannot compile the same file — so it reads as a version skew or a stale tree and gets chased there first.
+
+Same trap applies to Metro consumers: the `"react-native"` export condition points at published `src/`, so RN apps compile core/services SOURCE too. Babel does not typecheck, which is the only reason those apps do not also break.
+
+- Shims are legitimate ONLY for a dependency with no types at all AND no `@types/` package (`buffer`, `expo-crypto`, `expo-secure-store` — the three left in core). Check both before writing one.
+- If a type from a dependency appears in a package's PUBLISHED `.d.ts` (e.g. `KeyManager.getKeyPairObject(): EC.KeyPair`), its `@types/` package belongs in `dependencies`, not `devDependencies` — otherwise it resolves to nothing in the consumer and `skipLibCheck` silently degrades it to `any`.
+- Verify a shim is load-bearing by deleting it and running the package's own `tsc`: core's 70-line `elliptic` shim had exactly one line anything used, and its `color` shim was for a package core does not import at all.
+
 ## Hermes Unicode Property Escapes (mobile — critical)
 
 Mobile Hermes (RN 0.86, `hermes-v0.17.0`) is built with `HERMES_ENABLE_UNICODE_REGEXP_PROPERTY_ESCAPES` OFF, so it throws `SyntaxError: Invalid RegExp: Invalid property name` at runtime on EVERY `\p{…}`/`\P{…}` atom in a `u`-flag regex — `\p{L}`, `\p{M}`, `\p{Zs}`, `\p{scx=…}`, all of them, not just obscure subcategories. V8 (web) supports them fully, so this NEVER reproduces on web — only on a real native Hermes build. The `u` flag itself and lookbehind `(?<…)` are unaffected; only the `\p{…}` atoms are unsupported.
