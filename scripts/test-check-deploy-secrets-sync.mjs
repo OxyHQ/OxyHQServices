@@ -118,6 +118,18 @@ expectVerdict(
   'DATABASE_URL is required at boot by validateRequiredEnvVars() but deploy-aws.yml never syncs it to SSM.',
 );
 
+// Production-mandatory but outside the `required` array — DEVICE_ID_SALT must
+// still be synced even though dev boot installs a placeholder when unset.
+const deviceSaltMissing = createFixture();
+edit(deviceSaltMissing, WORKFLOW, 'device-salt-not-synced', (text) =>
+  text.replace(' DEVICE_ID_SALT OXY_PUBLIC_KEY', ' OXY_PUBLIC_KEY'));
+expectVerdict(
+  'device-salt-not-synced',
+  deviceSaltMissing,
+  1,
+  'DEVICE_ID_SALT is production-mandatory (validateRequiredEnvVars) but deploy-aws.yml never syncs it to SSM.',
+);
+
 // A typo'd secret reference writes the WRONG value under the right SSM name —
 // worse than not writing it, because nothing looks missing.
 const mismatched = createFixture();

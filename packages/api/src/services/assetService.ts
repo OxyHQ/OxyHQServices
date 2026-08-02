@@ -453,6 +453,9 @@ export class AssetService {
         const variant = await this.variantService.ensureVideoPoster(fileObj);
         return variant;
       }
+      if (this.variantService.isVideoMp4Rendition(variantType)) {
+        return this.variantService.ensureVideoMp4Rendition(fileObj, variantType);
+      }
       // A SIZE name (`thumb`, `w320`, …) asked of a video means "an image of
       // this asset at that size", which for a video is a render of its poster
       // frame. Callers hold a bare file id and cannot know the mime — the URL

@@ -1385,6 +1385,51 @@ export class VariantService {
     return row;
   }
 
+  /** Mp4 bitrate rendition names produced by upload-time `generateVideoVariants`. */
+  isVideoMp4Rendition(variantType: string): boolean {
+    return this.videoVariants.some(v => v.type === variantType);
+  }
+
+  /**
+   * Ensure a specific mp4 bitrate rendition exists, generating via FFmpeg if missing.
+   *
+   * Upload-time `generateVideoVariants` swallows per-rendition failures (`resolve(null)`),
+   * so a file can have `poster`/`hls_master` but no `360p`/`720p`/`1080p`. Lazy
+   * generation here lets those files self-heal on first request (#759).
+   */
+  async ensureVideoMp4Rendition(file: FileRecord, variantType: string): Promise<FileVariantRecord> {
+    const existing = await this.getUsableReadyVariant(file, variantType);
+    if (existing) {
+      return existing;
+    }
+
+    const config = this.videoVariants.find(v => v.type === variantType);
+    if (!config) {
+      throw new Error(`Unsupported video mp4 rendition: ${variantType}`);
+    }
+
+    const videoUrl = await this.s3Service.getPresignedDownloadUrl(file.storageKey, 3600);
+    const metadata = file.metadata?.video ?? await this.extractVideoMetadataFromUrl(videoUrl);
+
+    if (metadata.width && config.width && config.width > metadata.width) {
+      throw new Error(
+        `Variant ${variantType} exceeds source resolution (${metadata.width}px wide)`
+      );
+    }
+
+    const variant = await this.generateVideoVariant(
+      videoUrl,
+      file.sha256,
+      config,
+      file.visibility
+    );
+    if (!variant) {
+      throw new Error(`Failed to generate video rendition: ${variantType}`);
+    }
+
+    return await this.storeVariant(file, variant);
+  }
+
   /**
    * Ensure a specific video poster variant exists, generate via FFmpeg if missing.
    */
