@@ -157,7 +157,13 @@ export interface CreateAccountInput {
   parentAccountId?: string;
   /** Unique handle for the account (shares the `User.username` unique index). */
   username: string;
-  name?: { first?: string; last?: string };
+  /**
+   * A managed account (organization / project / bot / channel) has a TITLE, not
+   * a given-and-family name, so it sets `displayName` — the explicit
+   * `name_display` column — and leaves `first`/`last` unset. Splitting a title
+   * on whitespace into `first`/`last` is what this replaced.
+   */
+  name?: { first?: string; last?: string; displayName?: string };
   bio?: string;
   avatar?: string;
   /** Meaningful only when `kind` is `organization`. */
@@ -167,7 +173,13 @@ export interface CreateAccountInput {
 /** Input accepted by `updateAccount`. Tree placement changes go through `/move`. */
 export interface UpdateAccountInput {
   username?: string;
-  name?: { first?: string; last?: string };
+  /**
+   * Same shape as `CreateAccountInput['name']`. On update, an EMPTY STRING in
+   * `displayName` clears the explicit name and falls back to the composed
+   * `first`/`last`; omitting the key leaves the stored value untouched. The two
+   * are not interchangeable.
+   */
+  name?: { first?: string; last?: string; displayName?: string };
   bio?: string | null;
   avatar?: string | null;
   /** Clears the category when `null`; only valid on `kind: 'organization'`. */
