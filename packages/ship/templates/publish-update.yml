@@ -9,10 +9,8 @@
 #   - Repo secrets OXY_SHIP_CLIENT_ID / OXY_SHIP_SECRET: a `service`-type
 #     ApplicationCredential for THIS app, granted the `updates:publish` scope.
 #   - The app embeds the Oxy Updates code-signing certificate and points
-#     expo-updates at https://updates.oxy.so/updates/v1/apps/<clientId>/manifest.
-#   - `oxy-ship` on PATH. Until `@oxyhq/ship` is published to npm it is run from a
-#     checkout of OxyHQServices (see the "Run oxy-ship" step) — swap to
-#     `bunx oxy-ship` once it is published.
+#     expo-updates at https://api.oxy.so/updates/v1/apps/<clientId>/manifest.
+#   - `bunx oxy-ship` (from `@oxyhq/ship` on npm, or a workspace checkout).
 #
 # This publishes ONLY the OTA update. It does NOT build native binaries.
 

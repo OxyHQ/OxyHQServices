@@ -33,7 +33,7 @@ export const VERSIONS = {
   expoHaptics: '~57.0.1',
   expoImagePicker: '~57.0.4',
   expoImageManipulator: '~57.0.4',
-  reactNativeQrcodeSvg: '^6.3.15',
+  reactNativeQrcodeSvg: '^6.3.0',
   sonner: '^2.0.7', // web toast (Bloom toast.web)
   sonnerNative: '^0.26.4', // native toast (Bloom toast.native)
 
@@ -79,7 +79,7 @@ export const VERSIONS = {
   nodeTypes: '^20.0.0', // @types/node
 
   // --- Backend (Express + Mongoose + Socket.IO) ---
-  express: '^4.22.1',
+  express: '^4.22.2',
   expressTypes: '^4.17.23', // @types/express
   mongoose: '^8.22.1',
   socketIo: '^4.8.1', // socket.io

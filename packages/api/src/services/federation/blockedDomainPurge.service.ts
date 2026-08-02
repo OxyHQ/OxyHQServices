@@ -89,7 +89,10 @@ const COMPONENT = 'blockedDomainPurge';
  * Default number of actors processed per call. Each actor costs a small number
  * of queries plus one S3 delete per file, so an unbounded run would hold a
  * request (or an ECS task) open for an arbitrary time on a large instance.
- * Callers loop on {@link BlockedDomainPurgeResult.remaining} instead.
+ * Callers loop until {@link BlockedDomainPurgeResult.done} is true, passing
+ * {@link BlockedDomainPurgeResult.nextCursor} as `afterId` on each subsequent
+ * call. Do NOT loop on {@link BlockedDomainPurgeResult.remaining} — retained
+ * rows keep matching forever.
  */
 export const DEFAULT_PURGE_LIMIT = 200;
 

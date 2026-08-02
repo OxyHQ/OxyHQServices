@@ -50,6 +50,10 @@ export interface RequiredEnvVars {
   // Read directly by `services/updates/signing.service.ts`.
   UPDATES_CODE_SIGNING_PRIVATE_KEY?: string;
 
+  // When `true`, `POST /federation/domain-purge` with `dryRun:false` may execute
+  // deletions. Defaults to disabled; read per request in `routes/federation.ts`.
+  FEDERATION_DOMAIN_PURGE_ENABLED?: string;
+
   // Server
   PORT?: string;
   NODE_ENV?: string;

@@ -413,8 +413,10 @@ function isDomainPurgeArmed(): boolean {
  * `FEDERATION_DOMAIN_PURGE_ENABLED=true` on the deployment; otherwise 409.
  *
  * BOUNDED AND RESUMABLE: at most `limit` actors (default 200) per call. The
- * response carries `remaining` and `done`; callers loop until `done`. Repeating
- * a completed purge is a no-op, so a retry after a partial failure converges.
+ * response carries `done`, `nextCursor`, and `remaining` (informational only).
+ * Loop until `done`, echoing `nextCursor` as `afterId` on each subsequent call.
+ * Repeating a completed purge is a no-op, so a retry after a partial failure
+ * converges.
  */
 router.post(
   '/domain-purge',

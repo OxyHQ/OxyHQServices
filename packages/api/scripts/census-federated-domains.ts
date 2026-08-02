@@ -10,10 +10,11 @@
  *
  * It takes NO blocklist as input, deliberately. Oxy is not the authority on
  * which domains are blocked — the app that federates is (see
- * `packages/api/src/services/federation/blockedDomainPurge.ts` for how the
- * blocked set reaches Oxy). Censusing every federated domain and letting the
- * caller intersect keeps this script honest about the fact that it does not
- * know, and cannot decide, what is blocked.
+ * `packages/api/src/services/federation/blockedDomainPurge.service.ts` for how
+ * a caller names one domain per purge request; Oxy never stores a blocklist).
+ * Censusing every federated domain and letting the caller intersect keeps this
+ * script honest about the fact that it does not know, and cannot decide, what
+ * is blocked.
  *
  * What it does:
  *   1. Aggregates federated `users` by `federation.domain`.
