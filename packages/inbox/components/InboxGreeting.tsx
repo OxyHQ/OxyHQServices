@@ -17,13 +17,14 @@ import { SPACING as BLOOM_SPACING } from '@oxyhq/bloom/design-tokens';
 import { useColors } from '@/constants/theme';
 import { useDailyBrief } from '@/hooks/queries/useDailyBrief';
 import { useInboxPrefs } from '@/contexts/inbox-prefs-context';
+import { useTranslation } from '@/lib/i18n';
 import type { Message } from '@/services/emailApi';
 
-function getGreeting(): string {
+function getGreetingKey(): string {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 12) return 'home.greeting.morning';
+  if (hour < 18) return 'home.greeting.afternoon';
+  return 'home.greeting.evening';
 }
 
 function isSameDay(a: Date, b: Date): boolean {
@@ -36,6 +37,7 @@ export function InboxGreeting({ messages }: { messages: Message[] }) {
   const colors = useColors();
   const { user } = useOxy();
   const { prefs } = useInboxPrefs();
+  const { t } = useTranslation();
 
   // Refreshed on focus so the date self-heals when the day rolls over while
   // the app sits open.
@@ -62,7 +64,9 @@ export function InboxGreeting({ messages }: { messages: Message[] }) {
   );
 
   const greetingName = user?.name?.displayName ?? getNormalizedUserHandle(user) ?? '';
-  const greetingLine = greetingName ? `${getGreeting()} ${greetingName}` : getGreeting();
+  const greetingLine = greetingName
+    ? t('home.greeting.withName', { greeting: t(getGreetingKey()), name: greetingName })
+    : t(getGreetingKey());
 
   /**
    * The brief line always says something. Streaming text wins as soon as there
@@ -71,11 +75,11 @@ export function InboxGreeting({ messages }: { messages: Message[] }) {
    */
   const briefLine = useMemo(() => {
     if (briefText) return briefText;
-    if (isLoading || isStreaming) return 'Writing your brief…';
-    if (error) return "Couldn't write today's brief.";
-    if (dayMessages.length === 0) return 'Nothing new today.';
-    return 'Preparing your brief…';
-  }, [briefText, isLoading, isStreaming, error, dayMessages.length]);
+    if (isLoading || isStreaming) return t('home.brief.writing');
+    if (error) return t('home.brief.failed');
+    if (dayMessages.length === 0) return t('home.brief.nothingNew');
+    return t('home.brief.preparing');
+  }, [briefText, isLoading, isStreaming, error, dayMessages.length, t]);
 
   return (
     <View style={styles.container}>
@@ -86,7 +90,7 @@ export function InboxGreeting({ messages }: { messages: Message[] }) {
         error ? (
           <Pressable onPress={regenerate} accessibilityRole="button">
             <Text style={[styles.briefText, { color: colors.secondaryText }]}>
-              {briefLine} Tap to retry.
+              {briefLine} {t('home.brief.tapRetry')}
             </Text>
           </Pressable>
         ) : (

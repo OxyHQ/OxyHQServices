@@ -46,6 +46,7 @@ import { SentimentIndicator } from './SentimentIndicator';
 import type { SentimentResult } from '@/hooks/queries/useSentimentAnalysis';
 import { CardPreview } from './cards/CardPreview';
 import { useColors } from '@/constants/theme';
+import { useTranslation } from '@/lib/i18n';
 import { SPACING, RADIUS, TIMESTAMP_WIDTH } from '@/constants/layout';
 import { DENSITY_STYLES } from '@/constants/densityStyles';
 import type { MessageDensity } from '@/contexts/inbox-prefs-context';
@@ -77,7 +78,7 @@ const MONTH_DAY_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', da
 const MONTH_DAY_YEAR_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
 const WEEKDAY_MONTH_DAY_FORMAT = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, yesterdayLabel: string): string {
   const date = new Date(dateStr);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -87,7 +88,7 @@ function formatDate(dateStr: string): string {
   if (diffDays === 0) {
     return TIME_FORMAT.format(date);
   }
-  if (diffDays === 1) return 'Yesterday';
+  if (diffDays === 1) return yesterdayLabel;
   if (diffDays < 7) return WEEKDAY_FORMAT.format(date);
 
   if (date.getFullYear() === now.getFullYear()) {
@@ -181,6 +182,7 @@ function MessageRowInner({
   showPreviews = true,
 }: MessageRowProps) {
   const colors = useColors();
+  const { t } = useTranslation();
   const densityStyle = DENSITY_STYLES[density];
   const isUnread = !message.flags.seen;
   const [rowHovered, setRowHovered] = useState(false);
@@ -244,7 +246,7 @@ function MessageRowInner({
 
   const senderName = getSenderName(message);
   const preview = getPreview(message);
-  const dateStr = formatDate(message.date);
+  const dateStr = formatDate(message.date, t('inbox.sections.yesterday'));
 
   // Unread is carried by the row background alone: a tinted row reads at a
   // glance across a whole list, which a 6dp dot does not, and it keeps the

@@ -118,6 +118,11 @@ const ko: LocaleDict = {
       analyzing: 'Alia가 받은편지함을 분석하고 있어요…',
       unavailable: '지금은 요약을 만들 수 없어요.',
       empty: '아직 요약할 메일이 없어요.',
+      writing: '요약을 작성하고 있어요…',
+      preparing: '요약을 준비하고 있어요…',
+      failed: '오늘의 요약을 작성하지 못했어요.',
+      nothingNew: '오늘은 새 메일이 없어요.',
+      tapRetry: '탭하여 다시 시도',
     },
     feedEmpty: {
       title: '모두 처리됨',
@@ -361,6 +366,7 @@ const ko: LocaleDict = {
     keyPoints: '핵심 내용',
     actionItems: '실행 항목',
     due: '기한: {{date}}',
+    unavailable: '지금은 이 대화를 요약할 수 없어요.',
   },
 
   staleThread: {

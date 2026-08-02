@@ -111,12 +111,8 @@ async function fetchThreadSummary(messages: Message[], http: HttpService): Promi
         deadline: item.deadline || undefined,
       })),
     };
-  } catch {
-    return {
-      summary: '',
-      keyPoints: [],
-      actionItems: [],
-    };
+  } catch (error) {
+    throw error instanceof Error ? error : new Error('Failed to summarize thread');
   }
 }
 

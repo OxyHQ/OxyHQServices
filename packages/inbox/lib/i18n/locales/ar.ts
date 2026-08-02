@@ -119,6 +119,11 @@ const ar: LocaleDict = {
       analyzing: 'تقوم Alia بتحليل بريدك الوارد…',
       unavailable: 'تعذّر إنشاء الملخّص الآن.',
       empty: 'لا توجد رسائل للتلخيص بعد.',
+      writing: 'جارٍ كتابة ملخّصك…',
+      preparing: 'جارٍ تجهيز ملخّصك…',
+      failed: 'تعذّر كتابة ملخّص اليوم.',
+      nothingNew: 'لا جديد اليوم.',
+      tapRetry: 'اضغط لإعادة المحاولة.',
     },
     feedEmpty: {
       title: 'تم تحديث كل شيء',
@@ -362,6 +367,7 @@ const ar: LocaleDict = {
     keyPoints: 'النقاط الرئيسية',
     actionItems: 'بنود التنفيذ',
     due: 'الموعد: {{date}}',
+    unavailable: 'تعذّر تلخيص هذه المحادثة الآن.',
   },
 
   staleThread: {

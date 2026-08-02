@@ -696,9 +696,20 @@ export class VariantService {
         );
       }
 
+      if (renditionsAttempted > renditionsSucceeded) {
+        logger.warn('Some video mp4 renditions failed to encode', {
+          fileId: file.id,
+          renditionsAttempted,
+          renditionsSucceeded,
+          renditionsFailed: renditionsAttempted - renditionsSucceeded,
+        });
+      }
+
       logger.info('Video variants generated successfully', {
         fileId: file.id,
         variantCount: variants.length,
+        renditionsAttempted,
+        renditionsSucceeded,
         metadata
       });
     } catch (error) {
@@ -1443,8 +1454,17 @@ export class VariantService {
 
     const videoUrl = await this.s3Service.getPresignedDownloadUrl(file.storageKey, 3600);
     const storedVideo = file.metadata?.video as VideoProbeMetadata | undefined;
-    const metadata: VideoProbeMetadata =
-      storedVideo ?? await this.extractVideoMetadataFromUrl(videoUrl);
+    const hasStoredDimensions =
+      typeof storedVideo?.width === 'number' && typeof storedVideo?.height === 'number';
+    const probed = hasStoredDimensions
+      ? ({} as VideoProbeMetadata)
+      : await this.extractVideoMetadataFromUrl(videoUrl);
+    const metadata: VideoProbeMetadata = {
+      ...probed,
+      ...storedVideo,
+      width: storedVideo?.width ?? probed.width,
+      height: storedVideo?.height ?? probed.height,
+    };
 
     if (metadata.width && config.width && config.width > metadata.width) {
       throw new Error(

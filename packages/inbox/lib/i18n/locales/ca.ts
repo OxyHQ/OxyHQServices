@@ -120,6 +120,11 @@ const ca: LocaleDict = {
       analyzing: "L'Alia està analitzant la safata…",
       unavailable: "No s'ha pogut generar el resum ara mateix.",
       empty: 'Encara no hi ha correus per resumir.',
+      writing: 'Escrivint el teu resum…',
+      preparing: 'Preparant el teu resum…',
+      failed: "No s'ha pogut escriure el resum d'avui.",
+      nothingNew: 'Res de nou avui.',
+      tapRetry: 'Toca per tornar-ho a provar.',
     },
     feedEmpty: {
       title: 'Tot al dia',
@@ -366,6 +371,7 @@ const ca: LocaleDict = {
     keyPoints: 'Punts clau',
     actionItems: 'Accions pendents',
     due: 'Per a: {{date}}',
+    unavailable: "No s'ha pogut resumir aquesta conversa ara mateix.",
   },
 
   staleThread: {

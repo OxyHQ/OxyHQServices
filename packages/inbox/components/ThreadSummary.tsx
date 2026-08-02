@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
+  Pressable,
 } from 'react-native';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -24,6 +25,7 @@ import {
 } from '@hugeicons/core-free-icons';
 
 import { useColors } from '@/constants/theme';
+import { useTranslation } from '@/lib/i18n';
 import { useThreadSummary, type ActionItem } from '@/hooks/queries/useThreadSummary';
 import type { Message } from '@/services/emailApi';
 
@@ -39,6 +41,7 @@ function ActionItemRow({
   item: ActionItem;
   colors: ReturnType<typeof useColors>;
 }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.actionItem}>
       <MaterialCommunityIcons
@@ -59,7 +62,7 @@ function ActionItemRow({
             )}
             {item.deadline && (
               <Text style={[styles.actionItemDeadline, { color: colors.primary }]}>
-                Due: {item.deadline}
+                {t('threadSummary.due', { date: item.deadline })}
               </Text>
             )}
           </View>
@@ -71,9 +74,10 @@ function ActionItemRow({
 
 export function ThreadSummary({ messages, minMessages = 4 }: ThreadSummaryProps) {
   const colors = useColors();
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
 
-  const { summary, keyPoints, actionItems, isLoading, error } = useThreadSummary(
+  const { summary, keyPoints, actionItems, isLoading, error, refetch } = useThreadSummary(
     messages,
     { minMessages }
   );
@@ -93,13 +97,33 @@ export function ThreadSummary({ messages, minMessages = 4 }: ThreadSummaryProps)
             ) : (
               <MaterialCommunityIcons name="robot-outline" size={18} color={colors.primary} />
             )}
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Thread Summary</Text>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>{t('threadSummary.title')}</Text>
           </View>
         </View>
         <View style={styles.loadingContent}>
           <Skeleton.Box width="100%" height={14} borderRadius={4} />
           <Skeleton.Box width="70%" height={14} borderRadius={4} />
         </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.surfaceVariant, borderColor: colors.border }]}>
+        <Pressable onPress={() => refetch()} accessibilityRole="button" style={styles.header}>
+          <View style={styles.headerLeft}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={AiChat02Icon as unknown as IconSvgElement} size={18} color={colors.primary} />
+            ) : (
+              <MaterialCommunityIcons name="robot-outline" size={18} color={colors.primary} />
+            )}
+            <Text style={[styles.headerTitle, { color: colors.text }]}>{t('threadSummary.title')}</Text>
+          </View>
+        </Pressable>
+        <Text style={[styles.errorText, { color: colors.secondaryText }]}>
+          {t('threadSummary.unavailable')} {t('home.brief.tapRetry')}
+        </Text>
       </View>
     );
   }
@@ -125,7 +149,7 @@ export function ThreadSummary({ messages, minMessages = 4 }: ThreadSummaryProps)
           <Text style={[styles.headerTitle, { color: colors.text }]}>Thread Summary</Text>
           <View style={[styles.badge, { backgroundColor: colors.primary + '20' }]}>
             <Text style={[styles.badgeText, { color: colors.primary }]}>
-              {messages.length} messages
+              {t('threadSummary.messages', { count: messages.length })}
             </Text>
           </View>
         </View>
@@ -155,7 +179,7 @@ export function ThreadSummary({ messages, minMessages = 4 }: ThreadSummaryProps)
           {keyPoints.length > 0 && (
             <View style={styles.keyPointsSection}>
               <Text style={[styles.sectionLabel, { color: colors.secondaryText }]}>
-                Key Points
+                {t('threadSummary.keyPoints')}
               </Text>
               {keyPoints.map((point, index) => (
                 <View key={index} style={styles.keyPoint}>
@@ -176,7 +200,7 @@ export function ThreadSummary({ messages, minMessages = 4 }: ThreadSummaryProps)
                   <MaterialCommunityIcons name="checkbox-marked-outline" size={14} color={colors.secondaryText} />
                 )}
                 <Text style={[styles.sectionLabel, { color: colors.secondaryText }]}>
-                  Action Items
+                  {t('threadSummary.actionItems')}
                 </Text>
               </View>
               {actionItems.map((item, index) => (
@@ -297,5 +321,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 12,
     gap: 8,
+  },
+  errorText: {
+    fontSize: 13,
+    lineHeight: 18,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
 });

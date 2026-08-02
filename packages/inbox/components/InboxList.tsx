@@ -29,7 +29,7 @@ import { SPACING, CONTENT_MAX_WIDTH } from '@/constants/layout';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useTabBarClearance } from '@/hooks/useTabBarClearance';
-import { useTranslation } from '@/lib/i18n';
+import { useTranslation, type TranslateFn } from '@/lib/i18n';
 import { useInboxPrefs, type SwipeAction } from '@/contexts/inbox-prefs-context';
 import { useInboxDisplayPrefs } from '@/hooks/useInboxDisplayPrefs';
 import { useMessageActions } from '@/hooks/useMessageActions';
@@ -69,18 +69,18 @@ type ListItem =
   | { type: 'reminder'; data: Reminder };
 
 /** Section title for a message: one card per calendar bucket. */
-function getDateCategory(dateStr: string): string {
+function getDateCategory(dateStr: string, t: TranslateFn): string {
   const date = new Date(dateStr);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const diffDays = Math.floor((today.getTime() - msgDay.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return 'This Week';
-  if (diffDays < 30) return 'This Month';
-  return 'Earlier';
+  if (diffDays === 0) return t('inbox.sections.today');
+  if (diffDays === 1) return t('inbox.sections.yesterday');
+  if (diffDays < 7) return t('inbox.sections.thisWeek');
+  if (diffDays < 30) return t('inbox.sections.thisMonth');
+  return t('inbox.sections.earlier');
 }
 
 /**
@@ -104,10 +104,10 @@ function pushGroup(items: ListItem[], title: string, key: string, messages: Mess
 }
 
 /** Splits messages into consecutive date buckets, preserving list order. */
-function groupByDate(messages: Message[]): { title: string; messages: Message[] }[] {
+function groupByDate(messages: Message[], t: TranslateFn): { title: string; messages: Message[] }[] {
   const groups: { title: string; messages: Message[] }[] = [];
   for (const msg of messages) {
-    const title = getDateCategory(msg.date);
+    const title = getDateCategory(msg.date, t);
     const current = groups[groups.length - 1];
     if (current && current.title === title) {
       current.messages.push(msg);
@@ -316,7 +316,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         if (!matched) primaryMsgs.push(msg);
       }
 
-      for (const group of groupByDate(primaryMsgs)) {
+      for (const group of groupByDate(primaryMsgs, t)) {
         pushGroup(items, group.title, `header-${group.title}`, group.messages);
       }
 
@@ -332,13 +332,13 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         }
       }
     } else {
-      for (const group of groupByDate(unpinned)) {
+      for (const group of groupByDate(unpinned, t)) {
         pushGroup(items, group.title, `header-${group.title}`, group.messages);
       }
     }
 
     return items;
-  }, [displayMessages, isSnoozedView, isInboxView, showBundles, bundles, expandedBundles, reminders]);
+  }, [displayMessages, isSnoozedView, isInboxView, showBundles, bundles, expandedBundles, reminders, t]);
 
   // Clear selection when view changes
   useEffect(() => {

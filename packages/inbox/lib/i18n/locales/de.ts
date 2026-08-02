@@ -119,6 +119,11 @@ const de: LocaleDict = {
       analyzing: 'Alia analysiert deinen Posteingang…',
       unavailable: 'Überblick kann gerade nicht erstellt werden.',
       empty: 'Noch keine E-Mails zum Zusammenfassen.',
+      writing: 'Dein Überblick wird geschrieben…',
+      preparing: 'Dein Überblick wird vorbereitet…',
+      failed: 'Der heutige Überblick konnte nicht erstellt werden.',
+      nothingNew: 'Heute nichts Neues.',
+      tapRetry: 'Tippe, um es erneut zu versuchen.',
     },
     feedEmpty: {
       title: 'Alles erledigt',
@@ -362,6 +367,7 @@ const de: LocaleDict = {
     keyPoints: 'Kernpunkte',
     actionItems: 'Aufgaben',
     due: 'Fällig: {{date}}',
+    unavailable: 'Diese Unterhaltung kann gerade nicht zusammengefasst werden.',
   },
 
   staleThread: {

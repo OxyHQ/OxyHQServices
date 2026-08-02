@@ -195,6 +195,15 @@ describe('GET /search — match surface', () => {
     expect(ids(res)).toEqual([bridged]);
   });
 
+  it('treats twitter.com and mobile.x.com as the same network when pasted', async () => {
+    const marker = token();
+    const bridged = await account({ username: `${marker}@x.com`, type: 'federated' });
+    await account({ username: `other${token()}`, description: `see https://x.com/${marker} for more` });
+
+    expect(ids(await search({ query: `https://twitter.com/${marker}` }))).toEqual([bridged]);
+    expect(ids(await search({ query: `https://mobile.x.com/${marker}?s=20` }))).toEqual([bridged]);
+  });
+
   it('returns nothing for type=users when the query matches nobody', async () => {
     const res = await search({ query: token(), type: 'users' });
 

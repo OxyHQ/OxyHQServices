@@ -119,6 +119,11 @@ const it: LocaleDict = {
       analyzing: 'Alia sta analizzando la posta…',
       unavailable: 'Impossibile generare il riepilogo in questo momento.',
       empty: 'Ancora nessuna email da riepilogare.',
+      writing: 'Scrittura del riepilogo…',
+      preparing: 'Preparazione del riepilogo…',
+      failed: 'Impossibile scrivere il riepilogo di oggi.',
+      nothingNew: 'Niente di nuovo oggi.',
+      tapRetry: 'Tocca per riprovare.',
     },
     feedEmpty: {
       title: 'Tutto in pari',
@@ -362,6 +367,7 @@ const it: LocaleDict = {
     keyPoints: 'Punti chiave',
     actionItems: 'Azioni da fare',
     due: 'Scadenza: {{date}}',
+    unavailable: 'Impossibile riassumere questa conversazione ora.',
   },
 
   staleThread: {
