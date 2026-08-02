@@ -132,6 +132,9 @@ function readParameter(body: Record<string, unknown>, name: string): string | un
   return value.length > 0 ? value : undefined;
 }
 
+/** Standard base64 alphabet with optional padding. Linear — see below. */
+const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
+
 /** First value of a possibly-repeated header. */
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) {
@@ -168,21 +171,19 @@ export function decodeBasicClientCredentials(
     throw new OAuthProtocolError('invalid_client', 'Malformed Basic authorization header');
   }
 
-  let decoded: string;
-  try {
-    const buffer = Buffer.from(encoded, 'base64');
-    // Buffer.from is lenient: it silently drops invalid base64 characters.
-    // Re-encoding and comparing rejects a header that was never valid base64.
-    if (buffer.toString('base64').replace(/=+$/, '') !== encoded.replace(/=+$/, '')) {
-      throw new OAuthProtocolError('invalid_client', 'Malformed Basic authorization header');
-    }
-    decoded = buffer.toString('utf8');
-  } catch (error) {
-    if (error instanceof OAuthProtocolError) {
-      throw error;
-    }
+  // `Buffer.from(…, 'base64')` is lenient: it silently DROPS characters outside
+  // the alphabet instead of failing, so the input has to be validated first or
+  // `Basic !!!garbage!!!` would decode to an empty string and look merely
+  // "unparseable" rather than malformed. Validated with an explicit alphabet
+  // test rather than by re-encoding and comparing: the padding-stripping regex
+  // that comparison needs (`/=+$/`) backtracks quadratically on a header of
+  // repeated `=`, which is attacker-controlled input on an unauthenticated
+  // endpoint. This pattern cannot backtrack — `=` is absent from the character
+  // class, so there is no ambiguity between the two parts.
+  if (!BASE64_PATTERN.test(encoded)) {
     throw new OAuthProtocolError('invalid_client', 'Malformed Basic authorization header');
   }
+  const decoded = Buffer.from(encoded, 'base64').toString('utf8');
 
   const separatorIndex = decoded.indexOf(':');
   if (separatorIndex < 0) {

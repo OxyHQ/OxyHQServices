@@ -107,6 +107,21 @@ describe('decodeBasicClientCredentials', () => {
     expect(decodeBasicClientCredentials('Bearer abc')).toBeUndefined();
   });
 
+  // `Buffer.from(…, 'base64')` silently DROPS characters outside the alphabet,
+  // so `aWQ6!c2VjcmV0` decodes to exactly the same `id:secret` as the untampered
+  // `aWQ6c2VjcmV0`. Without an explicit alphabet check the header would be
+  // accepted as valid credentials rather than rejected as malformed — this is
+  // the case the check exists for, and the only one that detects its absence.
+  it('rejects a header whose base64 lenient-decoding would silently repair', () => {
+    const valid = Buffer.from('id:secret').toString('base64');
+    const tampered = `${valid.slice(0, 4)}!${valid.slice(4)}`;
+    expect(Buffer.from(tampered, 'base64').toString('utf8')).toBe('id:secret');
+
+    expect(() => decodeBasicClientCredentials(`Basic ${tampered}`)).toThrow(
+      expect.objectContaining({ oauthError: 'invalid_client' }),
+    );
+  });
+
   it.each([
     ['no credentials at all', 'Basic'],
     ['not base64', 'Basic !!!not-base64!!!'],
