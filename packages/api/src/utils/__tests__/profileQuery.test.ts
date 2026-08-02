@@ -133,6 +133,101 @@ describe('peopleSearchPredicate', () => {
   });
 });
 
+describe('peopleSearchMatch — a pasted upstream profile URL', () => {
+  /**
+   * The owner's ask: paste an x.com / instagram.com / bsky.app profile link into
+   * search and find the account we hold for that person. We hold them under the
+   * federated username a bridge derived (`nasa@x.com`), which the substring match
+   * can never reach from a URL — so without this branch, pasting the link a user
+   * is looking at reports that we do not have the account.
+   */
+  it('finds the account a pasted x.com URL names', async () => {
+    const marker = uniqueId().slice(0, 10);
+    const bridged = await makeUser({ username: `${marker}@x.com`, type: 'federated' });
+    const lookalike = await makeUser({ username: `${marker}@mastodon.social`, type: 'federated' });
+    const scope = [bridged, lookalike];
+
+    expect(await idsMatching(peopleSearchMatch(`https://x.com/${marker}`), scope))
+      .toEqual([bridged]);
+  });
+
+  it('treats twitter.com as the same network, and ignores case', async () => {
+    const marker = uniqueId().slice(0, 10);
+    const bridged = await makeUser({ username: `${marker}@x.com`, type: 'federated' });
+    const scope = [bridged];
+
+    expect(await idsMatching(peopleSearchMatch(`https://twitter.com/${marker}`), scope))
+      .toEqual([bridged]);
+    expect(await idsMatching(peopleSearchMatch(`https://x.com/${marker.toUpperCase()}`), scope))
+      .toEqual([bridged]);
+  });
+
+  it('drops the tracking parameters a pasted link usually carries', async () => {
+    const marker = uniqueId().slice(0, 10);
+    const bridged = await makeUser({ username: `${marker}@x.com`, type: 'federated' });
+
+    expect(await idsMatching(peopleSearchMatch(`https://x.com/${marker}?s=20&t=abc`), [bridged]))
+      .toEqual([bridged]);
+  });
+
+  it('applies the Bluesky suffix rule, so a default handle URL still resolves', async () => {
+    // The case a second parsing rule in this file would get wrong: the stored
+    // username drops `.bsky.social`, so a literal parse finds nobody.
+    const marker = uniqueId().slice(0, 10);
+    const bridged = await makeUser({ username: `${marker}@bsky.social`, type: 'federated' });
+
+    expect(await idsMatching(
+      peopleSearchMatch(`https://bsky.app/profile/${marker}.bsky.social`),
+      [bridged]
+    )).toEqual([bridged]);
+  });
+
+  it('returns nothing — not noise — for a URL naming an account we do not hold', async () => {
+    // "We do not have this account" is a fine answer and must look like one.
+    const unrelated = await makeUser({ description: `mentions x.com/${uniqueId()} in passing` });
+
+    expect(await idsMatching(peopleSearchMatch(`https://x.com/${uniqueId()}`), [unrelated]))
+      .toEqual([]);
+  });
+
+  it('does not let a bio quoting the URL crowd out the precise answer', async () => {
+    const marker = uniqueId().slice(0, 10);
+    const bridged = await makeUser({ username: `${marker}@x.com`, type: 'federated' });
+    const quoter = await makeUser({ description: `see https://x.com/${marker} for more` });
+    const scope = [bridged, quoter];
+
+    // A pasted URL is an exact request; whoever merely quotes it was not asked for.
+    expect(await idsMatching(peopleSearchMatch(`https://x.com/${marker}`), scope))
+      .toEqual([bridged]);
+  });
+
+  it('finds a row whose STORED username carries uppercase', async () => {
+    // The comparison is written against `lower(btrim(username))` — the expression
+    // the username unique index is built on, so it is an index seek rather than a
+    // scan. It also has to hold for a row that is not already lowercased: every
+    // other case here seeds a lowercase username, so a case-SENSITIVE comparison
+    // passes all of them and only this one tells the two apart.
+    const marker = uniqueId().slice(0, 10);
+    const mixedCase = await makeUser({ username: `Mi${marker}@X.com`, type: 'federated' });
+
+    expect(await idsMatching(peopleSearchMatch(`https://x.com/MI${marker}`), [mixedCase]))
+      .toEqual([mixedCase]);
+  });
+
+  it('leaves an ordinary search term on the substring path', async () => {
+    const marker = uniqueId().slice(0, 10);
+    const byName = await makeUser({ nameFirst: marker });
+    expect(await idsMatching(peopleSearchMatch(marker), [byName])).toEqual([byName]);
+  });
+
+  it('leaves a non-profile URL on the substring path', async () => {
+    const marker = uniqueId().slice(0, 10);
+    const quoter = await makeUser({ description: `https://mastodon.social/@${marker}` });
+    expect(await idsMatching(peopleSearchMatch(`https://mastodon.social/@${marker}`), [quoter]))
+      .toEqual([quoter]);
+  });
+});
+
 describe('peopleSearchMatch', () => {
   it('matches username, first name, last name and description, case-insensitively', async () => {
     const marker = uniqueId().slice(0, 10);

@@ -13,6 +13,7 @@ import {
   blueskyUsernameFromHandle,
   createBridgeRelabeller,
   parseUpstreamProfileUrl,
+  federatedUsernameFromUpstreamUrl,
   stripBridgeBoilerplate,
   upstreamHandleFromPreferredUsername,
   upstreamHandleFromProfileField,
@@ -276,5 +277,52 @@ describe('bsky.social is one network, whichever protocol an account arrives by',
     expect(blueskyUsernameFromHandle('mayor.nyc.gov')).toBe('mayor.nyc.gov');
     expect(blueskyUsernameFromHandle('jay.bsky.team')).toBe('jay.bsky.team');
     expect(blueskyUsernameFromHandle('bsky.social')).toBe('bsky.social');
+  });
+});
+
+describe('federatedUsernameFromUpstreamUrl — the search direction', () => {
+  /**
+   * A pasted profile URL has to arrive at the SAME username the connector
+   * stored, or search returns nothing for an account we hold — a result
+   * indistinguishable from "we do not have that account", which is why nobody
+   * would ever report it.
+   */
+  it('resolves a pasted URL to the username Oxy stores', () => {
+    expect(federatedUsernameFromUpstreamUrl('https://x.com/nasa')).toBe('nasa@x.com');
+    expect(federatedUsernameFromUpstreamUrl('https://twitter.com/nasa')).toBe('nasa@x.com');
+    expect(federatedUsernameFromUpstreamUrl('https://www.instagram.com/natgeo'))
+      .toBe('natgeo@instagram.com');
+  });
+
+  it('lowercases, because X and Instagram handles are case-insensitive', () => {
+    expect(federatedUsernameFromUpstreamUrl('https://x.com/NASA')).toBe('nasa@x.com');
+    expect(federatedUsernameFromUpstreamUrl('https://x.com/WIRED')).toBe('wired@x.com');
+  });
+
+  it('drops a default Bluesky handle\'s redundant suffix, exactly as ingest does', () => {
+    // The case a second, parallel parsing rule would get wrong: it works for X
+    // with plain lowercasing and silently fails here.
+    expect(federatedUsernameFromUpstreamUrl('https://bsky.app/profile/georgemonbiot.bsky.social'))
+      .toBe('georgemonbiot@bsky.social');
+    expect(federatedUsernameFromUpstreamUrl('https://bsky.app/profile/gothamist.com'))
+      .toBe('gothamist.com@bsky.social');
+  });
+
+  it('agrees with what the relabeller would store for the same account', () => {
+    // Ingest and search reading one declaration, asserted rather than assumed.
+    const relabeller = createBridgeRelabeller([entry({
+      host: 'mirror.example',
+      network: FEDERATION_NETWORKS.x,
+      derive: () => 'NASA',
+    })]);
+    const viaIngest = relabeller.deriveNetworkIdentity(candidate())?.federatedUsername;
+    expect(federatedUsernameFromUpstreamUrl('https://x.com/NASA')).toBe(viaIngest);
+  });
+
+  it('answers undefined for anything that is not an upstream profile URL', () => {
+    expect(federatedUsernameFromUpstreamUrl('https://mastodon.social/@alice')).toBeUndefined();
+    expect(federatedUsernameFromUpstreamUrl('https://x.com/i/status/1')).toBeUndefined();
+    expect(federatedUsernameFromUpstreamUrl('nasa')).toBeUndefined();
+    expect(federatedUsernameFromUpstreamUrl('')).toBeUndefined();
   });
 });

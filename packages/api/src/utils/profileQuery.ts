@@ -24,6 +24,7 @@
  */
 
 import { and, eq, gte, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { federatedUsernameFromUpstreamUrl } from '@oxyhq/federation';
 import { qualified } from '../db/casing';
 import { users } from '../db/schema/users';
 import { userLocations } from '../db/schema/userLocations';
@@ -92,6 +93,32 @@ export function peopleSearchMatch(
   options: PeopleSearchMatchOptions = {}
 ): SQL {
   const { includeDescription = true, includeLocations = false } = options;
+
+  // A pasted upstream profile URL is an EXACT request, not a search phrase.
+  //
+  // `https://x.com/nasa` names one account, and we hold that person under the
+  // federated username a bridge derived for them (`nasa@x.com`). Left to the
+  // substring match below the URL matches nothing at all — no username or name
+  // contains it — so pasting a link a user is looking at reports that we do not
+  // have the account, which is very often false.
+  //
+  // It REPLACES the fuzzy match rather than joining it. Someone whose bio quotes
+  // `x.com/nasa` is not who was asked for, and returning them alongside would
+  // make the precise answer harder to see. When the URL parses and we hold
+  // nobody, no rows is the correct and honest answer.
+  //
+  // The username is resolved through `@oxyhq/federation`, the same declaration
+  // the ingest path reads forwards — not a second parsing rule here, which would
+  // work for X (plain lowercasing) and fail silently for Bluesky (a default
+  // handle drops its `.bsky.social` suffix), returning nothing for accounts we
+  // do hold. The URL is never fetched.
+  const upstreamUsername = federatedUsernameFromUpstreamUrl(term);
+  if (upstreamUsername !== undefined) {
+    // Written against the expression the username unique index is built on
+    // (`lower(btrim(username))`), so this is an index seek rather than a scan.
+    return sql`lower(btrim(${users.username})) = ${upstreamUsername}`;
+  }
+
   const pattern = `%${term.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 
   const clauses: SQL[] = [

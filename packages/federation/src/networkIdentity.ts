@@ -74,6 +74,22 @@ export interface FederationNetwork {
   readonly profileHosts: readonly string[];
   /** Fixed path segments before the handle (`bsky.app/profile/<handle>` ⇒ `['profile']`). */
   readonly profilePathPrefix: readonly string[];
+  /**
+   * The LOCAL PART an upstream handle is stored under in Oxy.
+   *
+   * Not the identity function: X and Instagram treat handles
+   * case-insensitively so they are lowered, and a default Bluesky handle drops
+   * its now-redundant `.bsky.social` suffix once the domain already says
+   * `bsky.social`. It belongs to the NETWORK rather than to any bridge entry
+   * because it is a protocol fact about how that network names accounts, not a
+   * judgement about an operator.
+   *
+   * Both the ingest path and the search path go through this ONE function.
+   * That is the whole point: a pasted `https://bsky.app/profile/x.bsky.social`
+   * has to arrive at the same username the connector stored, or search finds
+   * nothing and looks exactly like "we do not have that account".
+   */
+  readonly storedUsername: (handle: string) => string;
 }
 
 /**
@@ -93,6 +109,7 @@ export const FEDERATION_NETWORKS = {
     domain: 'x.com',
     profileHosts: ['x.com', 'twitter.com', 'mobile.twitter.com'],
     profilePathPrefix: [],
+    storedUsername: (handle) => handle.trim().toLowerCase(),
   },
   instagram: {
     id: 'instagram',
@@ -100,6 +117,7 @@ export const FEDERATION_NETWORKS = {
     domain: 'instagram.com',
     profileHosts: ['instagram.com'],
     profilePathPrefix: [],
+    storedUsername: (handle) => handle.trim().toLowerCase(),
   },
   bluesky: {
     id: 'bluesky',
@@ -107,6 +125,7 @@ export const FEDERATION_NETWORKS = {
     domain: 'bsky.social',
     profileHosts: ['bsky.app'],
     profilePathPrefix: ['profile'],
+    storedUsername: (handle) => blueskyUsernameFromHandle(handle.trim()),
   },
 } as const satisfies Record<string, FederationNetwork>;
 
@@ -381,9 +400,22 @@ export function upstreamHandleFromProfileField(options: {
 }
 
 /**
- * Read the upstream handle out of `alsoKnownAs` profile URLs — the Bridgy Fed
- * pattern, where the actor publishes a rel="me" bsky.app profile link (and often
- * an atproto DID) rather than embedding the assertion in a named profile field.
+ * Read the upstream handle out of `alsoKnownAs` profile URLs — the shape where an
+ * actor publishes a profile link there rather than in a named profile field.
+ *
+ * ⚠ UNMATCHED BY ANY ACTOR WE ACTUALLY HOLD. On all three Bridgy Fed actors
+ * captured from production, `alsoKnownAs` contains ONLY the atproto DID
+ * (`["did:plc:…"]`) and no `bsky.app` URL, so this returns `undefined` for the
+ * entire real corpus; the shipped Bridgy entry reads the `Web site` profile
+ * field, which every one of them does carry. Written against the documented
+ * shape rather than an observed one — so verify against a live actor before
+ * building on it, and do not read a green test suite as evidence that it fires.
+ *
+ * `alsoKnownAs` is also NOT a generic upstream backlink. It is one on Bridgy,
+ * but on the stock-Mastodon mirror farms it is a Mastodon MIGRATION pointer at a
+ * sibling farm domain — following it there would attribute an account to
+ * whatever that pointer happens to name. Only use this where a reviewed entry
+ * states that the bridge publishes an upstream link in that field.
  */
 export function upstreamHandleFromAlsoKnownAs(options: {
   readonly hosts: readonly string[];
@@ -531,4 +563,33 @@ export function stripBridgeBoilerplate(bio: string, entry: FederationBridgeEntry
     result = result.replace(pattern, '');
   }
   return result.trim();
+}
+
+/**
+ * The exact federated username Oxy stores for a pasted upstream profile URL —
+ * `https://x.com/NASA` → `nasa@x.com`, `https://bsky.app/profile/alice.bsky.social`
+ * → `alice@bsky.social` — or `undefined` when the URL names no known network.
+ *
+ * This is the SEARCH direction of the same declaration the ingest path reads
+ * forwards, and it deliberately routes through `network.storedUsername` rather
+ * than reimplementing the normalisation. A search built on a second, parallel
+ * rule would work for X (where the rule is just lowercasing) and fail silently
+ * for Bluesky (where a default handle's `.bsky.social` suffix is dropped),
+ * returning nothing for an account we hold — a result indistinguishable from
+ * "we do not have that account", which is why nobody would ever report it.
+ *
+ * Purely syntactic: it never fetches the URL. Resolving a user-supplied URL by
+ * fetching it would be an SSRF surface, and nothing here needs the network.
+ */
+export function federatedUsernameFromUpstreamUrl(
+  candidateUrl: string,
+  networks: readonly FederationNetwork[] = Object.values(FEDERATION_NETWORKS),
+): string | undefined {
+  const parsed = parseUpstreamProfileUrl(candidateUrl, networks);
+  if (!parsed) return undefined;
+
+  const local = parsed.network.storedUsername(parsed.handle);
+  if (local.length === 0 || local.includes('@') || local.includes('/')) return undefined;
+
+  return `${local}@${canonicalFederationHost(parsed.network.domain)}`;
 }

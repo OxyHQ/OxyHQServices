@@ -63,6 +63,7 @@ export {
   stripBridgeBoilerplate,
   upstreamProfileUrl,
   parseUpstreamProfileUrl,
+  federatedUsernameFromUpstreamUrl,
   upstreamHandleFromProfileField,
   upstreamHandleFromAlsoKnownAs,
   upstreamHandleFromPreferredUsername,
