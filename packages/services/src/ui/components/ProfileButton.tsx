@@ -17,6 +17,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { registerAccountDialogConsumerHooks } from '../navigation/accountDialogManager';
+import type { AccountDialogMenuItem } from '../navigation/accountDialogManager';
 
 const isWeb = Platform.OS === 'web';
 
@@ -62,6 +63,8 @@ export interface ProfileButtonProps {
     onAddAccount?: () => void;
     /** Optional: navigate to the signed-in user's own profile. */
     onNavigateProfile?: () => void;
+    /** App-owned actions rendered in the shared account menu. */
+    menuItems?: readonly AccountDialogMenuItem[];
     /**
      * Retained for source compatibility. The trigger now opens the unified
      * `OxyAccountDialogScreen` (a centered / bottom-sheet modal) rather than an
@@ -104,6 +107,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
     onNavigateManage,
     onAddAccount,
     onNavigateProfile,
+    menuItems,
     className,
     style,
 }) => {
@@ -137,8 +141,9 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
             onNavigateManage,
             onAddAccount,
             onNavigateProfile,
+            menuItems,
         });
-    }, [onNavigateManage, onAddAccount, onNavigateProfile]);
+    }, [onNavigateManage, onAddAccount, onNavigateProfile, menuItems]);
 
     const avatarUrl = useMemo(
         () => (user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar, 'thumb') : undefined),

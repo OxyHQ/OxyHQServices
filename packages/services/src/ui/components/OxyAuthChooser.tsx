@@ -348,6 +348,13 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
         void logout();
         onComplete?.();
       },
+      customItems: (getAccountDialogConsumerHooks()?.menuItems ?? []).map((item) => ({
+        ...item,
+        onPress: () => {
+          onComplete?.();
+          item.onPress();
+        },
+      })),
     };
   }, [onComplete, showBottomSheet, logout]);
 

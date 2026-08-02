@@ -62,6 +62,12 @@ export interface AccountsMenuActions {
   onPrivacy: () => void;
   onTerms: () => void;
   onSignOut: () => void;
+  customItems: readonly {
+    key: string;
+    label: string;
+    icon?: string;
+    onPress: () => void;
+  }[];
 }
 
 /**

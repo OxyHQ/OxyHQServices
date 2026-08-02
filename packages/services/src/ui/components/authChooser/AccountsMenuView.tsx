@@ -490,6 +490,14 @@ const AccountsMenuView: React.FC<AccountsMenuViewProps> = ({
           title={t('accountMenu.help')}
           onPress={menu.onHelp}
         />
+        {menu.customItems.map((item) => (
+          <SettingsListItem
+            key={item.key}
+            icon={<MenuIcon name={(item.icon ?? 'dots-horizontal') as keyof typeof MaterialCommunityIcons.glyphMap} theme={theme} />}
+            title={item.label}
+            onPress={item.onPress}
+          />
+        ))}
         <SettingsListItem
           icon={<MenuIcon name="logout" theme={theme} />}
           title={t('accountMenu.signOut')}

@@ -275,6 +275,7 @@ export { LogoText } from './ui/components/logo/LogoText';
 // `useOxy().openAccountDialog`.
 export { default as ProfileButton } from './ui/components/ProfileButton';
 export type { ProfileButtonProps } from './ui/components/ProfileButton';
+export type { AccountDialogMenuItem } from './ui/navigation/accountDialogManager';
 
 // The account switcher/sign-in/sign-up chooser WITHOUT dialog chrome — the
 // surface stack presents `OxyAccountDialogScreen` (which renders this) into

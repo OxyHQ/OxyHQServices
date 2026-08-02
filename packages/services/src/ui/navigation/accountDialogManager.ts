@@ -12,6 +12,14 @@
 
 import type { AccountDialogView } from '@oxyhq/core';
 
+/** An app-owned action rendered inside the shared account menu. */
+export interface AccountDialogMenuItem {
+  key: string;
+  label: string;
+  icon?: string;
+  onPress: () => void;
+}
+
 /**
  * Live open/close handles registered by the mounted provider. `open` presents
  * the `AccountDialog` surface (and points its view); `close` dismisses it. Both
@@ -31,6 +39,7 @@ export interface AccountDialogConsumerHooks {
   onNavigateManage?: () => void;
   onAddAccount?: () => void;
   onNavigateProfile?: () => void;
+  menuItems?: readonly AccountDialogMenuItem[];
 }
 
 let controls: AccountDialogControls | null = null;
