@@ -1,5 +1,5 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useAuth } from '@oxyhq/services';
@@ -164,6 +164,15 @@ function AccountSettingsPage() {
   const [avatar, setAvatar] = useState(() => currentAccount?.account.avatar ?? '');
   const [isSaving, setIsSaving] = useState(false);
 
+  useEffect(() => {
+    if (!currentAccount) {
+      return;
+    }
+    setName(currentAccount.account.name?.displayName ?? '');
+    setBio(currentAccount.account.bio ?? '');
+    setAvatar(currentAccount.account.avatar ?? '');
+  }, [currentAccount?.accountId, currentAccount?.account.bio, currentAccount?.account.avatar, currentAccount?.account.name?.displayName]);
+
   // Invite dialog state
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteIdentifier, setInviteIdentifier] = useState('');
@@ -327,7 +336,7 @@ function AccountSettingsPage() {
       if (user?.id === accountId) {
         const personal = accounts.find((node) => node.relationship === 'self');
         if (personal) {
-          await setCurrentAccount(personal).catch(() => undefined);
+          await setCurrentAccount(personal);
         }
       }
       toast.success('Account archived');

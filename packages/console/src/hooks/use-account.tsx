@@ -78,7 +78,7 @@ interface AccountContextValue {
   isLoading: boolean;
 
   // Account CRUD
-  setCurrentAccount: (account: AccountNode) => void;
+  setCurrentAccount: (account: AccountNode) => Promise<void>;
   createAccount: (data: CreateAccountInput) => Promise<AccountNode>;
   updateAccount: (accountId: string, data: UpdateAccountInput) => Promise<AccountNode>;
   archiveAccount: (accountId: string) => Promise<AccountSuccessResult>;
@@ -138,7 +138,7 @@ function hasPermission(account: AccountNode, permissions: Array<AccountPermissio
 }
 
 export function AccountProvider({ children }: { children: React.ReactNode }) {
-  const { oxyServices, isAuthenticated, isReady } = useAuth();
+  const { oxyServices, switchToAccount, user, isAuthenticated, isReady } = useAuth();
   const queryClient = useQueryClient();
 
   const accountsQuery = useQuery({
@@ -175,10 +175,30 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentAccount, selectedId]);
 
-  const setCurrentAccount = React.useCallback((account: AccountNode): void => {
-    setSelectedId(account.accountId);
-    persistAccountId(account.accountId);
-  }, []);
+  const setCurrentAccount = React.useCallback(
+    async (account: AccountNode): Promise<void> => {
+      if (account.accountId !== currentAccount?.accountId) {
+        await switchToAccount(account.accountId);
+      }
+      setSelectedId(account.accountId);
+      persistAccountId(account.accountId);
+    },
+    [currentAccount?.accountId, switchToAccount],
+  );
+
+  // Keep console account context aligned when the device session changes via
+  // ProfileButton / OxyAccountDialog (outside the header org switcher).
+  React.useEffect(() => {
+    if (!user?.id || accounts.length === 0) {
+      return;
+    }
+    const sessionAccount = accounts.find((a) => a.accountId === user.id);
+    if (!sessionAccount || sessionAccount.accountId === selectedId) {
+      return;
+    }
+    setSelectedId(sessionAccount.accountId);
+    persistAccountId(sessionAccount.accountId);
+  }, [accounts, selectedId, user?.id]);
 
   const createAccountMutation = useMutation({
     mutationFn: (data: CreateAccountInput): Promise<AccountNode> => oxyServices.createAccount(data),

@@ -22,6 +22,7 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import config from '@/lib/config';
 
@@ -117,5 +118,12 @@ export function AppSidebar() {
 
 function SidebarProfileButton() {
   const { isMobile, state } = useSidebar();
-  return <ProfileButton expanded={isMobile || state === 'expanded'} />;
+  return (
+    <ProfileButton
+      expanded={isMobile || state === 'expanded'}
+      onNavigateManage={() => {
+        window.open(config.accountsUrl, '_blank', 'noopener,noreferrer');
+      }}
+    />
+  );
 }

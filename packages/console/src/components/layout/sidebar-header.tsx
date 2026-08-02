@@ -160,9 +160,16 @@ export function SidebarHeaderBrand() {
     }
   };
 
-  const handleSelectAccount = (account: AccountNode) => {
-    setCurrentAccount(account);
-    toast.success(`Switched to ${accountLabel(account)}`);
+  const handleSelectAccount = async (account: AccountNode) => {
+    if (account.accountId === currentAccount?.accountId) {
+      return;
+    }
+    try {
+      await setCurrentAccount(account);
+      toast.success(`Switched to ${accountLabel(account)}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to switch account');
+    }
   };
 
   if (isLoading || !currentAccount) {
