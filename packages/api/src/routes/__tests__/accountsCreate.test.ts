@@ -25,9 +25,18 @@ jest.mock('../../services/account.service', () => ({
   },
 }));
 
+// The real `authMiddleware` assigns `{ ...user, id: user._id }`, so an
+// authenticated request carries BOTH keys — and `requireUserId` in the router
+// reads `_id`. A mock that sets only `id` therefore fails the guard and every
+// route under it answers 401, which reads as "the refusal below is missing"
+// rather than "the fixture is not shaped like a real request".
 jest.mock('../../middleware/auth', () => ({
-  authMiddleware: (req: { user?: { id: string } }, _res: unknown, next: () => void) => {
-    req.user = { id: OPERATOR_ID };
+  authMiddleware: (
+    req: { user?: { _id: string; id: string } },
+    _res: unknown,
+    next: () => void
+  ) => {
+    req.user = { _id: OPERATOR_ID, id: OPERATOR_ID };
     next();
   },
   serviceAuthMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
