@@ -130,32 +130,26 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push (linux/arm64)
         id: build
-        run: |
-          IMG=$ECR_REGISTRY/oxy/$APP
-          docker build -f "$DOCKERFILE" -t "$IMG:${{ github.sha }}" -t "$IMG:latest" .
-          docker push "$IMG:${{ github.sha }}"
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          platforms: linux/arm64
+          push: true
           # :latest is still moved, but nothing that deploys reads it. It exists
           # so a from-scratch `terraform apply` -- whose app-service module
           # declares `<repo>:latest` as the task definition's bootstrap image --
           # creates the service on a current build rather than an ancient one.
-          docker push "$IMG:latest"
-
-          # Resolve the digest from the per-commit tag, which no other build
-          # ever reuses. This is the artefact the rollout pins: a tag is a
-          # mutable pointer, and a task definition pinned to one silently
-          # re-pulls whatever that tag means at task-placement time.
-          DIGEST=$(aws ecr describe-images \
-            --repository-name "oxy/$APP" \
-            --image-ids imageTag=${{ github.sha }} \
-            --query 'imageDetails[0].imageDigest' --output text)
-          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::ECR returned no usable digest for ${{ github.sha }} (got: ${DIGEST:-<empty>})"
-            exit 1
-          fi
-          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
-          echo "Resolved ${{ github.sha }} -> $DIGEST"
+          tags: |
+            ${{ env.ECR_REGISTRY }}/oxy/${{ env.APP }}:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/oxy/${{ env.APP }}:latest
+          provenance: true
+          sbom: true
 
       - name: Register immutable task definition and deploy
         env:
