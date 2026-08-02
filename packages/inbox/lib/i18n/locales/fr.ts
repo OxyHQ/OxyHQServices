@@ -119,6 +119,11 @@ const fr: LocaleDict = {
       analyzing: 'Alia analyse ta boîte…',
       unavailable: 'Impossible de générer le résumé pour le moment.',
       empty: 'Aucun courriel à résumer pour le moment.',
+      writing: 'Rédaction de ton résumé…',
+      preparing: 'Préparation de ton résumé…',
+      failed: "Impossible d'écrire le résumé d'aujourd'hui.",
+      nothingNew: "Rien de nouveau aujourd'hui.",
+      tapRetry: 'Appuie pour réessayer.',
     },
     feedEmpty: {
       title: 'Tout est à jour',
@@ -362,6 +367,7 @@ const fr: LocaleDict = {
     keyPoints: 'Points clés',
     actionItems: 'Actions à faire',
     due: 'Échéance : {{date}}',
+    unavailable: 'Impossible de résumer cette conversation pour le moment.',
   },
 
   staleThread: {

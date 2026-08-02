@@ -118,6 +118,11 @@ const ja: LocaleDict = {
       analyzing: 'Alia が受信箱を分析しています…',
       unavailable: '現在ブリーフを生成できません。',
       empty: 'まだ要約するメールがありません。',
+      writing: 'ブリーフを作成しています…',
+      preparing: 'ブリーフを準備しています…',
+      failed: '今日のブリーフを作成できませんでした。',
+      nothingNew: '今日は新着がありません。',
+      tapRetry: 'タップして再試行',
     },
     feedEmpty: {
       title: 'すべて処理済み',
@@ -361,6 +366,7 @@ const ja: LocaleDict = {
     keyPoints: '要点',
     actionItems: 'アクション項目',
     due: '期限: {{date}}',
+    unavailable: '現在このスレッドを要約できません。',
   },
 
   staleThread: {

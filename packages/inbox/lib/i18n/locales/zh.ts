@@ -116,6 +116,11 @@ const zh: LocaleDict = {
       analyzing: 'Alia 正在分析你的收件箱…',
       unavailable: '当前无法生成摘要。',
       empty: '还没有可摘要的邮件。',
+      writing: '正在撰写你的摘要…',
+      preparing: '正在准备你的摘要…',
+      failed: '无法生成今天的摘要。',
+      nothingNew: '今天没有新邮件。',
+      tapRetry: '点按重试',
     },
     feedEmpty: {
       title: '一切都已处理',
@@ -359,6 +364,7 @@ const zh: LocaleDict = {
     keyPoints: '要点',
     actionItems: '待办事项',
     due: '截止:{{date}}',
+    unavailable: '当前无法总结此会话。',
   },
 
   staleThread: {

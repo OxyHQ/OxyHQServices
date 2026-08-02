@@ -120,6 +120,11 @@ const es: LocaleDict = {
       analyzing: 'Alia está analizando tu bandeja…',
       unavailable: 'No se pudo generar el resumen ahora.',
       empty: 'Aún no hay correos para resumir.',
+      writing: 'Escribiendo tu resumen…',
+      preparing: 'Preparando tu resumen…',
+      failed: 'No se pudo escribir el resumen de hoy.',
+      nothingNew: 'Nada nuevo hoy.',
+      tapRetry: 'Toca para reintentar.',
     },
     feedEmpty: {
       title: 'Todo al día',
@@ -366,6 +371,7 @@ const es: LocaleDict = {
     keyPoints: 'Puntos clave',
     actionItems: 'Acciones pendientes',
     due: 'Para: {{date}}',
+    unavailable: 'No se pudo resumir esta conversación ahora.',
   },
 
   staleThread: {

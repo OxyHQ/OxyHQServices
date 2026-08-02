@@ -125,6 +125,11 @@ const en: LocaleDict = {
       analyzing: 'Alia is analyzing your inbox…',
       unavailable: 'Unable to generate brief right now.',
       empty: 'No emails to summarize yet.',
+      writing: 'Writing your brief…',
+      preparing: 'Preparing your brief…',
+      failed: "Couldn't write today's brief.",
+      nothingNew: 'Nothing new today.',
+      tapRetry: 'Tap to retry.',
     },
     feedEmpty: {
       title: 'All caught up',
@@ -368,6 +373,7 @@ const en: LocaleDict = {
     keyPoints: 'Key Points',
     actionItems: 'Action Items',
     due: 'Due: {{date}}',
+    unavailable: 'Unable to summarize this thread right now.',
   },
 
   staleThread: {

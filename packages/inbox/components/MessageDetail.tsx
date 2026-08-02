@@ -48,6 +48,7 @@ import { useOxy } from '@oxyhq/services';
 
 import { useGoBack } from '@/hooks/useGoBack';
 import { useColors } from '@/constants/theme';
+import { useTranslation } from '@/lib/i18n';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMessage } from '@/hooks/queries/useMessage';
@@ -124,6 +125,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
   const pathname = usePathname();
   const { width } = useWindowDimensions();
   const colors = useColors();
+  const { t } = useTranslation();
 
   const { data: currentMessage, isLoading, isError, refetch } = useMessage(messageId);
   const { data: threadMessages = [] } = useThread(messageId);
@@ -188,12 +190,12 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
     if (!messageId) return;
     const archiveBox = mailboxes.find((m) => m.specialUse === SPECIAL_USE.ARCHIVE);
     if (!archiveBox) {
-      toast.error('Archive folder not available.');
+      toast.error(t('inbox.toast.archiveUnavailable'));
       return;
     }
     archiveMutation.mutate({ messageId, archiveMailboxId: archiveBox._id });
     if (mode === 'standalone') handleBack();
-  }, [messageId, mailboxes, archiveMutation, handleBack, mode]);
+  }, [messageId, mailboxes, archiveMutation, handleBack, mode, t]);
 
   const handleDelete = useCallback(() => {
     if (!messageId) return;
@@ -296,7 +298,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
         const url = await oxyServices.getFileDownloadUrlAsync(fileId);
         await Linking.openURL(url);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to download attachment.';
+        const message = err instanceof Error ? err.message : t('message.toast.attachmentFailed');
         toast.error(message);
       }
     }
@@ -364,7 +366,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
         try {
           await Print.printAsync({ html: printHtml });
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Failed to print email.';
+          const message = err instanceof Error ? err.message : t('message.toast.printFailed');
           toast.error(message);
         }
       })();
@@ -453,18 +455,18 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
         try {
           const documentDirectory = FileSystem.documentDirectory;
           if (!documentDirectory) {
-            toast.error('File system not available on this device.');
+            toast.error(t('message.toast.fileSystemUnavailable'));
             return;
           }
           const fileUri = `${documentDirectory}${filename}`;
           await FileSystem.writeAsStringAsync(fileUri, emlContent, { encoding: FileSystem.EncodingType.UTF8 });
           if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(fileUri, { mimeType: 'message/rfc822', dialogTitle: 'Save email' });
+            await Sharing.shareAsync(fileUri, { mimeType: 'message/rfc822', dialogTitle: t('message.toast.saveEmailDialog') });
           } else {
-            toast.error('Sharing is not available on this device.');
+            toast.error(t('message.toast.sharingUnavailable'));
           }
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Failed to download email.';
+          const message = err instanceof Error ? err.message : t('message.toast.downloadFailed');
           toast.error(message);
         }
       })();
@@ -614,7 +616,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
           )}
         </TouchableOpacity>
         <TouchableOpacity
-          accessibilityLabel={currentMessage.flags.pinned ? 'Unpin message' : 'Pin message'}
+          accessibilityLabel={currentMessage.flags.pinned ? t('message.actions.unpin') : t('message.actions.pin')}
           accessibilityRole="button"
           accessibilityState={{ selected: currentMessage.flags.pinned }}
           onPress={handlePin}
@@ -638,7 +640,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
           )}
         </TouchableOpacity>
         <TouchableOpacity
-          accessibilityLabel={currentMessage.flags.starred ? 'Unstar message' : 'Star message'}
+          accessibilityLabel={currentMessage.flags.starred ? t('message.actions.unstar') : t('message.actions.star')}
           accessibilityRole="button"
           accessibilityState={{ selected: currentMessage.flags.starred }}
           onPress={handleStar}
@@ -687,14 +689,14 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
       </View>
 
       {/* More menu dialog */}
-      <Dialog control={moreMenuControl} label="More actions" style={{ padding: 0 }}>
+      <Dialog control={moreMenuControl} label={t('message.actions.more')} style={{ padding: 0 }}>
         <TouchableOpacity style={styles.menuItem} onPress={handleMarkUnread} activeOpacity={0.6}>
           {Platform.OS === 'web' ? (
             <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
           ) : (
             <MaterialCommunityIcons name="email-mark-as-unread" size={16} color={colors.icon} />
           )}
-          <Text style={[styles.menuItemText, { color: colors.text }]}>Mark unread</Text>
+          <Text style={[styles.menuItemText, { color: colors.text }]}>{t('message.actions.markUnread')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem} onPress={handleMarkSpam} activeOpacity={0.6}>
           {Platform.OS === 'web' ? (
@@ -702,7 +704,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
           ) : (
             <MaterialCommunityIcons name="alert-octagon-outline" size={16} color={colors.icon} />
           )}
-          <Text style={[styles.menuItemText, { color: colors.text }]}>Report spam</Text>
+          <Text style={[styles.menuItemText, { color: colors.text }]}>{t('message.actions.reportSpam')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem} onPress={() => { moreMenuControl.close(); labelPickerControl.open(); }} activeOpacity={0.6}>
           {Platform.OS === 'web' ? (
@@ -710,7 +712,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
           ) : (
             <MaterialCommunityIcons name="label-outline" size={16} color={colors.icon} />
           )}
-          <Text style={[styles.menuItemText, { color: colors.text }]}>Label</Text>
+          <Text style={[styles.menuItemText, { color: colors.text }]}>{t('message.actions.label')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem} onPress={handleDownloadEml} activeOpacity={0.6}>
           {Platform.OS === 'web' ? (
@@ -718,15 +720,15 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
           ) : (
             <MaterialCommunityIcons name="email-arrow-right-outline" size={16} color={colors.icon} />
           )}
-          <Text style={[styles.menuItemText, { color: colors.text }]}>Download .eml</Text>
+          <Text style={[styles.menuItemText, { color: colors.text }]}>{t('message.actions.downloadEml')}</Text>
         </TouchableOpacity>
       </Dialog>
 
       {/* Label picker dialog */}
-      <Dialog control={labelPickerControl} label="Labels" style={{ padding: 0 }}>
-        <Text style={[styles.labelPickerTitle, { color: colors.text }]}>Labels</Text>
+      <Dialog control={labelPickerControl} label={t('message.labelPicker.title')} style={{ padding: 0 }}>
+        <Text style={[styles.labelPickerTitle, { color: colors.text }]}>{t('message.labelPicker.title')}</Text>
         {labels.length === 0 && (
-          <Text style={[styles.labelPickerEmpty, { color: colors.secondaryText }]}>No labels yet</Text>
+          <Text style={[styles.labelPickerEmpty, { color: colors.secondaryText }]}>{t('message.labelPicker.empty')}</Text>
         )}
         {labels.map((lbl) => {
           const isAssigned = currentMessage.labels.includes(lbl.name);
@@ -1010,7 +1012,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
       <Dialog
         control={messageMenuControl}
         onClose={() => setMessageMenuId(null)}
-        label="Message actions"
+        label={t('message.actions.messageActions')}
         style={{ padding: 0 }}
       >
         <TouchableOpacity style={styles.menuItem} onPress={() => handleReply(messageMenuId ?? undefined)} activeOpacity={0.6}>
@@ -1019,7 +1021,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
           ) : (
             <MaterialCommunityIcons name="reply" size={16} color={colors.icon} />
           )}
-          <Text style={[styles.menuItemText, { color: colors.text }]}>Reply</Text>
+          <Text style={[styles.menuItemText, { color: colors.text }]}>{t('message.actions.reply')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem} onPress={() => handleReplyAll(messageMenuId ?? undefined)} activeOpacity={0.6}>
           {Platform.OS === 'web' ? (
@@ -1027,7 +1029,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
           ) : (
             <MaterialCommunityIcons name="reply-all" size={16} color={colors.icon} />
           )}
-          <Text style={[styles.menuItemText, { color: colors.text }]}>Reply all</Text>
+          <Text style={[styles.menuItemText, { color: colors.text }]}>{t('message.actions.replyAll')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.menuItem} onPress={() => handleForward(messageMenuId ?? undefined)} activeOpacity={0.6}>
           {Platform.OS === 'web' ? (
@@ -1035,7 +1037,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
           ) : (
             <MaterialCommunityIcons name="share" size={16} color={colors.icon} />
           )}
-          <Text style={[styles.menuItemText, { color: colors.text }]}>Forward</Text>
+          <Text style={[styles.menuItemText, { color: colors.text }]}>{t('message.actions.forward')}</Text>
         </TouchableOpacity>
       </Dialog>
 
@@ -1052,7 +1054,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
           ]}
         >
           <TouchableOpacity
-            accessibilityLabel="Reply"
+            accessibilityLabel={t('message.actions.reply')}
             accessibilityRole="button"
             style={[styles.replyButton, { borderColor: colors.border }]}
             onPress={() => handleReply()}
@@ -1063,10 +1065,10 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
             ) : (
               <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
             )}
-            <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply</Text>
+            <Text style={[styles.replyButtonText, { color: colors.text }]}>{t('message.actions.reply')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            accessibilityLabel="Reply all"
+            accessibilityLabel={t('message.actions.replyAll')}
             accessibilityRole="button"
             style={[styles.replyButton, { borderColor: colors.border }]}
             onPress={() => handleReplyAll()}
@@ -1077,10 +1079,10 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
             ) : (
               <MaterialCommunityIcons name="reply-all" size={18} color={colors.icon} />
             )}
-            <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply All</Text>
+            <Text style={[styles.replyButtonText, { color: colors.text }]}>{t('message.actions.replyAll')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            accessibilityLabel="Forward"
+            accessibilityLabel={t('message.actions.forward')}
             accessibilityRole="button"
             style={[styles.replyButton, { borderColor: colors.border }]}
             onPress={() => handleForward()}
@@ -1091,7 +1093,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
             ) : (
               <MaterialCommunityIcons name="share" size={18} color={colors.icon} />
             )}
-            <Text style={[styles.replyButtonText, { color: colors.text }]}>Forward</Text>
+            <Text style={[styles.replyButtonText, { color: colors.text }]}>{t('message.actions.forward')}</Text>
           </TouchableOpacity>
         </View>
       )}
