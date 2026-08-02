@@ -22,7 +22,7 @@
     "@oxyhq/services": "*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native/virtualized-lists": "0.86.0",
-    "@tailwindcss/postcss": "4.3.2",
+    "@tailwindcss/postcss": "4.3.3",
     "@tanstack/query-async-storage-persister": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-query-persist-client": "catalog:",
@@ -59,7 +59,7 @@
     "socket.io-client": "catalog:",
     "sonner": "catalog:",
     "sonner-native": "^0.26.4",
-    "tailwindcss": "4.3.2",
+    "tailwindcss": "4.3.3",
     "tailwindcss-animate": "^1.0.7",
     "whatwg-fetch": "^3.6.20",
     "zustand": "catalog:"
