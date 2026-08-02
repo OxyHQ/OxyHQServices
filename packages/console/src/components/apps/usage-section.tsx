@@ -1,12 +1,8 @@
 import { useState } from 'react';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
-import type {Application, CallerAccess} from '@/hooks/use-applications';
+import type { Application, CallerAccess } from '@/hooks/use-applications';
 import { Button } from '@/components/ui/button';
-import {
-  
-  
-  useApplicationUsage
-} from '@/hooks/use-applications';
+import { useApplicationUsage } from '@/hooks/use-applications';
 
 const PERIODS = [
   { value: '24h', label: '24h' },

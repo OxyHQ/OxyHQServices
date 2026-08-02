@@ -15,7 +15,7 @@ import {
   UserMultiple02Icon,
 } from '@hugeicons/core-free-icons';
 import { toast } from 'sonner';
-import type {AccountMember, AccountRole, AssignableAccountRole} from '@/hooks/use-account';
+import type { AccountMember, AccountRole, AssignableAccountRole } from '@/hooks/use-account';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -52,15 +52,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  
-  
-  
   useAccount,
   useAccountMembers,
   useInviteAccountMember,
   useRemoveAccountMember,
   useTransferAccountOwnership,
-  useUpdateAccountMember
+  useUpdateAccountMember,
 } from '@/hooks/use-account';
 import {
   USER_NOT_FOUND_MESSAGE,

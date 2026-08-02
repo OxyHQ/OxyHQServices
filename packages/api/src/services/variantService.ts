@@ -15,6 +15,7 @@ import type {
 } from '../types/file.types';
 import { applyCanonicalMediaMetadata, resolveFileMediaMetadata } from '../utils/fileMediaMetadata';
 import {
+  deleteVariant,
   findFileById,
   findVariantTwin,
   upsertVariantSet,
@@ -307,6 +308,8 @@ export class VariantService {
       variantType,
       key: existing.key,
     });
+    await deleteVariant(file.id, existing.type, existing.key);
+    file.variants = file.variants.filter((v) => v.id !== existing.id);
     return undefined;
   }
 
@@ -785,8 +788,8 @@ export class VariantService {
         'pipe:1' // Output to stdout
       ];
 
-      // Verify ffmpeg path exists before spawning
-      if (!fs.existsSync(ffmpegPath)) {
+      // Only verify absolute paths — a bare `ffmpeg` command is resolved via PATH at spawn time.
+      if (path.isAbsolute(ffmpegPath) && !fs.existsSync(ffmpegPath)) {
         reject(new Error(`FFmpeg binary not found at path: ${ffmpegPath}. Please install ffmpeg-static or ensure system ffmpeg is available.`));
         return;
       }
@@ -997,8 +1000,8 @@ export class VariantService {
         args.push('-vf', `scale=${config.width}:${config.height}:force_original_aspect_ratio=decrease,pad=${config.width}:${config.height}:(ow-iw)/2:(oh-ih)/2`);
       }
 
-      // Verify ffmpeg path exists before spawning
-      if (!fs.existsSync(ffmpegPath)) {
+      // Only verify absolute paths — a bare `ffmpeg` command is resolved via PATH at spawn time.
+      if (path.isAbsolute(ffmpegPath) && !fs.existsSync(ffmpegPath)) {
         logger.error('FFmpeg binary not found', { path: ffmpegPath, variant: config.type });
         resolve(null);
         return;

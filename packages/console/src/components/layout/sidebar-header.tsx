@@ -12,7 +12,7 @@ import {
 import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useAuth } from '@oxyhq/services';
 import { toast } from 'sonner';
-import type {AccountKind, AccountNode, AccountRole} from '@/hooks/use-account';
+import type { AccountKind, AccountNode, AccountRole } from '@/hooks/use-account';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,12 +40,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import {
-  
-  
-  
-  useAccount
-} from '@/hooks/use-account';
+import { useAccount } from '@/hooks/use-account';
 
 const roleLabels: Record<AccountRole, string> = {
   owner: 'Owner',
