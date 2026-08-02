@@ -98,7 +98,7 @@ let snapshot = makeSnapshot();
 const controller = {
   subscribe: jest.fn((_l: () => void) => () => undefined),
   getSnapshot: () => snapshot,
-  switchTo: jest.fn(async () => undefined),
+  switchTo: jest.fn(async () => true),
   add: jest.fn(),
   startSignup: jest.fn(),
   showQr: jest.fn(),
@@ -197,6 +197,14 @@ describe('OxyAuthChooser', () => {
     snapshot = makeSnapshot();
     mockController = controller;
     jest.clearAllMocks();
+    // `clearAllMocks` clears recorded calls but does NOT drain a queued
+    // `mockImplementationOnce`. The failed-switch test queues one; if its click
+    // does not reach `switchTo` the one-shot survives into the NEXT test, which
+    // then takes the failure branch and never runs the success side effects.
+    // Restore the default implementation explicitly so no test inherits another
+    // test's one-shot.
+    controller.switchTo.mockReset();
+    controller.switchTo.mockImplementation(async () => undefined);
     isWebBrowserMock.mockReturnValue(true);
     isOxyRpOriginMock.mockReturnValue(true);
   });
@@ -267,6 +275,23 @@ describe('OxyAuthChooser', () => {
     expect(controller.add).not.toHaveBeenCalled();
   });
 
+  it('renders app-owned menu items from registered consumer hooks', () => {
+    const onCustom = jest.fn();
+    registerAccountDialogConsumerHooks({
+      menuItems: [{ key: 'inbox-settings', label: 'Inbox settings', onPress: onCustom }],
+    });
+
+    snapshot = makeSnapshot({
+      activeAccountId: 'a',
+      accounts: [makeAccount({ accountId: 'a', displayName: 'Alice', isCurrent: true, sessionId: 's-a' })],
+    });
+
+    render(<OxyAuthChooser />);
+
+    fireEvent.click(screen.getByText('Inbox settings'));
+    expect(onCustom).toHaveBeenCalledTimes(1);
+  });
+
   it('toasts a failed account switch instead of rendering an inline banner', async () => {
     snapshot = makeSnapshot({
       activeAccountId: 'a',
@@ -279,6 +304,7 @@ describe('OxyAuthChooser', () => {
     // snapshot, which the chooser reads back at the point the switch settles.
     controller.switchTo.mockImplementationOnce(async () => {
       snapshot = makeSnapshot({ ...snapshot, error: 'Account switch did not return a valid session' });
+      return false;
     });
 
     render(<OxyAuthChooser />);
@@ -325,7 +351,9 @@ describe('OxyAuthChooser', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Bob' }));
 
     await waitFor(() => expect(controller.switchTo).toHaveBeenCalledWith('b'));
-    expect(invalidateQueries).toHaveBeenCalled();
+    // `invalidateQueries` runs AFTER `await controller.switchTo(...)` resolves,
+    // so it needs its own wait rather than being asserted on the next line.
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalled());
     // A successful switch fires no error toast.
     expect(toast.error).not.toHaveBeenCalled();
   });

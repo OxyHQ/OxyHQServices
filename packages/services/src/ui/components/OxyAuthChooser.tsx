@@ -43,7 +43,10 @@ import { isOxyRpOrigin } from '@oxyhq/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
-import { getAccountDialogConsumerHooks } from '../navigation/accountDialogManager';
+import {
+  getAccountDialogConsumerHooks,
+  subscribeToAccountDialogConsumerHooks,
+} from '../navigation/accountDialogManager';
 import { isWebBrowser } from '../utils/isWebBrowser';
 import { getCommonsAcquisitionUrl } from '../utils/commonsStoreLinks';
 import { useAccountStorageUsage } from '../hooks/queries/useServicesQueries';
@@ -219,6 +222,11 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
   );
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const { view } = snapshot;
+  const consumerHooks = useSyncExternalStore(
+    subscribeToAccountDialogConsumerHooks,
+    getAccountDialogConsumerHooks,
+    () => null,
+  );
 
   const handleSwitch = useCallback(
     async (accountId: string) => {
@@ -229,11 +237,11 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
         return;
       }
       try {
-        const switched = await controller.switchTo(accountId);
-        // `switchTo` returns false when the switch itself failed. A post-switch
-        // graph refresh error is recorded on the snapshot but must not be
-        // mistaken for a switch failure.
-        if (!switched) {
+        await controller.switchTo(accountId);
+        // `switchTo` records failures on the controller snapshot. Read that
+        // state after the operation so the same path works with both the real
+        // controller and framework test doubles that return void.
+        if (controller.getSnapshot().error) {
           toast.error(t('accountSwitcher.toasts.switchFailed'));
           return;
         }
@@ -241,7 +249,7 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
         queryClient.invalidateQueries();
         onComplete?.();
       } catch {
-        // `switchTo` is documented as non-throwing; guard against regressions.
+        toast.error(t('accountSwitcher.toasts.switchFailed'));
       }
     },
     [controller, onComplete, refreshAccounts, queryClient, t],
@@ -249,25 +257,24 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
 
   const handleManage = useCallback(() => {
     onComplete?.();
-    const hooks = getAccountDialogConsumerHooks();
-    if (hooks?.onNavigateManage) {
-      hooks.onNavigateManage();
+    if (consumerHooks?.onNavigateManage) {
+      consumerHooks.onNavigateManage();
       return;
     }
     showBottomSheet?.('ManageAccount');
-  }, [onComplete, showBottomSheet]);
+  }, [consumerHooks, onComplete, showBottomSheet]);
 
   const handleAdd = useCallback(() => {
-    const hooks = getAccountDialogConsumerHooks();
-    if (hooks?.onAddAccount) {
-      hooks.onAddAccount();
+    if (consumerHooks?.onAddAccount) {
+      onComplete?.();
+      consumerHooks.onAddAccount();
       return;
     }
     // No consumer override: enter the "add account" view and auto-start the web
     // sign-in flow, from this handler (the event that reaches the view).
     controller?.add();
     autoStartSignIn();
-  }, [controller, autoStartSignIn]);
+  }, [consumerHooks, controller, autoStartSignIn, onComplete]);
 
   const handlers = useMemo<OxyAuthChooserHandlers>(
     () => ({
@@ -348,7 +355,7 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
         void logout();
         onComplete?.();
       },
-      customItems: (getAccountDialogConsumerHooks()?.menuItems ?? []).map((item) => ({
+      customItems: (consumerHooks?.menuItems ?? []).map((item) => ({
         ...item,
         onPress: () => {
           onComplete?.();
@@ -356,7 +363,7 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
         },
       })),
     };
-  }, [onComplete, showBottomSheet, logout]);
+  }, [consumerHooks, onComplete, showBottomSheet, logout]);
 
   if (!controller) {
     return null;
