@@ -294,6 +294,10 @@ describe('updated_at is maintained by the application', () => {
       .values({ userId, name: 'Before' })
       .returning();
 
+    // `$onUpdate` stamps `updatedAt` with `new Date()` (ms resolution); a fast
+    // runner can insert and update in the same tick without this pause.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
     await getDb()
       .update(labels)
       .set({ name: 'After' })
