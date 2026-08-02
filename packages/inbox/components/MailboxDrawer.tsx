@@ -189,11 +189,11 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   }, [queryClient]);
 
   const handleAddAccount = useCallback(() => {
-    // Open the sign-in modal to authenticate a new account. OxyContext picks up
-    // the new session and ProfileButton's menu reflects it.
-    resetInboxForAccountChange();
+    // Open the sign-in modal to authenticate a new account. Cache reset runs in
+    // the activeUserId effect below once a switch actually commits — not here,
+    // or canceling sign-in would wipe the current inbox.
     openAccountDialog('signin');
-  }, [resetInboxForAccountChange]);
+  }, []);
 
   const handleNavigateManage = useCallback(() => {
     router.push('/settings');

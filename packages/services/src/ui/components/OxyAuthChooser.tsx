@@ -220,16 +220,14 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const { view } = snapshot;
 
-  const [switching, setSwitching] = useState(false);
-
   const handleSwitch = useCallback(
     async (accountId: string) => {
-      if (!controller || switching) return;
-      if (accountId === snapshot.activeAccountId) {
+      if (!controller) return;
+      if (controller.getSnapshot().switchingAccountId) return;
+      if (accountId === controller.getSnapshot().activeAccountId) {
         onComplete?.();
         return;
       }
-      setSwitching(true);
       try {
         await controller.switchTo(accountId);
         // `switchTo` never throws — it records a failure on the controller's
@@ -246,11 +244,11 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
         void refreshAccounts();
         queryClient.invalidateQueries();
         onComplete?.();
-      } finally {
-        setSwitching(false);
+      } catch {
+        // `switchTo` is documented as non-throwing; guard against regressions.
       }
     },
-    [controller, switching, snapshot.activeAccountId, onComplete, refreshAccounts, queryClient, t],
+    [controller, onComplete, refreshAccounts, queryClient, t],
   );
 
   const handleManage = useCallback(() => {
@@ -317,7 +315,7 @@ const OxyAuthChooser: React.FC<OxyAuthChooserProps> = ({
   // Real storage usage for the account menu's "Oxy storage" block. Disabled
   // (no fetch) until a private-API session exists, so it is inert on the
   // sign-in/request/sign-up views; when present the block shows live used/total.
-  const storageQuery = useAccountStorageUsage();
+  const storageQuery = useAccountStorageUsage({ enabled: view === 'accounts' });
   const storage = useMemo<AccountStorageModel | null>(
     () =>
       storageQuery.data

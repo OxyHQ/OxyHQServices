@@ -29,7 +29,6 @@ const isWeb = Platform.OS === 'web';
  */
 const BG_TRANSITION_MS = 150;
 const AVATAR_TRANSITION_MS = 250;
-const OPACITY_TRANSITION_MS = 150;
 const LEAVE_DELAY_MS = 50;
 
 /** Shrunk-avatar scale on hover, matching Bluesky's `scale: 2/3`. */
@@ -300,22 +299,11 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
         }
         : undefined;
 
+    // Expanded mode always shows identity + chevron (console/inbox wide sidebar).
+    // Hover only animates the row background and avatar shrink — not text visibility.
     const identityStyle: ViewStyle | undefined = isWeb
         ? {
             marginLeft: -resolvedAvatarSize / 2,
-            opacity: active ? 1 : 0,
-            transitionProperty: 'opacity',
-            transitionDuration: `${OPACITY_TRANSITION_MS}ms`,
-            transitionDelay: active ? '0ms' : `${LEAVE_DELAY_MS}ms`,
-        }
-        : undefined;
-
-    const chevronStyle: ViewStyle | undefined = isWeb
-        ? {
-            opacity: active ? 1 : 0,
-            transitionProperty: 'opacity',
-            transitionDuration: `${OPACITY_TRANSITION_MS}ms`,
-            transitionDelay: active ? '0ms' : `${LEAVE_DELAY_MS}ms`,
         }
         : undefined;
 
@@ -345,7 +333,7 @@ const ProfileButton: React.FC<ProfileButtonProps> = ({
                         </Text>
                     ) : null}
                 </View>
-                <View style={chevronStyle}>
+                <View>
                     <MaterialCommunityIcons
                         name="dots-horizontal"
                         size={18}

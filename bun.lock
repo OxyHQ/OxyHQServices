@@ -796,6 +796,7 @@
         "expo-notifications",
         "expo-web-browser",
         "nativewind",
+        "react-native-css",
         "react-native-keyboard-controller",
       ],
     },
