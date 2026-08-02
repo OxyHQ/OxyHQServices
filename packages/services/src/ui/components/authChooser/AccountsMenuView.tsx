@@ -25,7 +25,7 @@
 
 import type React from 'react';
 import { Fragment, useCallback, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native-css/components';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -98,6 +98,11 @@ const FACEPILE_AVATAR_SIZE = 32;
  * label under the avatar before it.
  */
 const FACEPILE_OVERLAP = 4;
+
+// Vite/RN-Web does not install NativeWind's Metro global className polyfill.
+// Use the react-native-css components explicitly so the same className markup
+// works in web Vite hosts as well as Expo/Metro apps.
+const AnimatedCssView = Animated.createAnimatedComponent(View);
 
 /**
  * The hero's address line, shown under the "Hi, <name>!" greeting: the account's
@@ -381,7 +386,7 @@ const AccountsMenuView: React.FC<AccountsMenuViewProps> = ({
       {/* SWITCH ACCOUNT — own NativeWind card, NOT a Bloom grouped section: it
           is a disclosure header over an animated list, not a list of settings
           rows, and the grouped section is not a bare card container. */}
-      <Animated.View className="bg-fill overflow-hidden mb-space-16" style={switchCardStyle}>
+      <AnimatedCssView className="bg-fill overflow-hidden mb-space-16" style={switchCardStyle}>
         <HoverPressable
           baseClassName={`flex-row items-center gap-space-12 px-space-12 py-[10px] min-h-[44px]${
             switchingDisabled ? ' opacity-60' : ''
@@ -424,7 +429,7 @@ const AccountsMenuView: React.FC<AccountsMenuViewProps> = ({
         {/* Animated reveal: an overflow-clipped container whose height + opacity
             are driven by `listProgress`; the inner style-based wrapper measures
             the natural content height via `onLayout`. */}
-        <Animated.View
+        <AnimatedCssView
           style={[styles.collapse, listStyle]}
           pointerEvents={expanded ? 'auto' : 'none'}
         >
@@ -434,8 +439,8 @@ const AccountsMenuView: React.FC<AccountsMenuViewProps> = ({
           >
             <View>{listItems}</View>
           </View>
-        </Animated.View>
-      </Animated.View>
+        </AnimatedCssView>
+      </AnimatedCssView>
 
       {/* OXY STORAGE — own NativeWind card for the same reason: a title, a meter
           and two chips are not settings rows. Its cloud sits in the same 20px
