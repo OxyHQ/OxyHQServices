@@ -166,7 +166,7 @@ jobs:
             --arg only "$ONLY_APPS" \
             '{containerOverrides:[{
                name: $name,
-               command: ["node","packages/api/dist/scripts/seed-oxy-applications.js"],
+               command: ["bun","run","packages/api/scripts/seed-oxy-applications.ts"],
                environment: [
                  {name:"DRY_RUN", value:$dry},
                  {name:"ONLY_APPS", value:$only}
