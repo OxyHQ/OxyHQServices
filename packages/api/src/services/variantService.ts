@@ -696,9 +696,20 @@ export class VariantService {
         );
       }
 
+      if (renditionsAttempted > renditionsSucceeded) {
+        logger.warn('Some video mp4 renditions failed to encode', {
+          fileId: file.id,
+          renditionsAttempted,
+          renditionsSucceeded,
+          renditionsFailed: renditionsAttempted - renditionsSucceeded,
+        });
+      }
+
       logger.info('Video variants generated successfully', {
         fileId: file.id,
         variantCount: variants.length,
+        renditionsAttempted,
+        renditionsSucceeded,
         metadata
       });
     } catch (error) {
