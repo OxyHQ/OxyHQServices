@@ -79,6 +79,7 @@ import {
   stopTransparencyCheckpointJobs,
 } from './queue/transparencyCheckpoint.queue';
 import { startLinkPreviewWarmJobs, stopLinkPreviewWarmJobs } from './queue/linkPreviewWarm.queue';
+import { startAssetVariantJobs, stopAssetVariantJobs } from './queue/assetVariants.queue';
 import {
   startConductRiskExpiryJobs,
   stopConductRiskExpiryJobs,
@@ -437,6 +438,7 @@ async function gracefulShutdown(signal: string) {
   await stopNodeIngestJobs();
   await stopTransparencyCheckpointJobs();
   await stopLinkPreviewWarmJobs();
+  await stopAssetVariantJobs();
   await stopConductRiskExpiryJobs();
   await stopSubscriptionExpiryJobs();
   await stopSmtpInbound();
@@ -998,6 +1000,12 @@ export async function bootstrap(
   // resolves (BullMQ when REDIS_URL is set, else an in-process pending set).
   // All remote I/O is background-only — never on a request's read path.
   await startLinkPreviewWarmJobs();
+
+  // Drain asset variant generation (sharp / ffmpeg) off the upload path. The
+  // worker's concurrency is deliberately small — this is the CPU- and
+  // memory-heaviest work the process does, and running it unbounded is what
+  // starved the JS thread until the ELB health check timed out.
+  await startAssetVariantJobs();
 
   // Let active moderation consequences lapse on schedule. The ledger row
   // stays permanently; only the active risk decays, so a minor error does

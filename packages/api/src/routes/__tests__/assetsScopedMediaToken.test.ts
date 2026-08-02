@@ -103,6 +103,9 @@ jest.mock('../../services/assetServiceSingleton', () => ({
     repairMissingFederationFileContent: (...args: unknown[]) =>
       mockRepairMissingFederationFileContent(...args),
   },
+}));
+
+jest.mock('../../services/s3ServiceSingleton', () => ({
   s3Service: {
     fileExists: (...args: unknown[]) => mockFileExists(...args),
     getObjectStreamRange: (...args: unknown[]) => mockGetObjectStreamRange(...args),
