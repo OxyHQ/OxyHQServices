@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@oxyhq/auth';
+import { useAuth } from '@oxyhq/services';
 
 export interface ModelStats {
   id: string;
@@ -19,7 +19,7 @@ export interface ModelStats {
 }
 
 export interface ModelsStatsResponse {
-  models: ModelStats[];
+  models: Array<ModelStats>;
   count: number;
   timestamp: string;
 }

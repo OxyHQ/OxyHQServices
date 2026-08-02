@@ -2,26 +2,23 @@ import type React from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import {
   View,
-  ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Platform,
-  KeyboardAvoidingView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast, Dialog, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { H1, Text } from '@oxyhq/bloom/typography';
+import { Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { Divider } from '@oxyhq/bloom/divider';
 import type { AccountMember, AccountRole } from '@oxyhq/core';
-import { logger as loggerUtil } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 
 /** Roles assignable via invite / role change — everything except `owner`. */
 type AssignableRole = Exclude<AccountRole, 'owner'>;
@@ -45,6 +42,11 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
   const bloomTheme = useTheme();
   const colors = bloomTheme.colors;
   const { t } = useI18n();
+
+  useSurfaceHeader({
+    title: t('accounts.members.title') || 'Members',
+    subtitle: t('accounts.members.subtitle') || 'People with access to this account.',
+  });
   const { oxyServices, canUsePrivateApi } = useOxy();
   const queryClient = useQueryClient();
 
@@ -155,11 +157,6 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
     },
   });
 
-  const [memberToRemove, setMemberToRemove] = useState<AccountMember | null>(null);
-  const [memberToPromote, setMemberToPromote] = useState<AccountMember | null>(null);
-  const removeDialog = useDialogControl();
-  const transferDialog = useDialogControl();
-
   const handleInvite = useCallback(() => {
     const usernameOrEmail = inviteIdentifier.trim();
     if (!usernameOrEmail) {
@@ -177,53 +174,46 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
     updateMutation.mutate({ memberId: member._id, role });
   }, [updateMutation]);
 
-  const confirmRemove = useCallback((member: AccountMember) => {
-    setMemberToRemove(member);
-    removeDialog.open();
-  }, [removeDialog]);
+  const confirmRemove = useCallback(async (member: AccountMember) => {
+    const confirmed = await surfaces.confirm({
+      title: t('accounts.members.removeConfirm.title') || 'Remove member',
+      message:
+        t('accounts.members.removeConfirm.description')
+        || 'Remove this member from the account? They will lose all access.',
+      confirmLabel: t('accounts.members.actions.remove') || 'Remove',
+      cancelLabel: t('common.cancel') || 'Cancel',
+      destructive: true,
+    });
+    if (confirmed) removeMutation.mutate(member._id);
+  }, [removeMutation, t]);
 
-  const confirmTransfer = useCallback((member: AccountMember) => {
-    setMemberToPromote(member);
-    transferDialog.open();
-  }, [transferDialog]);
-
-  const title = t('accounts.members.title') || 'Members';
+  const confirmTransfer = useCallback(async (member: AccountMember) => {
+    const confirmed = await surfaces.confirm({
+      title: t('accounts.members.transferConfirm.title') || 'Transfer ownership',
+      message:
+        t('accounts.members.transferConfirm.description')
+        || 'Transfer ownership of this account to this member? You will be demoted to admin. This cannot be undone.',
+      confirmLabel: t('accounts.members.actions.transfer') || 'Transfer ownership',
+      cancelLabel: t('common.cancel') || 'Cancel',
+      destructive: true,
+    });
+    if (confirmed) transferMutation.mutate(member.memberUserId);
+  }, [transferMutation, t]);
 
   if (!id) {
     return (
-      <View className="flex-1 bg-bg">
-        <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
-        <View className="flex-1 items-center justify-center px-screen-margin">
+      <>
+        <View className="items-center justify-center px-screen-margin py-space-40">
           <Text className="text-body font-body text-text-secondary text-center">
             {t('accounts.members.errors.missingAccount') || 'No account selected.'}
           </Text>
         </View>
-      </View>
+      </>
     );
   }
 
   return (
-    <View className="flex-1 bg-bg">
-      <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
-
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
-      >
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-screen-margin pt-space-24 pb-space-32 gap-space-24"
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View className="gap-space-8">
-            <H1 className="text-headerBold font-headerBold text-text">{title}</H1>
-            <Text className="text-body font-body text-text-secondary">
-              {t('accounts.members.subtitle') || 'People with access to this account.'}
-            </Text>
-          </View>
-
+      <View className="px-screen-margin pt-space-16 pb-space-32 gap-space-24">
           {!accountQuery.isLoading && !canRead ? (
             <Text className="text-body font-body text-text-secondary text-center py-space-24">
               {t('accounts.members.errors.noPermission') || 'You do not have permission to view members.'}
@@ -423,58 +413,7 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
               )}
             </View>
           ) : null}
-        </ScrollView>
-      </KeyboardAvoidingView>
-
-      <Dialog
-        control={removeDialog}
-        title={t('accounts.members.removeConfirm.title') || 'Remove member'}
-        description={
-          t('accounts.members.removeConfirm.description')
-          || 'Remove this member from the account? They will lose all access.'
-        }
-        actions={[
-          {
-            label: t('accounts.members.actions.remove') || 'Remove',
-            color: 'destructive',
-            onPress: () => {
-              const target = memberToRemove;
-              setMemberToRemove(null);
-              if (target) {
-                removeMutation.mutate(target._id);
-              } else {
-                loggerUtil.debug('Remove confirmed with no pending member', { component: 'AccountMembersScreen' });
-              }
-            },
-          },
-          { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-        ]}
-      />
-      <Dialog
-        control={transferDialog}
-        title={t('accounts.members.transferConfirm.title') || 'Transfer ownership'}
-        description={
-          t('accounts.members.transferConfirm.description')
-          || 'Transfer ownership of this account to this member? You will be demoted to admin. This cannot be undone.'
-        }
-        actions={[
-          {
-            label: t('accounts.members.actions.transfer') || 'Transfer ownership',
-            color: 'destructive',
-            onPress: () => {
-              const target = memberToPromote;
-              setMemberToPromote(null);
-              if (target) {
-                transferMutation.mutate(target.memberUserId);
-              } else {
-                loggerUtil.debug('Transfer confirmed with no pending member', { component: 'AccountMembersScreen' });
-              }
-            },
-          },
-          { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-        ]}
-      />
-    </View>
+      </View>
   );
 };
 

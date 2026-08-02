@@ -70,6 +70,9 @@ export function parseScan(raw: string): ScanResult {
 
   const attest = parseAttestPayload(raw);
   if (attest) {
+    if (attest.exp < Date.now()) {
+      return { kind: 'invalid', reason: 'expired' };
+    }
     return {
       kind: 'attest',
       subjectDid: attest.subjectDid,

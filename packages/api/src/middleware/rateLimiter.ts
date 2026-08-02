@@ -3,6 +3,7 @@ import { RedisStore } from 'rate-limit-redis';
 import type { RedisReply } from 'rate-limit-redis';
 import { getRedisClient } from '../config/redis';
 import type { Request } from 'express';
+import { hashedIpKey } from '../utils/ipKey';
 
 interface RateLimitOptions {
   /**
@@ -11,7 +12,7 @@ interface RateLimitOptions {
    * that flows through more than one of them increments the same counter
    * multiple times (express-rate-limit emits `ERR_ERL_DOUBLE_COUNT` and the
    * effective per-IP budget is silently halved). Use a short, stable, unique
-   * string per call site, e.g. `'auth:challenge:'`, `'fedcm:nonce:'`.
+   * string per call site, e.g. `'auth:challenge:'`, `'auth:device:bootstrap:'`.
    */
   prefix: string;
   windowMs: number;
@@ -40,6 +41,9 @@ export function rateLimit(options: RateLimitOptions) {
     message: options.message || 'Too many requests, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
-    ...(options.keyGenerator ? { keyGenerator: options.keyGenerator } : {}),
+    keyGenerator: options.keyGenerator ?? hashedIpKey,
+    // hashedIpKey already buckets IPv6 to /56 before HMAC (see ipKey.ts); the v8
+    // static source scan false-positives on req.ip and spams ERR_ERL_KEY_GEN_IPV6.
+    validate: { keyGeneratorIpFallback: false },
   });
 }

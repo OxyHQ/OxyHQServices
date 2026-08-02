@@ -8,7 +8,6 @@
  * Reference: https://docs.expo.dev/router/reference/static-rendering/#root-html
  */
 
-import { getSsoCallbackBootstrapScript } from '@oxyhq/core';
 import { ScrollViewStyleReset } from 'expo-router/html';
 import { type PropsWithChildren } from 'react';
 
@@ -16,7 +15,6 @@ const DEFAULT_TITLE = 'Inbox by Oxy';
 const DEFAULT_DESCRIPTION = 'Email by Oxy. Federated, encrypted, simple.';
 const SITE_NAME = 'Inbox by Oxy';
 const OG_IMAGE = '/assets/images/icon.png';
-const SSO_CALLBACK_BOOTSTRAP_SCRIPT = getSsoCallbackBootstrapScript();
 
 export default function Root({ children }: PropsWithChildren) {
   return (
@@ -68,7 +66,6 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
-        <script dangerouslySetInnerHTML={{ __html: SSO_CALLBACK_BOOTSTRAP_SCRIPT }} />
         <ScrollViewStyleReset />
       </head>
       <body>{children}</body>

@@ -1,7 +1,10 @@
 import React from 'react';
-import { renderHook, waitFor } from '@testing-library/react';
-import { __resetAsyncStorage, __seedAsyncStorage } from '@/__mocks__/async-storage';
-import { __resetOxyState, __setOxyState } from '@/__mocks__/oxyhq-services';
+import { act, renderHook } from '@testing-library/react';
+import {
+  __resetOxyState,
+  __setOxyState,
+  __getLanguageMocks,
+} from '@/__mocks__/oxyhq-services';
 import { LocaleProvider, useLocale } from '@/lib/i18n/locale-context';
 import { DEFAULT_LOCALE } from '@/lib/i18n/types';
 
@@ -9,50 +12,63 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   return <LocaleProvider>{children}</LocaleProvider>;
 }
 
-describe('LocaleProvider locale precedence', () => {
+describe('LocaleProvider', () => {
   beforeEach(() => {
-    __resetAsyncStorage();
     __resetOxyState();
   });
 
-  it('uses the user profile language as the initial locale when no storage value is set', async () => {
-    __setOxyState({ user: { language: 'es-ES' } });
+  it('derives the active locale from the SDK currentLanguage', () => {
+    __setOxyState({ currentLanguage: 'es-ES' });
     const { result } = renderHook(() => useLocale(), { wrapper: Wrapper });
-    // Storage hydration may fire asynchronously; wait for ready then assert.
-    await waitFor(() => {
-      expect(result.current.isReady).toBe(true);
-    });
     expect(result.current.locale).toBe('es-ES');
   });
 
-  it('persisted storage value takes precedence over the user profile language', async () => {
-    __setOxyState({ user: { language: 'es-ES' } });
-    __seedAsyncStorage('oxy_accounts_locale', 'fr-FR');
+  it('coerces a broad SDK locale down to a supported app locale', () => {
+    // The account primary es-MX shares its base language with the app's es-ES.
+    __setOxyState({ currentLanguage: 'es-MX' });
     const { result } = renderHook(() => useLocale(), { wrapper: Wrapper });
-    await waitFor(() => {
-      expect(result.current.locale).toBe('fr-FR');
-    });
+    expect(result.current.locale).toBe('es-ES');
   });
 
-  it('falls back to DEFAULT_LOCALE when nothing resolves', async () => {
-    __setOxyState({ user: null });
+  it('falls back to DEFAULT_LOCALE for a language the app does not ship', () => {
+    // Dutch shares no base language with any locale in the app's catalog.
+    __setOxyState({ currentLanguage: 'nl-NL' });
     const { result } = renderHook(() => useLocale(), { wrapper: Wrapper });
-    await waitFor(() => {
-      expect(result.current.isReady).toBe(true);
-    });
-    // jsdom Intl is en-US-ish in most CI envs, so we accept either the device
-    // resolution or the documented default — both are valid fallbacks.
-    expect([DEFAULT_LOCALE, 'es-ES']).toContain(result.current.locale);
+    expect(result.current.locale).toBe(DEFAULT_LOCALE);
   });
 
-  it('ignores unsupported persisted values and keeps the derived locale', async () => {
-    __setOxyState({ user: { language: 'en-US' } });
-    __seedAsyncStorage('oxy_accounts_locale', 'klingon-KL');
-    const { result } = renderHook(() => useLocale(), { wrapper: Wrapper });
-    await waitFor(() => {
-      expect(result.current.isReady).toBe(true);
+  it('writes the account locales (primary first) when signed in', async () => {
+    __setOxyState({
+      isAuthenticated: true,
+      currentLanguage: 'en-US',
+      currentLanguages: ['en-US', 'fr-FR'],
     });
-    expect(result.current.locale).toBe('en-US');
+    const { result } = renderHook(() => useLocale(), { wrapper: Wrapper });
+    const { updateProfileMutateAsync, setLanguage } = __getLanguageMocks();
+
+    await act(async () => {
+      await result.current.setLocale('fr-FR');
+    });
+
+    expect(updateProfileMutateAsync).toHaveBeenCalledWith({
+      languages: ['fr-FR', 'en-US'],
+    });
+    expect(setLanguage).not.toHaveBeenCalled();
+    expect(result.current.locale).toBe('fr-FR');
+  });
+
+  it('stores a guest override via the SDK when signed out', async () => {
+    __setOxyState({ isAuthenticated: false, currentLanguage: 'en-US' });
+    const { result } = renderHook(() => useLocale(), { wrapper: Wrapper });
+    const { updateProfileMutateAsync, setLanguage } = __getLanguageMocks();
+
+    await act(async () => {
+      await result.current.setLocale('es-ES');
+    });
+
+    expect(setLanguage).toHaveBeenCalledWith('es-ES');
+    expect(updateProfileMutateAsync).not.toHaveBeenCalled();
+    expect(result.current.locale).toBe('es-ES');
   });
 
   it('throws when useLocale is called outside a LocaleProvider', () => {

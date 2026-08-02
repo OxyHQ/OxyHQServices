@@ -1,5 +1,6 @@
 import type { IncomingHttpHeaders } from 'http';
 import { URL } from 'url';
+import { normalizeInlineText } from '@oxyhq/core';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
 import { logger } from '../../utils/logger';
 import { decodeHtmlEntities } from '../../utils/sanitize';
@@ -121,7 +122,12 @@ function extractMetadataFromHtml(html: string): Record<string, string> {
   const metadata: Record<string, string> = {};
   const headMatch = html.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i);
   const head = headMatch?.[1] ?? html.slice(0, 128 * 1024);
-  const attrPattern = /([a-zA-Z_:.-]+)\s*=\s*(["'])(.*?)\2/g;
+  // The value class is `[\s\S]` (not `.`): an attribute value may legitimately
+  // span source lines (a long `og:description` wrapped by the page author), and
+  // with `.` the lazy match stops at the first newline, so the attribute — hence
+  // the whole meta tag — is dropped. It stays bounded by the enclosing tag either
+  // way.
+  const attrPattern = /([a-zA-Z_:.-]+)\s*=\s*(["'])([\s\S]*?)\2/g;
 
   for (const tagMatch of head.matchAll(
     /<(title|meta|link)\b[^>]*>([\s\S]*?)<\/\1>|<(meta|link)\b[^>]*\/?\s*>/gi,
@@ -225,11 +231,32 @@ async function fetchMetadataDocument(
   }
 }
 
-/** Decode + absolutize the raw metadata fields. */
+/**
+ * Decode HTML entities, then run the value through the ecosystem's canonical
+ * single-line normalizer ({@link normalizeInlineText}: NFC, every whitespace run
+ * — newlines, tabs, indentation, NBSP — collapsed to one space, trimmed).
+ * Returns `undefined` when the field holds no text at all, so a whitespace-only
+ * value never counts as metadata.
+ *
+ * WHY: a `<title>` authored across indented source lines —
+ * `<title>\n      Some Page – Site\n    </title>` — is captured verbatim by the
+ * head extractor, and clients render preview text in a React Native `Text`
+ * (`white-space: pre-wrap` on web), where those newlines survive as a blank line
+ * plus a leading indent inside the card. oEmbed/provider titles carry the same
+ * risk, which is why this runs at the shared {@link finalize} chokepoint rather
+ * than in the HTML extractor.
+ */
+function normalizeMetadataText(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = normalizeInlineText(decodeHtmlEntities(value));
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+/** Decode + whitespace-normalize the text fields; absolutize the URL fields. */
 function finalize(result: RawLinkMetadata, baseUrl: string): RawLinkMetadata {
-  if (result.title) result.title = decodeHtmlEntities(result.title);
-  if (result.description) result.description = decodeHtmlEntities(result.description);
-  if (result.siteName) result.siteName = decodeHtmlEntities(result.siteName);
+  result.title = normalizeMetadataText(result.title);
+  result.description = normalizeMetadataText(result.description);
+  result.siteName = normalizeMetadataText(result.siteName);
   if (result.imageUrl) result.imageUrl = resolveAbsoluteUrl(result.imageUrl, baseUrl);
   if (result.faviconUrl) result.faviconUrl = resolveAbsoluteUrl(result.faviconUrl, baseUrl);
   return result;
@@ -295,11 +322,16 @@ export async function resolveLinkMetadata(normalizedUrl: string): Promise<RawLin
   }
 
   const { metadata, finalUrl } = await fetchMetadataDocument(normalizedUrl);
+  // Open Graph first, then the Twitter card, then the plain document tags. OG
+  // exists precisely to carry the share-optimized title/description, so it wins:
+  // a page's `<title>` routinely appends a site suffix ("Article – Dan Q") that
+  // duplicates the siteName the card already shows, while `og:title` is clean.
+  // This matches how Slack/Twitter/Facebook/Mastodon unfurl.
   const result: RawLinkMetadata = {
     url: finalUrl,
-    title: metadata.title || metadata['og:title'] || metadata['twitter:title'],
+    title: metadata['og:title'] || metadata['twitter:title'] || metadata.title,
     description:
-      metadata.description || metadata['og:description'] || metadata['twitter:description'],
+      metadata['og:description'] || metadata['twitter:description'] || metadata.description,
     imageUrl: metadata['og:image'] || metadata['twitter:image'] || metadata.image,
     siteName: metadata['og:site_name'] || extractSiteName(finalUrl),
     faviconUrl: metadata.favicon,

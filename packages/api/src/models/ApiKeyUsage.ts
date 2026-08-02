@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, type Document } from 'mongoose';
 
 export interface IApiKeyUsage extends Document {
   apiKeyId?: mongoose.Types.ObjectId;
@@ -12,7 +12,6 @@ export interface IApiKeyUsage extends Document {
   creditsUsed?: number;
   responseTime?: number;
   userAgent?: string;
-  ipAddress?: string;
   timestamp: Date;
   authType: 'api_key' | 'session' | 'internal';
   serviceApp?: string;
@@ -67,9 +66,6 @@ const ApiKeyUsageSchema = new Schema<IApiKeyUsage>(
       type: Number,
     },
     userAgent: {
-      type: String,
-    },
-    ipAddress: {
       type: String,
     },
     timestamp: {

@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useOxy } from '@oxyhq/services';
 import type { VerifiableCredentialResponse } from '@oxyhq/contracts';
 import { useColors } from '@/hooks/useColors';
@@ -15,6 +15,7 @@ import {
   SecondaryButton,
   Callout,
   CenteredState,
+  SessionGate,
 } from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useMyCredentials } from '@/hooks/useCredentials';
@@ -287,7 +288,7 @@ export default function CredentialDetailScreen() {
         onBack={handleBack}
         backAccessibilityLabel={t('common.back')}
       />
-      {renderBody()}
+      <SessionGate>{renderBody()}</SessionGate>
     </Screen>
   );
 }

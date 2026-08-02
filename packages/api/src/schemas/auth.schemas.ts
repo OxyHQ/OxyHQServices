@@ -1,48 +1,21 @@
+import { commonsDenyReasonSchema } from '@oxyhq/contracts';
 import { z } from 'zod';
-import { isValidDisplayName } from '../utils/displayNameSanitize';
+import { INVALID_USERNAME_MESSAGE, USERNAME_PATTERN } from '../utils/username';
 
-const INVALID_NAME_MESSAGE = 'Name may only contain letters, spaces and apostrophes.';
+const deviceIdField = z.string().trim().min(1).max(128).optional();
 
-// POST /auth/signup
-export const signupSchema = z.object({
-  email: z.string().trim().email(),
-  username: z.string().trim().min(3).max(30),
-  password: z.string().min(8),
-  name: z.object({
-    first: z.string().trim().optional(),
-    last: z.string().trim().optional(),
-  }).optional(),
-  deviceName: z.string().trim().optional(),
-  deviceFingerprint: z.string().trim().optional(),
-}).superRefine((data, ctx) => {
-  // Native users must supply a clean display name (letters/spaces/apostrophe
-  // only). Federated names are stripped silently elsewhere; native names are
-  // rejected with a 400 so the user fixes them at the source.
-  if (typeof data.name?.first === 'string' && !isValidDisplayName(data.name.first)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['name', 'first'],
-      message: INVALID_NAME_MESSAGE,
-    });
-  }
-  if (typeof data.name?.last === 'string' && !isValidDisplayName(data.name.last)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['name', 'last'],
-      message: INVALID_NAME_MESSAGE,
-    });
-  }
-});
-
-// POST /auth/login
-export const loginSchema = z.object({
-  identifier: z.string().trim().min(1).optional(),
-  email: z.string().trim().optional(),
-  username: z.string().trim().optional(),
-  password: z.string().min(1),
-  deviceName: z.string().trim().optional(),
-  deviceFingerprint: z.string().trim().optional(),
-});
+/**
+ * A username is a routing key (`/@alice`, `acct:alice@…`), not prose. The length
+ * bounds alone accepted `"al ice"` — the pattern is what actually rejects
+ * whitespace and punctuation. The signup / registration controllers enforce the
+ * same rule; declaring it on the schema means the request never reaches them.
+ */
+const usernameField = z
+  .string()
+  .trim()
+  .min(3)
+  .max(30)
+  .regex(USERNAME_PATTERN, INVALID_USERNAME_MESSAGE);
 
 // POST /auth/register (public key)
 export const registerPublicKeySchema = z.object({
@@ -50,7 +23,7 @@ export const registerPublicKeySchema = z.object({
   signature: z.string().trim().min(1),
   timestamp: z.number(),
   email: z.string().trim().email().optional(),
-  username: z.string().trim().min(3).max(30).optional(),
+  username: usernameField.optional(),
 });
 
 // POST /auth/challenge
@@ -66,26 +39,7 @@ export const verifyChallengeSchema = z.object({
   timestamp: z.number(),
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
-});
-
-// POST /auth/recover/request
-export const recoverRequestSchema = z.object({
-  identifier: z.string().trim().min(1).optional(),
-  email: z.string().trim().optional(),
-  username: z.string().trim().optional(),
-});
-
-// POST /auth/recover/verify
-export const recoverVerifySchema = z.object({
-  identifier: z.string().trim().min(1).optional(),
-  email: z.string().trim().optional(),
-  username: z.string().trim().optional(),
-  code: z.string().trim().min(1),
-});
-
-// POST /auth/recover/reset
-export const recoverResetSchema = z.object({
-  password: z.string().min(8),
+  deviceId: deviceIdField,
 });
 
 // GET /auth/check-username/:username
@@ -115,17 +69,46 @@ export const getUserByPublicKeyParams = z.object({
 //   - `clientId`      an ApplicationCredential.publicKey / OAuth client_id, or
 //   - `applicationId` an Application _id.
 // There is no free-form app label.
+//
+// An OPTIONAL `oauth` block turns the session into an OAuth authorization
+// request (`purpose: 'oauth_authorization'`) that finalizes into a single-use
+// `AuthCode` instead of a device sign-in claim. It carries only the MINIMUM
+// request binding — nothing already owned by `Application`, `AuthCode` or
+// `DeviceSession`. The RP-owned `state` never reaches the server.
+export const authSessionOAuthContextSchema = z.object({
+  redirectUri: z.string().trim().url(),
+  /** PKCE is MANDATORY for an OAuth-bound session (no confidential-client path here). */
+  codeChallenge: z.string().trim().min(43).max(128),
+  /** S256 only — `plain` is rejected outright, per current OAuth BCP. */
+  codeChallengeMethod: z.literal('S256'),
+  /** Space-separated, normalized exactly like `POST /auth/oauth/authorize`. */
+  scope: z.string().trim().max(512).optional(),
+  /** Delegated account the app will act AS; permission is verified server-side. */
+  subjectAccountId: z.string().trim().min(1).max(64).optional(),
+});
+
 export const authSessionCreateSchema = z.object({
   sessionToken: z.string().trim().min(1),
   clientId: z.string().trim().min(1).optional(),
   applicationId: z.string().trim().min(1).optional(),
   expiresAt: z.union([z.string(), z.number()]).optional(),
+  /** Originating RP device id — converges QR sign-in onto the same DeviceSession. */
+  deviceId: deviceIdField,
+  oauth: authSessionOAuthContextSchema.optional(),
 }).refine(
   (data) => Boolean(data.clientId) || Boolean(data.applicationId),
   { message: 'Either clientId or applicationId is required' }
+).refine(
+  // The redirect URI is matched against the OAuth client's registered
+  // allowlist, so an OAuth-bound session must be identified by its client_id —
+  // an `applicationId`-only reference has no credential to bind to.
+  (data) => !data.oauth || Boolean(data.clientId),
+  { message: 'clientId is required for an OAuth-bound session' }
 );
 
-// GET /auth/session/status/:sessionToken
+// :sessionToken path param — the SECRET credential held only by the originating
+// client. Shared by GET /auth/session/status, POST /auth/session/authorize,
+// POST /auth/session/cancel and POST /auth/session/finalize.
 export const authSessionTokenParams = z.object({
   sessionToken: z.string().trim().min(1),
 });
@@ -152,6 +135,15 @@ export const authSessionAuthorizeSignedSchema = z.object({
   timestamp: z.number(),
   deviceName: z.string().trim().optional(),
   deviceFingerprint: z.string().trim().optional(),
+});
+
+// POST /auth/session/deny/:authorizeCode
+// Optional reason from the closed `COMMONS_DENY_REASONS` set, whose single
+// declaration lives in `@oxyhq/contracts` — the same one the persisted
+// `AuthSession.deniedReason` enum and the client SDK read. Anything outside it
+// (including a free-form string) is rejected with 400 before the handler runs.
+export const authSessionDenySchema = z.object({
+  reason: commonsDenyReasonSchema.optional(),
 });
 
 // POST /auth/session/claim
@@ -189,18 +181,27 @@ export const oauthAuthorizeSchema = z.object({
   scope: z.string().trim().max(512).optional(),
 });
 
-// POST /auth/oauth/token
-// Confidential clients pass clientSecret. Public clients pass codeVerifier.
+// POST /auth/oauth/token — RFC 6749 §4.1.3 `authorization_code` grant.
+//
+// snake_case because these are the wire parameter NAMES the RFC defines, not a
+// house naming choice: a standard OAuth client sends exactly these keys in an
+// `application/x-www-form-urlencoded` body.
+//
+// `client_id` is optional HERE because a confidential client may instead supply
+// it through HTTP Basic (RFC 6749 §2.3.1); the route requires one to have
+// arrived by one route or the other. `grant_type` is validated BEFORE this
+// schema so an unknown grant reports `unsupported_grant_type` rather than a
+// generic `invalid_request`.
+//
+// Confidential clients pass `client_secret`. Public clients pass `code_verifier`
+// (PKCE); the route requires one of the two.
 export const oauthTokenSchema = z.object({
   code: z.string().trim().min(1),
-  clientId: z.string().trim().min(1),
-  redirectUri: z.string().trim().url(),
-  clientSecret: z.string().trim().min(1).optional(),
-  codeVerifier: z.string().trim().min(43).max(128).optional(),
-}).refine(
-  (data) => Boolean(data.clientSecret) || Boolean(data.codeVerifier),
-  { message: 'Either clientSecret (confidential client) or codeVerifier (PKCE) is required' }
-);
+  redirect_uri: z.string().trim().url(),
+  client_id: z.string().trim().min(1).optional(),
+  client_secret: z.string().trim().min(1).optional(),
+  code_verifier: z.string().trim().min(43).max(128).optional(),
+});
 
 // GET /auth/oauth/client/:clientId
 // Public lookup of sanitized application metadata for the consent UI.

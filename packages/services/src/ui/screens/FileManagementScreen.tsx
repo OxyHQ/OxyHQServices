@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import type React from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -8,752 +9,87 @@ import {
     ActivityIndicator,
     RefreshControl,
     TextInput,
-    Image,
-    Animated,
-    Easing,
-    FlatList,
-    AccessibilityInfo,
-    Platform,
     useWindowDimensions,
 } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { Image as ExpoImage } from 'expo-image';
-import Reanimated, {
-    FadeIn,
-    useAnimatedStyle,
-    useSharedValue,
-    withSequence,
-    withSpring,
-    withTiming,
-} from 'react-native-reanimated';
 import type { FileManagementScreenProps } from '../types/fileManagement';
-
-// Lazy load expo-document-picker (optional dependency)
-// This allows the screen to work even if expo-document-picker is not installed
-let DocumentPicker: typeof import('expo-document-picker') | null = null;
-const loadDocumentPicker = async () => {
-    if (DocumentPicker) return DocumentPicker;
-    try {
-        DocumentPicker = await import('expo-document-picker');
-        return DocumentPicker;
-    } catch (error) {
-        throw new Error('expo-document-picker is not installed. Please install it: npx expo install expo-document-picker');
-    }
-};
-import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import type { AssetUploadInput, FileMetadata, RNFileDescriptor } from '@oxyhq/core';
-import { getErrorMessage as getOxyErrorMessage } from '@oxyhq/core';
-import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
-import Header from '../components/Header';
+import { toast } from '@oxyhq/bloom/toast';
+import { surfaces } from '@oxyhq/bloom/surfaces';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { Pressable } from 'react-native';
+import type { FileMetadata } from '@oxyhq/core';
+import { queryKeys } from '../hooks/queries/queryKeys';
+import { useUserFilesInfinite, removeFileFromCache, patchFileMetadataInCache } from '../hooks/queries/useFileQueries';
+import { useSurfaceHeader, type SurfaceHeaderContent } from '../hooks/useSurfaceHeader';
+import { SurfaceHeaderAction } from '../components/SurfaceHeaderAction';
 import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
-import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useReduceMotion } from '../hooks/useReduceMotion';
 import { useUploadFile } from '../hooks/mutations/useAccountMutations';
 import {
-    convertDocumentPickerAssetToFile,
     formatFileSize,
     getFileIcon,
-    getSafeDownloadUrl,
 } from '../utils/fileManagement';
+import { useResolvedFileUrls, fileThumbSource } from '../hooks/useResolvedFileUrls';
 import { FileViewer } from '../components/fileManagement/FileViewer';
-import { FileDetailsModal } from '../components/fileManagement/FileDetailsModal';
+import { presentFileDetails } from '../components/fileManagement/FileDetailsModal';
 import { UploadPreview } from '../components/fileManagement/UploadPreview';
-import { fileManagementStyles, photoPickerStyles } from '../components/fileManagement/styles';
-import type { OnConfirmFileSelection } from '../types/fileManagement';
+import { presentActionSheet } from '../components/surfaces/ActionSheetSurface';
+import { getErrorMessage } from './fileManagement/shared';
+import { useFileUploadState } from './fileManagement/hooks/useFileUploadState';
+import PhotoPickerView from './fileManagement/PhotoPickerSection';
+import FileListSection, { type FileListItem } from './fileManagement/FileListSection';
+import FileLibraryError from './fileManagement/FileLibraryError';
+import UploadBar from './fileManagement/UploadBar';
+import { AnimatedButton } from '../components/fileManagement/AnimatedButton';
 
-/**
- * Extract error message from unknown error type.
- * Delegates to the canonical `getErrorMessage` in `@oxyhq/core` and returns
- * `undefined` for empty results (so callers can fall back to a translated
- * message via `||`).
- */
-const getErrorMessage = (error: unknown): string | undefined => {
-    if (error == null) return undefined;
-    const message = getOxyErrorMessage(error, '');
-    return message ? message : undefined;
-};
-
-/**
- * A picker-produced file ready to upload. On web this is a real `File`
- * (carrying an optional `uri` for preview). On native, it's an
- * {@link RNFileDescriptor} — passed straight to FormData by `assetUpload`.
- */
-type UploadCandidate = (File & { uri?: string }) | RNFileDescriptor;
-
-/** Returns the display name for either a web File or an RN descriptor. */
-const candidateName = (candidate: UploadCandidate, fallback: string): string =>
-    (candidate.name && typeof candidate.name === 'string' ? candidate.name : fallback);
-
-/** Returns the byte size for either a web File or an RN descriptor (0 if unknown). */
-const candidateSize = (candidate: UploadCandidate): number => {
-    const size = (candidate as { size?: number }).size;
-    return typeof size === 'number' && Number.isFinite(size) ? size : 0;
-};
-
-/** Returns the mime type for either a web File or an RN descriptor. */
-const candidateType = (candidate: UploadCandidate): string => {
-    const value = (candidate as { type?: string }).type;
-    return typeof value === 'string' && value.length > 0 ? value : 'application/octet-stream';
-};
-
-/** Returns the preview URI for an upload candidate, if available. */
-const candidateUri = (candidate: UploadCandidate): string | undefined => {
-    const uri = (candidate as { uri?: string }).uri;
-    return typeof uri === 'string' && uri.length > 0 ? uri : undefined;
-};
-
-/**
- * Haptic feedback wrapper. `expo-haptics` is an optional dependency — when not
- * installed (or on web), all calls degrade silently. We resolve the module
- * once and cache the promise so subsequent calls don't repeat the dynamic
- * import. Matches the pattern used by AvatarCropScreen.
- */
-type HapticImpact = 'light' | 'medium' | 'heavy';
-type HapticNotification = 'success' | 'warning' | 'error';
-interface HapticsModule {
-    impactAsync: (style: unknown) => Promise<void>;
-    notificationAsync: (type: unknown) => Promise<void>;
-    selectionAsync: () => Promise<void>;
-    ImpactFeedbackStyle: { Light: unknown; Medium: unknown; Heavy: unknown };
-    NotificationFeedbackType: { Success: unknown; Warning: unknown; Error: unknown };
-}
-
-let hapticsModulePromise: Promise<HapticsModule | null> | null = null;
-const getHaptics = (): Promise<HapticsModule | null> => {
-    if (Platform.OS === 'web') return Promise.resolve(null);
-    if (hapticsModulePromise) return hapticsModulePromise;
-    hapticsModulePromise = (async () => {
-        try {
-            const mod = (await import('expo-haptics')) as unknown as HapticsModule;
-            if (!mod || typeof mod.impactAsync !== 'function') return null;
-            return mod;
-        } catch {
-            return null;
-        }
-    })();
-    return hapticsModulePromise;
-};
-
-const hapticImpact = async (style: HapticImpact): Promise<void> => {
-    const h = await getHaptics();
-    if (!h) return;
-    const styleEnum =
-        style === 'heavy'
-            ? h.ImpactFeedbackStyle.Heavy
-            : style === 'medium'
-                ? h.ImpactFeedbackStyle.Medium
-                : h.ImpactFeedbackStyle.Light;
-    try {
-        await h.impactAsync(styleEnum);
-    } catch {
-        // Silent — haptics are non-critical UX polish.
-    }
-};
-
-const hapticSelection = async (): Promise<void> => {
-    const h = await getHaptics();
-    if (!h) return;
-    try {
-        await h.selectionAsync();
-    } catch {
-        // Silent.
-    }
-};
-
-const hapticNotification = async (type: HapticNotification): Promise<void> => {
-    const h = await getHaptics();
-    if (!h) return;
-    const typeEnum =
-        type === 'error'
-            ? h.NotificationFeedbackType.Error
-            : type === 'warning'
-                ? h.NotificationFeedbackType.Warning
-                : h.NotificationFeedbackType.Success;
-    try {
-        await h.notificationAsync(typeEnum);
-    } catch {
-        // Silent.
-    }
-};
-
-// Animated button component for smooth transitions
-const AnimatedButton: React.FC<{
-    isSelected: boolean;
-    onPress: () => void;
-    icon: string;
-    primaryColor: string;
-    textColor: string;
-    style: Record<string, unknown>;
-    accessibilityLabel: string;
-}> = ({ isSelected, onPress, icon, primaryColor, textColor, style, accessibilityLabel }) => {
-    const animatedValue = useRef(new Animated.Value(isSelected ? 1 : 0)).current;
-
-    useEffect(() => {
-        Animated.timing(animatedValue, {
-            toValue: isSelected ? 1 : 0,
-            duration: 200,
-            easing: Easing.out(Easing.ease),
-            useNativeDriver: false,
-        }).start();
-    }, [isSelected, animatedValue]);
-
-    const backgroundColor = animatedValue.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['transparent', primaryColor],
-    });
-
-    return (
-        <TouchableOpacity
-            onPress={onPress}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={accessibilityLabel}
-            accessibilityState={{ selected: isSelected }}
-        >
-            <Animated.View
-                style={[
-                    style,
-                    {
-                        backgroundColor,
-                    },
-                ]}
-            >
-                <Animated.View>
-                    <MaterialCommunityIcons
-                        name={icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
-                        size={16}
-                        color={isSelected ? '#FFFFFF' : textColor}
-                    />
-                </Animated.View>
-            </Animated.View>
-        </TouchableOpacity>
-    );
-};
-
-/**
- * Props for the dedicated photo picker view. Used by FileManagementScreen
- * only when `selectMode + image-only` is active. All callbacks are wired by
- * the parent — this component is purely presentational.
- */
-interface PhotoPickerViewProps {
-    photos: FileMetadata[];
-    selectedIds: Set<string>;
-    multiSelect: boolean;
-    maxSelection?: number;
-    allowUpload: boolean;
-    refreshing: boolean;
-    uploading: boolean;
-    isPickingDocument: boolean;
-    uploadProgress: { current: number; total: number } | null;
-    hasMore: boolean;
-    loadingMore: boolean;
-    reduceMotion: boolean;
-    getThumbUrl: (file: FileMetadata, variant?: string) => string;
-    primaryColor: string;
-    isOwner: boolean;
-    onTogglePhoto: (photo: FileMetadata) => void;
-    onPreviewPhoto: (photo: FileMetadata) => void;
-    onUpload: () => void;
-    onRefresh: () => void;
-    onLoadMore: () => void;
-    onCancel: () => void;
-    onConfirm: () => void;
-    t: (key: string, vars?: Record<string, string | number>) => string;
-}
-
-/**
- * A single photo cell. Memoized so re-renders during selection only touch
- * affected cells — selection of one photo must not redraw the whole grid.
- *
- * Apple Photos pattern: when any cell is selected, *non-selected* siblings
- * fade to 0.6 opacity to focus attention on the active selection.
- */
-const PhotoPickerCell = React.memo(function PhotoPickerCell(props: {
-    photo: FileMetadata;
-    size: number;
-    marginRight: number;
-    marginBottom: number;
-    isSelected: boolean;
-    selectionIndex: number; // 1-based for badge; 0 if not selected
-    dim: boolean; // any selection exists and this cell is not selected
-    primaryColor: string;
-    thumbUrl: string;
-    enterIndex: number;
-    reduceMotion: boolean;
-    onPress: () => void;
-    onLongPress: () => void;
-    a11yLabel: string;
-}) {
-    const {
-        photo, size, marginRight, marginBottom, isSelected, selectionIndex,
-        dim, primaryColor, thumbUrl, enterIndex, reduceMotion, onPress,
-        onLongPress, a11yLabel,
-    } = props;
-
-    // Cap the cumulative stagger at ~800ms total so the very long grid does
-    // not keep fading in late tiles. Beyond ~53 tiles the delay maxes out.
-    const STAGGER_PER_CELL_MS = 15;
-    const MAX_TOTAL_STAGGER_MS = 800;
-    const delay = Math.min(enterIndex * STAGGER_PER_CELL_MS, MAX_TOTAL_STAGGER_MS);
-
-    // Selection ring pulse animation: 1.0 → 1.05 → 1.0 on transition to
-    // selected. Plays at most once per selection change; reduce-motion skips.
-    const ringScale = useSharedValue(1);
-    const prevSelected = useRef(isSelected);
-    useEffect(() => {
-        if (prevSelected.current === isSelected) return;
-        prevSelected.current = isSelected;
-        if (!isSelected) {
-            ringScale.value = 1;
-            return;
-        }
-        if (reduceMotion) {
-            ringScale.value = 1;
-            return;
-        }
-        ringScale.value = withSequence(
-            withTiming(1.05, { duration: 110 }),
-            withSpring(1, { damping: 14, stiffness: 200 }),
-        );
-    }, [isSelected, reduceMotion, ringScale]);
-
-    const ringAnimatedStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: ringScale.value }],
-    }));
-
-    const inner = (
-        <>
-            <View style={[photoPickerStyles.cellInner, dim && photoPickerStyles.cellDim]}>
-                <ExpoImage
-                    source={{ uri: thumbUrl }}
-                    style={photoPickerStyles.cellImage}
-                    contentFit="cover"
-                    transition={120}
-                    cachePolicy="memory-disk"
-                    accessibilityLabel={photo.filename}
-                />
-            </View>
-            {isSelected && (
-                <Reanimated.View
-                    pointerEvents="none"
-                    style={[
-                        photoPickerStyles.cellRing,
-                        { borderColor: primaryColor },
-                        ringAnimatedStyle,
-                    ]}
-                />
-            )}
-            {isSelected && (
-                <View
-                    pointerEvents="none"
-                    style={[photoPickerStyles.cellBadge, { backgroundColor: primaryColor }]}
-                >
-                    <Text style={photoPickerStyles.cellBadgeText}>
-                        {selectionIndex > 0 ? String(selectionIndex) : ''}
-                    </Text>
-                </View>
-            )}
-        </>
-    );
-
-    const cellWrapperStyle = {
-        width: size,
-        height: size,
-        marginRight,
-        marginBottom,
-    };
-
-    if (reduceMotion) {
-        return (
-            <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={onPress}
-                onLongPress={onLongPress}
-                style={[photoPickerStyles.cellWrapper, cellWrapperStyle]}
-                accessibilityRole="button"
-                accessibilityLabel={a11yLabel}
-                accessibilityState={{ selected: isSelected }}
-            >
-                {inner}
-            </TouchableOpacity>
-        );
-    }
-
-    return (
-        <Reanimated.View
-            entering={FadeIn.delay(delay).duration(200)}
-            style={[photoPickerStyles.cellWrapper, cellWrapperStyle]}
-        >
-            <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={onPress}
-                onLongPress={onLongPress}
-                style={{ flex: 1 }}
-                accessibilityRole="button"
-                accessibilityLabel={a11yLabel}
-                accessibilityState={{ selected: isSelected }}
-            >
-                {inner}
-            </TouchableOpacity>
-        </Reanimated.View>
-    );
+// Genuinely-inline-only styles: `viewModeButton` is spread into an Animated.View
+// style array (interpolated backgroundColor), and the photo tiles are
+// `expo-image` (no className remap). Everything else uses NativeWind classNames.
+// Nav-header slot layout for this screen's action row + review-mode back button.
+const fmHeaderStyles = StyleSheet.create({
+    actionsRow: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    backButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
 });
 
-const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
-    photos,
-    selectedIds,
-    multiSelect,
-    maxSelection,
-    allowUpload,
-    refreshing,
-    uploading,
-    isPickingDocument,
-    uploadProgress,
-    hasMore,
-    loadingMore,
-    reduceMotion,
-    getThumbUrl,
-    primaryColor,
-    isOwner,
-    onTogglePhoto,
-    onPreviewPhoto,
-    onUpload,
-    onRefresh,
-    onLoadMore,
-    onCancel,
-    onConfirm,
-    t,
-}) => {
-    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-
-    // Layout: 3 columns phone portrait, 2 columns phone landscape,
-    // 4 columns tablet (>= 600 width). Apple Photos-ish.
-    const columns = useMemo(() => {
-        if (windowWidth >= 600) return 4;
-        // Landscape phone: width > height
-        if (windowWidth > windowHeight) return 2;
-        return 3;
-    }, [windowWidth, windowHeight]);
-
-    const GUTTER = 2;
-    const cellSize = useMemo(() => {
-        // (windowWidth - (columns - 1) * GUTTER) / columns, but
-        // FlatList in 3-col layout means each row has 2 inter-cell gutters.
-        return Math.floor((windowWidth - GUTTER * (columns - 1)) / columns);
-    }, [windowWidth, columns]);
-
-    // Map selectedIds → 1-based selection order for the badge. We freeze a
-    // stable order at the time of selection: the order is the insertion
-    // order of the Set (which JS preserves natively).
-    const selectionOrder = useMemo(() => {
-        const map = new Map<string, number>();
-        let i = 1;
-        for (const id of selectedIds) {
-            map.set(id, i++);
-        }
-        return map;
-    }, [selectedIds]);
-
-    const hasAnySelection = selectedIds.size > 0;
-
-    // Compact icon-only upload pill on narrow screens; full pill otherwise.
-    const showUploadLabel = windowWidth >= 360;
-
-    // The bottom sheet renders below the status bar already (its `maxHeight`
-    // is capped by `SCREEN_HEIGHT - insets.top`), so the picker MUST NOT add
-    // an additional safe-area inset to the header. Header layout:
-    //   • 28dp drag-handle hit area floats at the very top of the sheet
-    //   • 56dp app bar sits immediately below the handle
-    // Total header zone = 28 + 56 = 84dp from sheet top.
-    const HANDLE_ZONE = 28;
-    const APP_BAR_HEIGHT = 56;
-    const headerHeight = HANDLE_ZONE + APP_BAR_HEIGHT;
-    const contentPaddingTop = headerHeight + 4;
-
-    const isEmpty = photos.length === 0;
-    const a11yColumnsAnnouncement = useRef<number>(columns);
-
-    useEffect(() => {
-        if (a11yColumnsAnnouncement.current !== columns) {
-            a11yColumnsAnnouncement.current = columns;
-        }
-    }, [columns]);
-
-    const handleCellPress = useCallback(
-        (photo: FileMetadata) => {
-            if (Platform.OS !== 'web') {
-                void hapticImpact('light');
-            }
-            onTogglePhoto(photo);
-        },
-        [onTogglePhoto],
-    );
-
-    const handleCellLongPress = useCallback(
-        (photo: FileMetadata) => {
-            if (Platform.OS !== 'web') {
-                void hapticSelection();
-            }
-            onPreviewPhoto(photo);
-        },
-        [onPreviewPhoto],
-    );
-
-    const handleConfirm = useCallback(() => {
-        if (multiSelect) {
-            if (selectedIds.size === 0) return;
-            if (Platform.OS !== 'web') {
-                void hapticNotification('success');
-            }
-        }
-        onConfirm();
-    }, [multiSelect, selectedIds.size, onConfirm]);
-
-    // FlatList renderItem: each cell knows its enterIndex (for stagger).
-    const renderItem = useCallback(
-        ({ item, index }: { item: FileMetadata; index: number }) => {
-            const isSelected = selectedIds.has(item.id);
-            const selIndex = isSelected ? (selectionOrder.get(item.id) || 0) : 0;
-            // Last column gets no right margin; last row no bottom margin
-            // (FlatList handles row breaks via numColumns).
-            const isLastInRow = (index + 1) % columns === 0;
-            const a11yLabel = t(
-                isSelected
-                    ? 'fileManagement.a11y.photoCellSelected'
-                    : 'fileManagement.a11y.photoCellUnselected',
-                { name: item.filename || 'photo' },
-            );
-            return (
-                <PhotoPickerCell
-                    photo={item}
-                    size={cellSize}
-                    marginRight={isLastInRow ? 0 : GUTTER}
-                    marginBottom={GUTTER}
-                    isSelected={isSelected}
-                    selectionIndex={selIndex}
-                    dim={multiSelect && hasAnySelection && !isSelected}
-                    primaryColor={primaryColor}
-                    thumbUrl={getThumbUrl(item, 'thumb')}
-                    enterIndex={index}
-                    reduceMotion={reduceMotion}
-                    onPress={() => handleCellPress(item)}
-                    onLongPress={() => handleCellLongPress(item)}
-                    a11yLabel={a11yLabel}
-                />
-            );
-        },
-        [
-            selectedIds, selectionOrder, columns, cellSize, multiSelect, hasAnySelection,
-            primaryColor, getThumbUrl, reduceMotion, handleCellPress, handleCellLongPress, t,
-        ],
-    );
-
-    const keyExtractor = useCallback((item: FileMetadata) => item.id, []);
-
-    const listFooter = useMemo(() => {
-        if (!loadingMore) return null;
-        return (
-            <View style={{ paddingVertical: 16, alignItems: 'center' }}>
-                <ActivityIndicator size="small" color="#FFFFFF" />
-            </View>
-        );
-    }, [loadingMore]);
-
-    const handleEndReached = useCallback(() => {
-        if (loadingMore || !hasMore) return;
-        onLoadMore();
-    }, [loadingMore, hasMore, onLoadMore]);
-
-    const confirmDisabled = multiSelect && selectedIds.size === 0;
-    const confirmLabel = multiSelect
-        ? t('fileManagement.doneWithCount', { count: selectedIds.size })
-        : t('fileManagement.done');
-
-    // The progress fill width. Guard against zero division.
-    const progressFraction = uploadProgress && uploadProgress.total > 0
-        ? Math.min(1, Math.max(0, uploadProgress.current / uploadProgress.total))
-        : 0;
-
-    return (
-        <View style={photoPickerStyles.root}>
-            {/* Photo grid (renders behind translucent header) */}
-            {isEmpty ? (
-                <View style={[photoPickerStyles.empty, { paddingTop: contentPaddingTop }]}>
-                    <View style={photoPickerStyles.emptyIconWrap}>
-                        <MaterialCommunityIcons name="image-outline" size={64} color="#FFFFFF" />
-                    </View>
-                    <Text style={[photoPickerStyles.emptyTitle, { color: '#FFFFFF' }]}>
-                        {t('fileManagement.photoPicker.emptyTitle')}
-                    </Text>
-                    <Text style={[photoPickerStyles.emptySubtitle, { color: '#FFFFFF' }]}>
-                        {t('fileManagement.photoPicker.emptySubtitle')}
-                    </Text>
-                    {isOwner && allowUpload && (
-                        <TouchableOpacity
-                            style={[photoPickerStyles.emptyCta, { backgroundColor: primaryColor }]}
-                            onPress={onUpload}
-                            disabled={uploading || isPickingDocument}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('fileManagement.uploadPhoto')}
-                            accessibilityState={{ busy: uploading || isPickingDocument }}
-                        >
-                            {(uploading || isPickingDocument) ? (
-                                <ActivityIndicator size="small" color="#FFFFFF" />
-                            ) : (
-                                <>
-                                    <Ionicons name="cloud-upload" size={18} color="#FFFFFF" />
-                                    <Text style={photoPickerStyles.emptyCtaText}>
-                                        {t('fileManagement.uploadPhoto')}
-                                    </Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
-                    )}
-                </View>
-            ) : (
-                <FlatList
-                    key={`cols-${columns}`}
-                    data={photos}
-                    renderItem={renderItem}
-                    keyExtractor={keyExtractor}
-                    numColumns={columns}
-                    contentContainerStyle={[
-                        photoPickerStyles.gridContent,
-                        { paddingTop: contentPaddingTop },
-                    ]}
-                    style={photoPickerStyles.grid}
-                    showsVerticalScrollIndicator={false}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={onRefresh}
-                            tintColor="#FFFFFF"
-                            colors={[primaryColor]}
-                            progressViewOffset={contentPaddingTop}
-                        />
-                    }
-                    onEndReached={handleEndReached}
-                    onEndReachedThreshold={0.4}
-                    ListFooterComponent={listFooter}
-                    removeClippedSubviews
-                    initialNumToRender={Math.max(12, columns * 6)}
-                    windowSize={9}
-                />
-            )}
-
-            {/* Translucent black header. The bottom sheet already sits below
-                the status bar, so we do NOT add `insets.top` here — that would
-                double-pad. `paddingTop: HANDLE_ZONE` clears the 28dp drag
-                handle floating at the top of the sheet. */}
-            <View
-                style={[
-                    photoPickerStyles.header,
-                    { paddingTop: HANDLE_ZONE, minHeight: headerHeight },
-                ]}
-            >
-                <View style={photoPickerStyles.headerRow}>
-                    <View style={[photoPickerStyles.headerSide, photoPickerStyles.headerSideLeft]}>
-                        <TouchableOpacity
-                            onPress={onCancel}
-                            style={photoPickerStyles.headerCancel}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('fileManagement.a11y.cancelPicker')}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                            <Text style={photoPickerStyles.headerCancelText}>
-                                {t('fileManagement.cancel')}
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                    <View pointerEvents="none">
-                        <Text style={photoPickerStyles.headerTitle} numberOfLines={1}>
-                            {t('fileManagement.choosePhoto')}
-                        </Text>
-                    </View>
-                    <View style={[photoPickerStyles.headerSide, photoPickerStyles.headerSideRight]}>
-                        {multiSelect ? (
-                            <TouchableOpacity
-                                onPress={handleConfirm}
-                                disabled={confirmDisabled}
-                                style={[
-                                    photoPickerStyles.headerPrimaryPill,
-                                    {
-                                        backgroundColor: confirmDisabled
-                                            ? 'rgba(255,255,255,0.18)'
-                                            : primaryColor,
-                                        opacity: confirmDisabled ? 0.6 : 1,
-                                    },
-                                ]}
-                                accessibilityRole="button"
-                                accessibilityLabel={t('fileManagement.a11y.confirmSelection')}
-                                accessibilityState={{ disabled: confirmDisabled }}
-                            >
-                                <Text style={photoPickerStyles.headerPrimaryText}>
-                                    {confirmLabel}
-                                </Text>
-                            </TouchableOpacity>
-                        ) : (
-                            isOwner && allowUpload && (
-                                <TouchableOpacity
-                                    onPress={onUpload}
-                                    disabled={uploading || isPickingDocument}
-                                    style={[
-                                        photoPickerStyles.headerPrimaryPill,
-                                        !showUploadLabel && photoPickerStyles.headerPrimaryPillIconOnly,
-                                        { backgroundColor: primaryColor },
-                                    ]}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={t('fileManagement.a11y.uploadFromDevice')}
-                                    accessibilityState={{ busy: uploading || isPickingDocument }}
-                                >
-                                    {(uploading || isPickingDocument) ? (
-                                        <ActivityIndicator size="small" color="#FFFFFF" />
-                                    ) : (
-                                        <>
-                                            <Ionicons name="cloud-upload" size={16} color="#FFFFFF" />
-                                            {showUploadLabel && (
-                                                <Text style={photoPickerStyles.headerPrimaryText}>
-                                                    {t('fileManagement.upload')}
-                                                </Text>
-                                            )}
-                                        </>
-                                    )}
-                                </TouchableOpacity>
-                            )
-                        )}
-                    </View>
-                </View>
-                {/* Subtle top progress bar during upload (non-blocking). */}
-                {uploading && (
-                    <View style={photoPickerStyles.headerProgressBarTrack}>
-                        <View
-                            style={[
-                                photoPickerStyles.headerProgressBarFill,
-                                {
-                                    width: `${Math.round(progressFraction * 100)}%`,
-                                    backgroundColor: primaryColor,
-                                },
-                            ]}
-                        />
-                    </View>
-                )}
-            </View>
-        </View>
-    );
-};
+const screenStyles = StyleSheet.create({
+    viewModeButton: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
+        minWidth: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: 1,
+    },
+    justifiedPhotoImage: { width: '100%', height: '100%', borderRadius: 6 },
+});
 
 const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     onClose,
-    theme,
     goBack,
     navigate,
+    dismiss,
     userId,
-    containerWidth = 400, // Fallback for when not provided by the router
+    containerWidth,
     selectMode = false,
     multiSelect = false,
     onSelect,
+    onPicked,
     onConfirmSelection,
     initialSelectedIds = [],
     maxSelection,
@@ -769,50 +105,52 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // against `user`, so switching shows/manages that account's files.
     const { user, oxyServices } = useOxy();
     const { t } = useI18n();
+    const queryClient = useQueryClient();
     const uploadFileMutation = useUploadFile();
-    // Prompt controls
-    const fileDeleteDialog = useDialogControl();
-    const bulkDeleteDialog = useDialogControl();
-    const visibilityChangeDialog = useDialogControl();
-    const [pendingDeleteFile, setPendingDeleteFile] = useState<{ id: string; name: string } | null>(null);
-    const files = useFiles();
-    // Ensure containerWidth is a number (TypeScript guard)
-    const safeContainerWidth: number = typeof containerWidth === 'number' ? containerWidth : 400;
-    const uploading = useUploadingStore();
-    const uploadProgress = useUploadAggregateProgress();
-    const deleting = useDeletingStore();
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [paging, setPaging] = useState({ offset: 0, limit: 40, total: 0, hasMore: true, loadingMore: false });
-    const [selectedFile, setSelectedFile] = useState<FileMetadata | null>(null);
-    const fileDetailsControl = useDialogControl();
+
+    // Files are owned by the ACTIVE account. `targetUserId` scopes the query key,
+    // so switching accounts (or an explicit `userId` prop) shows that account's
+    // library with no manual reset.
+    const targetUserId = userId || user?.id;
+
+    // The file list is React Query's, NOT a store: infinite-paginated, fetched on
+    // mount + on owner change, edited optimistically via cache helpers. The
+    // rendered list is the flattened pages.
+    const filesQuery = useUserFilesInfinite(targetUserId);
+    const files = useMemo(
+        () => filesQuery.data?.pages.flatMap((page) => page.files) ?? [],
+        [filesQuery.data],
+    );
+    // No owner resolved yet reads as "loading" (matches the old skeleton-until-
+    // first-load behaviour); `isLoading` is the first-page fetch only.
+    const isLoadingFiles = !targetUserId || filesQuery.isLoading;
+    const isRefreshingFiles = filesQuery.isRefetching;
+    const isFetchingMore = filesQuery.isFetchingNextPage;
+    const hasMoreFiles = filesQuery.hasNextPage ?? false;
+    // Terminal load failure with nothing cached — render a DISTINCT error state
+    // (not the empty state) so a failed load never looks like an empty library.
+    const hasLoadError = filesQuery.isError && files.length === 0;
+    const invalidateFiles = useCallback(() => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.files.list(targetUserId) });
+    }, [queryClient, targetUserId]);
+
+    const { width: windowWidth } = useWindowDimensions();
+    // Prefer an explicit sheet width from the router; fall back to the window
+    // so photo grids never size against a hardcoded 400px default.
+    const safeContainerWidth: number =
+        typeof containerWidth === 'number' && containerWidth > 0
+            ? containerWidth
+            : windowWidth;
+    // In-flight delete target (local UI state — was in the file store).
+    const [deletingId, setDeletingId] = useState<string | null>(null);
     // In selectMode we never open the detailed viewer
     const [openedFile, setOpenedFile] = useState<FileMetadata | null>(null);
     const [fileContent, setFileContent] = useState<string | null>(null);
     const [loadingFileContent, setLoadingFileContent] = useState(false);
     const [showFileDetailsInViewer, setShowFileDetailsInViewer] = useState(false);
-    const [isPickingDocument, setIsPickingDocument] = useState(false);
-    const [reduceMotion, setReduceMotion] = useState(false);
-
-    // Detect reduce-motion preference once on mount + subscribe to changes.
-    // Used by `PhotoPickerView` to skip cell stagger animations.
-    useEffect(() => {
-        let cancelled = false;
-        AccessibilityInfo.isReduceMotionEnabled()
-            .then((enabled) => {
-                if (!cancelled) setReduceMotion(enabled);
-            })
-            .catch(() => {
-                // Defaults to false; no action needed.
-            });
-        const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
-            setReduceMotion(enabled);
-        });
-        return () => {
-            cancelled = true;
-            sub.remove();
-        };
-    }, []);
+    // Reduce-motion preference, read as an external store (no effect). Passed to
+    // `PhotoPickerView` to skip cell stagger animations.
+    const reduceMotion = useReduceMotion();
 
     // Image-only picker mode: when the consumer restricts to image MIME types
     // (e.g. avatar picker), photos grid is the more useful default view.
@@ -835,8 +173,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'date' | 'size' | 'name' | 'type'>('date');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-    const [pendingFiles, setPendingFiles] = useState<Array<{ file: UploadCandidate; preview?: string; size: number; name: string; type: string }>>([]);
-    const [showUploadPreview, setShowUploadPreview] = useState(false);
     // Derived filtered and sorted files (avoid setState loops)
     const filteredFiles = useMemo(() => {
         let filteredByMode = files;
@@ -888,26 +224,54 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
         return sorted;
     }, [files, searchQuery, viewMode, sortBy, sortOrder]);
-    const [photoDimensions, setPhotoDimensions] = useState<{ [key: string]: { width: number, height: number } }>({});
-    const [loadingDimensions, setLoadingDimensions] = useState(false);
-    const uploadStartRef = useRef<number | null>(null);
-    const MIN_BANNER_MS = 600;
-    // Selection state
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(initialSelectedIds));
-    const [lastSelectedFileId, setLastSelectedFileId] = useState<string | null>(null);
+    // Selection state. `initialSelectedIds` is the INITIAL selection only (lazy
+    // init) — there is no prop→state sync effect, since no caller mutates it
+    // after mount.
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(initialSelectedIds));
     const scrollViewRef = useRef<ScrollView>(null);
     const photoScrollViewRef = useRef<ScrollView>(null);
-    const itemRefs = useRef<Map<string, number>>(new Map()); // Track item positions
-    const containerRef = useRef<View>(null);
-    useEffect(() => {
-        if (initialSelectedIds?.length) {
-            setSelectedIds(new Set(initialSelectedIds));
+
+    // Scroll the browse list/grid to a just-selected file. Driven directly from
+    // the selection event handler (double-rAF so the selection re-render has
+    // committed first) — not an effect. No-ops in the image-only picker, whose
+    // own FlatList is not either ScrollView ref.
+    const scrollToSelectedFile = useCallback((fileId: string) => {
+        if (viewMode === 'all' && scrollViewRef.current) {
+            const itemIndex = filteredFiles.findIndex(file => file.id === fileId);
+            if (itemIndex < 0) return;
+            // GroupedItem dense rows are ~65px, +30px when a description wraps.
+            const baseItemHeight = 65;
+            const descriptionHeight = 30;
+            let scrollPosition = 0;
+            for (let i = 0; i <= itemIndex && i < filteredFiles.length; i++) {
+                scrollPosition += baseItemHeight;
+                if (filteredFiles[i].metadata?.description) scrollPosition += descriptionHeight;
+            }
+            // Offset for the header/controls/search/stats chrome (~250px) so the
+            // item lands near the top, not under the chrome.
+            const finalScrollPosition = 250 + scrollPosition - 150;
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    scrollViewRef.current?.scrollTo({ y: Math.max(0, finalScrollPosition), animated: true });
+                });
+            });
+        } else if (viewMode === 'photos' && photoScrollViewRef.current) {
+            const photos = filteredFiles.filter(file => file.contentType.startsWith('image/'));
+            const photoIndex = photos.findIndex(p => p.id === fileId);
+            if (photoIndex < 0) return;
+            // Rough estimate for the justified grid (3 photos/row, variable heights).
+            const row = Math.floor(photoIndex / 3);
+            const finalScrollPosition = row * (150 + 4) - 100;
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    photoScrollViewRef.current?.scrollTo({ y: Math.max(0, finalScrollPosition), animated: true });
+                });
+            });
         }
-    }, [initialSelectedIds]);
+    }, [viewMode, filteredFiles]);
 
     const toggleSelect = useCallback(async (file: FileMetadata) => {
-        // Allow selection in regular mode for bulk operations
-        // if (!selectMode) return;
+        // Selection is allowed in regular mode too (for bulk operations).
         if (disabledMimeTypes.length) {
             const blocked = disabledMimeTypes.some(mt => file.contentType === mt || file.contentType.startsWith(mt.endsWith('/') ? mt : `${mt}/`));
             if (blocked) {
@@ -926,9 +290,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
         }
 
-        // Track the selected file for scrolling
-        setLastSelectedFileId(file.id);
-
         // Link file to entity if linkContext is provided
         if (linkContext) {
             try {
@@ -946,11 +307,25 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
 
         if (!multiSelect) {
-            onSelect?.(file);
-            if (afterSelect === 'back') {
-                goBack?.();
-            } else if (afterSelect === 'close') {
-                onClose?.();
+            if (onPicked) {
+                // Forward-navigation picker (e.g. the avatar flow): hand the file
+                // to the caller, which pushes the NEXT frame (the cropper) on top
+                // of this picker. The picker frame stays below so Back returns here
+                // to re-pick — no dismiss, no session close.
+                onPicked(file);
+            } else if (onSelect) {
+                // Legacy callback caller (inbox, WelcomeNewUser): keep the
+                // callback + afterSelect behaviour unchanged.
+                onSelect(file);
+                if (afterSelect === 'back') {
+                    goBack?.();
+                } else if (afterSelect === 'close') {
+                    onClose?.();
+                }
+            } else {
+                // Promise-based picker: resolve the surface's present() promise
+                // with the picked file.
+                dismiss?.(file);
             }
             return;
         }
@@ -968,12 +343,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
             return next;
         });
-    }, [selectMode, multiSelect, onSelect, onClose, goBack, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices, linkContext]);
+        scrollToSelectedFile(file.id);
+    }, [multiSelect, onPicked, onSelect, onClose, goBack, dismiss, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices, linkContext, t, scrollToSelectedFile]);
 
     const confirmMultiSelection = useCallback(async () => {
         if (!selectMode || !multiSelect) return;
         const map: Record<string, FileMetadata> = {};
-        files.forEach(f => { map[f.id] = f; });
+        for (const f of files) { map[f.id] = f; }
         const chosen = Array.from(selectedIds).map(id => map[id]).filter(Boolean);
 
         // Update visibility and link files if needed
@@ -1008,26 +384,28 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         // Wait for all updates (but don't block on failures)
         await Promise.allSettled(updatePromises);
 
-        onConfirmSelection?.(chosen);
-        onClose?.();
-    }, [selectMode, multiSelect, selectedIds, files, onConfirmSelection, onClose, defaultVisibility, oxyServices, linkContext]);
+        if (onConfirmSelection) {
+            // Legacy callback caller (inbox): keep the callback + close.
+            onConfirmSelection(chosen);
+            onClose?.();
+        } else {
+            // Promise-based picker: resolve the surface with the chosen files.
+            dismiss?.(chosen);
+        }
+    }, [selectMode, multiSelect, selectedIds, files, onConfirmSelection, onClose, dismiss, defaultVisibility, oxyServices, linkContext]);
 
-    const endUpload = useCallback(() => {
-        const started = uploadStartRef.current;
-        const elapsed = started ? Date.now() - started : MIN_BANNER_MS;
-        const remaining = elapsed < MIN_BANNER_MS ? MIN_BANNER_MS - elapsed : 0;
-        setTimeout(() => {
-            useFileStore.getState().setUploading(false);
-            uploadStartRef.current = null;
-        }, remaining);
-    }, []);
+    // Private-safe thumbnail URLs for the currently-shown files, resolved in
+    // ONE batch per page (not N per-tile) and cached by React Query. Uploads
+    // default to private, so the synchronous public-CDN URL would 404 for
+    // every private thumbnail.
+    const resolvedThumbUrls = useResolvedFileUrls(oxyServices, filteredFiles, user?.id);
 
-    // Helper to safely request a thumbnail variant only for image mime types.
-    const getSafeDownloadUrlCallback = useCallback(
-        (file: FileMetadata, variant = 'thumb') => {
-            return getSafeDownloadUrl(file, variant, (fileId: string, variant?: string) => oxyServices.getFileDownloadUrl(fileId, variant));
-        },
-        [oxyServices]
+    // Image source for a grid tile: the resolved private-safe URL for a
+    // persisted file, or the locally-picked preview for an in-flight optimistic
+    // entry. Never builds an asset URL from a `temp-…`/uploading id.
+    const thumbSourceFor = useCallback(
+        (file: FileMetadata): string | undefined => fileThumbSource(file, resolvedThumbUrls),
+        [resolvedThumbUrls],
     );
 
     const bloomTheme = useTheme();
@@ -1036,594 +414,88 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const backgroundColor = colors.backgroundSecondary;
     const borderColor = colors.border;
 
-    const targetUserId = userId || user?.id;
+    // Self-contained document-picking + upload-preview state and handlers.
+    // Optimistic uploads edit the file query cache directly (see
+    // useFileQueries), so no loader is threaded in.
+    const {
+        isPickingDocument,
+        pendingFiles,
+        showUploadPreview,
+        uploading,
+        uploadProgress,
+        handleFileUpload,
+        handleConfirmUpload,
+        handleCancelUpload,
+        removePendingFile,
+    } = useFileUploadState({
+        targetUserId,
+        uploadFileMutation,
+        defaultVisibility,
+        selectMode,
+        multiSelect,
+        afterSelect,
+        onSelect,
+        onPicked,
+        goBack,
+        onClose,
+        imagesOnly: isImageOnlyPicker,
+        selectedIds,
+        setSelectedIds,
+        t,
+    });
 
-    const storeSetUploading = useFileStore(s => s.setUploading);
-    const storeSetUploadProgress = useFileStore(s => s.setUploadProgress);
-    const storeSetDeleting = useFileStore(s => s.setDeleting);
-
-    const loadFiles = useCallback(async (mode: 'initial' | 'refresh' | 'silent' | 'more' = 'initial') => {
-        if (!targetUserId) return;
-
-        try {
-            if (mode === 'refresh') {
-                setRefreshing(true);
-            } else if (mode === 'initial') {
-                setLoading(true);
-                setPaging(p => ({ ...p, offset: 0, hasMore: true }));
-            } else if (mode === 'more') {
-                // Prevent duplicate fetches
-                setPaging(p => ({ ...p, loadingMore: true }));
-            }
-            const currentPaging = mode === 'more' ? (prevPagingRef.current ?? paging) : paging;
-            const effectiveOffset = mode === 'more' ? currentPaging.offset + currentPaging.limit : 0;
-            const response = await oxyServices.listUserFiles(currentPaging.limit, effectiveOffset);
-            const assets: FileMetadata[] = (response.files || []).map((f: { id: string; originalName?: string; sha256?: string; mime?: string; size?: number; createdAt?: string; metadata?: Record<string, unknown>; variants?: unknown[] }) => ({
-                id: f.id,
-                filename: f.originalName ?? f.sha256 ?? '',
-                contentType: f.mime ?? '',
-                length: f.size ?? 0,
-                chunkSize: 0,
-                uploadDate: f.createdAt ?? '',
-                metadata: f.metadata ?? {},
-                variants: (f.variants ?? []) as FileMetadata['variants'],
-            }));
-            if (mode === 'more') {
-                // append
-                useFileStore.getState().setFiles(assets, { merge: true });
-                setPaging(p => ({
-                    ...p,
-                    offset: effectiveOffset,
-                    total: response.total || (effectiveOffset + assets.length),
-                    hasMore: response.hasMore,
-                    loadingMore: false,
-                }));
-            } else {
-                useFileStore.getState().setFiles(assets, { merge: false });
-                setPaging(p => ({
-                    ...p,
-                    offset: 0,
-                    total: response.total || assets.length,
-                    hasMore: response.hasMore,
-                    loadingMore: false,
-                }));
-            }
-        } catch (error: unknown) {
-            toast.error(getErrorMessage(error) || t('fileManagement.toasts.loadFailed'));
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-            setPaging(p => ({ ...p, loadingMore: false }));
-        }
-    }, [targetUserId, oxyServices, paging]);
-
-    // Keep a ref to avoid stale closure when calculating next offset
-    const prevPagingRef = useRef(paging);
-    useEffect(() => { prevPagingRef.current = paging; }, [paging]);
-
-    // (removed effect; filteredFiles is memoized)
-
-    // Load photo dimensions for justified grid - unified approach using Image.getSize
-    const loadPhotoDimensions = useCallback(async (photos: FileMetadata[]) => {
-        if (photos.length === 0) return;
-
-        setLoadingDimensions(true);
-        const newDimensions: { [key: string]: { width: number, height: number } } = { ...photoDimensions };
-        let hasNewDimensions = false;
-
-        // Only load dimensions for photos we don't have yet
-        const photosToLoad = photos.filter(photo => !newDimensions[photo.id]);
-
-        if (photosToLoad.length === 0) {
-            setLoadingDimensions(false);
-            return;
-        }
-
-        try {
-            await Promise.all(
-                photosToLoad.map(async (photo) => {
-                    try {
-                        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
-
-                        // Unified approach using Image.getSize (works on all platforms)
-                        await new Promise<void>((resolve) => {
-                            Image.getSize(
-                                downloadUrl,
-                                (width: number, height: number) => {
-                                    newDimensions[photo.id] = { width, height };
-                                    hasNewDimensions = true;
-                                    resolve();
-                                },
-                                () => {
-                                    // Fallback dimensions
-                                    newDimensions[photo.id] = { width: 1, height: 1 };
-                                    hasNewDimensions = true;
-                                    resolve();
-                                }
-                            );
-                        });
-                    } catch (error) {
-                        // Fallback dimensions for any errors
-                        newDimensions[photo.id] = { width: 1, height: 1 };
-                        hasNewDimensions = true;
-                    }
-                })
-            );
-
-            if (hasNewDimensions) {
-                setPhotoDimensions(newDimensions);
-            }
-        } catch (error) {
-            // Photo dimensions loading failed, continue without dimensions
-        } finally {
-            setLoadingDimensions(false);
-        }
-    }, [getSafeDownloadUrlCallback, photoDimensions]);
-
-    // Create justified rows from photos with responsive algorithm
-    const createJustifiedRows = useCallback((photos: FileMetadata[], containerWidth: number) => {
-        if (photos.length === 0) return [];
-
-        const rows: FileMetadata[][] = [];
-        const photosPerRow = 3; // Fixed 3 photos per row for consistency
-
-        for (let i = 0; i < photos.length; i += photosPerRow) {
-            const rowPhotos = photos.slice(i, i + photosPerRow);
-            rows.push(rowPhotos);
-        }
-
-        return rows;
-    }, []);
-
-    const processFileUploads = async (selectedFiles: UploadCandidate[]): Promise<FileMetadata[]> => {
-        if (selectedFiles.length === 0) return [];
-        if (!targetUserId) return []; // Guard clause to ensure userId is defined
-        const uploadedFiles: FileMetadata[] = [];
-        try {
-            storeSetUploadProgress({ current: 0, total: selectedFiles.length });
-            const maxSize = 50 * 1024 * 1024; // 50MB
-            const oversizedFiles = selectedFiles.filter(file => candidateSize(file) > maxSize);
-            if (oversizedFiles.length > 0) {
-                const fileList = oversizedFiles.map(f => candidateName(f, 'file')).join(', ');
-                toast.error(t('fileManagement.toasts.filesTooLarge', { files: fileList }));
-                return [];
-            }
-            let successCount = 0;
-            let failureCount = 0;
-            const errors: string[] = [];
-            for (let i = 0; i < selectedFiles.length; i++) {
-                storeSetUploadProgress({ current: i + 1, total: selectedFiles.length });
-                const raw = selectedFiles[i];
-                const fileName = candidateName(raw, `file-${i + 1}`);
-                const fileSize = candidateSize(raw);
-                const fileType = candidateType(raw);
-                const optimisticId = `temp-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`; // Unique ID per file
-
-                try {
-                    // Validate file before upload
-                    if (!raw || !fileName || fileSize <= 0) {
-                        const errorMsg = `Invalid file: ${fileName}`;
-                        if (__DEV__) {
-                            console.error('Upload validation failed:', { file: raw, error: errorMsg });
-                        }
-                        failureCount++;
-                        errors.push(`${fileName}: Invalid file (missing name or size)`);
-                        continue;
-                    }
-
-                    const optimisticFile: FileMetadata = {
-                        id: optimisticId,
-                        filename: fileName,
-                        contentType: fileType,
-                        length: fileSize,
-                        chunkSize: 0,
-                        uploadDate: new Date().toISOString(),
-                        metadata: { uploading: true },
-                        variants: [],
-                    };
-                    useFileStore.getState().addFile(optimisticFile, { prepend: true });
-
-                    // Use the mutation hook with authentication handling
-                    const result = await uploadFileMutation.mutateAsync({
-                        file: raw as AssetUploadInput,
-                        visibility: defaultVisibility,
-                    });
-
-                    // Attempt to refresh file list incrementally – fetch single file metadata if API allows
-                    const f = result?.file ?? result?.files?.[0];
-                    if (f) {
-                        const merged: FileMetadata = {
-                            id: f.id,
-                            filename: f.originalName || f.sha256 || fileName,
-                            contentType: f.mime || fileType,
-                            length: f.size || fileSize,
-                            chunkSize: 0,
-                            uploadDate: f.createdAt || new Date().toISOString(),
-                            metadata: f.metadata || {},
-                            variants: f.variants || [],
-                        };
-                        // Remove optimistic then add real
-                        useFileStore.getState().removeFile(optimisticId);
-                        useFileStore.getState().addFile(merged, { prepend: true });
-                        uploadedFiles.push(merged);
-                        successCount++;
-                    } else {
-                        // Fallback: will reconcile on later list refresh
-                        useFileStore.getState().updateFile(optimisticId, { metadata: { uploading: false } as Partial<FileMetadata>['metadata'] });
-                        if (__DEV__) {
-                            console.warn('Upload completed but no file data returned:', { fileName, result });
-                        }
-                        // Still count as success if upload didn't throw
-                        successCount++;
-                    }
-                } catch (error: unknown) {
-                    failureCount++;
-                    const errorMessage = getErrorMessage(error) || 'Upload failed';
-                    const fullError = `${fileName}: ${errorMessage}`;
-                    errors.push(fullError);
-                    if (__DEV__) {
-                        console.error('File upload failed:', {
-                            fileName,
-                            fileSize,
-                            fileType,
-                            error: errorMessage,
-                            stack: (error instanceof Error) ? error.stack : undefined
-                        });
-                    }
-
-                    // Remove optimistic file on error (use the same optimisticId from above)
-                    useFileStore.getState().removeFile(optimisticId);
-                }
-            }
-
-            // Show success/error messages
-            if (successCount > 0) {
-                toast.success(t('fileManagement.toasts.uploadSuccess', { count: successCount }));
-            }
-            if (failureCount > 0) {
-                // Show detailed error message with first few errors
-                const errorDetails = errors.length > 0
-                    ? `\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...and ${errors.length - 3} more` : ''}`
-                    : '';
-                toast.error(`${t('fileManagement.toasts.uploadFailed', { count: failureCount })}${errorDetails}`);
-            }
-            // Silent background refresh to ensure metadata/variants updated
-            setTimeout(() => { loadFiles('silent'); }, 1200);
-        } catch (error: unknown) {
-            toast.error(getErrorMessage(error) || t('fileManagement.toasts.uploadError'));
-        } finally {
-            storeSetUploadProgress(null);
-        }
-        return uploadedFiles;
-    };
-
-    const handleFileSelection = useCallback(async (selectedFiles: UploadCandidate[]) => {
-        const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
-        const processedFiles: Array<{ file: UploadCandidate; preview?: string; size: number; name: string; type: string }> = [];
-
-        for (const file of selectedFiles) {
-            // Validate file has required properties
-            if (!file) {
-                if (__DEV__) {
-                    console.error('Invalid file: file is null or undefined');
-                }
-                toast.error(t('fileManagement.toasts.invalidFileMissing'));
-                continue;
-            }
-
-            const name = candidateName(file, '');
-            if (!name) {
-                if (__DEV__) {
-                    console.error('Invalid file: missing or invalid name property', file);
-                }
-                toast.error(t('fileManagement.toasts.invalidFileName'));
-                continue;
-            }
-
-            const size = (file as { size?: number }).size;
-            if (size === undefined || size === null || Number.isNaN(size)) {
-                if (__DEV__) {
-                    console.error('Invalid file: missing or invalid size property', file);
-                }
-                toast.error(t('fileManagement.toasts.invalidFileSize', { name }));
-                continue;
-            }
-
-            if (size <= 0) {
-                if (__DEV__) {
-                    console.error('Invalid file: file size is zero or negative', file);
-                }
-                toast.error(t('fileManagement.toasts.fileEmpty', { name }));
-                continue;
-            }
-
-            // Validate file size
-            if (size > MAX_FILE_SIZE) {
-                toast.error(t('fileManagement.toasts.fileTooLarge', { name, maxSize: formatFileSize(MAX_FILE_SIZE) }));
-                continue;
-            }
-
-            const fileType = candidateType(file);
-
-            // Generate preview for images - unified approach
-            let preview: string | undefined;
-            if (fileType.startsWith('image/')) {
-                // Try to use file URI from expo-document-picker if available (works on all platforms)
-                const fileUri = candidateUri(file);
-                if (fileUri &&
-                    (fileUri.startsWith('file://') || fileUri.startsWith('content://') ||
-                        fileUri.startsWith('http://') || fileUri.startsWith('https://') ||
-                        fileUri.startsWith('blob:'))) {
-                    preview = fileUri;
-                } else {
-                    // Fallback: create blob URL if possible (works on web only)
-                    try {
-                        if ((typeof File !== 'undefined' && file instanceof File) ||
-                            (typeof Blob !== 'undefined' && file instanceof Blob)) {
-                            preview = URL.createObjectURL(file as Blob);
-                        }
-                    } catch (error: unknown) {
-                        if (__DEV__) {
-                            console.warn('Failed to create preview URL:', error);
-                        }
-                        // Preview is optional, continue without it
-                    }
-                }
-            }
-
-            processedFiles.push({
-                file,
-                preview,
-                size,
-                name,
-                type: fileType
-            });
-        }
-
-        if (processedFiles.length === 0) {
-            toast.error(t('fileManagement.toasts.noValidFiles'));
-            return;
-        }
-
-        // Show preview modal for user to review files before upload
-        setPendingFiles(processedFiles);
-        setShowUploadPreview(true);
-    }, [t]);
-
-    const handleConfirmUpload = async () => {
-        if (pendingFiles.length === 0) return;
-
-        setShowUploadPreview(false);
-        uploadStartRef.current = Date.now();
-        storeSetUploading(true);
-        storeSetUploadProgress(null);
-
-        try {
-            const filesToUpload = pendingFiles.map(pf => pf.file);
-            storeSetUploadProgress({ current: 0, total: filesToUpload.length });
-            const uploadedFiles = await processFileUploads(filesToUpload);
-
-            // Cleanup preview URLs
-            pendingFiles.forEach(pf => {
-                if (pf.preview) {
-                    URL.revokeObjectURL(pf.preview);
-                }
-            });
-            setPendingFiles([]);
-
-            // If in selectMode, automatically select the uploaded file(s)
-            if (selectMode && uploadedFiles.length > 0) {
-                // Wait a bit for the file store to update and ensure file is available
-                setTimeout(() => {
-                    const fileToSelect = uploadedFiles[0];
-                    if (!multiSelect && fileToSelect) {
-                        // Single select mode - directly call onSelect callback
-                        onSelect?.(fileToSelect);
-                        if (afterSelect === 'back') {
-                            goBack?.();
-                        } else if (afterSelect === 'close') {
-                            onClose?.();
-                        }
-                    } else if (multiSelect) {
-                        // Multi-select mode - add all uploaded files to selection
-                        uploadedFiles.forEach(file => {
-                            if (!selectedIds.has(file.id)) {
-                                setSelectedIds(prev => new Set(prev).add(file.id));
-                            }
-                        });
-                    }
-                }, 500);
-            }
-
-            endUpload();
-        } catch (error: unknown) {
-            toast.error(getErrorMessage(error) || t('fileManagement.toasts.uploadError'));
-            endUpload();
-        }
-    };
-
-    const handleCancelUpload = () => {
-        // Cleanup preview URLs
-        pendingFiles.forEach(pf => {
-            if (pf.preview) {
-                URL.revokeObjectURL(pf.preview);
-            }
+    const confirmFileDelete = useCallback(async (fileId: string, filename: string) => {
+        const confirmed = await surfaces.confirm({
+            title: t('fileManagement.deleteFile') || 'Delete File',
+            message: t('fileManagement.confirms.deleteFile', { filename }),
+            confirmLabel: t('fileManagement.confirm') || 'Delete',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
         });
-        setPendingFiles([]);
-        setShowUploadPreview(false);
-    };
-
-    const removePendingFile = (index: number) => {
-        const file = pendingFiles[index];
-        if (file.preview) {
-            URL.revokeObjectURL(file.preview);
-        }
-        const updated = pendingFiles.filter((_, i) => i !== index);
-        setPendingFiles(updated);
-        if (updated.length === 0) {
-            setShowUploadPreview(false);
-        }
-    };
-
-    /**
-     * Handle file upload - opens document picker and processes selected files
-     * Expo 54 compatible - works on web, iOS, and Android
-     */
-    const handleFileUpload = async () => {
-        // Prevent concurrent document picker calls
-        if (isPickingDocument) {
-            toast.error(t('fileManagement.toasts.waitForSelection'));
-            return;
-        }
+        if (!confirmed) return;
 
         try {
-            setIsPickingDocument(true);
-
-            // Lazy load expo-document-picker
-            const picker = await loadDocumentPicker();
-
-            // Use expo-document-picker (works on all platforms including web)
-            // On web, it uses the native file input and provides File objects directly
-            const result = await picker.getDocumentAsync({
-                type: '*/*',
-                multiple: true,
-                copyToCacheDirectory: true,
-            });
-
-            if (result.canceled) {
-                setIsPickingDocument(false);
-                return;
-            }
-
-            if (!result.assets || result.assets.length === 0) {
-                setIsPickingDocument(false);
-                toast.error(t('fileManagement.toasts.noFilesSelected'));
-                return;
-            }
-
-            // Convert expo document picker results to File-like objects
-            // According to Expo 54 docs, expo-document-picker returns assets with:
-            // - uri: file URI (file://, content://, or blob URL)
-            // - name: file name
-            // - size: file size in bytes
-            // - mimeType: MIME type of the file
-            // - file: (optional) native File object (usually only on web)
-            const files: UploadCandidate[] = [];
-            const errors: string[] = [];
-
-            // Process files in parallel for better performance
-            // This allows multiple files to be converted simultaneously
-            const conversionPromises = result.assets.map((doc, index) =>
-                convertDocumentPickerAssetToFile(doc, index)
-                    .then((file): UploadCandidate | null => {
-                        if (file) {
-                            // Validate file has required properties before adding
-                            if (!file.name || (file as { size?: number }).size === undefined) {
-                                errors.push(`File "${doc.name || 'file'}" is invalid: missing required properties`);
-                                return null;
-                            }
-                            return file;
-                        }
-                        return null;
-                    })
-                    .catch((error: unknown) => {
-                        errors.push(`File "${doc.name || 'file'}": ${getErrorMessage(error) || 'Failed to process'}`);
-                        return null;
-                    })
-            );
-
-            const convertedFiles = await Promise.all(conversionPromises);
-
-            // Filter out null values
-            for (const file of convertedFiles) {
-                if (file) {
-                    files.push(file);
-                }
-            }
-
-            // Show errors if any
-            if (errors.length > 0) {
-                const errorMessage = errors.slice(0, 3).join('\n') + (errors.length > 3 ? `\n...and ${errors.length - 3} more` : '');
-                toast.error(t('fileManagement.toasts.loadSomeFailed', { errors: errorMessage }));
-            }
-
-            // Process successfully converted files
-            if (files.length > 0) {
-                await handleFileSelection(files);
-            } else {
-                // Files were selected but none could be converted
-                toast.error(t('fileManagement.toasts.noFilesProcessed'));
-            }
-        } catch (error: unknown) {
-            if (__DEV__) {
-                console.error('File upload error:', error);
-            }
-            if (getErrorMessage(error)?.includes('expo-document-picker') || getErrorMessage(error)?.includes('Different document picking in progress')) {
-                if (getErrorMessage(error)?.includes('Different document picking in progress')) {
-                    toast.error(t('fileManagement.toasts.waitForSelection'));
-                } else {
-                    toast.error(t('fileManagement.toasts.filePickerNotAvailable'));
-                }
-            } else {
-                toast.error(getErrorMessage(error) || t('fileManagement.toasts.selectFilesFailed'));
-            }
-        } finally {
-            // Always reset the picking state, even if there was an error
-            setIsPickingDocument(false);
-        }
-    };
-
-    const confirmFileDelete = useCallback((fileId: string, filename: string) => {
-        setPendingDeleteFile({ id: fileId, name: filename });
-        fileDeleteDialog.open();
-    }, [fileDeleteDialog]);
-
-    const handleFileDelete = useCallback(async () => {
-        if (!pendingDeleteFile) return;
-        const { id: fileId } = pendingDeleteFile;
-
-        try {
-            storeSetDeleting(fileId);
+            setDeletingId(fileId);
             await oxyServices.deleteFile(fileId);
 
             toast.success(t('fileManagement.toasts.deleteSuccess'));
 
-            // Reload files after successful deletion
-            // Optimistic remove
-            useFileStore.getState().removeFile(fileId);
-            // Silent background reconcile
-            setTimeout(() => loadFiles('silent'), 800);
+            // Remove from the query cache, then reconcile against the server.
+            removeFileFromCache(queryClient, targetUserId, fileId);
+            invalidateFiles();
         } catch (error: unknown) {
-
             // Provide specific error messages
             if (getErrorMessage(error)?.includes('File not found') || getErrorMessage(error)?.includes('404')) {
                 toast.error(t('fileManagement.toasts.fileNotFound'));
-                // Still reload files to refresh the list
-                setTimeout(() => loadFiles('silent'), 800);
+                // It's already gone server-side — reconcile the list.
+                invalidateFiles();
             } else if (getErrorMessage(error)?.includes('permission') || getErrorMessage(error)?.includes('403')) {
                 toast.error(t('fileManagement.toasts.noPermission'));
             } else {
                 toast.error(getErrorMessage(error) || t('fileManagement.toasts.deleteFailed'));
             }
         } finally {
-            storeSetDeleting(null);
-            setPendingDeleteFile(null);
+            setDeletingId(null);
         }
-    }, [pendingDeleteFile, storeSetDeleting, oxyServices, loadFiles, t]);
+    }, [oxyServices, queryClient, targetUserId, invalidateFiles, t]);
 
-    const confirmBulkDelete = useCallback(() => {
+    const confirmBulkDelete = useCallback(async () => {
         if (selectedIds.size === 0) return;
-        bulkDeleteDialog.open();
-    }, [selectedIds.size, bulkDeleteDialog]);
 
-    const handleBulkDelete = useCallback(async () => {
-        if (selectedIds.size === 0) return;
+        const confirmed = await surfaces.confirm({
+            title: t('fileManagement.deleteFiles') || 'Delete Files',
+            message: t('fileManagement.confirms.deleteFiles', { count: selectedIds.size }),
+            confirmLabel: t('fileManagement.confirm') || 'Delete',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) return;
 
         try {
             const deletePromises = Array.from(selectedIds).map(async (fileId) => {
                 try {
                     await oxyServices.deleteFile(fileId);
-                    useFileStore.getState().removeFile(fileId);
+                    removeFileFromCache(queryClient, targetUserId, fileId);
                     return { success: true, fileId };
                 } catch (error: unknown) {
                     return { success: false, fileId, error };
@@ -1642,11 +514,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
 
             setSelectedIds(new Set());
-            setTimeout(() => loadFiles('silent'), 800);
+            invalidateFiles();
         } catch (error: unknown) {
             toast.error(getErrorMessage(error) || t('fileManagement.toasts.bulkDeleteError'));
         }
-    }, [selectedIds, files, oxyServices, loadFiles]);
+    }, [selectedIds, oxyServices, queryClient, targetUserId, invalidateFiles, t]);
 
     const handleBulkVisibilityChange = useCallback(async (visibility: 'private' | 'public' | 'unlisted') => {
         if (selectedIds.size === 0) return;
@@ -1667,29 +539,43 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             if (successful > 0) {
                 toast.success(t('fileManagement.toasts.visibilitySuccess', { count: successful, visibility }));
-                // Update file metadata in store
-                Array.from(selectedIds).forEach(fileId => {
-                    useFileStore.getState().updateFile(fileId, {
-                        metadata: { ...files.find(f => f.id === fileId)?.metadata, visibility } as Partial<FileMetadata>['metadata']
-                    });
-                });
+                // Reflect the new visibility in the cached files.
+                for (const fileId of selectedIds) {
+                    patchFileMetadataInCache(queryClient, targetUserId, fileId, { visibility });
+                }
             }
             if (failed > 0) {
                 toast.error(t('fileManagement.toasts.visibilityFailed', { count: failed }));
             }
 
-            setTimeout(() => loadFiles('silent'), 800);
+            invalidateFiles();
         } catch (error: unknown) {
             toast.error(getErrorMessage(error) || t('fileManagement.toasts.visibilityError'));
         }
-    }, [selectedIds, oxyServices, files, loadFiles]);
+    }, [selectedIds, oxyServices, queryClient, targetUserId, invalidateFiles, t]);
+
+    const handleVisibilityChange = useCallback(async () => {
+        if (selectedIds.size === 0) return;
+        const visibility = await presentActionSheet<'private' | 'public' | 'unlisted'>({
+            title: t('fileManagement.changeVisibility') || 'Change Visibility',
+            message: t('fileManagement.changeVisibilityConfirm', { count: selectedIds.size }),
+            options: [
+                { label: t('fileManagement.private') || 'Private', value: 'private' },
+                { label: t('fileManagement.public') || 'Public', value: 'public' },
+                { label: t('fileManagement.unlisted') || 'Unlisted', value: 'unlisted' },
+            ],
+            cancelLabel: t('common.cancel') || 'Cancel',
+        });
+        if (visibility) await handleBulkVisibilityChange(visibility);
+    }, [selectedIds.size, handleBulkVisibilityChange, t]);
 
     // Unified download function - works on all platforms
-    const handleFileDownload = async (fileId: string, filename: string) => {
+    const handleFileDownload = useCallback(async (fileId: string, filename: string) => {
         try {
-            // Try to use the download URL with a simple approach
-            // On web, this creates a download link. On mobile, it opens the URL.
-            const downloadUrl = oxyServices.getFileDownloadUrl(fileId);
+            // Resolve an authenticated, private-safe URL. The synchronous
+            // `getFileDownloadUrl` yields the public CDN origin, which 404s for
+            // private assets (the default visibility).
+            const downloadUrl = await oxyServices.getFileDownloadUrlAsync(fileId);
 
             // For web platforms, use link download
             if (typeof window !== 'undefined' && window.document) {
@@ -1728,10 +614,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } catch (error: unknown) {
             toast.error(getErrorMessage(error) || t('fileManagement.toasts.downloadFailed'));
         }
-    };
+    }, [oxyServices, t]);
 
-
-    const handleFileOpen = async (file: FileMetadata) => {
+    const handleFileOpen = useCallback(async (file: FileMetadata) => {
         if (selectMode) {
             toggleSelect(file);
             return;
@@ -1756,8 +641,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         file.contentType.includes('pdf') ||
                         file.contentType.startsWith('video/') ||
                         file.contentType.startsWith('audio/')) {
-                        // For images, PDFs, videos, and audio, we'll use the URL directly
-                        const downloadUrl = oxyServices.getFileDownloadUrl(file.id);
+                        // For images, PDFs, videos, and audio, we render the URL
+                        // directly. Resolve the authenticated, private-safe URL —
+                        // the synchronous public-CDN URL 404s for private assets.
+                        const downloadUrl = await oxyServices.getFileDownloadUrlAsync(file.id);
                         setFileContent(downloadUrl);
                     } else {
                         // For text files, get the content using authenticated request
@@ -1781,93 +668,44 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } finally {
             setLoadingFileContent(false);
         }
-    };
+    }, [selectMode, toggleSelect, oxyServices, t]);
 
-    const handleCloseFile = () => {
+    const handleCloseFile = useCallback(() => {
         setOpenedFile(null);
         setFileContent(null);
         setShowFileDetailsInViewer(false);
         // Don't reset view mode when closing a file
-    };
+    }, []);
 
-    const showFileDetailsModal = (file: FileMetadata) => {
-        setSelectedFile(file);
-        fileDetailsControl.open();
-    };
-
-    const renderSimplePhotoItem = useCallback((photo: FileMetadata, index: number) => {
-        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
-
-        // Calculate photo item width based on actual container size from bottom sheet
-        let itemsPerRow = 3; // Default for mobile
-        if (safeContainerWidth > 768) itemsPerRow = 4; // Desktop/tablet
-        else if (safeContainerWidth > 480) itemsPerRow = 3; // Large mobile
-
-        // Account for the photoScrollContainer padding (16px on each side = 32px total)
-        const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
-        const gaps = (itemsPerRow - 1) * 4; // Gap between items (4px)
-        const availableWidth = safeContainerWidth - scrollContainerPadding;
-        const itemWidth = (availableWidth - gaps) / itemsPerRow;
-
-        return (
-            <TouchableOpacity
-                key={photo.id}
-                style={[
-                    fileManagementStyles.simplePhotoItem,
-                    {
-                        width: itemWidth,
-                        height: itemWidth,
-                        marginRight: (index + 1) % itemsPerRow === 0 ? 0 : 4,
-                        ...(selectMode && selectedIds.has(photo.id) ? { borderWidth: 2, borderColor: colors.primary } : {})
-                    }
-                ]}
-                onPress={() => handleFileOpen(photo)}
-                activeOpacity={0.8}
-            >
-                <View style={fileManagementStyles.simplePhotoContainer}>
-                    <ExpoImage
-                        source={{ uri: downloadUrl }}
-                        style={fileManagementStyles.simplePhotoImage}
-                        contentFit="cover"
-                        transition={120}
-                        cachePolicy="memory-disk"
-                        onError={() => {
-                            // Photo failed to load, will show placeholder
-                        }}
-                        accessibilityLabel={photo.filename}
-                    />
-                    {selectMode && (
-                        <View style={fileManagementStyles.selectionBadge}>
-                            <Ionicons name={selectedIds.has(photo.id) ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={selectedIds.has(photo.id) ? colors.primary : colors.text} />
-                        </View>
-                    )}
-                </View>
-            </TouchableOpacity>
-        );
-    }, [oxyServices, safeContainerWidth, selectMode, selectedIds, colors.primary, colors.text]);
+    const showFileDetailsModal = useCallback((file: FileMetadata) => {
+        presentFileDetails({
+            file,
+            onDownload: handleFileDownload,
+            onDelete: confirmFileDelete,
+            isOwner: user?.id === targetUserId,
+        });
+    }, [handleFileDownload, confirmFileDelete, user?.id, targetUserId]);
 
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
-        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
+        const downloadUrl = thumbSourceFor(photo);
 
         return (
             <TouchableOpacity
                 key={photo.id}
-                style={[
-                    fileManagementStyles.justifiedPhotoItem,
-                    {
-                        width,
-                        height,
-                        ...(selectMode && selectedIds.has(photo.id) ? { borderWidth: 2, borderColor: colors.primary } : {}),
-                        ...(selectMode && multiSelect && selectedIds.size > 0 && !selectedIds.has(photo.id) ? { opacity: 0.4 } : {}),
-                    },
-                ]}
+                className="rounded-[6px] overflow-hidden relative"
+                style={{
+                    width,
+                    height,
+                    ...(selectMode && selectedIds.has(photo.id) ? { borderWidth: 2, borderColor: colors.primary } : {}),
+                    ...(selectMode && multiSelect && selectedIds.size > 0 && !selectedIds.has(photo.id) ? { opacity: 0.4 } : {}),
+                }}
                 onPress={() => handleFileOpen(photo)}
                 activeOpacity={0.8}
             >
-                <View style={fileManagementStyles.justifiedPhotoContainer}>
+                <View className="w-full h-full relative rounded-[6px] overflow-hidden">
                     <ExpoImage
                         source={{ uri: downloadUrl }}
-                        style={fileManagementStyles.justifiedPhotoImage}
+                        style={screenStyles.justifiedPhotoImage}
                         contentFit="cover"
                         transition={120}
                         cachePolicy="memory-disk"
@@ -1877,177 +715,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         accessibilityLabel={photo.filename}
                     />
                     {selectMode && (
-                        <View style={fileManagementStyles.selectionBadge}>
+                        <View className="absolute top-[4px] right-[4px] rounded-[12px] p-[2px]" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
                             <Ionicons name={selectedIds.has(photo.id) ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={selectedIds.has(photo.id) ? colors.primary : colors.text} />
                         </View>
                     )}
                 </View>
             </TouchableOpacity>
         );
-    }, [oxyServices, selectMode, selectedIds, multiSelect, colors.primary, colors.text]);
-
-    // Run initial load once per targetUserId change to avoid accidental loops
-    const lastLoadedFor = useRef<string | undefined>(undefined);
-    useEffect(() => {
-        const key = targetUserId || 'anonymous';
-        if (lastLoadedFor.current !== key) {
-            lastLoadedFor.current = key;
-            loadFiles('initial');
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [targetUserId]);
-
-    const renderFileItem = (file: FileMetadata) => {
-        const isImage = file.contentType.startsWith('image/');
-        const isPDF = file.contentType.includes('pdf');
-        const isVideo = file.contentType.startsWith('video/');
-        const isAudio = file.contentType.startsWith('audio/');
-        const hasPreview = isImage || isPDF || isVideo;
-        const borderColor = colors.border;
-
-        return (
-            <View
-                key={file.id}
-                style={[fileManagementStyles.fileItem, { backgroundColor: colors.backgroundSecondary, borderColor }, selectMode && selectedIds.has(file.id) && { borderColor: colors.primary, borderWidth: 2 }]}
-            >
-                <TouchableOpacity
-                    style={fileManagementStyles.fileContent}
-                    onPress={() => handleFileOpen(file)}
-                >
-                    {/* Preview Thumbnail */}
-                    <View style={fileManagementStyles.filePreviewContainer}>
-                        {hasPreview ? (
-                            <View style={fileManagementStyles.filePreview}>
-                                {isImage && (
-                                    <ExpoImage
-                                        source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
-                                        style={fileManagementStyles.previewImage}
-                                        contentFit="cover"
-                                        transition={120}
-                                        cachePolicy="memory-disk"
-                                        onError={() => {
-                                            // Image preview failed to load
-                                        }}
-                                        accessibilityLabel={file.filename}
-                                    />
-                                )}
-                                {isPDF && (
-                                    <View style={fileManagementStyles.pdfPreview}>
-                                        <Ionicons name="document" size={32} color={colors.primary} />
-                                        <Text style={[fileManagementStyles.pdfLabel, { color: colors.primary }]}>PDF</Text>
-                                    </View>
-                                )}
-                                {isVideo && (
-                                    <View style={fileManagementStyles.videoPreviewWrapper}>
-                                        <ExpoImage
-                                            source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
-                                            style={fileManagementStyles.videoPosterImage}
-                                            contentFit="cover"
-                                            transition={120}
-                                            cachePolicy="memory-disk"
-                                            onError={(_: unknown) => {
-                                                // If thumbnail not available, we still show icon overlay
-                                            }}
-                                            accessibilityLabel={`${file.filename} video thumbnail`}
-                                        />
-                                        <View style={fileManagementStyles.videoOverlay}>
-                                            <Ionicons name="play" size={24} color="#FFFFFF" />
-                                        </View>
-                                    </View>
-                                )}
-                                {/* Fallback icon (hidden by default for images) */}
-                                <View
-                                    style={[fileManagementStyles.fallbackIcon, { display: isImage ? 'none' : 'flex' }]}
-                                >
-                                    <Ionicons
-                                        name={getFileIcon(file.contentType) as React.ComponentProps<typeof Ionicons>['name']}
-                                        size={32}
-                                        color={colors.primary}
-                                    />
-                                </View>
-
-                                {selectMode && (
-                                    <View style={fileManagementStyles.selectionBadge}>
-                                        <Ionicons name={selectedIds.has(file.id) ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selectedIds.has(file.id) ? colors.primary : colors.text} />
-                                    </View>
-                                )}
-                            </View>
-                        ) : (
-                            <View style={fileManagementStyles.fileIconContainer}>
-                                <Ionicons
-                                    name={getFileIcon(file.contentType) as React.ComponentProps<typeof Ionicons>['name']}
-                                    size={32}
-                                    color={colors.primary}
-                                />
-                            </View>
-                        )}
-                    </View>
-
-                    <View style={fileManagementStyles.fileInfo}>
-                        <Text style={[fileManagementStyles.fileName, { color: colors.text }]} numberOfLines={1}>
-                            {file.filename}
-                        </Text>
-                        <Text style={[fileManagementStyles.fileDetails, { color: colors.textSecondary }]}>
-                            {formatFileSize(file.length)} • {new Date(file.uploadDate).toLocaleDateString()}
-                        </Text>
-                        {file.metadata?.description && (
-                            <Text
-                                style={[fileManagementStyles.fileDescription, { color: colors.textTertiary }]}
-                                numberOfLines={2}
-                            >
-                                {file.metadata.description}
-                            </Text>
-                        )}
-                    </View>
-                </TouchableOpacity>
-
-                {!selectMode && (
-                    <View style={fileManagementStyles.fileActions}>
-                        {/* Preview button for supported files */}
-                        {hasPreview && (
-                            <TouchableOpacity
-                                style={[fileManagementStyles.actionButton, { backgroundColor: colors.backgroundSecondary }]}
-                                onPress={() => handleFileOpen(file)}
-                            >
-                                <Ionicons name="eye" size={20} color={colors.primary} />
-                            </TouchableOpacity>
-                        )}
-
-                        <TouchableOpacity
-                            style={[fileManagementStyles.actionButton, { backgroundColor: colors.backgroundSecondary }]}
-                            onPress={() => handleFileDownload(file.id, file.filename)}
-                        >
-                            <Ionicons name="download" size={20} color={colors.primary} />
-                        </TouchableOpacity>
-
-                        {/* Always show delete button for debugging */}
-                        <TouchableOpacity
-                            style={[fileManagementStyles.actionButton, { backgroundColor: colors.negativeSubtle }]}
-                            onPress={() => confirmFileDelete(file.id, file.filename)}
-                            disabled={deleting === file.id}
-                        >
-                            {deleting === file.id ? (
-                                <ActivityIndicator size="small" color={colors.error} />
-                            ) : (
-                                <Ionicons name="trash" size={20} color={colors.error} />
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                )}
-            </View>
-        );
-    };
+    }, [thumbSourceFor, selectMode, selectedIds, multiSelect, colors.primary, colors.text, handleFileOpen]);
 
     // SettingsListItem-based file items (for 'all' view)
-    // biome-ignore lint/suspicious/noExplicitAny: file items have dynamic props
-    const groupedFileItems: any[] = useMemo(() => {
+    const groupedFileItems: FileListItem[] = useMemo(() => {
         // filteredFiles is already sorted, so just use it directly
         const sortedFiles = filteredFiles;
-
-        // Store file positions for scrolling
-        sortedFiles.forEach((file, index) => {
-            itemRefs.current.set(file.id, index);
-        });
 
         return sortedFiles.map((file) => {
             const isImage = file.contentType.startsWith('image/');
@@ -2063,7 +743,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     fileIcon = (
                         <View style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden' }}>
                             <ExpoImage
-                                source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
+                                source={{ uri: thumbSourceFor(file) }}
                                 style={{ width: 36, height: 36 }}
                                 contentFit="cover"
                                 transition={120}
@@ -2079,7 +759,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     fileIcon = (
                         <View style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000000', position: 'relative' }}>
                             <ExpoImage
-                                source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
+                                source={{ uri: thumbSourceFor(file) }}
                                 style={{ width: 36, height: 36 }}
                                 contentFit="cover"
                                 transition={120}
@@ -2119,27 +799,30 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 },
                 // Hide action buttons when selecting (in selectMode or bulk operations mode)
                 rightElement: (!selectMode && selectedIds.size === 0) ? (
-                    <View style={fileManagementStyles.groupedActions}>
+                    <View className="flex-row items-center gap-[6px] ml-[12px]">
                         {(isImage || isVideo || file.contentType.includes('pdf')) && (
                             <TouchableOpacity
-                                style={[fileManagementStyles.groupedActionBtn, { backgroundColor: colors.backgroundSecondary }]}
+                                className="w-[34px] h-[34px] rounded-[8px] items-center justify-center"
+                                style={{ backgroundColor: colors.backgroundSecondary }}
                                 onPress={() => handleFileOpen(file)}
                             >
                                 <Ionicons name="eye" size={18} color={colors.primary} />
                             </TouchableOpacity>
                         )}
                         <TouchableOpacity
-                            style={[fileManagementStyles.groupedActionBtn, { backgroundColor: colors.backgroundSecondary }]}
+                            className="w-[34px] h-[34px] rounded-[8px] items-center justify-center"
+                            style={{ backgroundColor: colors.backgroundSecondary }}
                             onPress={() => handleFileDownload(file.id, file.filename)}
                         >
                             <Ionicons name="download" size={18} color={colors.primary} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[fileManagementStyles.groupedActionBtn, { backgroundColor: colors.negativeSubtle }]}
+                            className="w-[34px] h-[34px] rounded-[8px] items-center justify-center"
+                            style={{ backgroundColor: colors.negativeSubtle }}
                             onPress={() => confirmFileDelete(file.id, file.filename)}
-                            disabled={deleting === file.id}
+                            disabled={deletingId === file.id}
                         >
-                            {deleting === file.id ? (
+                            {deletingId === file.id ? (
                                 <ActivityIndicator size="small" color={colors.error} />
                             ) : (
                                 <Ionicons name="trash" size={18} color={colors.error} />
@@ -2149,165 +832,52 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 ) : undefined,
             };
         });
-    }, [filteredFiles, theme, deleting, handleFileDownload, confirmFileDelete, handleFileOpen, getSafeDownloadUrlCallback, selectMode, selectedIds]);
+    }, [filteredFiles, colors, deletingId, toggleSelect, handleFileDownload, confirmFileDelete, handleFileOpen, thumbSourceFor, selectMode, selectedIds]);
 
-    // Scroll to selected file after selection
-    useEffect(() => {
-        if (lastSelectedFileId && selectMode) {
-            if (viewMode === 'all' && scrollViewRef.current) {
-                // Find the index of the selected file
-                const itemIndex = itemRefs.current.get(lastSelectedFileId);
+    // Browse-themed terminal load-failure state — DISTINCT from the empty state.
+    const renderLoadError = () => (
+        <FileLibraryError
+            title={t('fileManagement.loadError.title')}
+            description={t('fileManagement.loadError.description')}
+            retryLabel={t('fileManagement.retry')}
+            onRetry={() => filesQuery.refetch()}
+            iconColor={colors.error}
+            titleColor={colors.text}
+            descriptionColor={colors.textSecondary}
+            buttonColor={colors.primary}
+        />
+    );
 
-                if (itemIndex !== undefined && itemIndex >= 0) {
-                    // Estimate item height (GroupedItem with dense mode is approximately 60-70px)
-                    // Account for description rows which add extra height
-                    const baseItemHeight = 65;
-                    const descriptionHeight = 30; // Approximate height for description
-                    // Use filteredFiles which is already sorted according to user's selection
-                    const sortedFiles = filteredFiles;
-
-                    // Calculate total height up to this item
-                    let scrollPosition = 0;
-                    for (let i = 0; i <= itemIndex && i < sortedFiles.length; i++) {
-                        const file = sortedFiles[i];
-                        scrollPosition += baseItemHeight;
-                        if (file.metadata?.description) {
-                            scrollPosition += descriptionHeight;
-                        }
-                    }
-
-                    // Add header, controls, search, and stats height (approximately 250px)
-                    const headerHeight = 250;
-                    const finalScrollPosition = headerHeight + scrollPosition - 150; // Offset to show item near top
-
-                    // Use requestAnimationFrame to ensure DOM is updated before scrolling
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            scrollViewRef.current?.scrollTo({
-                                y: Math.max(0, finalScrollPosition),
-                                animated: true,
-                            });
-                        });
-                    });
-                }
-            } else if (viewMode === 'photos' && photoScrollViewRef.current) {
-                // For photo grid, find the photo index
-                const photos = filteredFiles.filter(file => file.contentType.startsWith('image/'));
-                const photoIndex = photos.findIndex(p => p.id === lastSelectedFileId);
-
-                if (photoIndex >= 0) {
-                    // Estimate photo item height based on grid layout
-                    // Calculate items per row
-                    let itemsPerRow = 3;
-                    if (safeContainerWidth > 768) itemsPerRow = 6;
-                    else if (safeContainerWidth > 480) itemsPerRow = 4;
-
-                    const scrollContainerPadding = 32;
-                    const gaps = (itemsPerRow - 1) * 4;
-                    const availableWidth = safeContainerWidth - scrollContainerPadding;
-                    const itemWidth = (availableWidth - gaps) / itemsPerRow;
-
-                    // Calculate row and approximate scroll position
-                    const row = Math.floor(photoIndex / itemsPerRow);
-                    const headerHeight = 250;
-                    const finalScrollPosition = headerHeight + (row * (itemWidth + 4)) - 150;
-
-                    // Use requestAnimationFrame to ensure DOM is updated before scrolling
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            photoScrollViewRef.current?.scrollTo({
-                                y: Math.max(0, finalScrollPosition),
-                                animated: true,
-                            });
-                        });
-                    });
-                }
-            }
-        }
-    }, [lastSelectedFileId, selectMode, viewMode, filteredFiles, safeContainerWidth]);
-
-    // Clear selected file ID after scroll animation completes
-    useEffect(() => {
-        if (lastSelectedFileId && scrollViewRef.current) {
-            const timeoutId = setTimeout(() => {
-                setLastSelectedFileId(null);
-            }, 600); // Allow time for scroll animation to complete
-
-            return () => clearTimeout(timeoutId);
-        }
-    }, [lastSelectedFileId]);
-
-    const renderPhotoItem = (photo: FileMetadata, index: number) => {
-        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
-
-        // Calculate photo item width based on actual container size from bottom sheet
-        let itemsPerRow = 3; // Default for mobile
-        if (safeContainerWidth > 768) itemsPerRow = 6; // Tablet/Desktop
-        else if (safeContainerWidth > 480) itemsPerRow = 4; // Large mobile
-
-        // Account for the photoScrollContainer padding (16px on each side = 32px total)
-        const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
-        const gaps = (itemsPerRow - 1) * 4; // Gap between items
-        const availableWidth = safeContainerWidth - scrollContainerPadding;
-        const itemWidth = (availableWidth - gaps) / itemsPerRow;
-
-        return (
-            <TouchableOpacity
-                key={photo.id}
-                style={[
-                    fileManagementStyles.photoItem,
-                    {
-                        width: itemWidth,
-                        height: itemWidth,
-                    }
-                ]}
-                onPress={() => handleFileOpen(photo)}
-                activeOpacity={0.8}
-            >
-                <View style={fileManagementStyles.photoContainer}>
-                    <ExpoImage
-                        source={{ uri: downloadUrl }}
-                        style={fileManagementStyles.photoImage}
-                        contentFit="cover"
-                        transition={120}
-                        cachePolicy="memory-disk"
-                        onError={() => {
-                            // Image preview failed to load
-                        }}
-                        accessibilityLabel={photo.filename}
-                    />
-                </View>
-            </TouchableOpacity>
-        );
-    };
-
-    const renderPhotoGrid = useCallback(() => {
+    // Browse "photos" view. The justified grid owns its own dimension
+    // measurement + reflow (see JustifiedPhotoGrid); this only supplies the
+    // photo set, the private-safe URL resolver, and the tile renderer.
+    const renderPhotoGrid = () => {
         const photos = filteredFiles.filter(file => file.contentType.startsWith('image/'));
 
         if (photos.length === 0) {
+            if (hasLoadError) return renderLoadError();
             return (
-                <View style={fileManagementStyles.emptyState}>
+                <View className="items-center py-[40px] px-[24px]">
                     <Ionicons name="images-outline" size={64} color={colors.textTertiary} />
-                    <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.emptyPhotos.title')}</Text>
-                    <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}> {
+                    <Text className="text-[24px] font-bold mt-[16px] mb-[8px]" style={{ color: colors.text }}>{t('fileManagement.emptyPhotos.title')}</Text>
+                    <Text className="text-[16px] text-center leading-[24px] mb-[32px]" style={{ color: colors.textSecondary }}> {
                         user?.id === targetUserId
                             ? t('fileManagement.emptyPhotos.ownDescription')
                             : t('fileManagement.emptyPhotos.otherDescription')
                     } </Text>
                     {user?.id === targetUserId && (
                         <TouchableOpacity
-                            style={[fileManagementStyles.emptyStateButton, { backgroundColor: colors.primary }]}
+                            className="flex-row items-center px-[24px] py-[12px] rounded-[24px] gap-[8px]"
+                            style={{ backgroundColor: colors.primary }}
                             onPress={handleFileUpload}
                             disabled={uploading || isPickingDocument}
                         >
-                            {uploading ? (
-                                <ActivityIndicator size="small" color="#FFFFFF" />
-                            ) : isPickingDocument ? (
+                            {(uploading || isPickingDocument) ? (
                                 <ActivityIndicator size="small" color="#FFFFFF" />
                             ) : (
                                 <>
                                     <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                                    <Text style={fileManagementStyles.emptyStateButtonText}>{t('fileManagement.uploadPhotos')}</Text>
+                                    <Text className="text-white text-[16px] font-semibold">{t('fileManagement.uploadPhotos')}</Text>
                                 </>
                             )}
                         </TouchableOpacity>
@@ -2319,12 +889,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return (
             <ScrollView
                 ref={photoScrollViewRef}
-                style={fileManagementStyles.scrollView}
-                contentContainerStyle={fileManagementStyles.photoScrollContainer}
+                className="flex-1"
+                contentContainerClassName="p-[10px]"
                 refreshControl={
                     <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={() => loadFiles('refresh')}
+                        refreshing={isRefreshingFiles}
+                        onRefresh={() => filesQuery.refetch()}
                         tintColor={colors.primary}
                     />
                 }
@@ -2332,58 +902,32 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 onScroll={({ nativeEvent }) => {
                     const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
                     const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
-                    if (distanceFromBottom < 200 && !paging.loadingMore && paging.hasMore) {
-                        loadFiles('more');
+                    if (distanceFromBottom < 200 && !isFetchingMore && hasMoreFiles) {
+                        filesQuery.fetchNextPage();
                     }
                 }}
                 scrollEventThrottle={250}
             >
-                {loadingDimensions && (
-                    <View style={fileManagementStyles.dimensionsLoadingIndicator}>
-                        <ActivityIndicator size="small" color={colors.primary} />
-                        <Text style={[fileManagementStyles.dimensionsLoadingText, { color: colors.textSecondary }]}>{t('fileManagement.loadingPhotoLayout')}</Text>
-                    </View>
-                )}
-
                 <JustifiedPhotoGrid
                     photos={photos}
-                    photoDimensions={photoDimensions}
-                    loadPhotoDimensions={loadPhotoDimensions}
-                    createJustifiedRows={createJustifiedRows}
+                    getThumbUrl={thumbSourceFor}
                     renderJustifiedPhotoItem={renderJustifiedPhotoItem}
-                    renderSimplePhotoItem={renderPhotoItem}
                     textColor={colors.text}
-                    containerWidth={safeContainerWidth}
+                    containerWidth={
+                        typeof containerWidth === 'number' && containerWidth > 0
+                            ? containerWidth
+                            : undefined
+                    }
                 />
             </ScrollView>
         );
-    }, [
-        filteredFiles,
-        colors,
-        user?.id,
-        targetUserId,
-        uploading,
-        handleFileUpload,
-        refreshing,
-        loadFiles,
-        loadingDimensions,
-        photoDimensions,
-        loadPhotoDimensions,
-        createJustifiedRows,
-        renderJustifiedPhotoItem,
-        renderPhotoItem,
-        safeContainerWidth
-    ]);
+    };
 
-    // Inline justified grid removed (moved to components/photogrid/JustifiedPhotoGrid.tsx)
-
-
-
-    const renderEmptyState = () => (
-        <View style={fileManagementStyles.emptyState}>
+    const renderEmptyState = () => hasLoadError ? renderLoadError() : (
+        <View className="items-center py-[40px] px-[24px]">
             <Ionicons name="folder-open-outline" size={64} color={colors.textTertiary} />
-            <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.emptyFiles.title')}</Text>
-            <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}>
+            <Text className="text-[24px] font-bold mt-[16px] mb-[8px]" style={{ color: colors.text }}>{t('fileManagement.emptyFiles.title')}</Text>
+            <Text className="text-[16px] text-center leading-[24px] mb-[32px]" style={{ color: colors.textSecondary }}>
                 {user?.id === targetUserId
                     ? t('fileManagement.emptyFiles.ownDescription')
                     : t('fileManagement.emptyFiles.otherDescription')
@@ -2391,18 +935,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             </Text>
             {user?.id === targetUserId && (
                 <TouchableOpacity
-                    style={[fileManagementStyles.emptyStateButton, { backgroundColor: colors.primary }]}
+                    className="flex-row items-center px-[24px] py-[12px] rounded-[24px] gap-[8px]"
+                    style={{ backgroundColor: colors.primary }}
                     onPress={handleFileUpload}
                     disabled={uploading || isPickingDocument}
                 >
-                    {uploading ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : isPickingDocument ? (
+                    {(uploading || isPickingDocument) ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                         <>
                             <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                            <Text style={fileManagementStyles.emptyStateButtonText}>{t('fileManagement.uploadFiles')}</Text>
+                            <Text className="text-white text-[16px] font-semibold">{t('fileManagement.uploadFiles')}</Text>
                         </>
                     )}
                 </TouchableOpacity>
@@ -2410,185 +953,183 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         </View>
     );
 
-    // Professional Skeleton Loading Component with Advanced Shimmer Effect
-    const SkeletonLoader = React.memo(() => {
-        const shimmerAnim = useRef(new Animated.Value(0)).current;
-        const skeletonContainerWidth = safeContainerWidth;
-
-        useEffect(() => {
-            const shimmer = Animated.loop(
-                Animated.timing(shimmerAnim, {
-                    toValue: 1,
-                    duration: 2000,
-                    easing: Easing.linear,
-                    useNativeDriver: true,
-                })
-            );
-            shimmer.start();
-            return () => shimmer.stop();
-        }, [shimmerAnim]);
-
-        // Create a sweeping shimmer effect
-        const shimmerTranslateX = shimmerAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [-skeletonContainerWidth * 2, skeletonContainerWidth * 2],
-        });
-
-        const SkeletonBox = ({ width, height, borderRadius = 8, style, delay = 0 }: { width: number | string; height: number; borderRadius?: number; style?: Record<string, unknown>; delay?: number }) => {
-            const delayedTranslateX = shimmerAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [-skeletonContainerWidth * 2 + delay, skeletonContainerWidth * 2 + delay],
-            });
-
-            return (
-                <View
-                    style={[
-                        {
-                            width,
-                            height,
-                            borderRadius,
-                            backgroundColor: colors.backgroundSecondary,
-                            overflow: 'hidden',
-                            position: 'relative',
-                        },
-                        style,
-                    ]}
-                >
-                    {/* Base background */}
-                    <View
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            backgroundColor: colors.backgroundSecondary,
-                        }}
-                    />
-                    {/* Shimmer gradient effect */}
-                    <Animated.View
-                        style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            transform: [{ translateX: delayedTranslateX }],
-                        }}
-                    >
-                        <View
-                            style={{
-                                width: skeletonContainerWidth,
-                                height: '100%',
-                                backgroundColor: bloomTheme.isDark
-                                    ? 'rgba(255, 255, 255, 0.08)'
-                                    : 'rgba(255, 255, 255, 0.8)',
-                                shadowColor: bloomTheme.isDark ? '#000' : '#FFF',
-                                shadowOffset: { width: 0, height: 0 },
-                                shadowOpacity: 0.3,
-                                shadowRadius: 10,
-                            }}
-                        />
-                    </Animated.View>
-                </View>
-            );
-        };
-
-        // Skeleton file item matching SettingsListItem structure
-        const SkeletonFileItem = ({ index }: { index: number }) => (
-            <View
-                style={[
-                    {
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingHorizontal: 16,
-                        paddingVertical: 12,
-                        backgroundColor: colors.background,
-                        borderBottomWidth: StyleSheet.hairlineWidth,
-                        borderBottomColor: colors.border,
-                    },
-                ]}
-            >
-                {/* Icon/Image skeleton */}
-                <SkeletonBox width={44} height={44} borderRadius={8} delay={index * 50} />
-
-                {/* Content skeleton */}
-                <View style={{ flex: 1, marginLeft: 12, justifyContent: 'center' }}>
-                    <SkeletonBox
-                        width={index % 3 === 0 ? '85%' : index % 3 === 1 ? '70%' : '90%'}
-                        height={16}
-                        style={{ marginBottom: 8 }}
-                        delay={index * 50 + 20}
-                    />
-                    <SkeletonBox
-                        width={index % 2 === 0 ? '50%' : '60%'}
-                        height={12}
-                        delay={index * 50 + 40}
-                    />
-                </View>
+    // Loading state — Bloom's shared `Skeleton` primitives own the shimmer, so
+    // this is pure layout: the top chrome (header / controls / search) plus a
+    // photo grid of shimmering tiles sized with the same 3-per-row geometry the
+    // real photo grid uses. No hand-rolled `Animated` shimmer.
+    //
+    // The image-only picker owns its OWN loading skeleton (rendered by
+    // `PhotoPickerView` when its photo list is still loading), so it inherits the
+    // picker's placement-aware container width / columns / tile size and the
+    // Dialog-vs-bottom-sheet sizing. Skipping the browse chrome here is what keeps
+    // the picker from flashing the wrong (file-manager) skeleton inside the Dialog.
+    // The Dialog owns the nav header; this screen contributes its state-dependent
+    // title/subtitle + action slots. The image-only picker mode is headerless
+    // (PhotoPickerView owns its own bar), so this config is simply ignored there.
+    const fmHeaderRight = useMemo<React.ReactNode>(() => {
+        const actions = selectMode && multiSelect
+            ? [
+                { key: 'clear', label: t('fileManagement.clear'), onPress: () => setSelectedIds(new Set()), disabled: selectedIds.size === 0 },
+                { key: 'confirm', label: t('fileManagement.confirm'), onPress: confirmMultiSelection, disabled: selectedIds.size === 0 },
+            ]
+            : !selectMode && selectedIds.size > 0
+                ? [
+                    { key: 'clear', label: t('fileManagement.clear'), onPress: () => setSelectedIds(new Set()), disabled: false },
+                    { key: 'delete', label: t('fileManagement.delete', { count: selectedIds.size }), onPress: confirmBulkDelete, disabled: false },
+                    { key: 'visibility', label: t('fileManagement.visibility'), onPress: handleVisibilityChange, disabled: false },
+                ]
+                : [];
+        if (actions.length === 0) return undefined;
+        return (
+            <View style={fmHeaderStyles.actionsRow}>
+                {actions.map((a) => (
+                    <SurfaceHeaderAction key={a.key} label={a.label} onPress={a.onPress} disabled={a.disabled} />
+                ))}
             </View>
+        );
+    }, [selectMode, multiSelect, selectedIds, t, confirmMultiSelection, confirmBulkDelete, handleVisibilityChange]);
+
+    const fmHeaderBack = useMemo<React.ReactNode>(() => (
+        <Pressable
+            onPress={handleCancelUpload}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.back') || 'Back'}
+            hitSlop={8}
+            style={fmHeaderStyles.backButton}
+        >
+            <Ionicons name="chevron-back" size={20} color={colors.text} />
+        </Pressable>
+    ), [handleCancelUpload, colors.text, t]);
+
+    // --- Image-only picker: shared-header chrome -----------------------------
+    // The flagship photo picker now rides the SAME Dialog nav header as every
+    // screen (Cancel / "Choose Photo" / Upload) instead of painting its own bar.
+    // Ownership + upload permission gate the Upload action, mirroring the picker's
+    // empty-state upload button.
+    const isOwner = user?.id === targetUserId;
+    const allowUpload = isOwner && allowUploadInSelectMode;
+
+    // Cancel = the nav bar's back affordance. A forward-nav picker (`onPicked`,
+    // e.g. the avatar flow) pops its own frame; legacy callback callers keep their
+    // close/back behaviour; a promise-based picker dismisses its surface.
+    const pickerCancel = useCallback(() => {
+        if (onPicked) {
+            // Forward-nav picker: Cancel/back pops THIS frame, returning to the
+            // frame that opened the picker — never closes the whole session.
+            goBack?.();
+        } else if (onSelect || onConfirmSelection) {
+            if (onClose) onClose();
+            else goBack?.();
+        } else {
+            dismiss?.();
+        }
+    }, [onPicked, onSelect, onConfirmSelection, onClose, goBack, dismiss]);
+
+    // The picker's ONE trailing CTA, declared through the Dialog header's
+    // `primaryAction` (a proper Bloom Button with loading/disabled) — the
+    // multi-select confirm ("Done (N)") or, single-select, the Upload action whose
+    // loading state reflects an in-flight device upload. Memoized so the header
+    // does not thrash.
+    const pickerPrimaryAction = useMemo<SurfaceHeaderContent['primaryAction']>(() => {
+        if (multiSelect) {
+            return {
+                label: t('fileManagement.doneWithCount', { count: selectedIds.size }),
+                onPress: confirmMultiSelection,
+                disabled: selectedIds.size === 0,
+            };
+        }
+        if (isOwner && allowUpload) {
+            return {
+                label: t('fileManagement.upload'),
+                onPress: handleFileUpload,
+                loading: uploading || isPickingDocument,
+            };
+        }
+        return undefined;
+    }, [
+        multiSelect, selectedIds.size, confirmMultiSelection, isOwner, allowUpload,
+        t, handleFileUpload, uploading, isPickingDocument,
+    ]);
+
+    useSurfaceHeader(
+        showUploadPreview
+            ? {
+                title: t('fileManagement.reviewFiles'),
+                subtitle: t('fileManagement.readyToUpload', { count: pendingFiles.length }),
+                left: fmHeaderBack,
+                largeTitle: false,
+            }
+            : isImageOnlyPicker
+                ? {
+                    // ONE shared header — Cancel (back) / "Choose Photo" / Upload — in
+                    // `onImage` tone so the chrome stays legible over the black grid.
+                    title: t('fileManagement.choosePhoto'),
+                    largeTitle: false,
+                    onBack: pickerCancel,
+                    primaryAction: pickerPrimaryAction,
+                    tone: 'onImage',
+                }
+                : {
+                    title: selectMode
+                        ? (multiSelect ? (maxSelection ? t('fileManagement.selectedWithMax', { count: selectedIds.size, max: maxSelection }) : t('fileManagement.selected', { count: selectedIds.size })) : t('fileManagement.selectFile'))
+                        : (viewMode === 'photos' ? t('fileManagement.photos') : t('fileManagement.title')),
+                    subtitle: selectMode
+                        ? (multiSelect ? t('fileManagement.available', { count: filteredFiles.length }) : t('fileManagement.tapToSelect'))
+                        : (filteredFiles.length === 1 ? t('fileManagement.itemCount', { count: filteredFiles.length }) : t('fileManagement.itemCount_plural', { count: filteredFiles.length })),
+                    right: fmHeaderRight,
+                    largeTitle: false,
+                },
+    );
+
+    if (isLoadingFiles && !isImageOnlyPicker) {
+        const GRID_PADDING = 10;
+        const TILE_GAP = 4;
+        const GRID_COLUMNS = 3;
+        const GRID_ROWS = 6;
+        const tileSize = Math.floor(
+            (safeContainerWidth - GRID_PADDING * 2 - TILE_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS,
         );
 
         return (
-            <View style={[fileManagementStyles.container, { backgroundColor }]}>
-                {/* Header Skeleton */}
-                <View style={[fileManagementStyles.header, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
-                    <SkeletonBox width={44} height={44} borderRadius={12} />
-                    <View style={[fileManagementStyles.headerTitleContainer, { flex: 1 }]}>
-                        <SkeletonBox width={140} height={20} style={{ marginBottom: 6 }} />
-                        <SkeletonBox width={100} height={14} />
-                    </View>
-                    <SkeletonBox width={44} height={44} borderRadius={12} />
+            <View className="flex-1" style={{ backgroundColor }}>
+                {/* Header */}
+                <View
+                    className="flex-row items-center justify-between px-[16px] py-[12px]"
+                    style={{ borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }}
+                >
+                    <Skeleton.Box width={44} height={44} borderRadius={12} />
+                    <Skeleton.Col style={{ alignItems: 'center', marginHorizontal: 16, gap: 6 }}>
+                        <Skeleton.Box width={140} height={20} />
+                        <Skeleton.Box width={100} height={14} />
+                    </Skeleton.Col>
+                    <Skeleton.Box width={44} height={44} borderRadius={12} />
                 </View>
 
-                {/* Controls Bar Skeleton */}
-                <View style={fileManagementStyles.controlsBar}>
-                    <SkeletonBox width={100} height={36} borderRadius={18} />
-                    <SkeletonBox width={44} height={44} borderRadius={22} />
+                {/* Controls bar */}
+                <Skeleton.Row style={{ alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 12 }}>
+                    <Skeleton.Box width={100} height={36} borderRadius={18} />
+                    <Skeleton.Box width={44} height={44} borderRadius={22} />
+                </Skeleton.Row>
+
+                {/* Search bar */}
+                <View className="mx-[12px] mb-[12px]">
+                    <Skeleton.Box width="100%" height={44} borderRadius={22} />
                 </View>
 
-                {/* Search Bar Skeleton */}
-                <View style={[fileManagementStyles.searchContainer, {
-                    backgroundColor: colors.card,
-                }]}>
-                    <SkeletonBox width="100%" height={44} borderRadius={12} />
-                </View>
-
-                {/* Stats Container Skeleton */}
-                <View style={[fileManagementStyles.statsContainer, {
-                    backgroundColor: colors.card,
-                }]}>
-                    {[1, 2, 3].map((i) => (
-                        <View key={i} style={fileManagementStyles.statItem}>
-                            <SkeletonBox width={50} height={20} style={{ marginBottom: 4 }} delay={i * 30} />
-                            <SkeletonBox width={40} height={14} delay={i * 30 + 15} />
-                        </View>
+                {/* Photo grid — static skeleton placeholders; index keys are stable */}
+                <View style={{ padding: GRID_PADDING, gap: TILE_GAP }}>
+                    {Array.from({ length: GRID_ROWS }, (_, row) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size skeleton grid, order never changes
+                        <Skeleton.Row key={`skeleton-row-${row}`} style={{ gap: TILE_GAP }}>
+                            {Array.from({ length: GRID_COLUMNS }, (_, col) => (
+                                // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size skeleton grid, order never changes
+                                <Skeleton.Box key={`skeleton-${row}-${col}`} width={tileSize} height={tileSize} borderRadius={6} />
+                            ))}
+                        </Skeleton.Row>
                     ))}
                 </View>
-
-                {/* File List Skeleton - Matching SettingsListItem */}
-                <ScrollView
-                    style={fileManagementStyles.scrollView}
-                    contentContainerStyle={fileManagementStyles.scrollContainer}
-                    showsVerticalScrollIndicator={false}
-                >
-                    <View style={{
-                        backgroundColor: colors.card,
-                        borderRadius: 18,
-                        overflow: 'hidden',
-                        marginTop: 8,
-                    }}>
-                        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                            <SkeletonFileItem key={i} index={i} />
-                        ))}
-                    </View>
-                </ScrollView>
             </View>
         );
-    });
-
-    if (loading) {
-        return <SkeletonLoader />;
     }
 
     // Dedicated flagship-style photo picker view used in the avatar-picker
@@ -2599,90 +1140,61 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const photosOnly = filteredFiles.filter(
             (file) => file.contentType.startsWith('image/'),
         );
-        const isOwner = user?.id === targetUserId;
-        const allowUpload = isOwner && allowUploadInSelectMode;
 
+        // Chrome (Cancel / "Choose Photo" / Upload) lives on the shared Dialog nav
+        // header (see the `useSurfaceHeader` call above); the picker owns only the
+        // full-bleed photo grid as content.
         return (
-            <>
-                <PhotoPickerView
-                    photos={photosOnly}
-                    selectedIds={selectedIds}
-                    multiSelect={multiSelect}
-                    maxSelection={maxSelection}
-                    allowUpload={allowUpload}
-                    refreshing={refreshing}
-                    uploading={uploading}
-                    isPickingDocument={isPickingDocument}
-                    uploadProgress={uploadProgress}
-                    hasMore={paging.hasMore}
-                    loadingMore={paging.loadingMore}
-                    reduceMotion={reduceMotion}
-                    getThumbUrl={getSafeDownloadUrlCallback}
-                    primaryColor={colors.primary}
-                    isOwner={isOwner}
-                    onTogglePhoto={toggleSelect}
-                    onPreviewPhoto={(file) => showFileDetailsModal(file)}
-                    onUpload={handleFileUpload}
-                    onRefresh={() => loadFiles('refresh')}
-                    onLoadMore={() => loadFiles('more')}
-                    onCancel={() => {
-                        if (onClose) onClose();
-                        else goBack?.();
-                    }}
-                    onConfirm={confirmMultiSelection}
-                    t={t}
-                />
-                {/* Long-press preview surfaces the existing details modal. */}
-                <FileDetailsModal
-                    control={fileDetailsControl}
-                    file={selectedFile}
-                    onDownload={handleFileDownload}
-                    onDelete={confirmFileDelete}
-                    isOwner={isOwner}
-                />
-            </>
+            <PhotoPickerView
+                photos={photosOnly}
+                selectedIds={selectedIds}
+                multiSelect={multiSelect}
+                maxSelection={maxSelection}
+                allowUpload={allowUpload}
+                refreshing={isRefreshingFiles}
+                uploading={uploading}
+                isPickingDocument={isPickingDocument}
+                hasMore={hasMoreFiles}
+                loadingMore={isFetchingMore}
+                loading={isLoadingFiles}
+                loadError={hasLoadError}
+                onRetry={() => filesQuery.refetch()}
+                reduceMotion={reduceMotion}
+                getThumbUrl={thumbSourceFor}
+                primaryColor={colors.primary}
+                isOwner={isOwner}
+                onTogglePhoto={toggleSelect}
+                // Long-press preview surfaces the file-detail panel on the stack.
+                onPreviewPhoto={(file) => showFileDetailsModal(file)}
+                onUpload={handleFileUpload}
+                onRefresh={() => filesQuery.refetch()}
+                onLoadMore={() => filesQuery.fetchNextPage()}
+                t={t}
+            />
         );
     }
 
     // If a file is opened, show the file viewer
     if (!selectMode && openedFile) {
         return (
-            <>
-                <FileViewer
-                    file={openedFile}
-                    fileContent={fileContent}
-                    loadingFileContent={loadingFileContent}
-                    showFileDetailsInViewer={showFileDetailsInViewer}
-                    onToggleDetails={() => setShowFileDetailsInViewer(!showFileDetailsInViewer)}
-                    onClose={handleCloseFile}
-                    onDownload={handleFileDownload}
-                    onDelete={confirmFileDelete}
-                    isOwner={user?.id === targetUserId}
-                />
-                <FileDetailsModal
-                    control={fileDetailsControl}
-                    file={selectedFile}
-                    onDownload={handleFileDownload}
-                    onDelete={confirmFileDelete}
-                    isOwner={user?.id === targetUserId}
-                />
-            </>
+            <FileViewer
+                file={openedFile}
+                fileContent={fileContent}
+                loadingFileContent={loadingFileContent}
+                showFileDetailsInViewer={showFileDetailsInViewer}
+                onToggleDetails={() => setShowFileDetailsInViewer(!showFileDetailsInViewer)}
+                onClose={handleCloseFile}
+                onDownload={handleFileDownload}
+                onDelete={confirmFileDelete}
+                isOwner={user?.id === targetUserId}
+            />
         );
     }
 
     // If upload preview is showing, render it inline instead of the file list
     if (showUploadPreview) {
         return (
-            <View style={fileManagementStyles.container}>
-                <Header
-                    title={t('fileManagement.reviewFiles')}
-                    subtitle={t('fileManagement.readyToUpload', { count: pendingFiles.length })}
-                    onBack={handleCancelUpload}
-                    showBackButton
-                    variant="minimal"
-                    elevation="none"
-                    titleAlignment="left"
-                />
+            <View className="flex-1">
                 <UploadPreview
                     pendingFiles={pendingFiles}
                     onConfirm={handleConfirmUpload}
@@ -2695,71 +1207,25 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }
 
     return (
-        <View style={fileManagementStyles.container}>
-            <Header
-                title={selectMode ? (multiSelect ? (maxSelection ? t('fileManagement.selectedWithMax', { count: selectedIds.size, max: maxSelection }) : t('fileManagement.selected', { count: selectedIds.size })) : t('fileManagement.selectFile')) : (viewMode === 'photos' ? t('fileManagement.photos') : t('fileManagement.title'))}
-                subtitle={selectMode ? (multiSelect ? t('fileManagement.available', { count: filteredFiles.length }) : t('fileManagement.tapToSelect')) : (filteredFiles.length === 1 ? t('fileManagement.itemCount', { count: filteredFiles.length }) : t('fileManagement.itemCount_plural', { count: filteredFiles.length }))}
-                rightActions={selectMode && multiSelect ? [
-                    {
-                        key: 'clear',
-                        text: t('fileManagement.clear'),
-                        onPress: () => setSelectedIds(new Set()),
-                        disabled: selectedIds.size === 0,
-                    },
-                    {
-                        key: 'confirm',
-                        text: t('fileManagement.confirm'),
-                        onPress: confirmMultiSelection,
-                        disabled: selectedIds.size === 0,
-                    }
-                ] : !selectMode && selectedIds.size > 0 ? [
-                    {
-                        key: 'clear',
-                        text: t('fileManagement.clear'),
-                        onPress: () => setSelectedIds(new Set()),
-                    },
-                    {
-                        key: 'delete',
-                        text: t('fileManagement.delete', { count: selectedIds.size }),
-                        onPress: confirmBulkDelete,
-                        icon: 'delete',
-                    },
-                    {
-                        key: 'visibility',
-                        text: t('fileManagement.visibility'),
-                        onPress: () => {
-                            visibilityChangeDialog.open();
-                        },
-                        icon: 'eye',
-                    }
-                ] : undefined}
-                onBack={onClose || goBack}
-
-                showBackButton
-                variant="minimal"
-                elevation="none"
-                titleAlignment="left"
-            />
-
-            <View style={fileManagementStyles.controlsBar}>
+        <View className="flex-1">
+            <View className="flex-row items-center justify-between px-[12px] py-[12px] gap-[12px]">
                 <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    style={fileManagementStyles.viewModeScroll}
+                    className="flex-1"
+                    style={{ maxWidth: '80%' }}
                 >
-                    <View style={[
-                        fileManagementStyles.viewModeToggle,
-                        {
-                            backgroundColor: colors.card,
-                        }
-                    ]}>
+                    <View
+                        className="flex-row rounded-full p-[2px] overflow-hidden"
+                        style={{ backgroundColor: colors.card }}
+                    >
                         <AnimatedButton
                             isSelected={viewMode === 'all'}
                             onPress={() => setViewMode('all')}
                             icon={viewMode === 'all' ? 'folder' : 'folder-outline'}
                             primaryColor={colors.primary}
                             textColor={colors.text}
-                            style={fileManagementStyles.viewModeButton}
+                            style={screenStyles.viewModeButton}
                             accessibilityLabel={t('fileManagement.a11y.viewAll') || 'Show all files'}
                         />
                         <AnimatedButton
@@ -2768,46 +1234,41 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             icon={viewMode === 'photos' ? 'image-multiple' : 'image-multiple-outline'}
                             primaryColor={colors.primary}
                             textColor={colors.text}
-                            style={fileManagementStyles.viewModeButton}
+                            style={screenStyles.viewModeButton}
                             accessibilityLabel={t('fileManagement.a11y.viewPhotos') || 'Show photos only'}
                         />
-                        {!isImageOnlyPicker && (
-                            <>
-                                <AnimatedButton
-                                    isSelected={viewMode === 'videos'}
-                                    onPress={() => setViewMode('videos')}
-                                    icon={viewMode === 'videos' ? 'video' : 'video-outline'}
-                                    primaryColor={colors.primary}
-                                    textColor={colors.text}
-                                    style={fileManagementStyles.viewModeButton}
-                                    accessibilityLabel={t('fileManagement.a11y.viewVideos') || 'Show videos only'}
-                                />
-                                <AnimatedButton
-                                    isSelected={viewMode === 'documents'}
-                                    onPress={() => setViewMode('documents')}
-                                    icon={viewMode === 'documents' ? 'file-document' : 'file-document-outline'}
-                                    primaryColor={colors.primary}
-                                    textColor={colors.text}
-                                    style={fileManagementStyles.viewModeButton}
-                                    accessibilityLabel={t('fileManagement.a11y.viewDocuments') || 'Show documents only'}
-                                />
-                                <AnimatedButton
-                                    isSelected={viewMode === 'audio'}
-                                    onPress={() => setViewMode('audio')}
-                                    icon={viewMode === 'audio' ? 'music-note' : 'music-note-outline'}
-                                    primaryColor={colors.primary}
-                                    textColor={colors.text}
-                                    style={fileManagementStyles.viewModeButton}
-                                    accessibilityLabel={t('fileManagement.a11y.viewAudio') || 'Show audio only'}
-                                />
-                            </>
-                        )}
+                        <AnimatedButton
+                            isSelected={viewMode === 'videos'}
+                            onPress={() => setViewMode('videos')}
+                            icon={viewMode === 'videos' ? 'video' : 'video-outline'}
+                            primaryColor={colors.primary}
+                            textColor={colors.text}
+                            style={screenStyles.viewModeButton}
+                            accessibilityLabel={t('fileManagement.a11y.viewVideos') || 'Show videos only'}
+                        />
+                        <AnimatedButton
+                            isSelected={viewMode === 'documents'}
+                            onPress={() => setViewMode('documents')}
+                            icon={viewMode === 'documents' ? 'file-document' : 'file-document-outline'}
+                            primaryColor={colors.primary}
+                            textColor={colors.text}
+                            style={screenStyles.viewModeButton}
+                            accessibilityLabel={t('fileManagement.a11y.viewDocuments') || 'Show documents only'}
+                        />
+                        <AnimatedButton
+                            isSelected={viewMode === 'audio'}
+                            onPress={() => setViewMode('audio')}
+                            icon={viewMode === 'audio' ? 'music-note' : 'music-note-outline'}
+                            primaryColor={colors.primary}
+                            textColor={colors.text}
+                            style={screenStyles.viewModeButton}
+                            accessibilityLabel={t('fileManagement.a11y.viewAudio') || 'Show audio only'}
+                        />
                     </View>
                 </ScrollView>
                 <TouchableOpacity
-                    style={[fileManagementStyles.sortButton, {
-                        backgroundColor: colors.card,
-                    }]}
+                    className="flex-row items-center justify-center px-[10px] py-[6px] rounded-full min-w-[36px] gap-[4px]"
+                    style={{ backgroundColor: colors.card }}
                     accessibilityRole="button"
                     accessibilityLabel={t('fileManagement.a11y.sortBy', {
                         field: sortBy,
@@ -2840,41 +1301,27 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         color={colors.textSecondary}
                     />
                 </TouchableOpacity>
-                {user?.id === targetUserId && (!selectMode || (selectMode && allowUploadInSelectMode)) && (
+                {user?.id === targetUserId && (!selectMode || allowUploadInSelectMode) && (
                     <TouchableOpacity
-                        style={[
-                            fileManagementStyles.uploadButton,
-                            isImageOnlyPicker && fileManagementStyles.uploadButtonExtended,
-                            { backgroundColor: colors.primary },
-                        ]}
+                        className="h-[44px] w-[44px] rounded-[22px] items-center justify-center"
+                        style={{ backgroundColor: colors.primary }}
                         onPress={handleFileUpload}
                         disabled={uploading || isPickingDocument}
                         accessibilityRole="button"
-                        accessibilityLabel={
-                            isImageOnlyPicker
-                                ? (t('fileManagement.a11y.uploadFromDevice') || 'Upload photo from device')
-                                : (t('fileManagement.a11y.uploadFile') || 'Upload file')
-                        }
+                        accessibilityLabel={t('fileManagement.a11y.uploadFile') || 'Upload file'}
                         accessibilityState={{ busy: uploading || isPickingDocument }}
                     >
                         {uploading ? (
-                            <View style={fileManagementStyles.uploadProgress}>
+                            <View className="items-center justify-center">
                                 <ActivityIndicator size="small" color="#FFFFFF" />
                                 {uploadProgress && (
-                                    <Text style={fileManagementStyles.uploadProgressText}>
+                                    <Text className="text-white text-[10px] font-semibold mt-[2px]">
                                         {uploadProgress.current}/{uploadProgress.total}
                                     </Text>
                                 )}
                             </View>
                         ) : isPickingDocument ? (
                             <ActivityIndicator size="small" color="#FFFFFF" />
-                        ) : isImageOnlyPicker ? (
-                            <View style={fileManagementStyles.uploadButtonContent}>
-                                <Ionicons name="cloud-upload" size={18} color="#FFFFFF" />
-                                <Text style={fileManagementStyles.uploadButtonLabel} numberOfLines={1}>
-                                    {t('fileManagement.upload') || 'Upload'}
-                                </Text>
-                            </View>
                         ) : (
                             <Ionicons name="add" size={22} color="#FFFFFF" />
                         )}
@@ -2884,15 +1331,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* Search Bar */}
             {files.length > 0 && (viewMode === 'all' || files.some(f => f.contentType.startsWith('image/'))) && (
-                <View style={[
-                    fileManagementStyles.searchContainer,
-                    {
-                        backgroundColor: colors.card,
-                    }
-                ]}>
+                <View
+                    className="flex-row items-center px-[14px] py-[10px] mx-[12px] mb-[12px] rounded-full gap-[10px]"
+                    style={{ backgroundColor: colors.card }}
+                >
                     <Ionicons name="search" size={22} color={colors.icon} />
                     <TextInput
-                        style={[fileManagementStyles.searchInput, { color: colors.text }]}
+                        className="flex-1 text-[16px] leading-[20px]"
+                        style={{ color: colors.text }}
                         placeholder={viewMode === 'photos' ? t('fileManagement.searchPhotos') : t('fileManagement.searchFiles')}
                         placeholderTextColor={colors.textSecondary}
                         value={searchQuery}
@@ -2901,7 +1347,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {searchQuery.length > 0 && (
                         <TouchableOpacity
                             onPress={() => setSearchQuery('')}
-                            style={fileManagementStyles.searchClearButton}
+                            className="p-[4px] rounded-[12px] items-center justify-center"
                         >
                             <Ionicons name="close-circle" size={22} color={colors.icon} />
                         </TouchableOpacity>
@@ -2911,30 +1357,28 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* File Stats */}
             {files.length > 0 && (
-                <View style={[
-                    fileManagementStyles.statsContainer,
-                    {
-                        backgroundColor: colors.card,
-                    }
-                ]}>
-                    <View style={fileManagementStyles.statItem}>
-                        <Text style={[fileManagementStyles.statValue, { color: colors.text }]}>{filteredFiles.length}</Text>
-                        <Text style={[fileManagementStyles.statLabel, { color: colors.textSecondary }]}>
+                <View
+                    className="flex-row px-[14px] py-[10px] mx-[12px] mb-[12px] rounded-[18px]"
+                    style={{ backgroundColor: colors.card }}
+                >
+                    <View className="flex-1 items-center py-[4px]">
+                        <Text className="text-[20px] font-extrabold leading-[24px]" style={{ color: colors.text, letterSpacing: -0.5 }}>{filteredFiles.length}</Text>
+                        <Text className="text-[12px] font-medium mt-[2px]" style={{ color: colors.textSecondary, letterSpacing: 0.2 }}>
                             {searchQuery.length > 0 ? t('fileManagement.found') : (filteredFiles.length === 1 ? (viewMode === 'photos' ? t('fileManagement.photo') : t('fileManagement.file')) : (viewMode === 'photos' ? t('fileManagement.photos_stat') : t('fileManagement.files')))}
                         </Text>
                     </View>
-                    <View style={fileManagementStyles.statItem}>
-                        <Text style={[fileManagementStyles.statValue, { color: colors.text }]}>
+                    <View className="flex-1 items-center py-[4px]">
+                        <Text className="text-[20px] font-extrabold leading-[24px]" style={{ color: colors.text, letterSpacing: -0.5 }}>
                             {formatFileSize(filteredFiles.reduce((total, file) => total + file.length, 0))}
                         </Text>
-                        <Text style={[fileManagementStyles.statLabel, { color: colors.textSecondary }]}>
+                        <Text className="text-[12px] font-medium mt-[2px]" style={{ color: colors.textSecondary, letterSpacing: 0.2 }}>
                             {searchQuery.length > 0 ? t('fileManagement.size') : t('fileManagement.totalSize')}
                         </Text>
                     </View>
                     {searchQuery.length > 0 && (
-                        <View style={fileManagementStyles.statItem}>
-                            <Text style={[fileManagementStyles.statValue, { color: colors.text }]}>{files.length}</Text>
-                            <Text style={[fileManagementStyles.statLabel, { color: colors.textSecondary }]}>
+                        <View className="flex-1 items-center py-[4px]">
+                            <Text className="text-[20px] font-extrabold leading-[24px]" style={{ color: colors.text, letterSpacing: -0.5 }}>{files.length}</Text>
+                            <Text className="text-[12px] font-medium mt-[2px]" style={{ color: colors.textSecondary, letterSpacing: 0.2 }}>
                                 {t('fileManagement.total')}
                             </Text>
                         </View>
@@ -2946,140 +1390,33 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             {viewMode === 'photos' ? (
                 renderPhotoGrid()
             ) : (
-                <ScrollView
-                    ref={scrollViewRef}
-                    style={fileManagementStyles.scrollView}
-                    contentContainerStyle={fileManagementStyles.scrollContainer}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={() => loadFiles('refresh')}
-                            tintColor={colors.primary}
-                        />
-                    }
-                    onScroll={({ nativeEvent }) => {
-                        const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-                        const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
-                        if (distanceFromBottom < 200 && !paging.loadingMore && paging.hasMore) {
-                            loadFiles('more');
-                        }
-                    }}
-                    scrollEventThrottle={250}
-                >
-                    {filteredFiles.length === 0 && searchQuery.length > 0 ? (
-                        <View style={fileManagementStyles.emptyState}>
-                            <Ionicons name="search" size={64} color={colors.textTertiary} />
-                            <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.noResults.title')}</Text>
-                            <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}>
-                                {t('fileManagement.noResults.description', { query: searchQuery })}
-                            </Text>
-                            <TouchableOpacity
-                                style={[fileManagementStyles.emptyStateButton, { backgroundColor: colors.primary }]}
-                                onPress={() => setSearchQuery('')}
-                            >
-                                <Ionicons name="refresh" size={20} color="#FFFFFF" />
-                                <Text style={fileManagementStyles.emptyStateButtonText}>{t('fileManagement.clearSearch')}</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ) : filteredFiles.length === 0 ? renderEmptyState() : (
-                        <>
-                            <SettingsListGroup>
-                                {groupedFileItems.map(item => (
-                                    <SettingsListItem
-                                        key={item.id}
-                                        icon={item.icon}
-                                        title={item.title}
-                                        description={item.description}
-                                        onPress={item.onPress}
-                                        showChevron={false}
-                                        rightElement={item.rightElement}
-                                    />
-                                ))}
-                            </SettingsListGroup>
-                            {paging.loadingMore && (
-                                <View style={fileManagementStyles.loadingMoreBar}>
-                                    <ActivityIndicator size="small" color={colors.primary} />
-                                    <Text style={[fileManagementStyles.loadingMoreText, { color: colors.text }]}>{t('fileManagement.loadingMore')}</Text>
-                                </View>
-                            )}
-                        </>
-                    )}
-                </ScrollView>
-            )}
-
-            {!selectMode && (
-                <FileDetailsModal
-                    control={fileDetailsControl}
-                    file={selectedFile}
-                    onDownload={handleFileDownload}
-                    onDelete={confirmFileDelete}
-                    isOwner={user?.id === targetUserId}
+                <FileListSection
+                    scrollViewRef={scrollViewRef}
+                    filteredFiles={filteredFiles}
+                    searchQuery={searchQuery}
+                    items={groupedFileItems}
+                    paging={{ loadingMore: isFetchingMore, hasMore: hasMoreFiles }}
+                    refreshing={isRefreshingFiles}
+                    colors={colors}
+                    t={t}
+                    onRefresh={() => filesQuery.refetch()}
+                    onLoadMore={() => filesQuery.fetchNextPage()}
+                    onClearSearch={() => setSearchQuery('')}
+                    renderEmptyState={renderEmptyState}
                 />
             )}
 
             {/* Uploading banner overlay with progress */}
             {!selectMode && uploading && (
-                <View style={[fileManagementStyles.uploadBannerContainer, { pointerEvents: 'none' }]}>
-                    <View style={[fileManagementStyles.uploadBanner, { backgroundColor: bloomTheme.isDark ? '#222831EE' : '#FFFFFFEE', borderColor: colors.border }]}>
-                        <Ionicons name="cloud-upload" size={18} color={colors.primary} />
-                        <View style={fileManagementStyles.uploadBannerContent}>
-                            <Text style={[fileManagementStyles.uploadBannerText, { color: colors.text }]}>
-                                {t('fileManagement.uploading')}{uploadProgress ? ` ${uploadProgress.current}/${uploadProgress.total}` : '...'}
-                            </Text>
-                            {uploadProgress && uploadProgress.total > 0 && (
-                                <View style={[fileManagementStyles.uploadProgressBarContainer, { backgroundColor: bloomTheme.isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
-                                    <View
-                                        style={[
-                                            fileManagementStyles.uploadProgressBar,
-                                            {
-                                                width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
-                                                backgroundColor: colors.primary
-                                            }
-                                        ]}
-                                    />
-                                </View>
-                            )}
-                        </View>
-                        <ActivityIndicator size="small" color={colors.primary} />
-                    </View>
-                </View>
+                <UploadBar
+                    uploadProgress={uploadProgress}
+                    isDark={bloomTheme.isDark}
+                    colors={colors}
+                    t={t}
+                />
             )}
-
-            {/* Selection bar removed; actions are now in header */}
-            {/* Global loadingMore bar removed; now inline in scroll areas */}
-            <Dialog
-                control={fileDeleteDialog}
-                title={t('fileManagement.deleteFile') || 'Delete File'}
-                description={pendingDeleteFile ? t('fileManagement.confirms.deleteFile', { filename: pendingDeleteFile.name }) : ''}
-                actions={[
-                    { label: t('fileManagement.confirm') || 'Delete', color: 'destructive', onPress: handleFileDelete },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={bulkDeleteDialog}
-                title={t('fileManagement.deleteFiles') || 'Delete Files'}
-                description={t('fileManagement.confirms.deleteFiles', { count: selectedIds.size })}
-                actions={[
-                    { label: t('fileManagement.confirm') || 'Delete', color: 'destructive', onPress: handleBulkDelete },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={visibilityChangeDialog}
-                title={t('fileManagement.changeVisibility') || 'Change Visibility'}
-                description={t('fileManagement.changeVisibilityConfirm', { count: selectedIds.size })}
-                actions={[
-                    { label: t('fileManagement.private') || 'Private', onPress: () => handleBulkVisibilityChange('private') },
-                    { label: t('fileManagement.public') || 'Public', onPress: () => handleBulkVisibilityChange('public') },
-                    { label: t('fileManagement.unlisted') || 'Unlisted', onPress: () => handleBulkVisibilityChange('unlisted') },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
         </View>
     );
 };
-
-// Styles have been moved to components/fileManagement/styles.ts
 
 export default FileManagementScreen;

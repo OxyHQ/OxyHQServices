@@ -183,7 +183,7 @@ function ipv6ToGroups(ip: string): number[] | null {
     const groups: number[] = [];
     for (const part of segment.split(':')) {
       if (!/^[0-9a-fA-F]{1,4}$/.test(part)) return null;
-      groups.push(parseInt(part, 16));
+      groups.push(Number.parseInt(part, 16));
     }
     return groups;
   };
@@ -234,8 +234,8 @@ function extractEmbeddedIpv4(ip: string): string | null {
   // Hex form "::ffff:0102:0304" → 1.2.3.4
   const hexMapped = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
   if (hexMapped) {
-    const hi = parseInt(hexMapped[1], 16);
-    const lo = parseInt(hexMapped[2], 16);
+    const hi = Number.parseInt(hexMapped[1], 16);
+    const lo = Number.parseInt(hexMapped[2], 16);
     return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
   }
   return null;
@@ -390,6 +390,8 @@ export interface SafeFetchOptions {
   method?: string;
   /** Extra request headers. A `User-Agent` is added if none is provided. */
   headers?: Record<string, string>;
+  /** Request body for POST/PUT/PATCH. */
+  body?: string | Buffer;
   /**
    * Maximum number of redirects to follow (each re-validated). Defaults to
    * {@link MAX_REDIRECTS}. Set to `0` to disallow redirects.
@@ -475,6 +477,7 @@ function fetchOnce(
   options: https.RequestOptions,
   isHttps: boolean,
   headersTimeoutMs: number,
+  body?: string | Buffer,
 ): Promise<IncomingMessage> {
   return new Promise<IncomingMessage>((resolve, reject) => {
     const transport = isHttps ? https : http;
@@ -484,7 +487,7 @@ function fetchOnce(
       req.destroy(new UpstreamError('upstream headers timeout'));
     });
     req.on('error', (err) => reject(err));
-    req.end();
+    req.end(body);
   });
 }
 
@@ -506,6 +509,7 @@ export async function safeFetch(
   const {
     method = 'GET',
     headers: callerHeaders,
+    body,
     maxRedirects = MAX_REDIRECTS,
     headersTimeoutMs = UPSTREAM_HEADERS_TIMEOUT_MS,
     signal,
@@ -548,6 +552,7 @@ export async function safeFetch(
       requestOptions,
       target.protocol === 'https:',
       headersTimeoutMs,
+      body,
     );
 
     const status = response.statusCode ?? 0;

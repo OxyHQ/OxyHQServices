@@ -16,18 +16,22 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Menu01Icon, ArrowLeft01Icon, Cancel01Icon } from '@hugeicons/core-free-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { LinearGradient } from 'expo-linear-gradient';
+
+import { useColors } from '@/constants/theme';
+import { CONTENT_MAX_WIDTH } from '@/constants/layout';
+import { fadeOut } from '@/utils/fadeOut';
+import { useTranslation } from '@/lib/i18n';
 
 const HUGE_ICON_MAP: Record<string, IconSvgElement> = {
   menu: Menu01Icon as unknown as IconSvgElement,
   'arrow-left': ArrowLeft01Icon as unknown as IconSvgElement,
 };
-
-import { useColors } from '@/constants/theme';
-import { useTranslation } from '@/lib/i18n';
 
 const ICON_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
 
@@ -85,15 +89,18 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
     )
   );
 
+  // Opaque at the top, fading out at the bottom, so content scrolling
+  // underneath dissolves into the header instead of meeting a hard edge.
+  // Built from `colors.background` so the ramp stays theme-aware.
   return (
-    <View
+    <LinearGradient
+      colors={[colors.background, fadeOut(colors.background)]}
       style={[
         styles.wrapper,
         {
           paddingTop: insets.top + 8,
           paddingLeft: 8 + insets.left,
           paddingRight: 8 + insets.right,
-          backgroundColor: colors.background,
         },
       ]}
     >
@@ -179,7 +186,7 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
           </View>
         )}
       </View>
-    </View>
+    </LinearGradient>
   );
 });
 
@@ -191,8 +198,11 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   bar: {
+    // Same column as the list below it, so the search field and the rows share
+    // a left edge. The gradient behind it stays full-bleed.
     width: '100%',
-    maxWidth: 720,
+    maxWidth: CONTENT_MAX_WIDTH,
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,

@@ -9,10 +9,10 @@
 
 import React, { memo, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { Avatar } from '@oxyhq/services';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import { useFollow } from '@oxyhq/services';
 import type { User } from '@oxyhq/core';
-import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
+import { getAccountDisplayName, getAccountFallbackHandle, getNormalizedUserHandle } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
@@ -49,10 +49,12 @@ function ContactMatchRowComponent({ match }: { match: ContactMatch }) {
     }
   }, [single]);
 
-  // Prefer the contact-book label, fall back to the canonical helper so the
-  // fallback chain (name → username → publicKey → "Unnamed") matches the rest
-  // of the app.
-  const displayName = match.localDisplayName?.trim() || getAccountDisplayName(match.user, locale);
+  // Prefer the contact-book label, then the API DTO contract (displayName → handle).
+  const displayName =
+    match.localDisplayName?.trim() ||
+    (match.user.name?.displayName ??
+      getNormalizedUserHandle(match.user) ??
+      getAccountDisplayName(null, locale));
   const avatarUrl = useAvatarUrl(match.user);
 
   const fallbackHandle = getAccountFallbackHandle(match.user);
@@ -64,7 +66,7 @@ function ContactMatchRowComponent({ match }: { match: ContactMatch }) {
     <View style={[styles.row, { borderBottomColor: colors.border }]}>
       <Avatar
         name={displayName}
-        uri={avatarUrl}
+        source={avatarUrl}
         size={40}
       />
       <View style={styles.identity}>

@@ -5,8 +5,14 @@
  * Uses service layer for business logic and standardized error handling.
  */
 
-import { Router, Request, Response } from 'express';
-import { Types } from 'mongoose';
+import { Router, type Request, type Response } from 'express';
+import { and, eq, inArray, notInArray, sql, type SQL } from 'drizzle-orm';
+import { getDb } from '../config/postgres';
+import { appAffinityEdges } from '../db/schema/appAffinityEdges';
+import { applications } from '../db/schema/applications';
+import { appUserSignals } from '../db/schema/appUserSignals';
+import { userFollows } from '../db/schema/userFollows';
+import { users } from '../db/schema/users';
 import { authMiddleware } from '../middleware/auth';
 import {
   optionalUserOrServiceAuth,
@@ -22,14 +28,24 @@ import {
 } from '../utils/error';
 import { userService } from '../services/user.service';
 import { federationService, isFediverseHandle } from '../services/federation.service';
-import Follow, { FollowType } from '../models/Follow';
-import User, { type IUser } from '../models/User';
 import { validate } from '../middleware/validate';
 import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.schemas';
-import { formatUserNameResponse, type NameParts } from '../utils/displayName';
-import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../utils/profileQuery';
-import { AppUserSignal } from '../models/AppUserSignal';
-import { Application } from '../models/Application';
+import { userIdentityFields, deriveIsFederated } from '../utils/userTransform';
+import {
+  publicUserColumns,
+  publicUserFollowCounts,
+  toPublicUserView,
+  type PublicUserView,
+} from '../utils/publicUserProjection';
+import {
+  eligibleUserPredicate,
+  FEDERATED_RECOMMENDATION_MAX_AGE_MS,
+  isPublicGraphTarget,
+  normalizePeopleSearchTerm,
+  peopleSearchMatch,
+  peopleSearchOrder,
+  peopleSearchPredicate,
+} from '../utils/profileQuery';
 import { accountService } from '../services/account.service';
 import { getRedisClient } from '../config/redis';
 import {
@@ -43,6 +59,9 @@ import {
   REP_WEIGHT_NORM_MAX,
   ENDORSEMENT_SCORE_SATURATION,
   MUTUAL_COUNT_SATURATION,
+  MAX_AFFINITY_CANDIDATES,
+  decayAffinity,
+  normalizeAffinity,
   type RecommendationSignal,
 } from '../utils/recommendationWeights';
 import { INFLUENCE_MIN } from '../utils/reputation.constants';
@@ -63,25 +82,20 @@ interface PaginationQuery {
   offset?: string;
 }
 
-type SearchProfileDocument = IUser & {
-  _id: Types.ObjectId;
-};
-
-interface ProfileSearchAggregateResult {
-  profiles?: SearchProfileDocument[];
-  totalCount?: Array<{ count: number }>;
-}
-
-interface FollowCountAggregateResult {
-  _id: string | Types.ObjectId;
-  count: number;
-}
-
 const router = Router();
 import { PAGINATION } from '../utils/constants';
 
 // Constants
-const VALID_EXCLUDE_TYPES = new Set(['federated', 'agent', 'automated']);
+/**
+ * The account types a caller may exclude from discovery. A closed set, and now a
+ * TYPE: the column it filters is a closed value set too, so an unrecognised
+ * string cannot reach the query at all rather than silently excluding nothing.
+ */
+const VALID_EXCLUDE_TYPES = ['federated', 'agent', 'automated'] as const;
+type ExcludableUserType = (typeof VALID_EXCLUDE_TYPES)[number];
+
+const isExcludableUserType = (value: unknown): value is ExcludableUserType =>
+  typeof value === 'string' && (VALID_EXCLUDE_TYPES as readonly string[]).includes(value);
 const MIN_USERNAME_LENGTH = 3;
 const MAX_USERNAME_LENGTH = 30;
 // Extra follower-ranked candidates fetched before the private/excludeTypes
@@ -99,51 +113,6 @@ const PUBLIC_POPULAR_FOLLOW_WINDOW = 5000;
 const SIMILAR_PROFILE_MAX_TARGET_FOLLOWERS = 5000;
 
 /**
- * Shared aggregation stages that look up follower and following counts
- * for each user matched in a Follow-based aggregation pipeline.
- */
-const followCountLookupStages = [
-  {
-    $lookup: {
-      from: 'follows',
-      let: { userId: '$_id' },
-      pipeline: [
-        {
-          $match: {
-            $expr: {
-              $and: [
-                { $eq: ['$followedId', '$$userId'] },
-                { $eq: ['$followType', FollowType.USER] },
-              ],
-            },
-          },
-        },
-      ],
-      as: 'followersArr',
-    },
-  },
-  {
-    $lookup: {
-      from: 'follows',
-      let: { userId: '$_id' },
-      pipeline: [
-        {
-          $match: {
-            $expr: {
-              $and: [
-                { $eq: ['$followerUserId', '$$userId'] },
-                { $eq: ['$followType', FollowType.USER] },
-              ],
-            },
-          },
-        },
-      ],
-      as: 'followingArr',
-    },
-  },
-];
-
-/**
  * Shape of a single recommendation/profile row produced by
  * {@link profileProjectionStage} and {@link userProfileProjectionStage}.
  * Both projections emit the same fields, so every recommendation pipeline
@@ -151,15 +120,20 @@ const followCountLookupStages = [
  * feeds {@link formatProfileResult}.
  */
 interface RecommendationRow {
-  _id: Types.ObjectId;
-  username?: string;
-  publicKey?: string;
-  name?: NameParts | string | null;
+  _id: string;
+  username?: string | null;
+  publicKey?: string | null;
+  /**
+   * FLAT, matching the `users` row. `userIdentityFields` reads either shape and
+   * is the single definition of `name.displayName`, the canonical contract every
+   * ecosystem app renders — so this row does NOT reassemble a nested `name`.
+   */
+  nameFirst?: string | null;
+  nameLast?: string | null;
   avatar?: string | null;
   description?: string | null;
   type?: string;
-  federation?: { domain?: string } | null;
-  automation?: unknown;
+  federationDomain?: string | null;
   verified?: boolean;
   reputationTier?: string;
   mutualCount?: number;
@@ -171,65 +145,49 @@ interface RecommendationRow {
   matchedSignals?: string[];
 }
 
-const profileProjectionStage = {
-  $project: {
-    _id: 1,
-    username: '$user.username',
-    publicKey: '$user.publicKey',
-    name: '$user.name',
-    avatar: '$user.avatar',
-    description: '$user.description',
-    type: '$user.type',
-    federation: '$user.federation',
-    automation: '$user.automation',
-    verified: '$user.verified',
-    reputationTier: '$user.reputationTier',
-    mutualCount: 1,
-    followersCount: { $size: '$followersArr' },
-    followingCount: { $size: '$followingArr' },
-  },
-};
+/**
+ * The `users` columns every recommendation surface reads.
+ *
+ * Replaces the two `$project` stages the Mongo pipelines carried — one for
+ * pipelines rooted at `follows` and one for pipelines rooted at `users`. Rooting
+ * is a JOIN here, not a different projection, so there is only one list and the
+ * two can no longer drift.
+ */
+const recommendationColumns = {
+  _id: users.id,
+  username: users.username,
+  publicKey: users.publicKey,
+  nameFirst: users.nameFirst,
+  nameLast: users.nameLast,
+  avatar: users.avatar,
+  description: users.description,
+  type: users.type,
+  federationDomain: users.federationDomain,
+  verified: users.verified,
+  reputationTier: users.reputationTier,
+} as const;
 
-/** Same projection but for pipelines starting from the users collection. */
-const userProfileProjectionStage = {
-  $project: {
-    _id: 1,
-    username: 1,
-    publicKey: 1,
-    name: 1,
-    avatar: 1,
-    description: 1,
-    type: 1,
-    federation: 1,
-    automation: 1,
-    verified: 1,
-    reputationTier: 1,
-    mutualCount: { $literal: 0 },
-    followersCount: { $size: '$followersArr' },
-    followingCount: { $size: '$followingArr' },
-  },
-};
-
-function formatProfileResult(u: RecommendationRow) {
+export function formatProfileResult(u: RecommendationRow) {
+  // Load-bearing identity fields (`id`, `name`, `username`, `avatar`) come from
+  // the SHARED `userIdentityFields` definer so this recommendation serializer can
+  // never diverge from the public/self serializers on them — `id` is the stable
+  // `_id` string, never the publicKey.
+  const identity = userIdentityFields(u);
   return {
-    id: u._id,
-    username: u.username,
-    name: formatUserNameResponse({
-      name: typeof u.name === 'object' ? u.name : undefined,
-      username: u.username,
-      publicKey: u.publicKey,
-    }),
-    avatar: u.avatar,
+    id: identity.id,
+    username: identity.username,
+    name: identity.name,
+    avatar: identity.avatar,
     description: u.description,
     verified: u.verified === true,
     trustTier: u.reputationTier,
     mutualCount: u.mutualCount || 0,
     ...(typeof u.score === 'number' ? { score: u.score } : {}),
     ...(u.matchedSignals ? { matchedSignals: u.matchedSignals } : {}),
-    isFederated: u.type === 'federated',
+    isFederated: deriveIsFederated(u.type),
     isAgent: u.type === 'agent',
     isAutomated: u.type === 'automated',
-    instance: u.federation?.domain,
+    instance: u.federationDomain ?? undefined,
     _count: {
       followers: u.followersCount || 0,
       following: u.followingCount || 0,
@@ -238,12 +196,53 @@ function formatProfileResult(u: RecommendationRow) {
 }
 
 /**
+ * Load ONE public profile by a predicate, with its follower/following totals.
+ *
+ * The totals are correlated aggregates on the same row rather than the two
+ * grouped `Follow` aggregations the Mongo version ran afterwards — which is also
+ * where `routes/profiles.ts:540` was broken: it passed `.toString()` ids into an
+ * aggregation `$match`, Mongoose does not cast aggregation pipelines, and the
+ * match therefore selected nothing, so every follower count on `/profiles/search`
+ * read zero. A join on a real foreign key cannot express that mistake.
+ */
+async function loadProfileByPredicate(
+  predicate: SQL
+): Promise<{ view: PublicUserView; stats: { followers: number; following: number } } | null> {
+  const [row] = await getDb()
+    .select({ ...publicUserColumns, ...publicUserFollowCounts })
+    .from(users)
+    .where(predicate)
+    .limit(1);
+  if (!row) return null;
+  return {
+    view: toPublicUserView(row),
+    stats: { followers: row.followersCount, following: row.followingCount },
+  };
+}
+
+/**
+ * The account id of a row `federationService.resolveAndUpsert` handed back.
+ *
+ * Read through `_id ?? id` because that service is ported by a different batch:
+ * whichever of the two shapes it currently returns, the value is the same
+ * account id, and this route re-reads the row from Postgres by it rather than
+ * trusting the returned document's shape for anything else.
+ */
+function resolvedActorId(actor: { _id?: unknown; id?: unknown } | null | undefined): string | undefined {
+  if (!actor) return undefined;
+  const raw = actor._id ?? actor.id;
+  if (raw == null) return undefined;
+  const id = typeof raw === 'string' ? raw : String(raw);
+  return id.length > 0 ? id : undefined;
+}
+
+/**
  * Validates pagination query parameters
  */
 const validatePagination = (req: Request, res: Response, next: () => void): void => {
   const query = req.query as PaginationQuery;
-  const limit = query.limit ? parseInt(query.limit, 10) : undefined;
-  const offset = query.offset ? parseInt(query.offset, 10) : undefined;
+  const limit = query.limit ? Number.parseInt(query.limit, 10) : undefined;
+  const offset = query.offset ? Number.parseInt(query.offset, 10) : undefined;
 
   if (limit !== undefined && (isNaN(limit) || limit < 0 || limit > PAGINATION.MAX_LIMIT)) {
     res.status(400).json({
@@ -264,7 +263,7 @@ const validatePagination = (req: Request, res: Response, next: () => void): void
   next();
 };
 
-const parseExcludeTypesQuery = (excludeTypesRaw: unknown): string[] => {
+const parseExcludeTypesQuery = (excludeTypesRaw: unknown): ExcludableUserType[] => {
   if (excludeTypesRaw === undefined) {
     return [];
   }
@@ -276,7 +275,7 @@ const parseExcludeTypesQuery = (excludeTypesRaw: unknown): string[] => {
   return excludeTypesRaw
     .split(',')
     .map((type) => type.trim())
-    .filter((type) => VALID_EXCLUDE_TYPES.has(type));
+    .filter(isExcludableUserType);
 };
 
 /**
@@ -339,8 +338,9 @@ const parseExcludeTypesQuery = (excludeTypesRaw: unknown): string[] => {
  */
 router.get(
   '/username/:username',
+  optionalUserOrServiceAuth,
   validate({ params: usernameParams }),
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
     const raw = req.params.username;
 
     // Federated handles (user@domain) are looked up as-is;
@@ -360,29 +360,46 @@ router.get(
       throw new BadRequestError(`Username must be no more than ${MAX_USERNAME_LENGTH} characters`);
     }
 
-    let user = await User.findOne({ username })
-      .select('-password -refreshToken')
-      .lean({ virtuals: true });
+    // Case-insensitive on BOTH branches now, and written against the EXPRESSION
+    // the unique index is built on (`lower(btrim(username))`). Mongo indexed
+    // `username` case-SENSITIVELY while this lookup ran an anchored `/i` regex,
+    // so every profile fetch was a collection scan; the index serves it here.
+    let profile = await loadProfileByPredicate(
+      sql`lower(btrim(${users.username})) = lower(btrim(${username}))`
+    );
 
     // If not found and it's a fediverse handle, resolve via WebFinger
-    if (!user && isFedHandle) {
+    if (!profile && isFedHandle) {
       const resolved = await federationService.resolveAndUpsert(username).catch(() => null);
-      if (resolved) {
-        user = await User.findById(resolved._id)
-          .select('-password -refreshToken')
-          .lean({ virtuals: true });
+      const resolvedId = resolvedActorId(resolved);
+      if (resolvedId) {
+        profile = await loadProfileByPredicate(eq(users.id, resolvedId));
       }
     }
 
-    if (!user) {
+    if (
+      !profile ||
+      profile.view.accountStatus === 'archived' ||
+      profile.view.reputationTier === 'restricted'
+    ) {
       throw new NotFoundError('Profile not found');
     }
 
-    // Get user statistics
-    const stats = await userService.getUserStats(user._id.toString());
+    const user = profile.view;
 
     // Format response with stats
-    const response = userService.formatUserResponse(user, stats);
+    const response = userService.formatUserResponse(user, profile.stats);
+
+    // Viewer-relative relationship: computed in the SAME handler (no second
+    // round-trip) from the Follow model when the request is authenticated.
+    // OMITTED for anonymous requests and for a self-view (no follow edge to a
+    // profile you are viewing as yourself), so consumers can distinguish
+    // "unknown" from "known, not following".
+    const viewerId = resolveViewerId(req);
+    const targetId = user._id;
+    if (viewerId && viewerId !== targetId) {
+      response.relationship = await userService.getViewerRelationship(viewerId, targetId);
+    }
 
     logger.debug('GET /profiles/username/:username', { username });
     sendSuccess(res, response);
@@ -412,80 +429,90 @@ router.get(
     }
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
 
-    // Sanitize search query to prevent regex injection
-    const sanitizedQuery = query.trim().substring(0, 100);
-    const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-
-    const searchFilter = {
-      $or: [
-        { username: searchRegex },
-        { 'name.first': searchRegex },
-        { 'name.last': searchRegex },
-        { description: searchRegex },
-      ],
-    };
+    // A single leading `@` is stripped first so a handle-style query matches the
+    // STORED username: an atproto handle `@adamrbjack.bsky.social` finds the
+    // stored `adamrbjack.bsky.social@bsky.social`, and a Mastodon `@user@host`
+    // matches the stored `user@host`. Only ONE leading `@` is removed — a
+    // mid-string `@` (the `user@host` separator) is preserved. The term is
+    // passed RAW: `peopleSearchMatch` escapes it for LIKE and binds it.
+    const sanitizedQuery = normalizePeopleSearchTerm(query);
 
     // Run local DB search and (if query is a fediverse handle) remote resolution in parallel
     const isFediverse = isFediverseHandle(sanitizedQuery);
-    const [dbResult, federatedUser] = await Promise.all([
-      User.aggregate<ProfileSearchAggregateResult>([
-        { $match: searchFilter },
-        {
-          $facet: {
-            profiles: [
-              { $skip: parsedOffset },
-              { $limit: parsedLimit },
-              { $project: { password: 0, refreshToken: 0 } },
-            ],
-            totalCount: [{ $count: 'count' }],
-          },
-        },
-      ]).then((r) => r[0] ?? { profiles: [], totalCount: [] }),
+    const [pageRows, federatedUser] = await Promise.all([
+      // Order the WHOLE match set BEFORE paging so offset pagination is
+      // deterministic (the client's infinite scroll must never see a row
+      // duplicated or skipped across pages):
+      //   1. NATIVE (Oxy local/agent/etc.) before FEDERATED.
+      //   2. Most-reputable first — `reputation_rank_weight` is the
+      //      denormalized reputation rank.
+      //   3. `id` ascending as the FINAL tiebreaker — `id` is unique, so this
+      //      makes the total order STRICT and pagination stable.
+      // The order precedes OFFSET/LIMIT, so it orders the full match set, not
+      // just the page. `count(*) over ()` is evaluated before LIMIT, which is
+      // what makes the total and the page ONE round trip — the job `$facet` did.
+      // The selection is INCLUSION-ONLY (`publicUserColumns`): this row is
+      // world-readable, and an exclusion denylist is one forgotten field away
+      // from leaking.
+      getDb()
+        .select({
+          ...publicUserColumns,
+          ...publicUserFollowCounts,
+          total: sql<number>`count(*) over ()::int`,
+        })
+        .from(users)
+        .where(and(peopleSearchPredicate(), peopleSearchMatch(sanitizedQuery)))
+        .orderBy(...peopleSearchOrder())
+        .offset(parsedOffset)
+        .limit(parsedLimit),
       isFediverse
         ? federationService.resolveAndUpsert(sanitizedQuery).catch(() => null)
         : Promise.resolve(null),
     ]);
 
-    const profiles = dbResult.profiles ?? [];
-    const total = dbResult.totalCount?.[0]?.count ?? 0;
+    const profiles = pageRows.map((row) => ({
+      view: toPublicUserView(row),
+      stats: { followers: row.followersCount, following: row.followingCount },
+    }));
+    let total = pageRows[0]?.total ?? 0;
 
-    // If federation resolved a user not already in DB results, prepend it
-    if (federatedUser) {
-      const fedId = federatedUser._id?.toString();
-      const alreadyIncluded = profiles.some((profile) => profile._id.toString() === fedId);
-      if (!alreadyIncluded) {
-        profiles.unshift(federatedUser as SearchProfileDocument);
+    // If federation resolved a user not already in DB results, prepend it.
+    // `resolveAndUpsert` returns the cached row for a known federated actor,
+    // which can be an ARCHIVED (dead / 410-Gone) account, a `restricted`
+    // (negative-reputation) actor, or a private account — never let that prepend
+    // re-introduce an actor the `peopleSearchMongoMatch` $match above excluded.
+    //
+    // This is a DELIBERATE exception to the native-first ordering applied above:
+    // the caller typed an EXACT fediverse handle (`user@host`), so the resolved
+    // remote actor is the single most-relevant hit and belongs at the front even
+    // though it is federated. The rest of the page keeps native-first order.
+    const fedId = resolvedActorId(federatedUser);
+    if (fedId && !profiles.some((profile) => profile.view._id === fedId)) {
+      // Re-read the resolved actor from Postgres rather than trusting the
+      // upsert's return shape, and apply the SAME gate the page query applied —
+      // `resolveAndUpsert` hands back the cached row for a known actor, which
+      // can be archived, `restricted`, or private.
+      const resolvedProfile = await loadProfileByPredicate(
+        and(eq(users.id, fedId), peopleSearchPredicate()) ?? sql`false`
+      );
+      if (resolvedProfile) {
+        profiles.unshift(resolvedProfile);
+        total += 1;
       }
     }
 
-    // Batch-fetch follower/following stats for all profiles at once (avoids N+1)
-    const profileIds = profiles.map((profile) => profile._id);
-    const [followerCounts, followingCounts] = await Promise.all([
-      Follow.aggregate<FollowCountAggregateResult>([
-        { $match: { followedId: { $in: profileIds.map((id) => id.toString()) }, followType: FollowType.USER } },
-        { $group: { _id: '$followedId', count: { $sum: 1 } } },
-      ]),
-      Follow.aggregate<FollowCountAggregateResult>([
-        { $match: { followerUserId: { $in: profileIds.map((id) => id.toString()) }, followType: FollowType.USER } },
-        { $group: { _id: '$followerUserId', count: { $sum: 1 } } },
-      ]),
-    ]);
+    // Prepend can push the page over `limit`; trim so clients never see limit+1.
+    if (profiles.length > parsedLimit) {
+      profiles.length = parsedLimit;
+    }
 
-    const followerMap = new Map(followerCounts.map((result) => [result._id.toString(), result.count]));
-    const followingMap = new Map(followingCounts.map((result) => [result._id.toString(), result.count]));
-
-    const enrichedProfiles = profiles.map((profile) => {
-      const id = profile._id.toString();
-      const stats = {
-        followers: followerMap.get(id) || 0,
-        following: followingMap.get(id) || 0,
-      };
-      return userService.formatUserResponse(profile, stats);
-    });
+    const enrichedProfiles = profiles.map((profile) =>
+      userService.formatUserResponse(profile.view, profile.stats)
+    );
 
     logger.debug('GET /profiles/search', {
       query: sanitizedQuery,
@@ -501,29 +528,107 @@ router.get(
 /**
  * GET /profiles/resolve
  *
- * Resolve a fediverse handle (e.g. @user@mastodon.social) to an Oxy user profile.
- * Performs WebFinger discovery, fetches the ActivityPub actor, and upserts as a
- * federated user. Returns cached results if resolved within the last 24 hours.
+ * Resolve a handle (e.g. @user@mastodon.social) to an Oxy user profile.
  *
- * @query {string} handle - Fediverse handle (e.g. "@user@domain" or "user@domain")
+ * LOCAL-FIRST: a handle that already maps to a known Oxy user is resolved
+ * directly from the DB — no network round-trip. This is essential for atproto
+ * (Bluesky) actors whose `user@bsky.social` username oxy-api's WebFinger can
+ * never resolve: the user already exists, so remote discovery must NOT run (it
+ * would fail and yield a false "Profile not found"). The local lookup runs
+ * regardless of `isFediverseHandle` because a stored `user@domain` username is a
+ * valid lookup key even when the strict handle-format check would reject it.
+ *
+ * Only when NO local user exists do we fall through to WebFinger/ActivityPub
+ * discovery (`resolveAndUpsert`) — genuine discovery of an unknown handle, which
+ * is where the `isFediverseHandle` format validation still applies.
+ *
+ * @query {string} handle - Handle (e.g. "@user@domain" or "user@domain")
  * @returns {User | null} Resolved user profile or null
  */
 router.get(
   '/resolve',
-  asyncHandler(async (req: Request, res: Response) => {
-    const handle = (req.query.handle as string || '').trim();
+  optionalUserOrServiceAuth,
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
+    // Normalize handle input: trim, strip optional `acct:` prefix, and remove a
+    // single leading `@` so `@user@host` matches the stored `user@host` username.
+    const rawHandle = (req.query.handle as string || '')
+      .trim()
+      .replace(/^acct:/i, '')
+      .replace(/^@/, '');
 
-    if (!handle || !isFediverseHandle(handle)) {
+    if (!rawHandle) {
       throw new BadRequestError('Invalid fediverse handle. Expected format: @user@domain or user@domain');
     }
 
-    const user = await federationService.resolveAndUpsert(handle);
-    if (!user) {
+    // Federated handles are stored lowercased; normalize before the local lookup
+    // so mixed-case queries hit the local-first fast path (same as /username/:username).
+    const handle = isFediverseHandle(rawHandle) ? rawHandle.toLowerCase() : rawHandle;
+
+    // Local-first: resolve an already-known user by exact username.
+    const localProfile = await loadProfileByPredicate(
+      sql`lower(btrim(${users.username})) = lower(btrim(${handle}))`
+    );
+
+    if (localProfile) {
+      const localUser = localProfile.view;
+      // A known user is never handed to remote discovery. Archived (dead /
+      // 410-Gone) and `restricted`-tier accounts resolve to null — the same gate
+      // people search applies, and consistent with the archived→null behavior of
+      // the discovery path below.
+      if (localUser.accountStatus === 'archived' || localUser.reputationTier === 'restricted') {
+        return sendSuccess(res, null);
+      }
+      const response = userService.formatUserResponse(localUser, localProfile.stats);
+
+      // Viewer-relative relationship: same in-handler computation as the two
+      // sibling single-profile routes (/profiles/username/:username and
+      // /users/:userId). A federated actor that bridged into the Oxy graph via an
+      // inbound follow IS a known Oxy row here, so `getViewerRelationship`
+      // returns real follow edges — this is what lets "Follows you" render on a
+      // federated profile fetched through resolve. OMITTED for anonymous requests
+      // and for a self-view, so consumers can distinguish "unknown" from "known,
+      // not following".
+      const viewerId = resolveViewerId(req);
+      const targetId = localUser._id;
+      if (viewerId && viewerId !== targetId) {
+        response.relationship = await userService.getViewerRelationship(viewerId, targetId);
+      }
+
+      logger.debug('GET /profiles/resolve (local)', { handle });
+      return sendSuccess(res, response);
+    }
+
+    // No local user → genuine discovery of an unknown handle. Enforce the strict
+    // fediverse-handle format only now, then WebFinger/ActivityPub resolve+upsert.
+    if (!isFediverseHandle(handle)) {
+      throw new BadRequestError('Invalid fediverse handle. Expected format: @user@domain or user@domain');
+    }
+
+    const resolvedId = resolvedActorId(await federationService.resolveAndUpsert(handle));
+    const resolvedProfile = resolvedId
+      ? await loadProfileByPredicate(eq(users.id, resolvedId))
+      : null;
+    if (
+      !resolvedProfile ||
+      resolvedProfile.view.accountStatus === 'archived' ||
+      resolvedProfile.view.reputationTier === 'restricted'
+    ) {
       return sendSuccess(res, null);
     }
 
-    const stats = await userService.getUserStats(user._id.toString());
-    const response = userService.formatUserResponse(user, stats);
+    const user = resolvedProfile.view;
+    const response = userService.formatUserResponse(user, resolvedProfile.stats);
+
+    // Same viewer-relative relationship as the local branch above. A
+    // freshly-discovered actor is now a known Oxy row (`resolveAndUpsert`
+    // persisted it), so its id is canonical; a brand-new actor simply has no
+    // follow edges yet (`isFollowing`/`followsYou` both false). OMITTED for
+    // anonymous requests and for a self-view.
+    const viewerId = resolveViewerId(req);
+    const targetId = user._id;
+    if (viewerId && viewerId !== targetId) {
+      response.relationship = await userService.getViewerRelationship(viewerId, targetId);
+    }
 
     logger.debug('GET /profiles/resolve', { handle });
     sendSuccess(res, response);
@@ -554,85 +659,91 @@ router.get(
       throw new UnauthorizedError('Authentication required');
     }
 
-    if (!Types.ObjectId.isValid(targetUserId)) {
-      throw new BadRequestError('Invalid user ID');
+    // Same target gate as GET /users/:userId/{followers,following,mutuals}:
+    // archived/restricted/private accounts must not seed a discovery surface.
+    const targetUser = await userService.getPublicUserById(targetUserId);
+    if (!isPublicGraphTarget(targetUser)) {
+      throw new NotFoundError('User not found');
     }
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
     const minFederatedResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
 
+    const db = getDb();
     const [targetFollowers, currentFollowing] = await Promise.all([
-      Follow.find({
-        followedId: targetUserId,
-        followType: FollowType.USER,
-      })
-        .select('followerUserId')
-        .sort({ _id: 1 })
-        .limit(SIMILAR_PROFILE_MAX_TARGET_FOLLOWERS)
-        .lean(),
-      Follow.find({
-        followerUserId: currentUserId,
-        followType: FollowType.USER,
-      }).select('followedId').lean(),
+      db
+        .select({ followerId: userFollows.followerId })
+        .from(userFollows)
+        .where(eq(userFollows.followedId, targetUserId))
+        .orderBy(userFollows.id)
+        .limit(SIMILAR_PROFILE_MAX_TARGET_FOLLOWERS),
+      db
+        .select({ followedId: userFollows.followedId })
+        .from(userFollows)
+        .where(eq(userFollows.followerId, currentUserId)),
     ]);
 
-    const targetFollowerIds = targetFollowers
-      .map((f) =>
-        f.followerUserId instanceof Types.ObjectId
-          ? f.followerUserId
-          : new Types.ObjectId(f.followerUserId as string)
-      )
-      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId);
-
-    const excludeIds: Types.ObjectId[] = [
-      new Types.ObjectId(currentUserId),
-      new Types.ObjectId(targetUserId),
-      ...currentFollowing.map((f) =>
-        f.followedId instanceof Types.ObjectId
-          ? f.followedId
-          : new Types.ObjectId(f.followedId as string)
-      ),
+    const targetFollowerIds = targetFollowers.map((edge) => edge.followerId);
+    const excludeIds = [
+      currentUserId,
+      targetUserId,
+      ...currentFollowing.map((edge) => edge.followedId),
     ];
 
     let similar: RecommendationRow[] = [];
 
     if (targetFollowerIds.length > 0) {
-      similar = await Follow.aggregate<RecommendationRow>([
-        {
-          $match: {
-            followerUserId: { $in: targetFollowerIds },
-            followType: FollowType.USER,
-            followedId: { $nin: excludeIds },
-          },
-        },
-        {
-          $group: {
-            _id: '$followedId',
-            mutualCount: { $sum: 1 },
-          },
-        },
-        { $sort: { mutualCount: -1 } },
-        { $skip: parsedOffset },
-        { $limit: parsedLimit },
-        {
-          $lookup: {
-            from: 'users',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'user',
-          },
-        },
-        { $unwind: '$user' },
+      // The overlap page, then the profiles. Paged BEFORE the eligibility join,
+      // exactly as the Mongo pipeline was: `$skip`/`$limit` preceded its
+      // `$lookup`, so a page can come back shorter than `limit` when a candidate
+      // fails the bar. `id` is added as the sort tiebreaker Mongo lacked —
+      // `mutualCount` alone is not unique, and without a strict total order an
+      // offset page can repeat a row while skipping another.
+      const overlap = await db
+        .select({
+          id: userFollows.followedId,
+          mutualCount: sql<number>`count(*)::int`,
+        })
+        .from(userFollows)
+        .where(
+          and(
+            inArray(userFollows.followerId, targetFollowerIds),
+            notInArray(userFollows.followedId, excludeIds)
+          )
+        )
+        .groupBy(userFollows.followedId)
+        .orderBy(sql`count(*) desc`, sql`${userFollows.followedId} asc`)
+        .offset(parsedOffset)
+        .limit(parsedLimit);
+
+      if (overlap.length > 0) {
+        const overlapIds = overlap.map((row) => row.id);
+        const mutualById = new Map(overlap.map((row) => [row.id, row.mutualCount]));
+
         // Hold co-follower candidates to the same discovery eligibility bar as
-        // the recommendations surface: drop incomplete shell/QA profiles and
-        // stale/unavailable federated actors before they reach the response.
-        { $match: eligibleUserMatch(minFederatedResolvedAt, 'user.') },
-        ...followCountLookupStages,
-        profileProjectionStage,
-      ]);
+        // the recommendations surface: drop incomplete shell/QA profiles,
+        // private accounts, and stale/unavailable federated actors before they
+        // reach the response.
+        const rows = await db
+          .select({ ...recommendationColumns, ...publicUserFollowCounts })
+          .from(users)
+          .where(
+            and(
+              inArray(users.id, overlapIds),
+              eq(users.privacyIsPrivateAccount, false),
+              eligibleUserPredicate(minFederatedResolvedAt)
+            )
+          );
+
+        const eligibleById = new Map(rows.map((row) => [row._id, row]));
+        similar = overlapIds
+          .map((id) => eligibleById.get(id))
+          .filter((row): row is (typeof rows)[number] => row !== undefined)
+          .map((row) => ({ ...row, mutualCount: mutualById.get(row._id) ?? 0 }));
+      }
     }
 
     const formattedSimilar = similar.map(formatProfileResult);
@@ -656,7 +767,7 @@ router.get(
 interface RecommendationOptions {
   limit: number;
   offset: number;
-  excludeTypes: string[];
+  excludeTypes: ExcludableUserType[];
   excludeIds: string[];
   clientId?: string;
   boosts?: RecommendationBoost[];
@@ -686,19 +797,20 @@ async function resolveAuthorizedRecommendationClientId(
   req: OptionalUserOrServiceRequest,
   suppliedClientId: string | undefined,
 ): Promise<string | undefined> {
-  if (!suppliedClientId || !Types.ObjectId.isValid(suppliedClientId)) {
+  if (!suppliedClientId) {
     return undefined;
   }
 
-  const requestedAppId = new Types.ObjectId(suppliedClientId).toHexString();
+  // No id-format guard: it existed to stop a Mongoose `CastError`, and it also
+  // normalized both sides through `new ObjectId(...).toHexString()` so two
+  // spellings of one ObjectId compared equal. A `text` id has ONE spelling and
+  // an unknown one simply matches no row, so the comparison is plain equality.
+  const requestedAppId = suppliedClientId;
 
   // SERVICE token: authorized only for its own application.
   const serviceAppId = req.serviceApp?.appId;
   if (serviceAppId) {
-    const ownAppId = Types.ObjectId.isValid(serviceAppId)
-      ? new Types.ObjectId(serviceAppId).toHexString()
-      : serviceAppId;
-    if (ownAppId === requestedAppId) {
+    if (serviceAppId === requestedAppId) {
       return requestedAppId;
     }
     logger.warn('recommendations: dropping unauthorized clientId', {
@@ -712,15 +824,19 @@ async function resolveAuthorizedRecommendationClientId(
   // USER session: authorized only when the caller has effective access to the
   // application's owning account (a member of the account, with inheritance).
   const userId = req.user?._id;
-  if (!userId || !Types.ObjectId.isValid(userId)) {
+  if (!userId) {
     return undefined;
   }
 
-  const application = await Application.findById(requestedAppId).select('ownerAccountId').lean();
+  const [application] = await getDb()
+    .select({ ownerAccountId: applications.ownerAccountId })
+    .from(applications)
+    .where(eq(applications.id, requestedAppId))
+    .limit(1);
   if (application?.ownerAccountId) {
     const access = await accountService.resolveEffectiveAccess(
       userId.toString(),
-      application.ownerAccountId.toString()
+      application.ownerAccountId
     );
     if (access) {
       return requestedAppId;
@@ -733,15 +849,6 @@ async function resolveAuthorizedRecommendationClientId(
     hasUserSession: true,
   });
   return undefined;
-}
-
-/** Coerce a Follow.followedId (ObjectId | string) to an ObjectId, or null. */
-function followedIdToObjectId(value: unknown): Types.ObjectId | null {
-  if (value instanceof Types.ObjectId) return value;
-  if (typeof value === 'string' && Types.ObjectId.isValid(value)) {
-    return new Types.ObjectId(value);
-  }
-  return null;
 }
 
 /**
@@ -758,52 +865,63 @@ function followedIdToObjectId(value: unknown): Types.ObjectId | null {
  * shape (`score: 0`, `mutualCount: 0`) so the response contract is identical.
  */
 async function buildPopularFallback(
-  excludeIds: readonly Types.ObjectId[],
-  excludeTypes: readonly string[],
+  excludeIds: readonly string[],
+  excludeTypes: readonly ExcludableUserType[],
   parsedLimit: number,
   parsedOffset: number,
   minFederatedResolvedAt: Date,
 ): Promise<RecommendationRow[]> {
-  const baseEligibility: Record<string, unknown> = {
-    'privacySettings.isPrivateAccount': { $ne: true },
-    reputationTier: { $ne: 'restricted' },
-    ...eligibleUserMatch(minFederatedResolvedAt),
+  const db = getDb();
+
+  const eligibility = (): SQL => {
+    const clauses: SQL[] = [
+      sql`${users.privacyIsPrivateAccount} = false`,
+      eligibleUserPredicate(minFederatedResolvedAt),
+    ];
+    if (excludeTypes.length > 0) {
+      clauses.push(notInArray(users.type, [...excludeTypes]));
+    }
+    return and(...clauses) ?? sql`true`;
   };
-  if (excludeTypes.length > 0) {
-    baseEligibility.type = { $nin: excludeTypes };
+
+  // The bounded recent-edge window, grouped by followed account. `id` is the
+  // sort tiebreaker in BOTH sorts, so the window and the ranking are each a
+  // strict total order and the paged result is stable.
+  const recentWindow = db
+    .select({ followedId: userFollows.followedId })
+    .from(userFollows)
+    .where(excludeIds.length > 0 ? notInArray(userFollows.followedId, [...excludeIds]) : undefined)
+    .orderBy(sql`${userFollows.createdAt} desc`, sql`${userFollows.id} asc`)
+    .limit(PUBLIC_POPULAR_FOLLOW_WINDOW)
+    .as('recent_window');
+
+  const ranked = await db
+    .select({
+      id: recentWindow.followedId,
+      followersCount: sql<number>`count(*)::int`,
+    })
+    .from(recentWindow)
+    .groupBy(recentWindow.followedId)
+    .orderBy(sql`count(*) desc`, sql`${recentWindow.followedId} asc`)
+    .offset(parsedOffset)
+    .limit(parsedLimit + PUBLIC_FILTER_HEADROOM);
+
+  let profiles: RecommendationRow[] = [];
+  if (ranked.length > 0) {
+    const rankedIds = ranked.map((row) => row.id);
+    const rows = await db
+      .select({ ...recommendationColumns, ...publicUserFollowCounts })
+      .from(users)
+      .where(and(inArray(users.id, rankedIds), eligibility()))
+      .limit(parsedLimit);
+
+    // Ranking order is the id order above; the eligibility read does not carry
+    // it, so it is re-applied here rather than left to the planner.
+    const byId = new Map(rows.map((row) => [row._id, row]));
+    profiles = rankedIds
+      .map((id) => byId.get(id))
+      .filter((row): row is (typeof rows)[number] => row !== undefined);
   }
-
-  const followerRanked = await Follow.aggregate<RecommendationRow>([
-    { $match: { followType: FollowType.USER, followedId: { $nin: excludeIds } } },
-    { $sort: { createdAt: -1, _id: 1 } },
-    { $limit: PUBLIC_POPULAR_FOLLOW_WINDOW },
-    { $group: { _id: '$followedId', followersCount: { $sum: 1 } } },
-    { $sort: { followersCount: -1, _id: 1 } },
-    { $skip: parsedOffset },
-    { $limit: parsedLimit + PUBLIC_FILTER_HEADROOM },
-    {
-      $lookup: {
-        from: 'users',
-        localField: '_id',
-        foreignField: '_id',
-        as: 'user',
-      },
-    },
-    { $unwind: '$user' },
-    {
-      $match: {
-        'user.privacySettings.isPrivateAccount': { $ne: true },
-        'user.reputationTier': { $ne: 'restricted' },
-        ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
-        ...eligibleUserMatch(minFederatedResolvedAt, 'user.'),
-      },
-    },
-    { $limit: parsedLimit },
-    ...followCountLookupStages,
-    profileProjectionStage,
-  ]);
-
-  let profiles: RecommendationRow[] = followerRanked;
 
   // Top up with a random eligible sample only on the first page, when popularity
   // alone could not fill the requested limit (e.g. a sparse graph). Offset pages
@@ -812,17 +930,16 @@ async function buildPopularFallback(
     const alreadyIncluded = profiles.map((u) => u._id);
     const fillLimit = parsedLimit - profiles.length;
 
-    const randomUsers = await User.aggregate<RecommendationRow>([
-      {
-        $match: {
-          _id: { $nin: [...excludeIds, ...alreadyIncluded] },
-          ...baseEligibility,
-        },
-      },
-      { $sample: { size: fillLimit } },
-      ...followCountLookupStages,
-      userProfileProjectionStage,
-    ]);
+    // `order by random()` and not `TABLESAMPLE`: the sample must respect the
+    // eligibility predicate, and TABLESAMPLE picks PAGES before any WHERE runs,
+    // so it would return nothing on a sparse eligible set — which is precisely
+    // the case this top-up exists for.
+    const randomUsers = await db
+      .select({ ...recommendationColumns, ...publicUserFollowCounts })
+      .from(users)
+      .where(and(notInArray(users.id, [...excludeIds, ...alreadyIncluded]), eligibility()))
+      .orderBy(sql`random()`)
+      .limit(fillLimit);
 
     profiles = profiles.concat(randomUsers);
   }
@@ -848,59 +965,88 @@ async function buildRecommendationsScored(
   const minFederatedResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
   const weights = resolveWeightProfile(opts.clientId, opts.signalWeights);
 
+  const db = getDb();
+
   // ---- Pre-queries -------------------------------------------------------
   // 1. The viewer's following set (for graph signal + exclusion).
-  const followingIds: Types.ObjectId[] = [];
+  let followingIds: string[] = [];
   if (viewerId) {
-    const following = await Follow.find({
-      followerUserId: viewerId,
-      followType: FollowType.USER,
-    })
-      .select('followedId')
-      .limit(MAX_FOLLOWING_FOR_MUTUALS)
-      .lean();
-    for (const f of following) {
-      const id = followedIdToObjectId(f.followedId);
-      if (id) followingIds.push(id);
-    }
+    const following = await db
+      .select({ followedId: userFollows.followedId })
+      .from(userFollows)
+      .where(eq(userFollows.followerId, viewerId))
+      .limit(MAX_FOLLOWING_FOR_MUTUALS);
+    followingIds = following.map((edge) => edge.followedId);
   }
 
   // 2. Mutual-overlap map (people followed by the people the viewer follows),
   //    bounded to the top window so the in-memory map stays small.
   const mutualMap = new Map<string, number>();
   if (followingIds.length > 0) {
-    const mutualRows = await Follow.aggregate<{ _id: Types.ObjectId; mutualCount: number }>([
-      {
-        $match: {
-          followerUserId: { $in: followingIds },
-          followType: FollowType.USER,
-        },
-      },
-      { $group: { _id: '$followedId', mutualCount: { $sum: 1 } } },
-      { $sort: { mutualCount: -1 } },
-      { $limit: MUTUAL_COUNT_WINDOW },
-    ]);
+    const mutualRows = await db
+      .select({
+        id: userFollows.followedId,
+        mutualCount: sql<number>`count(*)::int`,
+      })
+      .from(userFollows)
+      .where(inArray(userFollows.followerId, followingIds))
+      .groupBy(userFollows.followedId)
+      .orderBy(sql`count(*) desc`, sql`${userFollows.followedId} asc`)
+      .limit(MUTUAL_COUNT_WINDOW);
     for (const row of mutualRows) {
-      const id = followedIdToObjectId(row._id);
-      if (id) mutualMap.set(id.toHexString(), row.mutualCount);
+      mutualMap.set(row.id, row.mutualCount);
     }
   }
 
   // 3. App-signal candidates for the selected app (top endorsement/interest).
   const appSignalMap = new Map<string, { endorsementScore: number; interestScore: number }>();
-  if (opts.clientId && Types.ObjectId.isValid(opts.clientId)) {
-    const signalRows = await AppUserSignal.find({
-      applicationId: new Types.ObjectId(opts.clientId),
-    })
-      .select('userId endorsementScore interestScore')
-      .sort({ endorsementScore: -1 })
-      .limit(MAX_APP_SIGNAL_CANDIDATES)
-      .lean();
+  if (opts.clientId) {
+    const signalRows = await db
+      .select({
+        userId: appUserSignals.userId,
+        endorsementScore: appUserSignals.endorsementScore,
+        interestScore: appUserSignals.interestScore,
+      })
+      .from(appUserSignals)
+      .where(eq(appUserSignals.applicationId, opts.clientId))
+      .orderBy(sql`${appUserSignals.endorsementScore} desc`)
+      .limit(MAX_APP_SIGNAL_CANDIDATES);
     for (const row of signalRows) {
-      appSignalMap.set(row.userId.toHexString(), {
-        endorsementScore: typeof row.endorsementScore === 'number' ? row.endorsementScore : 0,
-        interestScore: typeof row.interestScore === 'number' ? row.interestScore : 0,
+      appSignalMap.set(row.userId, {
+        endorsementScore: row.endorsementScore,
+        interestScore: row.interestScore,
       });
+    }
+  }
+
+  // 3b. Interaction-affinity map (candidate id → decayed-on-read affinity).
+  //     The viewer's strongest directed affinity edges within the selected app,
+  //     decayed once more on read so a dormant relationship fades toward 0.
+  //     Empty when the viewer has no edges (no app context, or no events folded
+  //     yet) → 0 contribution and no injected candidates (strict no-op).
+  const affinityMap = new Map<string, number>();
+  if (viewerId && opts.clientId) {
+    const nowMs = Date.now();
+    const affinityRows = await db
+      .select({
+        toUserId: appAffinityEdges.toUserId,
+        affinity: appAffinityEdges.affinity,
+        lastEventAt: appAffinityEdges.lastEventAt,
+      })
+      .from(appAffinityEdges)
+      .where(
+        and(
+          eq(appAffinityEdges.applicationId, opts.clientId),
+          eq(appAffinityEdges.fromUserId, viewerId)
+        )
+      )
+      .orderBy(sql`${appAffinityEdges.affinity} desc`)
+      .limit(MAX_AFFINITY_CANDIDATES);
+    for (const row of affinityRows) {
+      const decayed = decayAffinity(row.affinity, row.lastEventAt, nowMs);
+      if (decayed > 0) {
+        affinityMap.set(row.toUserId, decayed);
+      }
     }
   }
 
@@ -909,30 +1055,30 @@ async function buildRecommendationsScored(
   const boostMap = new Map<string, number>();
   for (const boost of opts.boosts ?? []) {
     for (const userId of boost.userIds) {
-      if (!Types.ObjectId.isValid(userId)) continue;
-      const key = new Types.ObjectId(userId).toHexString();
-      boostMap.set(key, (boostMap.get(key) ?? 0) + boost.weight);
+      if (typeof userId !== 'string' || userId.length === 0) continue;
+      boostMap.set(userId, (boostMap.get(userId) ?? 0) + boost.weight);
     }
   }
 
   // ---- Candidate union minus excludeIds ∪ following ∪ self ----------------
-  const excluded = new Set<string>(opts.excludeIds
-    .filter((id) => Types.ObjectId.isValid(id))
-    .map((id) => new Types.ObjectId(id).toHexString()));
-  if (viewerId && Types.ObjectId.isValid(viewerId)) {
-    excluded.add(new Types.ObjectId(viewerId).toHexString());
+  // No id normalization: a `text` id has ONE spelling, so the set membership
+  // that `new ObjectId(...).toHexString()` used to guarantee is now structural.
+  const excluded = new Set<string>(opts.excludeIds.filter((id) => typeof id === 'string' && id.length > 0));
+  if (viewerId) {
+    excluded.add(viewerId);
   }
   for (const id of followingIds) {
-    excluded.add(id.toHexString());
+    excluded.add(id);
   }
 
   const candidateKeys = new Set<string>();
   for (const key of mutualMap.keys()) candidateKeys.add(key);
   for (const key of appSignalMap.keys()) candidateKeys.add(key);
+  for (const key of affinityMap.keys()) candidateKeys.add(key);
   for (const key of boostMap.keys()) candidateKeys.add(key);
   for (const key of excluded) candidateKeys.delete(key);
 
-  const candidateIds = Array.from(candidateKeys).map((key) => new Types.ObjectId(key));
+  const candidateIds = Array.from(candidateKeys);
 
   // When the personalized candidate union is empty (anonymous caller, or a
   // cold-start viewer with no mutual overlap / app signals / boosts), fall back
@@ -941,9 +1087,8 @@ async function buildRecommendationsScored(
   // fallback honors the same self/following/excludeIds exclusion set and emits
   // the uniform scored-row shape.
   if (candidateIds.length === 0) {
-    const excludeObjectIds = Array.from(excluded).map((key) => new Types.ObjectId(key));
     const fallbackRows = await buildPopularFallback(
-      excludeObjectIds,
+      Array.from(excluded),
       excludeTypes,
       parsedLimit,
       parsedOffset,
@@ -952,142 +1097,64 @@ async function buildRecommendationsScored(
     return fallbackRows.map(formatProfileResult);
   }
 
-  // ---- Single scoring aggregation over the candidate users ----------------
+  // ---- Single scoring pass over the candidate users -----------------------
+  //
+  // The three score components Mongo computed in `$addFields` are ordinary SQL
+  // expressions. Follower/following counts are deliberately NOT computed here —
+  // they are looked up for the final page only (see below), so the scoring pass
+  // never pays a per-candidate count for a candidate that will not be returned.
   const repNormDenominator = REP_WEIGHT_NORM_MAX - REP_WEIGHT_NORM_MIN;
 
-  const scoreAddFields = {
-    $addFields: {
-      mutualCount: { $literal: 0 },
-      // completeness = (has avatar + has structured name + has bio/description) / 3
-      completenessScore: {
-        $divide: [
-          {
-            $add: [
-              { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ['$avatar', ''] } }, 0] }, 1, 0] },
-              {
-                $cond: [
-                  {
-                    $or: [
-                      { $gt: [{ $strLenCP: { $ifNull: ['$name.first', ''] } }, 0] },
-                      { $gt: [{ $strLenCP: { $ifNull: ['$name.last', ''] } }, 0] },
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-              {
-                $cond: [
-                  {
-                    $or: [
-                      { $gt: [{ $strLenCP: { $ifNull: ['$bio', ''] } }, 0] },
-                      { $gt: [{ $strLenCP: { $ifNull: ['$description', ''] } }, 0] },
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            ],
-          },
-          3,
-        ],
-      },
-      verifiedScore: { $cond: [{ $eq: ['$verified', true] }, 1, 0] },
-      // repCandScore = normalize(reputationRankWeight) into [0, 1].
-      repCandScore: {
-        $max: [
-          0,
-          {
-            $min: [
-              1,
-              {
-                $divide: [
-                  {
-                    $subtract: [
-                      { $ifNull: ['$reputationRankWeight', INFLUENCE_MIN] },
-                      REP_WEIGHT_NORM_MIN,
-                    ],
-                  },
-                  repNormDenominator,
-                ],
-              },
-            ],
-          },
-        ],
-      },
-    },
-  };
+  /** A text column holds a real value: present AND not the empty string. */
+  const filled = (column: SQL) => sql`(${column} is not null and ${column} <> '')`;
 
-  const eligibilityMatch: Record<string, unknown> = {
-    'privacySettings.isPrivateAccount': { $ne: true },
-    reputationTier: { $ne: 'restricted' },
-    ...eligibleUserMatch(minFederatedResolvedAt),
-  };
+  const eligibilityClauses: SQL[] = [
+    sql`${users.privacyIsPrivateAccount} = false`,
+    eligibleUserPredicate(minFederatedResolvedAt),
+  ];
   if (excludeTypes.length > 0) {
-    eligibilityMatch.type = { $nin: excludeTypes };
+    eligibilityClauses.push(notInArray(users.type, [...excludeTypes]));
   }
 
-  const matchStage = { $match: { _id: { $in: candidateIds }, ...eligibilityMatch } };
-
-  const rows = await User.aggregate<
-    RecommendationRow & {
-      reputationRankWeight?: number;
-      completenessScore: number;
-      verifiedScore: number;
-      repCandScore: number;
-    }
-  >([
-    matchStage,
-    scoreAddFields,
-    // Project the raw profile fields plus the in-aggregation score components.
-    // Follower/following counts are intentionally NOT computed here — they are
-    // looked up for the final page only (see below), so the scoring pass never
-    // pays the per-candidate follower-count lookup for candidates that won't be
-    // returned.
-    {
-      $project: {
-        _id: 1,
-        username: 1,
-        publicKey: 1,
-        name: 1,
-        avatar: 1,
-        description: 1,
-        type: 1,
-        federation: 1,
-        automation: 1,
-        verified: 1,
-        reputationTier: 1,
-        reputationRankWeight: 1,
-        completenessScore: 1,
-        verifiedScore: 1,
-        repCandScore: 1,
-      },
-    },
-  ]);
+  const rows = await db
+    .select({
+      ...recommendationColumns,
+      reputationRankWeight: users.reputationRankWeight,
+      // completeness = (has avatar + has structured name + has bio/description) / 3
+      completenessScore: sql<number>`(
+        (case when ${filled(sql`${users.avatar}`)} then 1 else 0 end)
+        + (case when ${filled(sql`${users.nameFirst}`)} or ${filled(sql`${users.nameLast}`)} then 1 else 0 end)
+        + (case when ${filled(sql`${users.bio}`)} or ${filled(sql`${users.description}`)} then 1 else 0 end)
+      )::double precision / 3`,
+      verifiedScore: sql<number>`(case when ${users.verified} then 1 else 0 end)::double precision`,
+      // repCandScore = normalize(reputation_rank_weight) into [0, 1].
+      repCandScore: sql<number>`greatest(0::double precision, least(1::double precision,
+        (coalesce(${users.reputationRankWeight}, ${INFLUENCE_MIN}) - ${REP_WEIGHT_NORM_MIN})
+        / ${repNormDenominator}))`,
+    })
+    .from(users)
+    .where(and(inArray(users.id, candidateIds), ...eligibilityClauses));
 
   // ---- Compose composite score in app code (per-candidate signals live in
   //      the in-memory maps; aggregation-only signals come from the projection).
   const scored = rows.map((row) => {
-    const key = row._id.toHexString();
+    const key = row._id;
     const mutual = mutualMap.get(key) ?? 0;
     const appSignal = appSignalMap.get(key);
     const endorsement = appSignal?.endorsementScore ?? 0;
     const interest = appSignal?.interestScore ?? 0;
     const boost = boostMap.get(key) ?? 0;
+    // Decayed affinity for this candidate, normalized to [0, 1]. Absent → 0.
+    const affinityScore = normalizeAffinity(affinityMap.get(key) ?? 0);
 
     const graphScore = Math.min(mutual / MUTUAL_COUNT_SATURATION, 1);
     const curationScore = Math.max(
       0,
       Math.min(endorsement / ENDORSEMENT_SCORE_SATURATION, 1)
     );
-    const completeness = typeof row.completenessScore === 'number' ? row.completenessScore : 0;
-    const verifiedScore = typeof row.verifiedScore === 'number' ? row.verifiedScore : 0;
-    const repCand = typeof row.repCandScore === 'number'
-      ? row.repCandScore
-      : normalizeRepWeight(
-          typeof row.reputationRankWeight === 'number' ? row.reputationRankWeight : INFLUENCE_MIN
-        );
+    const completeness = row.completenessScore;
+    const verifiedScore = row.verifiedScore;
+    const repCand = row.repCandScore;
 
     const terms: Array<[RecommendationSignal, number]> = [
       ['graph', graphScore],
@@ -1097,6 +1164,7 @@ async function buildRecommendationsScored(
       ['interest', interest],
       ['appBoost', boost],
       ['repCandidate', repCand],
+      ['affinity', affinityScore],
     ];
 
     let score = 0;
@@ -1111,9 +1179,20 @@ async function buildRecommendationsScored(
   });
 
   // Sort by score desc, stable by _id; page with skip/limit.
+  //
+  // NO native-first tier is injected here — unlike people search (`GET
+  // /profiles/search`), this scored "who to follow" path already MODELS
+  // federation and is already deterministic: federated candidates are surfaced
+  // only through real graph/app signals (mutual overlap, endorsements, affinity,
+  // boosts — never a blanket regex), stale federated actors are aged out by
+  // `minFederatedResolvedAt`, and `excludeTypes` can drop them entirely. Forcing
+  // native-above-federated regardless of score would contradict the explicit
+  // product intent of this surface (a weighted composite recommendation), so we
+  // keep the composite score and let `_id` provide the stable pagination
+  // tiebreaker instead.
   scored.sort((a, b) => {
     if (b.row.score !== a.row.score) return b.row.score - a.row.score;
-    return a.row._id.toHexString().localeCompare(b.row._id.toHexString());
+    return a.row._id.localeCompare(b.row._id);
   });
 
   const pageRows = scored
@@ -1126,27 +1205,20 @@ async function buildRecommendationsScored(
   const pageIds = pageRows.map((row) => row._id);
   const countMap = new Map<string, { followers: number; following: number }>();
   if (pageIds.length > 0) {
-    const counted = await User.aggregate<RecommendationRow>([
-      { $match: { _id: { $in: pageIds } } },
-      ...followCountLookupStages,
-      {
-        $project: {
-          _id: 1,
-          followersCount: { $size: '$followersArr' },
-          followingCount: { $size: '$followingArr' },
-        },
-      },
-    ]);
+    const counted = await db
+      .select({ id: users.id, ...publicUserFollowCounts })
+      .from(users)
+      .where(inArray(users.id, pageIds));
     for (const row of counted) {
-      countMap.set(row._id.toHexString(), {
-        followers: row.followersCount ?? 0,
-        following: row.followingCount ?? 0,
+      countMap.set(row.id, {
+        followers: row.followersCount,
+        following: row.followingCount,
       });
     }
   }
 
   return pageRows.map((row) => {
-    const counts = countMap.get(row._id.toHexString());
+    const counts = countMap.get(row._id);
     return formatProfileResult({
       ...row,
       followersCount: counts?.followers ?? 0,
@@ -1235,9 +1307,9 @@ router.get(
     const excludeTypes = parseExcludeTypesQuery(excludeTypesRaw);
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
 
     logger.debug('GET /profiles/recommendations', {
       currentUserId: currentUserId ?? null,
@@ -1293,7 +1365,7 @@ router.post(
     const recommendations = await buildRecommendations(currentUserId, {
       limit: parsedLimit,
       offset: parsedOffset,
-      excludeTypes: body.excludeTypes ?? [],
+      excludeTypes: (body.excludeTypes ?? []).filter(isExcludableUserType),
       excludeIds: body.excludeIds ?? [],
       clientId: authorizedClientId,
       boosts: body.boosts,

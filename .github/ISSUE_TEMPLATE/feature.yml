@@ -7,8 +7,8 @@ body:
     attributes:
       label: Package
       options:
+        - "@oxyhq/contracts"
         - "@oxyhq/core"
-        - "@oxyhq/auth"
         - "@oxyhq/services"
         - "@oxyhq/api"
         - "accounts app"

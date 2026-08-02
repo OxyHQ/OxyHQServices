@@ -14,15 +14,22 @@
  * cache write — the read-path invariant holds).
  */
 
-import { Router, Request, Response } from 'express';
-import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { Router, type Request, type Response } from 'express';
+import { and, eq, ne } from 'drizzle-orm';
+import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError, ErrorCodes, InternalServerError, NotFoundError, UnauthorizedError } from '../utils/error';
 import { rateLimit } from '../middleware/rateLimiter';
-import { isValidObjectId } from '../utils/validation';
-import { getUserNode, removeNode, provisionManagedVault } from '../services/nodeRegistry.service';
+import { hashedIpKey } from '../utils/ipKey';
+import { getDb } from '../config/postgres';
+import { userNodes } from '../db/schema/userNodes';
+import {
+  getUserNode,
+  removeNode,
+  provisionManagedVault,
+  type UserNodeRecord,
+} from '../services/nodeRegistry.service';
 import { enqueueNodeIngest } from '../queue/nodeIngest.queue';
-import UserNode, { type IUserNode } from '../models/UserNode';
 
 const router = Router();
 
@@ -30,7 +37,7 @@ const router = Router();
 function userScopedKey(scope: string) {
   return (req: AuthRequest): string => {
     const userId = req.user?.id;
-    return userId ? `${scope}:${userId}` : `${scope}:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `${scope}:${userId}` : `${scope}:ip:${hashedIpKey(req)}`;
   };
 }
 
@@ -76,11 +83,11 @@ const nodeIngestNotifyLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
   message: 'Too many ingest notifications. Please slow down.',
-  keyGenerator: (req: Request): string => `nodes:ingest:ip:${req.ip ?? 'unknown'}`,
+  keyGenerator: (req: Request): string => `nodes:ingest:ip:${hashedIpKey(req)}`,
 });
 
-/** Public projection of a node row (drops Mongo internals). */
-function serializeNode(node: IUserNode): Record<string, unknown> {
+/** Public projection of a node row. */
+function serializeNode(node: UserNodeRecord): Record<string, unknown> {
   return {
     nodeDid: node.nodeDid,
     endpoint: node.endpoint,
@@ -183,17 +190,27 @@ router.post(
  * Unauthenticated by design (it only re-pulls the user's OWN node and changes
  * nothing without cryptographic verification), but rate-limited hard by IP. The
  * read path is untouched — this only schedules background work.
+ *
+ * The `isValidObjectId` pre-filter is DELETED, not ported. It existed to keep a
+ * non-ObjectId path param out of a Mongoose `CastError`; here `user_id` is
+ * `text`, so an unknown or malformed id simply selects no row. Keeping it would
+ * have been worse than useless: every account minted since the cutover carries a
+ * uuid v7, which the 24-hex predicate rejects — the notify would have silently
+ * enqueued nothing for exactly those accounts, with a 202 either way. Same trap
+ * the chain-head route hit (`routes/__tests__/chainHead.test.ts`).
  */
 router.post(
   '/ingest/notify/:userId',
   nodeIngestNotifyLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
-    if (isValidObjectId(userId)) {
-      const hasNode = await UserNode.exists({ userId, status: { $ne: 'revoked' } });
-      if (hasNode) {
-        enqueueNodeIngest(userId);
-      }
+    const [node] = await getDb()
+      .select({ userId: userNodes.userId })
+      .from(userNodes)
+      .where(and(eq(userNodes.userId, userId), ne(userNodes.status, 'revoked')))
+      .limit(1);
+    if (node) {
+      enqueueNodeIngest(userId);
     }
     res.status(202).json({ accepted: true });
   }),

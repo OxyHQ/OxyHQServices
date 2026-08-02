@@ -15,7 +15,7 @@ import {
   Platform,
 } from 'react-native';
 import { BottomSheet, type BottomSheetRef } from '@oxyhq/bloom/bottom-sheet';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Clock01Icon } from '@hugeicons/core-free-icons';
 import { useColors } from '@/constants/theme';
@@ -96,7 +96,7 @@ interface ScheduleSendSheetProps {
 
 export function ScheduleSendSheet({ visible, onClose, onSchedule }: ScheduleSendSheetProps) {
   const colors = useColors();
-  const options = useMemo(getScheduleOptions, []);
+  const options = useMemo(() => getScheduleOptions(), []);
   const sheetRef = useRef<BottomSheetRef>(null);
 
   useEffect(() => {

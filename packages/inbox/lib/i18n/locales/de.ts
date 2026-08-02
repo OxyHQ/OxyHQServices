@@ -44,16 +44,12 @@ const de: LocaleDict = {
   },
 
   tabs: {
-    home: 'Start',
     inbox: 'Posteingang',
     search: 'Suchen',
     settings: 'Einstellungen',
-    forYou: 'Für dich',
   },
 
   drawer: {
-    home: 'Start',
-    forYou: 'Für dich',
     starred: 'Markiert',
     snoozed: 'Erinnerung später',
     subscriptions: 'Abonnements',
@@ -123,6 +119,11 @@ const de: LocaleDict = {
       analyzing: 'Alia analysiert deinen Posteingang…',
       unavailable: 'Überblick kann gerade nicht erstellt werden.',
       empty: 'Noch keine E-Mails zum Zusammenfassen.',
+      writing: 'Dein Überblick wird geschrieben…',
+      preparing: 'Dein Überblick wird vorbereitet…',
+      failed: 'Der heutige Überblick konnte nicht erstellt werden.',
+      nothingNew: 'Heute nichts Neues.',
+      tapRetry: 'Tippe, um es erneut zu versuchen.',
     },
     feedEmpty: {
       title: 'Alles erledigt',
@@ -134,25 +135,6 @@ const de: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'Für dich',
-    starred: 'Markiert',
-    unread: 'Ungelesen',
-    attachments: 'Anhänge',
-    empty: {
-      title: 'Alles erledigt',
-      subtitle: 'Aktuell ist nichts für dich hervorgehoben.',
-    },
-    summary: {
-      fromOne: 'Von {{a}}',
-      fromTwo: 'Von {{a}} und {{b}}',
-      fromManyOne: 'Von {{a}}, {{b}} und {{count}} weiterer Person',
-      fromManyOther: 'Von {{a}}, {{b}} und {{count}} weiteren Personen',
-      aboutOne: ' — zu {{topic}}',
-      aboutTwo: ' — zu {{a}}, {{b}}',
-      aboutMore: ' und mehr',
-    },
-  },
 
   inbox: {
     title: 'Posteingang',
@@ -385,6 +367,7 @@ const de: LocaleDict = {
     keyPoints: 'Kernpunkte',
     actionItems: 'Aufgaben',
     due: 'Fällig: {{date}}',
+    unavailable: 'Diese Unterhaltung kann gerade nicht zusammengefasst werden.',
   },
 
   staleThread: {

@@ -1,8 +1,7 @@
 import {
     userResponseSchema,
-    refreshAllResponseSchema,
     currentUserResponseSchema,
-    deviceSessionsResponseSchema,
+    deviceLinkedSessionsResponseSchema,
     resolveUserId,
     safeParseContract,
 } from '../userResponse';
@@ -90,67 +89,6 @@ describe('userResponseSchema', () => {
     });
 });
 
-describe('refreshAllResponseSchema', () => {
-    it('rejects an entry whose authuser is null', () => {
-        const parsed = safeParseContract(refreshAllResponseSchema, {
-            accounts: [
-                {
-                    authuser: null,
-                    accessToken: 'tok',
-                    expiresAt: '2026-01-01T00:00:00.000Z',
-                    sessionId: 'sess_1',
-                    user: {
-                        id: 'u1',
-                        username: 'nateus',
-                        name: { first: 'Nate', last: 'Isern', displayName: 'Nate Isern' },
-                    },
-                },
-            ],
-        });
-        expect(parsed).toBeNull();
-    });
-
-    it('accepts an empty accounts array (no signed-in accounts on device)', () => {
-        const parsed = safeParseContract(refreshAllResponseSchema, { accounts: [] });
-        expect(parsed).not.toBeNull();
-        expect(parsed?.accounts).toHaveLength(0);
-    });
-
-    it('accepts a multi-account snapshot with structured names', () => {
-        const parsed = safeParseContract(refreshAllResponseSchema, {
-            accounts: [
-                {
-                    authuser: 0,
-                    accessToken: 'a',
-                    expiresAt: 't',
-                    sessionId: 's0',
-                    user: { id: 'u0', username: 'a', name: { first: 'First', displayName: 'First' } },
-                },
-                {
-                    authuser: 1,
-                    accessToken: 'b',
-                    expiresAt: 't',
-                    sessionId: 's1',
-                    user: { id: 'u1', username: 'b', name: { first: 'Sec', last: 'Ond', displayName: 'Sec Ond' } },
-                },
-            ],
-        });
-        expect(parsed?.accounts).toHaveLength(2);
-    });
-
-    it('rejects an entry missing the required accessToken', () => {
-        const parsed = safeParseContract(refreshAllResponseSchema, {
-            accounts: [{
-                authuser: 0,
-                expiresAt: 't',
-                sessionId: 's',
-                user: { id: 'u', name: { displayName: 'User' } },
-            }],
-        });
-        expect(parsed).toBeNull();
-    });
-});
-
 describe('currentUserResponseSchema', () => {
     it('accepts the success envelope with virtuals present', () => {
         const parsed = safeParseContract(currentUserResponseSchema, {
@@ -178,9 +116,9 @@ describe('currentUserResponseSchema', () => {
     });
 });
 
-describe('deviceSessionsResponseSchema', () => {
+describe('deviceLinkedSessionsResponseSchema', () => {
     it('accepts entries with a structured-name user', () => {
-        const parsed = safeParseContract(deviceSessionsResponseSchema, [
+        const parsed = safeParseContract(deviceLinkedSessionsResponseSchema, [
             {
                 sessionId: 's1',
                 isCurrent: true,
@@ -192,7 +130,7 @@ describe('deviceSessionsResponseSchema', () => {
     });
 
     it('accepts a null user slot', () => {
-        const parsed = safeParseContract(deviceSessionsResponseSchema, [
+        const parsed = safeParseContract(deviceLinkedSessionsResponseSchema, [
             { sessionId: 's1', user: null },
         ]);
         expect(parsed).not.toBeNull();

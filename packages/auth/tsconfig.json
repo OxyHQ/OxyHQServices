@@ -23,6 +23,7 @@
     "components/**/*.ts",
     "components/**/*.tsx",
     "lib/**/*.ts",
+    "functions/**/*.ts",
     "app/**/*.css",
     "vite.config.ts",
     "vite-env.d.ts"
@@ -30,7 +31,6 @@
   "exclude": [
     "node_modules",
     "dist",
-    "server",
     "lib/**/__tests__/**",
     "components/**/__tests__/**"
   ]

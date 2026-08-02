@@ -1,8 +1,10 @@
 import { useCallback, useMemo } from 'react';
 import { Alert, Pressable, StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-import { OxySignInButton, useOxy } from '@oxyhq/services';
+import { getNormalizedUserHandle } from '@oxyhq/core';
+import { OxySignInButton, useOxy, type RouteName } from '@oxyhq/services';
 import Section from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 
@@ -15,6 +17,7 @@ import { Colors } from '@/constants/theme';
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const router = useRouter();
 
   const {
     isAuthenticated,
@@ -28,11 +31,7 @@ export default function HomeScreen() {
   } = useOxy();
   const displayName = useMemo(() => {
     if (!user) return 'Unknown user';
-
-    const fullName = user.name?.full;
-    const firstLast = [user.name?.first, user.name?.last].filter(Boolean).join(' ').trim();
-
-    return fullName || firstLast || user.username || user.email || 'Unknown user';
+    return user.name?.displayName ?? getNormalizedUserHandle(user) ?? 'Unknown user';
   }, [user]);
 
   const handleLogout = useCallback(async () => {
@@ -53,12 +52,12 @@ export default function HomeScreen() {
     showBottomSheet('ManageAccount');
   }, [showBottomSheet]);
 
-  const handleOpenScreen = useCallback((screen: string) => {
+  const handleOpenScreen = useCallback((screen: RouteName) => {
     if (!showBottomSheet) {
       Alert.alert('Unavailable', 'Bottom sheet is not available right now.');
       return;
     }
-    showBottomSheet(screen as any);
+    showBottomSheet(screen);
   }, [showBottomSheet]);
 
   const handleOpenPaymentGateway = useCallback(() => {
@@ -141,9 +140,9 @@ export default function HomeScreen() {
               Native: <ThemedText type="defaultSemiBold">{currentNativeLanguageName}</ThemedText>
             </ThemedText>
           )}
-          {currentLanguageMetadata?.flag && (
-            <ThemedText type="default" style={styles.flag}>
-              {currentLanguageMetadata.flag}
+          {currentLanguageMetadata?.region && (
+            <ThemedText type="default">
+              Region: <ThemedText type="defaultSemiBold">{currentLanguageMetadata.region}</ThemedText>
             </ThemedText>
           )}
           <Pressable
@@ -156,19 +155,27 @@ export default function HomeScreen() {
           </Pressable>
         </ThemedView>
 
+        {/* Profile preview cards showcase — available regardless of auth state */}
+        <Section title="Profile preview cards">
+          <GroupedSection
+            items={[
+              {
+                id: 'profile-cards',
+                icon: 'id-card-outline',
+                iconColor: colors.iconData,
+                title: 'Profile preview cards',
+                subtitle: 'ProfileCard, StatBar, heatmap & more',
+                onPress: () => router.push('/profile-cards'),
+                showChevron: true,
+              },
+            ]}
+          />
+        </Section>
+
         {/* Authentication Screens — available regardless of auth state for testing */}
         <Section title="Authentication">
           <GroupedSection
             items={[
-              {
-                id: 'oxy-auth',
-                icon: 'qr-code',
-                iconColor: colors.iconSecurity,
-                title: 'Sign in with Oxy',
-                subtitle: 'QR code authentication flow',
-                onPress: () => handleOpenScreen('OxyAuth'),
-                showChevron: true,
-              },
               {
                 id: 'welcome-new-user',
                 icon: 'hand-left-outline',
@@ -207,7 +214,7 @@ export default function HomeScreen() {
                 items={[
                   {
                     id: 'manage-account',
-                    icon: 'cellphone',
+                    icon: 'phone-portrait-outline',
                     iconColor: colors.iconHome,
                     title: 'Manage your Oxy Account',
                     subtitle: 'Profile, sessions, security and more',
@@ -224,7 +231,7 @@ export default function HomeScreen() {
                 items={[
                   {
                     id: 'account-verification',
-                    icon: 'check-circle',
+                    icon: 'checkmark-circle-outline',
                     iconColor: colors.iconSuccess,
                     title: 'Verification',
                     subtitle: 'Account verification',
@@ -241,7 +248,7 @@ export default function HomeScreen() {
                 items={[
                   {
                     id: 'profile',
-                    icon: 'account',
+                    icon: 'person-outline',
                     iconColor: colors.iconPersonalInfo,
                     title: 'Profile',
                     subtitle: 'User profile',
@@ -268,7 +275,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'language-selector',
-                    icon: 'translate',
+                    icon: 'language-outline',
                     iconColor: colors.iconPersonalInfo,
                     title: 'Language',
                     subtitle: 'Change language',
@@ -285,7 +292,7 @@ export default function HomeScreen() {
                 items={[
                   {
                     id: 'history-view',
-                    icon: 'clock',
+                    icon: 'time-outline',
                     iconColor: colors.iconSecurity,
                     title: 'History',
                     subtitle: 'View & manage history',
@@ -303,7 +310,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'search-settings',
-                    icon: 'magnify',
+                    icon: 'search-outline',
                     iconColor: colors.iconSecurity,
                     title: 'Search',
                     subtitle: 'SafeSearch & settings',
@@ -356,7 +363,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'trust-rules',
-                    icon: 'file-document',
+                    icon: 'document-text-outline',
                     iconColor: colors.iconSecurity,
                     title: 'Rules',
                     subtitle: 'Reputation rules',
@@ -444,7 +451,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'legal-documents',
-                    icon: 'file-document',
+                    icon: 'document-text-outline',
                     iconColor: colors.iconSecurity,
                     title: 'Legal',
                     subtitle: 'Privacy & Terms',
@@ -519,11 +526,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#10b981',
     backgroundColor: 'rgba(16, 185, 129, 0.08)',
-  },
-  flag: {
-    fontSize: 32,
-    textAlign: 'center',
-    marginTop: 4,
   },
   languageButton: {
     marginTop: 8,

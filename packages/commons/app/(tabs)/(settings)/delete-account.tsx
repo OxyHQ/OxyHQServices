@@ -1,17 +1,20 @@
 import React, { useCallback, useState } from 'react';
-import { View, StyleSheet, TextInput, ScrollView, Platform } from 'react-native';
+import { View, StyleSheet, TextInput, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
-import { Button, ImportantBanner, ScreenHeader } from '@/components/ui';
-import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { Button, ImportantBanner, KeyboardAwareScrollViewWrapper, ScreenHeader } from '@/components/ui';
 import { useOxy } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
 import { KeyManager } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
 import { runAccountDeletion } from '@/lib/account/delete-account-flow';
+import { retireVaultPushToken } from '@/lib/notifications/push-registration';
+import { ONBOARDING_IDENTITY_QUERY_KEY, ONBOARDING_COMPLETE_QUERY_KEY, ONBOARDING_FLOW_QUERY_KEY } from '@/hooks/useOnboardingStatus';
+import { persistOnboardingComplete, persistOnboardingFlow } from '@/hooks/identity/identityStore';
 
 /**
  * Account Deletion Screen.
@@ -26,6 +29,7 @@ export default function DeleteAccountScreen() {
   // Auth is enforced by the `(vault)` layout — assume a session here.
   const { user, isLoading: oxyLoading, oxyServices, logoutAll } = useOxy();
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
 
   const [confirmText, setConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -38,9 +42,22 @@ export default function DeleteAccountScreen() {
 
     setIsDeleting(true);
     try {
-      // Pre-flight: identity key must exist on this device to sign the delete request.
-      const hasIdentity = await KeyManager.hasIdentity();
-      if (!hasIdentity) {
+      // Pre-flight: identity key must exist on this device to sign the delete
+      // request. `hasIdentity()` now THROWS `IdentityUnavailableError` when
+      // storage is locked/unreadable — that is an INDETERMINATE read, not proof
+      // the identity is gone, so we ABORT the deletion with a visible error and
+      // NEVER fall through to the purge on an unreadable keystore.
+      let identityReadable: boolean;
+      try {
+        identityReadable = await KeyManager.hasIdentity();
+      } catch (probeError) {
+        const message = probeError instanceof Error
+          ? probeError.message
+          : t('data.deleteAccount.failedDefault');
+        toast.error(message);
+        return;
+      }
+      if (!identityReadable) {
         alert(
           t('data.deleteAccount.identityRequiredTitle'),
           t('data.deleteAccount.identityRequiredMessage'),
@@ -48,11 +65,16 @@ export default function DeleteAccountScreen() {
         return;
       }
 
-      // Server-side delete → purge the local identity (primary + backup) →
-      // sign out. The purge runs ONLY after the server confirms deletion, so a
-      // failed delete never strands the user without their keys. See
-      // `runAccountDeletion` for the full ordering/safety contract.
+      // Retire the push token (bearer still valid) → server-side delete → purge
+      // the local identity (primary + backup) → sign out. The purge runs ONLY
+      // after the server confirms deletion, so a failed delete never strands the
+      // user without their keys. See `runAccountDeletion` for the full
+      // ordering/safety contract.
       const { localIdentityPurged } = await runAccountDeletion(confirmText, {
+        // Must precede the delete: the registry scopes the retirement to the
+        // authenticated identity, so this device would otherwise keep a live
+        // registration for the account being destroyed.
+        retirePushToken: () => retireVaultPushToken(oxyServices),
         deleteAccount: (text) => oxyServices.deleteAccount(text),
         // skipBackup=true (no point backing up keys for a deleted account),
         // force=true (also purges the backup slot, no re-prompt), and
@@ -61,6 +83,17 @@ export default function DeleteAccountScreen() {
         purgeIdentity: () => KeyManager.deleteIdentity(true, true, true),
         signOutAll: () => logoutAll(),
       });
+
+      // The local identity has been purged (or the purge was attempted) — re-sync
+      // the shared onboarding probe to ground truth so routing doesn't resume a
+      // deleted account's stale identity. Also clear the local onboarding-complete
+      // milestone so a subsequent re-onboard on this device starts fresh (the
+      // identity-presence check gates first, but keep storage coherent).
+      await persistOnboardingComplete(false);
+      await persistOnboardingFlow(null);
+      queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ONBOARDING_COMPLETE_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ONBOARDING_FLOW_QUERY_KEY });
 
       // The account is gone server-side regardless. If the local key purge
       // failed, surface a non-fatal warning so the user knows to reinstall to
@@ -78,15 +111,13 @@ export default function DeleteAccountScreen() {
     } finally {
       setIsDeleting(false);
     }
-  }, [isConfirmValid, oxyServices, confirmText, logoutAll, router, alert, t]);
+  }, [isConfirmValid, oxyServices, confirmText, logoutAll, router, alert, t, queryClient]);
 
   if (oxyLoading) {
     return (
-      <ScreenContentWrapper>
-        <View style={[styles.center, { backgroundColor: colors.background }]}>
-          <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</ThemedText>
-        </View>
-      </ScreenContentWrapper>
+      <View style={[styles.center, styles.flex, { backgroundColor: colors.background }]}>
+        <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</ThemedText>
+      </View>
     );
   }
 
@@ -177,29 +208,31 @@ export default function DeleteAccountScreen() {
   );
 
   if (Platform.OS === 'web') {
-    return renderContent();
+    return (
+      <View style={[styles.flex, styles.scrollContent, { backgroundColor: colors.background }]}>
+        {renderContent()}
+      </View>
+    );
   }
 
   return (
-    <ScreenContentWrapper>
-      <ScrollView
-        style={[styles.container, { backgroundColor: colors.background }]}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        {renderContent()}
-      </ScrollView>
-    </ScreenContentWrapper>
+    <KeyboardAwareScrollViewWrapper
+      reserveTabBarFootprint
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={styles.scrollContent}
+    >
+      {renderContent()}
+    </KeyboardAwareScrollViewWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 120,
+    flexGrow: 1,
   },
   center: {
     flex: 1,

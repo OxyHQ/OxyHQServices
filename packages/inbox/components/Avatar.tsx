@@ -9,7 +9,7 @@ import React, { useMemo } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { Avatar as BloomAvatar } from '@oxyhq/bloom/avatar';
 import { Text } from '@oxyhq/bloom/typography';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Tick02Icon } from '@hugeicons/core-free-icons';
 import { useColors } from '@/constants/theme';

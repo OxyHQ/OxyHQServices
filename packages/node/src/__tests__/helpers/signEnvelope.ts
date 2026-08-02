@@ -1,17 +1,19 @@
 /**
- * Test helper: forge REAL signed-record envelopes using `@oxyhq/core` —
- * `KeyManager.generateKeyPairSync` for a storage-free secp256k1 keypair and
- * `SignatureService.signWithKey` over `signedRecordSigningInput`.
+ * Test helper: forge REAL signed-record envelopes using the shared crypto —
+ * `KeyManager.generateKeyPairSync` (`@oxyhq/core`) for a storage-free secp256k1
+ * keypair and `@oxyhq/protocol`'s `signMessage` over `signedRecordSigningInput`.
  *
  * This is the crux of the cross-package verification proof: the tests SIGN with
- * the same `@oxyhq/core` primitives that the production Commons vault uses, and
- * the node VERIFIES with those same primitives (`src/verify.ts`). A record
- * forged here must verify on the node with no node-local crypto.
+ * the same `@oxyhq/protocol` primitives that the production Commons vault uses,
+ * and the node VERIFIES with those same primitives (`@oxyhq/protocol/node`'s
+ * `verifyNodeRecordEnvelope`). A record forged here must verify on the node with
+ * no node-local crypto.
  *
  * Not a test file (no `.test.ts` suffix) — imported by the suites.
  */
 
-import { KeyManager, SignatureService, signedRecordSigningInput, computeRecordId } from '@oxyhq/core';
+import { KeyManager } from '@oxyhq/core';
+import { signedRecordSigningInput, signMessage, computeRecordId } from '@oxyhq/protocol';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 
 export interface TestKeyPair {
@@ -40,7 +42,7 @@ export interface BuildEnvelopeOptions {
   issuedAt?: number;
 }
 
-/** Build a fully-signed v2 envelope; verifies against the node's `verifyRecordEnvelope`. */
+/** Build a fully-signed v2 envelope; verifies against `verifyNodeRecordEnvelope`. */
 export async function buildSignedEnvelope(options: BuildEnvelopeOptions): Promise<SignedRecordEnvelope> {
   const subject = options.subject ?? DEFAULT_SUBJECT;
   const fields = {
@@ -56,7 +58,7 @@ export async function buildSignedEnvelope(options: BuildEnvelopeOptions): Promis
     rkey: options.rkey ?? 'self',
   };
   const signingInput = signedRecordSigningInput(fields);
-  const signature = await SignatureService.signWithKey(signingInput, options.privateKey);
+  const signature = await signMessage(signingInput, options.privateKey);
   return { ...fields, publicKey: options.publicKey, alg: 'ES256K-DER-SHA256', signature };
 }
 

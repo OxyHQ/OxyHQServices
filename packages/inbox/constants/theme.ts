@@ -35,6 +35,8 @@ const InboxDomainColors = {
     warning: '#F9AB00',
     swipeArchive: '#1E8E3E',
     swipeDelete: '#D93025',
+    swipeRead: '#1A73E8',
+    swipeSnooze: '#F9AB00',
   },
   dark: {
     unread: '#E8EAED',
@@ -49,6 +51,8 @@ const InboxDomainColors = {
     warning: '#FDD663',
     swipeArchive: '#81C995',
     swipeDelete: '#F28B82',
+    swipeRead: '#8AB4F8',
+    swipeSnooze: '#FDD663',
   },
 } as const;
 

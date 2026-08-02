@@ -22,6 +22,7 @@ export {
   getRequiredOxyUserId,
   isOxyAuthenticated,
   requireOxyAuth,
+  OXY_SERVICE_ENVIRONMENTS,
 } from './auth';
 export type {
   OxyAuthenticatedRequest,
@@ -30,6 +31,7 @@ export type {
   OxyRequestUser,
   OxyServiceActingAsContext,
   OxyServiceAppContext,
+  OxyServiceEnvironment,
 } from './auth';
 export { createOxyRateLimit } from './rateLimit';
 export type { OxyRateLimitOptions } from './rateLimit';
@@ -61,5 +63,41 @@ export type {
 export { createOxyCors } from './cors';
 export type { OxyCorsOptions } from './cors';
 
+// Shared Helmet + Content-Security-Policy baseline (Cloudflare Insights beacon,
+// Oxy API/CDN origins) with additive, per-app extensions.
+export {
+  buildOxyCspDirectives,
+  buildOxyPagesHeaders,
+  createOxySecurityHeaders,
+  formatOxyCspPolicy,
+  OXY_CSP_BASELINE,
+} from './securityHeaders';
+export type {
+  OxyCspDirective,
+  OxyCspExtensions,
+  OxyPagesHeadersOptions,
+  OxySecurityHeadersOptions,
+} from './securityHeaders';
+
 // Constant-time secret comparison.
 export { verifySecret } from './verifySecret';
+
+// Cross-service user-invalidation signal: oxy-api publishes when identity
+// changes, every consuming backend sweeps its caches instead of waiting out a TTL.
+export {
+  createOxyUserInvalidationHandler,
+  evictOxyIdentityCache,
+  publishOxyUserInvalidation,
+} from './userInvalidation';
+export type {
+  OxyIdentityCacheEvictor,
+  OxyInvalidationPublisher,
+  OxyUserInvalidationHandlerOptions,
+} from './userInvalidation';
+
+// Registrable-apex (eTLD+1) derivation via the Public Suffix List — the SINGLE
+// SOURCE OF TRUTH shared with the IdP worker and the client FAPI auto-detect.
+// Pure host handling (no browser deps), so it is safe on the server subpath and
+// lets `@oxyhq/api` derive `auth.<apex>` without duplicating PSL logic.
+export { registrableApex } from '../utils/registrableApex';
+export { isOfficialWebOrigin } from '../utils/officialOrigins';

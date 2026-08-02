@@ -1,9 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
-import Header from '../../components/Header';
-import EmptyState from '../../components/EmptyState';
-import { SearchInput } from '@oxyhq/bloom/search-input';
+import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
+import { Search } from '@oxyhq/bloom/search';
 import {
     Accordion,
     AccordionItem,
@@ -11,7 +10,6 @@ import {
     AccordionContent,
 } from '@oxyhq/bloom/accordion';
 import { Text } from '@oxyhq/bloom/typography';
-import { useTheme } from '@oxyhq/bloom/theme';
 import { useI18n } from '../../hooks/useI18n';
 
 const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const;
@@ -20,13 +18,17 @@ const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const
  * TrustFAQScreen
  *
  * Frequently asked questions about Oxy Trust, rendered with the shared Bloom
- * Accordion (single-expand) + SearchInput. Styling is centralized Bloom token
+ * Accordion (single-expand) + Search. Styling is centralized Bloom token
  * classes; the Bloom Accordion owns its own expand/collapse animation, so no
  * `LayoutAnimation` is used here.
  */
-const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
+const TrustFAQScreen: React.FC<BaseScreenProps> = () => {
     const { t } = useI18n();
-    const bloomTheme = useTheme();
+
+    useSurfaceHeader({
+        title: t('trust.faq.title') || 'Trust FAQ',
+        subtitle: t('trust.faq.subtitle') || 'Frequently asked questions about Oxy Trust',
+    });
 
     const [search, setSearch] = useState('');
     const [expanded, setExpanded] = useState<string | undefined>(undefined);
@@ -54,17 +56,9 @@ const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     );
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('trust.faq.title') || 'Trust FAQ'}
-                subtitle={t('trust.faq.subtitle') || 'Frequently asked questions about Oxy Trust'}
-                subtitleVariant="muted"
-                onBack={goBack}
-                elevation="subtle"
-            />
-
+        <>
             <View className="px-screen-margin pt-space-20 pb-space-12">
-                <SearchInput
+                <Search
                     label={t('trust.faq.search') || 'Search FAQ...'}
                     value={search}
                     onChangeText={setSearch}
@@ -73,15 +67,12 @@ const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                 />
             </View>
 
-            <ScrollView className="flex-1 px-screen-margin" showsVerticalScrollIndicator={false}>
+            <View className="px-screen-margin">
                 {filteredFaqs.length === 0 ? (
-                    <EmptyState
-                        message={
-                            t('trust.faq.noResults', { query: search }) ||
-                            `No FAQ items found matching "${search}"`
-                        }
-                        textColor={bloomTheme.colors.text}
-                    />
+                    <Text className="text-text-secondary text-center p-space-40">
+                        {t('trust.faq.noResults', { query: search }) ||
+                            `No FAQ items found matching "${search}"`}
+                    </Text>
                 ) : (
                     <Accordion
                         type="single"
@@ -102,8 +93,8 @@ const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                         ))}
                     </Accordion>
                 )}
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 

@@ -1,26 +1,32 @@
 /**
  * Avatar Picker Hook
  *
- * Extracts avatar selection logic from OxyContext for better modularity.
+ * The ONE write path for a user's profile picture. It owns no UI: the whole
+ * choose-and-crop experience is a single surface.
  *
- * Flow:
- *   1. Open the FileManagement bottom sheet in select mode for image files.
- *   2. After the user picks an image, route to the AvatarCrop screen so they
- *      can square-crop + zoom before the avatar is set.
- *   3. The cropped JPEG is uploaded as a NEW file via `oxyServices.assetUpload`
- *      and that file becomes the user's avatar.
+ * Flow (typed promise over the shared surface stack — no callback props):
+ *   1. `openWithinOrPresent('ChangeAvatar')` opens the source list (device gallery,
+ *      camera, existing Oxy files, remove) — MORPHING into the caller's surface
+ *      when one is open, else presenting cold. Whichever source the user picks, it
+ *      navigates WITHIN to the crop editor — so there is exactly one cropper and
+ *      one entry into it.
+ *   2. The surface resolves with the cropped JPEG, with `{ removed: true }` when
+ *      the user removed their photo, or `undefined` when they cancelled.
+ *   3. A crop is uploaded as a NEW file via `oxyServices.assetUpload` and set as
+ *      the avatar; a removal clears the avatar field.
  *
- * `expo-image-manipulator` is required for the crop step (declared as an
- * optional peer in the consuming app) — see AvatarCropScreen.
+ * `expo-image-manipulator` is required for the crop step and `expo-image-picker`
+ * for the device/camera sources (both declared as optional peers in the
+ * consuming app) — see AvatarCropScreen / ChangeAvatarScreen.
  */
 
 import { useCallback } from 'react';
-import type { FileMetadata, OxyServices } from '@oxyhq/core';
+import type { OxyServices } from '@oxyhq/core';
 import { translate, updateAvatarVisibility } from '@oxyhq/core';
 import type { QueryClient } from '@tanstack/react-query';
-import { toast } from '@oxyhq/bloom';
-import type { RouteName } from '../navigation/routes';
+import { toast } from '@oxyhq/bloom/toast';
 import { updateProfileWithAvatar } from '../utils/avatarUtils';
+import { openWithinOrPresent } from '../navigation/surfaces';
 import type { AvatarCropResult } from '../screens/AvatarCropScreen';
 
 interface UseAvatarPickerOptions {
@@ -28,7 +34,6 @@ interface UseAvatarPickerOptions {
   currentLanguage: string | null | undefined;
   activeSessionId: string | null;
   queryClient: QueryClient;
-  showBottomSheet: (config: { screen: RouteName; props?: Record<string, unknown> }) => void;
 }
 
 /** Upload result shape returned by oxyServices.assetUpload (single-file path). */
@@ -52,7 +57,6 @@ export function useAvatarPicker({
   currentLanguage,
   activeSessionId,
   queryClient,
-  showBottomSheet,
 }: UseAvatarPickerOptions) {
   /**
    * Final step: take the cropped JPEG, upload it as a new public file, then
@@ -99,48 +103,36 @@ export function useAvatarPicker({
     [activeSessionId, currentLanguage, oxyServices, queryClient],
   );
 
-  /**
-   * After the user picks a file in the FileManagement sheet, route to the
-   * crop screen with the file's download URL as the source image.
-   */
-  const handleFilePicked = useCallback(
-    (file: FileMetadata) => {
-      if (!file.contentType?.startsWith('image/')) {
-        toast.error(
-          translate(currentLanguage ?? undefined, 'editProfile.toasts.selectImage') ||
-            'Please select an image file',
-        );
-        return;
-      }
+  /** Clear the avatar so the profile falls back to the user's initials. */
+  const removeAvatar = useCallback(async () => {
+    try {
+      await updateProfileWithAvatar({ avatar: '' }, oxyServices, activeSessionId, queryClient);
+      toast.success(
+        translate(currentLanguage ?? undefined, 'editProfile.toasts.avatarRemoved'),
+      );
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : undefined;
+      toast.error(
+        message ||
+          translate(currentLanguage ?? undefined, 'editProfile.toasts.updateAvatarFailed'),
+      );
+    }
+  }, [activeSessionId, currentLanguage, oxyServices, queryClient]);
 
-      // Use the public download URL of the picked file as the crop source.
-      // The OxyServices file URL endpoints accept image variants, but for
-      // cropping we want the original — passing no variant returns it.
-      const sourceUri = oxyServices.getFileDownloadUrl(file.id);
-
-      showBottomSheet({
-        screen: 'AvatarCrop',
-        props: {
-          imageUri: sourceUri,
-          onConfirm: finalizeCroppedAvatar,
-        },
-      });
-    },
-    [currentLanguage, finalizeCroppedAvatar, oxyServices, showBottomSheet],
-  );
-
-  const openAvatarPicker = useCallback(() => {
-    showBottomSheet({
-      screen: 'FileManagement',
-      props: {
-        selectMode: true,
-        multiSelect: false,
-        disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
-        afterSelect: 'none',
-        onSelect: handleFilePicked,
-      },
-    });
-  }, [handleFilePicked, showBottomSheet]);
+  const openAvatarPicker = useCallback(async () => {
+    // The source list + crop editor are ONE flow. When triggered from a screen
+    // already inside a surface (EditProfile, ManageAccount, WelcomeNewUser — every
+    // current entry point), it MORPHS into that surface and pops back on finish;
+    // triggered with no surface open it presents cold. Either way it resolves with
+    // the cropped JPEG, a removal, or `undefined` when the user backs out.
+    const result = await openWithinOrPresent('ChangeAvatar');
+    if (!result) return;
+    if ('removed' in result) {
+      await removeAvatar();
+      return;
+    }
+    await finalizeCroppedAvatar(result);
+  }, [finalizeCroppedAvatar, removeAvatar]);
 
   return { openAvatarPicker };
 }

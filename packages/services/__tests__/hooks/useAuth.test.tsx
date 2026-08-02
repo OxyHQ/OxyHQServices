@@ -1,8 +1,11 @@
 /**
  * Tests for the high-level `useAuth` hook.
  *
- * The public web sign-in path is redirect-based. Silent SSO/FedCM is handled
- * during cold boot; an explicit user click sends the browser to the IdP.
+ * The public web sign-in path opens the unified account dialog on its sign-in
+ * view (`openAccountDialog('signin')`) — there is NO automatic navigation to any
+ * login page. Cross-domain restore is handled during the device-first cold boot;
+ * an explicit user click just presents the SDK sign-in surface. Native with a
+ * public key still signs in with the cryptographic identity directly.
  */
 
 import { act, renderHook } from '@testing-library/react';
@@ -21,14 +24,12 @@ interface MockOxyState {
   logout: jest.Mock;
   logoutAll: jest.Mock;
   refreshSessions: jest.Mock;
-  oxyServices: {
-    config?: { authWebUrl?: string };
-    signInWithRedirect?: jest.Mock;
-  };
+  oxyServices: Record<string, unknown>;
   hasIdentity: jest.Mock;
   getPublicKey: jest.Mock;
   showBottomSheet: jest.Mock;
   openAvatarPicker: jest.Mock;
+  openAccountDialog: jest.Mock;
 }
 
 const defaultMockState = (): MockOxyState => ({
@@ -45,14 +46,12 @@ const defaultMockState = (): MockOxyState => ({
   logout: jest.fn(async () => undefined),
   logoutAll: jest.fn(async () => undefined),
   refreshSessions: jest.fn(async () => undefined),
-  oxyServices: {
-    config: { authWebUrl: 'https://auth.oxy.so' },
-    signInWithRedirect: jest.fn(),
-  },
+  oxyServices: {},
   hasIdentity: jest.fn(async () => false),
   getPublicKey: jest.fn(async () => null),
   showBottomSheet: jest.fn(),
   openAvatarPicker: jest.fn(),
+  openAccountDialog: jest.fn(),
 });
 
 let mockState: MockOxyState = defaultMockState();
@@ -93,21 +92,23 @@ describe('useAuth — state passthrough', () => {
   });
 });
 
-describe('useAuth.signIn — web redirect path', () => {
+describe('useAuth.signIn — web dialog path', () => {
   beforeEach(() => {
     mockState = defaultMockState();
   });
 
-  it('redirects to the IdP instead of using a popup', async () => {
+  it('opens the unified account dialog on its sign-in view instead of navigating', async () => {
     const { result } = renderHook(() => useAuth());
 
     await act(async () => {
+      // The web path returns a never-resolving promise (the caller reacts to
+      // `isAuthenticated`), so fire-and-forget it.
       void result.current.signIn();
+      await Promise.resolve();
     });
 
-    expect(mockState.oxyServices.signInWithRedirect).toHaveBeenCalledWith({
-      redirectUri: window.location.href,
-    });
+    expect(mockState.openAccountDialog).toHaveBeenCalledWith('signin');
+    // No key-based sign-in, no redirect helper.
     expect(mockState.signIn).not.toHaveBeenCalled();
   });
 });
@@ -125,7 +126,7 @@ describe('useAuth.signIn — native key-based path', () => {
     });
 
     expect(mockState.signIn).toHaveBeenCalledWith('explicit-pubkey');
-    expect(mockState.oxyServices.signInWithRedirect).not.toHaveBeenCalled();
+    expect(mockState.openAccountDialog).not.toHaveBeenCalled();
   });
 });
 

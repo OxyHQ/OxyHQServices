@@ -186,23 +186,6 @@ describe('OxyServices.identity', () => {
     });
   });
 
-  describe('linkPassword', () => {
-    it('POSTs /auth/link with the password method and sweeps cache', async () => {
-      makeRequestSpy.mockResolvedValue({ success: true, message: 'Password auth linked successfully' });
-
-      await oxy.linkPassword('nate@oxy.so', 'sup3r-secret');
-
-      expect(makeRequestSpy).toHaveBeenCalledWith(
-        'POST',
-        '/auth/link',
-        { type: 'password', email: 'nate@oxy.so', password: 'sup3r-secret' },
-        expect.objectContaining({ cache: false }),
-      );
-      expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/users/me');
-      expect(clearEntrySpy).toHaveBeenCalledWith('GET:/auth/methods');
-    });
-  });
-
   describe('unlinkAuthMethod', () => {
     it('DELETEs /auth/link/:type and sweeps cache', async () => {
       makeRequestSpy.mockResolvedValue({ success: true, message: 'identity auth unlinked successfully' });
@@ -216,6 +199,35 @@ describe('OxyServices.identity', () => {
         expect.objectContaining({ cache: false }),
       );
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/u/user-123/did.json');
+    });
+  });
+
+  describe('removePasskey', () => {
+    it('DELETEs /auth/link/webauthn/:credentialID and sweeps cache', async () => {
+      makeRequestSpy.mockResolvedValue({ success: true, message: 'Passkey unlinked successfully' });
+
+      await oxy.removePasskey('cred-abc');
+
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'DELETE',
+        '/auth/link/webauthn/cred-abc',
+        undefined,
+        expect.objectContaining({ cache: false }),
+      );
+      expect(clearEntrySpy).toHaveBeenCalledWith('GET:/u/user-123/did.json');
+    });
+
+    it('URL-encodes the credential id', async () => {
+      makeRequestSpy.mockResolvedValue({ success: true, message: 'Passkey unlinked successfully' });
+
+      await oxy.removePasskey('a/b+c=');
+
+      expect(makeRequestSpy).toHaveBeenCalledWith(
+        'DELETE',
+        '/auth/link/webauthn/a%2Fb%2Bc%3D',
+        undefined,
+        expect.objectContaining({ cache: false }),
+      );
     });
   });
 

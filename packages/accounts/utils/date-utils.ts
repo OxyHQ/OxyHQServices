@@ -1,17 +1,6 @@
 /**
- * Date formatting and display-name utilities for the accounts app.
- *
- * The display-name helpers are thin wrappers around the canonical
- * `getAccountDisplayName` in `@oxyhq/core`, so every UI surface in the Oxy
- * ecosystem resolves names through the same fallback chain
- * (name → composed first+last → username → `Account 0x12345678…` → translated
- * "Unnamed").
+ * Date formatting utilities for the accounts app.
  */
-
-import {
-  getAccountDisplayName as coreGetAccountDisplayName,
-  type DisplayNameUserShape,
-} from '@oxyhq/core';
 
 /**
  * Formats a date string to a readable format (e.g., "Feb 21, 2025")
@@ -32,14 +21,3 @@ export const formatDate = (dateString: string | undefined | null): string => {
     return '';
   }
 };
-
-/**
- * Gets a display name from user data.
- *
- * Prefers full name → composed first+last → username → `Account 0x12345678…`
- * (derived from publicKey) → translated "Unnamed".
- */
-export const getDisplayName = (
-  user: DisplayNameUserShape | null | undefined,
-  locale?: string,
-): string => coreGetAccountDisplayName(user, locale);

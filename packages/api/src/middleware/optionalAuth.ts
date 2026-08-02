@@ -6,11 +6,12 @@
  * This allows routes to serve public content while still identifying authenticated users.
  */
 
-import { Response, NextFunction } from 'express';
-import { Types } from 'mongoose';
+import type { Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
-import { authenticateRequestNonBlocking, AuthenticatedRequest, extractTokenFromRequest, decodeToken, validateSessionToken } from './authUtils';
-import { verifyServiceToken, type ServiceTokenPayload } from './auth';
+import { isAccountIdFormat } from '../utils/validation';
+import { authenticateRequestNonBlocking, type AuthenticatedRequest, extractTokenFromRequest } from './authUtils';
+import { verifyServiceToken, type ServiceTokenPayload } from './serviceToken';
+import { MEDIA_TOKEN_QUERY_PARAM, verifyMediaToken } from '../utils/mediaToken';
 
 /**
  * Optional authentication middleware
@@ -52,49 +53,48 @@ export function getUserId(req: AuthenticatedRequest): string | undefined {
  * Resolve the viewer user id for a MEDIA stream/download request.
  *
  * A browser `<img src>` / `<a download>` cannot send an `Authorization` header,
- * so the SDK embeds the access token in the URL query (`?token=`) for private
- * assets (see `@oxyhq/core` `getFileDownloadUrl`). This resolves that query
- * token to its owner user id so the OWNER can render their own private media.
+ * and the zero-cookie session transport gives it no ambient credential either.
+ * Private assets therefore carry a SCOPED MEDIA TOKEN in `?mt=`, minted by
+ * `GET /assets/:id/url`, `GET /assets/:id/download`, and `POST
+ * /assets/batch-access` only after the caller's access was verified. This
+ * resolves that token to the viewer it was minted for.
  *
  * Important properties:
- * - The query token must validate as a real, unexpired access-session token.
- *   `decodeToken`/`validateSessionToken` enforce the normal access-token signature,
- *   expiry, `type: 'access'`, `sessionId`, and active-session checks, so expired/logged-out tokens and
- *   non-session JWTs (for example 2FA challenge tokens) cannot identify a
- *   private-media viewer.
- * - Header/session auth always wins; the query token is only a fallback when no
+ * - The media token authorizes exactly ONE asset. It is accepted only when its
+ *   `fid` claim equals `req.params.id` — the file id THIS request is asking
+ *   for — so a token minted for asset A cannot open asset B. Binding to the
+ *   route param (rather than a fileId variable a caller passes in) keeps the
+ *   check tied to the id that actually selects the bytes.
+ * - It is signed with a key derived from `ACCESS_TOKEN_SECRET`, disjoint from
+ *   the access/service-token key. A session or service token presented in `?mt=`
+ *   does not verify, and a media token does not authenticate any other surface.
+ * - It expires in ~15 minutes; the short TTL is the revocation story.
+ * - Header/session auth always wins; the media token is only a fallback when no
  *   authenticated user is present on the request.
  *
+ * Resolving a viewer here NEVER grants access on its own — every caller still
+ * runs `assetService.canUserAccessFile` on the resolved viewer.
+ *
  * Scope it to media stream/download routes only — never wire it into a global
- * auth middleware (token-in-URL must not authenticate arbitrary endpoints).
+ * auth middleware (a token-in-URL must not authenticate arbitrary endpoints).
  */
-export async function getMediaViewerUserId(req: AuthenticatedRequest): Promise<string | undefined> {
+export function getMediaViewerUserId(req: AuthenticatedRequest): string | undefined {
   const sessionUserId = getUserId(req);
   if (sessionUserId) {
     return sessionUserId;
   }
 
-  const queryToken = typeof req.query?.token === 'string' ? req.query.token : undefined;
-  if (!queryToken || !process.env.ACCESS_TOKEN_SECRET) {
+  const rawToken = req.query?.[MEDIA_TOKEN_QUERY_PARAM];
+  if (typeof rawToken !== 'string' || rawToken.length === 0) {
     return undefined;
   }
 
-  try {
-    const decoded = decodeToken(queryToken);
-    if (decoded?.type !== 'access' || !decoded.sessionId) {
-      return undefined;
-    }
-
-    const user = await validateSessionToken(queryToken);
-    return user?._id;
-  } catch (error) {
-    // Invalid/expired/revoked/non-session token → treat as anonymous (the access
-    // check below still runs). Logged at debug for diagnostics only.
-    logger.debug('getMediaViewerUserId: query token did not validate as an active session', {
-      reason: error instanceof Error ? error.message : String(error),
-    });
+  const requestedFileId = req.params?.id;
+  if (typeof requestedFileId !== 'string' || requestedFileId.length === 0) {
     return undefined;
   }
+
+  return verifyMediaToken(rawToken, requestedFileId);
 }
 
 /**
@@ -186,10 +186,35 @@ export async function optionalUserOrServiceAuth(
  * - USER token: the viewer is the session's own user (`req.user._id`). Any
  *   `X-Oxy-User-Id` header is IGNORED so a user cannot impersonate another.
  * - SERVICE token: the viewer is the `X-Oxy-User-Id` header — but ONLY when the
- *   credential holds {@link VIEWER_DELEGATION_SCOPE} and the header is a valid
- *   ObjectId. A service with no/invalid header (or lacking the scope) resolves
- *   to `undefined` → the caller is treated as anonymous/public.
+ *   credential holds {@link VIEWER_DELEGATION_SCOPE} and the header has the
+ *   shape of an account id. A service with no/invalid header (or lacking the
+ *   scope) resolves to `undefined` → the caller is treated as anonymous/public.
  * - No principal: `undefined` (anonymous).
+ *
+ * ## Why a shape check SURVIVES the Postgres port here, when its siblings did not
+ *
+ * The `Types.ObjectId.isValid` guard this replaces rejected the **uuid v7 every
+ * account created after the cutover carries** (`schema/columns.ts`
+ * `generatedId()`), so a post-cutover viewer id arriving in this header resolved
+ * to `undefined` and the request SILENTLY DEGRADED TO ANONYMOUS — viewer-scoped
+ * visibility filtering (blocks, restricts, private accounts, follow-gated
+ * fields) simply stopped applying for the delegating caller. That is a privacy
+ * consequence, not an error, which is precisely why nothing surfaced it.
+ *
+ * It is replaced rather than deleted, unlike the guards in
+ * `securityActivityService` and `identityBinding.service`. Those two existed
+ * only to stop a malformed string reaching Mongoose as a `CastError`, and a
+ * `text` id that matches no row now produces the same "no such user" outcome a
+ * malformed one always did. This one is different in kind: it is not a driver
+ * artifact but the documented input contract of a CROSS-PRINCIPAL delegation
+ * header — one principal asserting an identity ABOUT ANOTHER — whose documented
+ * outcome for a value it does not accept is a defined fallback (anonymous),
+ * never an error. Keeping the check bounds an arbitrary caller-supplied string
+ * before it becomes a viewer identity across every route listed above.
+ *
+ * {@link isAccountIdFormat} accepts BOTH live id shapes — the pre-cutover
+ * 24-char ObjectId hex preserved verbatim and the uuid v7 — so the contract is
+ * kept while the bug is not. Do NOT narrow it back to a 24-hex test.
  */
 export function resolveViewerId(req: OptionalUserOrServiceRequest): string | undefined {
   // A user session always derives the viewer from its own token. Ignore any
@@ -212,7 +237,7 @@ export function resolveViewerId(req: OptionalUserOrServiceRequest): string | und
 
   const raw = req.headers[OXY_USER_ID_HEADER];
   const viewerId = typeof raw === 'string' && raw.length > 0 ? raw : undefined;
-  if (!viewerId || !Types.ObjectId.isValid(viewerId)) {
+  if (!viewerId || !isAccountIdFormat(viewerId)) {
     return undefined;
   }
   return viewerId;

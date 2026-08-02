@@ -1,22 +1,19 @@
 /**
- * Advanced subscreen — filters, templates, import.
+ * Advanced subscreen — filters, templates, bundles, import.
  *
  * Power-user features that don't fit the standard mail/account/notification
  * buckets. Layout follows the Alia subsection pattern (small eyebrow header
  * + visual content block) rather than the iOS row-spam look.
  *
- * Three subsections:
- *  1. Filters & rules — list of filters with enable toggle + delete; create
- *     opens a small inline form.
- *  2. Templates — saved snippet bodies for quick compose.
- *  3. Import — file picker on web (native is no-op for now).
- *
- * For deeper authoring (multi-condition filter builder, rich-text template
- * editor), this screen links to dedicated bottom sheets in future passes;
- * today it surfaces the essentials.
+ * Subsections:
+ *  1. Filters & rules — list with enable toggle + delete; a simple inline
+ *     create form (field + condition + value + action).
+ *  2. Templates — saved snippet bodies with inline edit + delete + create.
+ *  3. Bundles — enable/disable + reorder auto-grouping bundles.
+ *  4. Import — .eml file picker (web only).
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -30,55 +27,208 @@ import { Switch } from '@oxyhq/bloom/switch';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Admonition } from '@oxyhq/bloom/admonition';
-import { Dialog, useDialogControl } from '@oxyhq/bloom';
+import { Dialog, useDialogControl, toast } from '@oxyhq/bloom';
 import {
   Filter_Stroke2_Corner0_Rounded,
   PageText_Stroke2_Corner0_Rounded,
   ArrowOutOfBox_Stroke2_Corner0_Rounded,
   Trash_Stroke2_Corner0_Rounded,
+  Pencil_Stroke2_Corner0_Rounded,
   PlusSmall_Stroke2_Corner0_Rounded,
   Loader_Stroke2_Corner0_Rounded,
+  CircleCheck_Stroke2_Corner0_Rounded,
+  Group3_Stroke2_Corner0_Rounded,
+  ChevronTop_Stroke2_Corner0_Rounded,
+  ChevronBottom_Stroke2_Corner0_Rounded,
 } from '@oxyhq/bloom/icons';
-import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { SectionHeader } from '@/components/settings/SectionHeader';
 import { useFilters } from '@/hooks/queries/useFilters';
 import {
+  useCreateFilter,
   useUpdateFilter,
   useDeleteFilter,
 } from '@/hooks/mutations/useFilterMutations';
 import { useTemplates } from '@/hooks/queries/useTemplates';
 import {
   useCreateTemplate,
+  useUpdateTemplate,
   useDeleteTemplate,
 } from '@/hooks/mutations/useTemplateMutations';
+import { useBundles } from '@/hooks/queries/useBundles';
+import { useUpdateBundle, useReorderBundle } from '@/hooks/mutations/useBundleMutations';
 import { useEmailStore } from '@/hooks/useEmail';
+import type { EmailFilterCondition, EmailFilterAction } from '@/services/emailApi';
+
+// ─── Filter form option maps ─────────────────────────────────────────
+
+type FilterField = EmailFilterCondition['field'];
+type FilterOperator = EmailFilterCondition['operator'];
+type FilterActionType = 'archive' | 'mark-read' | 'star' | 'delete';
+
+const FIELD_OPTIONS: { value: FilterField; label: string }[] = [
+  { value: 'from', label: 'From' },
+  { value: 'to', label: 'To' },
+  { value: 'subject', label: 'Subject' },
+  { value: 'has-attachment', label: 'Has attachment' },
+  { value: 'size', label: 'Size' },
+];
+
+const TEXT_OPERATORS: { value: FilterOperator; label: string }[] = [
+  { value: 'contains', label: 'contains' },
+  { value: 'equals', label: 'equals' },
+  { value: 'not-contains', label: "doesn't contain" },
+  { value: 'starts-with', label: 'starts with' },
+  { value: 'ends-with', label: 'ends with' },
+];
+
+const SIZE_OPERATORS: { value: FilterOperator; label: string }[] = [
+  { value: 'greater-than', label: 'larger than (bytes)' },
+  { value: 'less-than', label: 'smaller than (bytes)' },
+];
+
+const ACTION_OPTIONS: { value: FilterActionType; label: string }[] = [
+  { value: 'archive', label: 'Archive' },
+  { value: 'mark-read', label: 'Mark read' },
+  { value: 'star', label: 'Star' },
+  { value: 'delete', label: 'Delete' },
+];
+
+function operatorsForField(field: FilterField) {
+  if (field === 'size') return SIZE_OPERATORS;
+  if (field === 'has-attachment') return [];
+  return TEXT_OPERATORS;
+}
+
+interface ChipGroupProps<T extends string> {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}
+
+function ChipGroup<T extends string>({ options, value, onChange }: ChipGroupProps<T>) {
+  const colors = useColors();
+  const theme = useTheme();
+  return (
+    <View style={styles.chipRow}>
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <Pressable
+            key={opt.value}
+            onPress={() => onChange(opt.value)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            style={[
+              styles.chip,
+              {
+                backgroundColor: active ? theme.colors.primary : theme.colors.background,
+                borderColor: active ? theme.colors.primary : colors.border,
+              },
+            ]}
+          >
+            <Text
+              style={[styles.chipText, { color: active ? '#FFFFFF' : colors.text }]}
+              numberOfLines={1}
+            >
+              {opt.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 export function AdvancedSection() {
   const colors = useColors();
   const theme = useTheme();
 
   const { data: filters = [] } = useFilters();
+  const createFilter = useCreateFilter();
   const updateFilter = useUpdateFilter();
   const deleteFilter = useDeleteFilter();
 
   const { data: templates = [] } = useTemplates();
   const createTemplate = useCreateTemplate();
+  const updateTemplate = useUpdateTemplate();
   const deleteTemplate = useDeleteTemplate();
+
+  const { data: bundles = [] } = useBundles();
+  const updateBundle = useUpdateBundle();
+  const reorderBundle = useReorderBundle();
+
+  const sortedBundles = useMemo(
+    () => [...bundles].sort((a, b) => a.order - b.order),
+    [bundles],
+  );
 
   const api = useEmailStore((s) => s._api);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number; total: number } | null>(null);
 
-  const [newTemplateName, setNewTemplateName] = useState('');
-  const [newTemplateSubject, setNewTemplateSubject] = useState('');
-  const [newTemplateBody, setNewTemplateBody] = useState('');
+  // ─── Filter create form state ──────────────────────────────────────
+  const [filterName, setFilterName] = useState('');
+  const [filterField, setFilterField] = useState<FilterField>('from');
+  const [filterOperator, setFilterOperator] = useState<FilterOperator>('contains');
+  const [filterValue, setFilterValue] = useState('');
+  const [filterAction, setFilterAction] = useState<FilterActionType>('archive');
+
+  // ─── Template create / edit state ──────────────────────────────────
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [templateName, setTemplateName] = useState('');
+  const [templateSubject, setTemplateSubject] = useState('');
+  const [templateBody, setTemplateBody] = useState('');
 
   const filterDelete = useDialogControl();
   const templateDelete = useDialogControl();
   const [filterPendingDelete, setFilterPendingDelete] = useState<{ id: string; name: string } | null>(null);
   const [templatePendingDelete, setTemplatePendingDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const handleFieldChange = useCallback((field: FilterField) => {
+    setFilterField(field);
+    const ops = operatorsForField(field);
+    setFilterOperator(ops[0]?.value ?? 'contains');
+  }, []);
+
+  const filterValid = useMemo(() => {
+    if (!filterName.trim()) return false;
+    if (filterField === 'has-attachment') return true;
+    return filterValue.trim().length > 0;
+  }, [filterName, filterField, filterValue]);
+
+  const handleCreateFilter = useCallback(() => {
+    if (!filterValid) return;
+    const condition: EmailFilterCondition =
+      filterField === 'has-attachment'
+        ? { field: 'has-attachment', operator: 'equals', value: 'true' }
+        : { field: filterField, operator: filterOperator, value: filterValue.trim() };
+    const action: EmailFilterAction = { type: filterAction };
+    createFilter.mutate(
+      {
+        name: filterName.trim(),
+        conditions: [condition],
+        actions: [action],
+        matchAll: true,
+        enabled: true,
+      },
+      {
+        onSuccess: () => {
+          setFilterName('');
+          setFilterValue('');
+          setFilterField('from');
+          setFilterOperator('contains');
+          setFilterAction('archive');
+          toast.success('Filter created.');
+        },
+        onError: (err: unknown) => {
+          const message = err instanceof Error ? err.message : 'Failed to create filter.';
+          toast.error(message);
+        },
+      },
+    );
+  }, [filterValid, filterField, filterOperator, filterValue, filterAction, filterName, createFilter]);
 
   const handleToggleFilter = useCallback(
     (filterId: string, enabled: boolean) => {
@@ -109,18 +259,51 @@ export function AdvancedSection() {
     });
   }, [filterPendingDelete, deleteFilter]);
 
-  const handleCreateTemplate = useCallback(() => {
-    const name = newTemplateName.trim();
-    const body = newTemplateBody;
-    const subject = newTemplateSubject.trim();
+  const resetTemplateForm = useCallback(() => {
+    setEditingTemplateId(null);
+    setTemplateName('');
+    setTemplateSubject('');
+    setTemplateBody('');
+  }, []);
+
+  const handleEditTemplate = useCallback(
+    (id: string, name: string, subject: string, body: string) => {
+      setEditingTemplateId(id);
+      setTemplateName(name);
+      setTemplateSubject(subject);
+      setTemplateBody(body);
+    },
+    [],
+  );
+
+  const handleSubmitTemplate = useCallback(() => {
+    const name = templateName.trim();
+    const body = templateBody;
+    const subject = templateSubject.trim();
     if (!name || !body.trim()) return;
+
+    if (editingTemplateId) {
+      updateTemplate.mutate(
+        { templateId: editingTemplateId, name, subject, body },
+        {
+          onSuccess: () => {
+            resetTemplateForm();
+            toast.success('Template updated.');
+          },
+          onError: (err: unknown) => {
+            const message = err instanceof Error ? err.message : 'Failed to update template.';
+            toast.error(message);
+          },
+        },
+      );
+      return;
+    }
+
     createTemplate.mutate(
       { name, subject: subject || undefined, body },
       {
         onSuccess: () => {
-          setNewTemplateName('');
-          setNewTemplateSubject('');
-          setNewTemplateBody('');
+          resetTemplateForm();
           toast.success('Template created.');
         },
         onError: (err: unknown) => {
@@ -129,13 +312,14 @@ export function AdvancedSection() {
         },
       },
     );
-  }, [newTemplateName, newTemplateSubject, newTemplateBody, createTemplate]);
+  }, [templateName, templateBody, templateSubject, editingTemplateId, updateTemplate, createTemplate, resetTemplateForm]);
 
   const handleDeleteTemplate = useCallback(() => {
     if (!templatePendingDelete) return;
     deleteTemplate.mutate(templatePendingDelete.id, {
       onSuccess: () => {
         toast.success('Template deleted.');
+        if (editingTemplateId === templatePendingDelete.id) resetTemplateForm();
         setTemplatePendingDelete(null);
       },
       onError: (err: unknown) => {
@@ -143,7 +327,7 @@ export function AdvancedSection() {
         toast.error(message);
       },
     });
-  }, [templatePendingDelete, deleteTemplate]);
+  }, [templatePendingDelete, deleteTemplate, editingTemplateId, resetTemplateForm]);
 
   const handleImportFiles = useCallback(async () => {
     if (!api || Platform.OS !== 'web') return;
@@ -176,6 +360,9 @@ export function AdvancedSection() {
     borderColor: colors.border,
   };
 
+  const templateSubmitting = editingTemplateId ? updateTemplate.isPending : createTemplate.isPending;
+  const showValueInput = filterField !== 'has-attachment';
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -186,7 +373,7 @@ export function AdvancedSection() {
         <SectionHeader icon={Filter_Stroke2_Corner0_Rounded} title="Filters & rules" />
         {filters.length === 0 ? (
           <Admonition type="info">
-            No filters yet. Filters automatically apply actions like labelling, archiving, or forwarding to incoming messages.
+            No filters yet. Filters automatically apply actions like archiving, starring, or marking read to incoming messages.
           </Admonition>
         ) : (
           <View style={[styles.itemList, { borderColor: colors.border }]}>
@@ -219,18 +406,53 @@ export function AdvancedSection() {
                   accessibilityRole="button"
                   accessibilityLabel={`Delete ${f.name}`}
                 >
-                  <Trash_Stroke2_Corner0_Rounded
-                    size="sm"
-                    style={{ color: colors.error }}
-                  />
+                  <Trash_Stroke2_Corner0_Rounded size="sm" style={{ color: colors.error }} />
                 </Pressable>
               </View>
             ))}
           </View>
         )}
-        <Text style={[styles.footnote, { color: colors.secondaryText }]}>
-          Use the current authoring flow to create new filters — the redesigned multi-condition builder is shipping soon.
-        </Text>
+
+        {/* Create filter */}
+        <View style={styles.createBlock}>
+          <TextInput
+            value={filterName}
+            onChangeText={setFilterName}
+            placeholder="Filter name"
+            placeholderTextColor={colors.secondaryText}
+            style={[styles.input, inputStyle]}
+          />
+          <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>When a message&apos;s</Text>
+          <ChipGroup options={FIELD_OPTIONS} value={filterField} onChange={handleFieldChange} />
+          {showValueInput ? (
+            <>
+              <ChipGroup
+                options={operatorsForField(filterField)}
+                value={filterOperator}
+                onChange={setFilterOperator}
+              />
+              <TextInput
+                value={filterValue}
+                onChangeText={setFilterValue}
+                placeholder={filterField === 'size' ? 'Size in bytes' : 'Value'}
+                placeholderTextColor={colors.secondaryText}
+                keyboardType={filterField === 'size' ? 'numeric' : 'default'}
+                autoCapitalize="none"
+                style={[styles.input, inputStyle]}
+              />
+            </>
+          ) : null}
+          <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>then</Text>
+          <ChipGroup options={ACTION_OPTIONS} value={filterAction} onChange={setFilterAction} />
+          <Button
+            onPress={handleCreateFilter}
+            disabled={!filterValid || createFilter.isPending}
+            icon={<PlusSmall_Stroke2_Corner0_Rounded size="sm" style={{ color: '#FFFFFF' }} />}
+            iconPosition="left"
+          >
+            {createFilter.isPending ? 'Creating…' : 'Add filter'}
+          </Button>
+        </View>
       </View>
 
       {/* Templates */}
@@ -244,6 +466,7 @@ export function AdvancedSection() {
                 style={[
                   styles.itemRow,
                   idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+                  editingTemplateId === t._id && { backgroundColor: theme.colors.background },
                 ]}
               >
                 <View style={styles.itemMain}>
@@ -255,6 +478,14 @@ export function AdvancedSection() {
                   </Text>
                 </View>
                 <Pressable
+                  onPress={() => handleEditTemplate(t._id, t.name, t.subject, t.body)}
+                  style={styles.iconBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${t.name}`}
+                >
+                  <Pencil_Stroke2_Corner0_Rounded size="sm" style={{ color: colors.icon }} />
+                </Pressable>
+                <Pressable
                   onPress={() => {
                     setTemplatePendingDelete({ id: t._id, name: t.name });
                     templateDelete.open();
@@ -263,10 +494,7 @@ export function AdvancedSection() {
                   accessibilityRole="button"
                   accessibilityLabel={`Delete ${t.name}`}
                 >
-                  <Trash_Stroke2_Corner0_Rounded
-                    size="sm"
-                    style={{ color: colors.error }}
-                  />
+                  <Trash_Stroke2_Corner0_Rounded size="sm" style={{ color: colors.error }} />
                 </Pressable>
               </View>
             ))}
@@ -274,23 +502,26 @@ export function AdvancedSection() {
         )}
 
         <View style={styles.createBlock}>
+          {editingTemplateId ? (
+            <Text style={[styles.fieldLabel, { color: theme.colors.primary }]}>Editing template</Text>
+          ) : null}
           <TextInput
-            value={newTemplateName}
-            onChangeText={setNewTemplateName}
+            value={templateName}
+            onChangeText={setTemplateName}
             placeholder="Template name"
             placeholderTextColor={colors.secondaryText}
             style={[styles.input, inputStyle]}
           />
           <TextInput
-            value={newTemplateSubject}
-            onChangeText={setNewTemplateSubject}
+            value={templateSubject}
+            onChangeText={setTemplateSubject}
             placeholder="Subject (optional)"
             placeholderTextColor={colors.secondaryText}
             style={[styles.input, inputStyle]}
           />
           <TextInput
-            value={newTemplateBody}
-            onChangeText={setNewTemplateBody}
+            value={templateBody}
+            onChangeText={setTemplateBody}
             placeholder="Template body"
             placeholderTextColor={colors.secondaryText}
             multiline
@@ -298,16 +529,85 @@ export function AdvancedSection() {
             textAlignVertical="top"
             style={[styles.textArea, inputStyle]}
           />
-          <Button
-            onPress={handleCreateTemplate}
-            disabled={!newTemplateName.trim() || !newTemplateBody.trim() || createTemplate.isPending}
-            icon={<PlusSmall_Stroke2_Corner0_Rounded size="sm" style={{ color: '#FFFFFF' }} />}
-            iconPosition="left"
-          >
-            {createTemplate.isPending ? 'Creating…' : 'Add template'}
-          </Button>
+          <View style={styles.buttonRow}>
+            <Button
+              onPress={handleSubmitTemplate}
+              disabled={!templateName.trim() || !templateBody.trim() || templateSubmitting}
+              icon={
+                editingTemplateId ? (
+                  <CircleCheck_Stroke2_Corner0_Rounded size="sm" style={{ color: '#FFFFFF' }} />
+                ) : (
+                  <PlusSmall_Stroke2_Corner0_Rounded size="sm" style={{ color: '#FFFFFF' }} />
+                )
+              }
+              iconPosition="left"
+            >
+              {templateSubmitting
+                ? editingTemplateId
+                  ? 'Saving…'
+                  : 'Creating…'
+                : editingTemplateId
+                  ? 'Save changes'
+                  : 'Add template'}
+            </Button>
+            {editingTemplateId ? (
+              <Button variant="text" onPress={resetTemplateForm}>
+                Cancel
+              </Button>
+            ) : null}
+          </View>
         </View>
       </View>
+
+      {/* Bundles */}
+      {sortedBundles.length > 0 ? (
+        <View style={styles.subsection}>
+          <SectionHeader icon={Group3_Stroke2_Corner0_Rounded} title="Bundles" />
+          <View style={[styles.itemList, { borderColor: colors.border }]}>
+            {sortedBundles.map((b, idx) => (
+              <View
+                key={b._id}
+                style={[
+                  styles.itemRow,
+                  idx > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+                ]}
+              >
+                <View style={[styles.bundleDot, { backgroundColor: b.color }]} />
+                <View style={styles.itemMain}>
+                  <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>
+                    {b.name}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => reorderBundle.mutate({ bundleId: b._id, direction: 'up' })}
+                  disabled={idx === 0}
+                  style={[styles.iconBtn, idx === 0 && styles.iconBtnDisabled]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Move ${b.name} up`}
+                >
+                  <ChevronTop_Stroke2_Corner0_Rounded size="sm" style={{ color: colors.icon }} />
+                </Pressable>
+                <Pressable
+                  onPress={() => reorderBundle.mutate({ bundleId: b._id, direction: 'down' })}
+                  disabled={idx === sortedBundles.length - 1}
+                  style={[styles.iconBtn, idx === sortedBundles.length - 1 && styles.iconBtnDisabled]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Move ${b.name} down`}
+                >
+                  <ChevronBottom_Stroke2_Corner0_Rounded size="sm" style={{ color: colors.icon }} />
+                </Pressable>
+                <Switch
+                  value={b.enabled}
+                  onValueChange={(v) => updateBundle.mutate({ bundleId: b._id, enabled: v })}
+                />
+              </View>
+            ))}
+          </View>
+          <Text style={[styles.footnote, { color: colors.secondaryText }]}>
+            Bundles group related mail automatically. Toggle to enable and reorder how they stack in your inbox.
+          </Text>
+        </View>
+      ) : null}
 
       {/* Import */}
       {Platform.OS === 'web' ? (
@@ -406,9 +706,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconBtnDisabled: {
+    opacity: 0.35,
+  },
+  bundleDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
   createBlock: {
     gap: 10,
     paddingTop: 6,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    paddingHorizontal: 2,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  chipText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   input: {
     borderWidth: 1,

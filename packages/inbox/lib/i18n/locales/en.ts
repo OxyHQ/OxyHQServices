@@ -50,16 +50,12 @@ const en: LocaleDict = {
   },
 
   tabs: {
-    home: 'Home',
     inbox: 'Inbox',
     search: 'Search',
     settings: 'Settings',
-    forYou: 'For You',
   },
 
   drawer: {
-    home: 'Home',
-    forYou: 'For You',
     starred: 'Starred',
     snoozed: 'Snoozed',
     subscriptions: 'Subscriptions',
@@ -129,6 +125,11 @@ const en: LocaleDict = {
       analyzing: 'Alia is analyzing your inbox…',
       unavailable: 'Unable to generate brief right now.',
       empty: 'No emails to summarize yet.',
+      writing: 'Writing your brief…',
+      preparing: 'Preparing your brief…',
+      failed: "Couldn't write today's brief.",
+      nothingNew: 'Nothing new today.',
+      tapRetry: 'Tap to retry.',
     },
     feedEmpty: {
       title: 'All caught up',
@@ -140,25 +141,6 @@ const en: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'For You',
-    starred: 'Starred',
-    unread: 'Unread',
-    attachments: 'Attachments',
-    empty: {
-      title: 'All caught up',
-      subtitle: 'Nothing highlighted for you right now.',
-    },
-    summary: {
-      fromOne: 'From {{a}}',
-      fromTwo: 'From {{a}} and {{b}}',
-      fromManyOne: 'From {{a}}, {{b}} and {{count}} other',
-      fromManyOther: 'From {{a}}, {{b}} and {{count}} others',
-      aboutOne: ' — about {{topic}}',
-      aboutTwo: ' — about {{a}}, {{b}}',
-      aboutMore: ' and more',
-    },
-  },
 
   inbox: {
     title: 'Inbox',
@@ -391,6 +373,7 @@ const en: LocaleDict = {
     keyPoints: 'Key Points',
     actionItems: 'Action Items',
     due: 'Due: {{date}}',
+    unavailable: 'Unable to summarize this thread right now.',
   },
 
   staleThread: {
@@ -600,6 +583,15 @@ const en: LocaleDict = {
       title: 'Sign in to access your inbox',
       subtitle: 'Connect your Oxy identity to sync messages, labels, and preferences across every device.',
       footer: 'By signing in you agree to our Terms and acknowledge our Privacy Policy.',
+    },
+  },
+
+  notifications: {
+    push: {
+      channel: {
+        name: 'Email',
+        description: 'New mail notifications',
+      },
     },
   },
 };

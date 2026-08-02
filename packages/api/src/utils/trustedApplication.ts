@@ -1,4 +1,7 @@
-import type { ApplicationType } from '../models/Application';
+import type { APPLICATION_TYPES } from '../db/schema/applications';
+
+/** The `applications.type` closed value set, derived from the column itself. */
+type ApplicationType = (typeof APPLICATION_TYPES)[number];
 
 /**
  * Pure predicate: is this Application part of the platform-trusted set?
@@ -10,14 +13,13 @@ import type { ApplicationType } from '../models/Application';
  * `status: 'active'`, so `status: 'active'` alone is never a trust boundary.
  *
  * This is the single source of truth for trust-gated decisions that must agree:
- *  - FedCM/SSO approved-origin derivation (`fedcm.service.ts`).
+ *  - Trusted/third-party CORS + device-first bootstrap origin derivation
+ *    (`config/dynamicOriginRegistry.ts`).
+ *  - OAuth consent auto-approve (trusted apps skip the consent screen entirely).
  *  - Service-credential creation + service-token minting (`applications.ts`,
  *    `auth.ts`) — bearer credentials for Oxy-to-Oxy/internal routes.
  *  - Requiring an Origin proof before showing official branding on the device
  *    consent UI (`auth.ts` `POST /session/create`).
- *
- * Keep this aligned with `TRUSTED_APPLICATION_FEDCM_FILTER` in
- * `fedcm.service.ts` (the Mongo-query form of the same policy).
  */
 export function isTrustedApplication(
   app: { isOfficial?: boolean; isInternal?: boolean; type?: ApplicationType }

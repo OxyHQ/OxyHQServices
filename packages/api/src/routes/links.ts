@@ -20,7 +20,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { z } from 'zod';
+import type { z } from 'zod';
 import {
   linkPreviewBatchRequestSchema,
   linkPreviewBatchResponseSchema,
@@ -31,6 +31,7 @@ import {
   type OptionalUserOrServiceRequest,
 } from '../middleware/optionalAuth';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { linkPreviewService } from '../services/linkPreview/linkPreviewService';
@@ -48,7 +49,7 @@ function principalKey(req: Request): string {
   const r = req as OptionalUserOrServiceRequest;
   if (r.user?._id) return `u:${r.user._id}`;
   if (r.serviceApp?.appId) return `s:${r.serviceApp.appId}`;
-  return `ip:${req.ip ?? 'unknown'}`;
+  return `ip:${hashedIpKey(req)}`;
 }
 
 // Reads are cheap (cache-backed) and every app calls them with ONE shared

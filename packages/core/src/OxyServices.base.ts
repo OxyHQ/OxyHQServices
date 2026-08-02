@@ -8,7 +8,6 @@ import type { OxyConfig as OxyConfigBase, ApiError, User } from './models/interf
 import { handleHttpError } from './utils/errorUtils';
 import { HttpService, type AuthRefreshReason, type RequestOptions } from './HttpService';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
-import { resolveCentralAuthUrl } from './utils/authWebUrl';
 
 export interface OxyConfig extends OxyConfigBase {
   cloudURL?: string;
@@ -41,23 +40,15 @@ export class OxyServicesBase {
       throw new Error('OxyConfig is required');
     }
 
-    // Default `authWebUrl` to the CENTRAL IdP (`auth.oxy.so`) when the caller
-    // did not pin it explicitly. TRUE central cross-domain SSO (Google/Meta/
-    // Clerk style) routes every RP through the one central IdP — it owns the
-    // host-only `fedcm_session` cookie and the central session store — so the
-    // SDK no longer derives a per-apex `auth.<rp-apex>` IdP by default.
-    // `autoDetectAuthWebUrl` is still exported for any call site that opts into
-    // per-apex resolution, but it is NOT the constructor default anymore.
-    // An explicit `authWebUrl` always wins (we only fill it when absent).
-    const resolvedConfig: OxyConfig = config.authWebUrl
-      ? config
-      : { ...config, authWebUrl: resolveCentralAuthUrl(config.authWebUrl) };
-
-    this.config = resolvedConfig;
-    this.cloudURL = resolvedConfig.cloudURL || 'https://cloud.oxy.so';
+    // `authWebUrl` is a plain optional config value now (used only for building
+    // third-party "Sign in with Oxy" OAuth links). The SDK no longer derives or
+    // defaults an IdP host — the device-first cold boot restores sessions from
+    // the persisted refresh store, not an `auth.<apex>` bounce.
+    this.config = config;
+    this.cloudURL = config.cloudURL || 'https://cloud.oxy.so';
 
     // Initialize unified HTTP service (handles auth, caching, deduplication, queuing, retry)
-    this.httpService = new HttpService(resolvedConfig);
+    this.httpService = new HttpService(config);
   }
 
   // Test-only utility to reset tokens on this instance between jest tests
@@ -94,23 +85,6 @@ export class OxyServicesBase {
    */
   public getBaseURL(): string {
     return this.httpService.getBaseURL();
-  }
-
-  /**
-   * Get the base URL the SDK's first-party session/refresh calls should target.
-   *
-   * Returns the configured `sessionBaseUrl` when provided, otherwise falls back
-   * to the API `baseURL` (`getBaseURL()`). Per the 2026 session architecture
-   * (docs/SESSION-ARCHITECTURE.md), non-`oxy.so` apps point this at their own
-   * same-site backend (e.g. `https://api.mention.earth`) whose session bridge
-   * forwards the user's refresh credential to `api.oxy.so`; `*.oxy.so` apps
-   * leave it unset so it resolves to `https://api.oxy.so` and nothing changes.
-   *
-   * This is additive: it only exposes configuration for `@oxyhq/services` to
-   * consume in a later phase. No refresh/auth logic in core reads it yet.
-   */
-  public getSessionBaseUrl(): string {
-    return this.config.sessionBaseUrl ?? this.getBaseURL();
   }
 
   /**

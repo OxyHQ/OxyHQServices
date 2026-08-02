@@ -28,10 +28,12 @@
  * SWITCHING INTO AN ACCOUNT: `switchToAccount(accountId)` mints a REAL session
  * for the target account and plants it as the active session — there is no
  * per-request "acting-as" header. Identity is carried by the session/token, not
- * a delegation header, so a switch propagates through reload and `refresh-all`
- * exactly like a login.
+ * a delegation header, so a switch propagates through reload and cross-domain
+ * exactly like a login, via the device-first session model (the server
+ * registers the switched session into the operator's device-set directly).
  */
 import type { User } from '../models/interfaces';
+import type { OrganizationCategory } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { normalizeUserIdentity } from '../utils/userIdentity';
@@ -48,6 +50,10 @@ import { CACHE_TIMES } from './mixinHelpers';
  * and have no direct login.
  */
 export type AccountKind = 'personal' | 'organization' | 'project' | 'bot';
+
+/** Real-estate / team taxonomy for `kind: 'organization'` accounts. */
+export type { OrganizationCategory } from '@oxyhq/contracts';
+export { ORGANIZATION_CATEGORIES } from '@oxyhq/contracts';
 
 /**
  * The calling user's relationship to an account node, as resolved by the API:
@@ -154,6 +160,8 @@ export interface CreateAccountInput {
   name?: { first?: string; last?: string };
   bio?: string;
   avatar?: string;
+  /** Meaningful only when `kind` is `organization`. */
+  organizationCategory?: OrganizationCategory;
 }
 
 /** Input accepted by `updateAccount`. Tree placement changes go through `/move`. */
@@ -162,6 +170,8 @@ export interface UpdateAccountInput {
   name?: { first?: string; last?: string };
   bio?: string | null;
   avatar?: string | null;
+  /** Clears the category when `null`; only valid on `kind: 'organization'`. */
+  organizationCategory?: OrganizationCategory | null;
 }
 
 /** Input accepted by `inviteAccountMember`. The owner role cannot be invited. */
@@ -283,6 +293,10 @@ export interface Application {
   name: string;
   description?: string;
   websiteUrl?: string;
+  /** Public privacy-policy URL, rendered as a legal link on the OAuth consent screen. */
+  privacyPolicyUrl?: string;
+  /** Public terms-of-service URL, rendered as a legal link on the OAuth consent screen. */
+  termsUrl?: string;
   icon?: string;
   type: ApplicationType;
   status: ApplicationStatus;
@@ -341,6 +355,10 @@ export interface CreateApplicationInput {
   name: string;
   description?: string;
   websiteUrl?: string;
+  /** Public privacy-policy URL (absolute `https://`). Shown on the OAuth consent screen. */
+  privacyPolicyUrl?: string;
+  /** Public terms-of-service URL (absolute `https://`). Shown on the OAuth consent screen. */
+  termsUrl?: string;
   icon?: string;
   redirectUris?: string[];
   scopes?: string[];
@@ -356,6 +374,10 @@ export interface UpdateApplicationInput {
   name?: string;
   description?: string;
   websiteUrl?: string;
+  /** Public privacy-policy URL (absolute `https://`, or `''` to clear). Shown on the OAuth consent screen. */
+  privacyPolicyUrl?: string;
+  /** Public terms-of-service URL (absolute `https://`, or `''` to clear). Shown on the OAuth consent screen. */
+  termsUrl?: string;
   icon?: string;
   redirectUris?: string[];
   scopes?: string[];
@@ -434,22 +456,22 @@ export interface AccountSuccessResult {
 /**
  * Result of {@link OxyServicesAccountsMixin.switchToAccount} — the freshly
  * minted session for the target account, in the SAME shape the canonical login
- * / `claimSessionByToken` responses use (`SessionLoginResponse`), plus the
- * device-local refresh-cookie slot index.
+ * / `claimSessionByToken` responses use (`SessionLoginResponse`).
  *
  * `accessToken` is the first access token for the new session (already planted
- * as the active token by `switchToAccount`). The refresh token is NOT in the
- * body — the server sets it as the httpOnly `oxy_rt_<authuser>` cookie, which
- * joins the device multi-account set so the switched session survives reload and
- * propagates cross-domain via `/auth/refresh-all`. `user` is the target account.
+ * as the active token by `switchToAccount`). The switched session's survival
+ * across reload and cross-domain sync is device-first: the server registers
+ * it into the operator's `DeviceSession` set directly
+ * (`deviceSessionService.addAccount`, broadcast to the device room) — there is
+ * no client-side refresh-cookie slot to establish. `user` is the target
+ * account.
  */
 export interface SwitchAccountResult extends SessionLoginResponse {
   /**
-   * The device-local refresh-cookie slot index (`oxy_rt_<authuser>`) the server
-   * assigned to the minted session. Surfaced so the consumer can register the
-   * new session in its device multi-account set exactly like a login response.
-   * Absent only when the server could not set the cookie (best-effort — the
-   * switch itself still succeeds).
+   * Legacy device-local refresh-cookie slot index. The current server switch
+   * response never sets this field (device-set registration replaced the
+   * cookie-slot model) — kept optional for backward type-compatibility with
+   * any caller still reading it, but always `undefined` in practice.
    */
   authuser?: number;
 }
@@ -515,15 +537,18 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
      * target, directly or inherited — else 403; 404 if missing/archived; 403 if
      * the target is a personal account), then mints a REAL session for the
      * target account and returns it in the canonical login / `claimSessionByToken`
-     * shape (`{ sessionId, deviceId, expiresAt, accessToken, user, authuser }`).
+     * shape (`{ sessionId, deviceId, expiresAt, accessToken, user }`).
      *
      * Unlike the removed `X-Acting-As` delegation header, the returned session
      * IS the new identity: this plants `accessToken` as the active token —
      * exactly like `claimSessionByToken` / `verifyChallenge` — so every
-     * subsequent request authenticates as the target account. The refresh token
-     * is the server-set httpOnly `oxy_rt_<authuser>` cookie (never in the body),
-     * so it joins the device multi-account set and survives reload /
-     * `refresh-all` with no extra client work.
+     * subsequent request authenticates as the target account.
+     *
+     * A single call is all that's needed: the server registers the switched
+     * session into the operator's `DeviceSession` set directly, inheriting the
+     * operator's central `deviceId` so the switch survives a reload and syncs
+     * cross-domain via the same device-first session model as a normal login —
+     * there is no separate client-side cookie/slot step to make it stick.
      *
      * After planting, the SDK's identity-scoped GET cache is fully cleared so
      * every cached read re-fetches as the new account. (The consuming
@@ -533,7 +558,7 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
      * same-user silent refreshes, so the sweep here is explicit.)
      *
      * @param accountId - The target account's Mongo `_id`.
-     * @returns The minted session (planted) plus the device `authuser` slot.
+     * @returns The minted session, already planted as the active session.
      */
     async switchToAccount(accountId: string): Promise<SwitchAccountResult> {
       try {
@@ -546,11 +571,16 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
 
         // Plant the freshly minted session as the ACTIVE session, mirroring
         // `claimSessionByToken` / `verifyChallenge`: the response body carries
-        // the first access token; the refresh token is the server-set httpOnly
-        // cookie, so there is nothing else to store here.
+        // the first access token.
         if (res?.accessToken) {
           this.setTokens(res.accessToken);
         }
+
+        // The switch route now registers the switched session in the device's
+        // server-side DeviceSession set directly (device-first), so there is no
+        // client-side refresh-cookie slot to establish — the `authuser` comes
+        // from the switch response (optional-chained to match `res?.accessToken`).
+        const authuser = res?.authuser;
 
         // Identity changed → drop the entire GET response cache so no entry
         // personalised for the previous identity is reused. Cache keys are
@@ -561,6 +591,7 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
 
         return {
           ...res,
+          ...(typeof authuser === 'number' ? { authuser } : {}),
           user: normalizeUserIdentity(res.user),
         };
       } catch (error) {

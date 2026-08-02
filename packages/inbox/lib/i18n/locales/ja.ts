@@ -43,16 +43,12 @@ const ja: LocaleDict = {
   },
 
   tabs: {
-    home: 'ホーム',
     inbox: '受信箱',
     search: '検索',
     settings: '設定',
-    forYou: 'あなた向け',
   },
 
   drawer: {
-    home: 'ホーム',
-    forYou: 'あなた向け',
     starred: 'スター付き',
     snoozed: 'スヌーズ中',
     subscriptions: '購読',
@@ -122,6 +118,11 @@ const ja: LocaleDict = {
       analyzing: 'Alia が受信箱を分析しています…',
       unavailable: '現在ブリーフを生成できません。',
       empty: 'まだ要約するメールがありません。',
+      writing: 'ブリーフを作成しています…',
+      preparing: 'ブリーフを準備しています…',
+      failed: '今日のブリーフを作成できませんでした。',
+      nothingNew: '今日は新着がありません。',
+      tapRetry: 'タップして再試行',
     },
     feedEmpty: {
       title: 'すべて処理済み',
@@ -133,25 +134,6 @@ const ja: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'あなた向け',
-    starred: 'スター付き',
-    unread: '未読',
-    attachments: '添付ファイル',
-    empty: {
-      title: 'すべて処理済み',
-      subtitle: '現在ハイライトされているものはありません。',
-    },
-    summary: {
-      fromOne: '{{a}} から',
-      fromTwo: '{{a}} と {{b}} から',
-      fromManyOne: '{{a}}、{{b}}、他 {{count}} 人から',
-      fromManyOther: '{{a}}、{{b}}、他 {{count}} 人から',
-      aboutOne: ' — {{topic}} について',
-      aboutTwo: ' — {{a}}、{{b}} について',
-      aboutMore: ' ほか',
-    },
-  },
 
   inbox: {
     title: '受信箱',
@@ -384,6 +366,7 @@ const ja: LocaleDict = {
     keyPoints: '要点',
     actionItems: 'アクション項目',
     due: '期限: {{date}}',
+    unavailable: '現在このスレッドを要約できません。',
   },
 
   staleThread: {

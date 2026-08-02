@@ -1,215 +1,137 @@
-# OxyServices Architecture
+# @oxyhq/services — Architecture
 
-This document explains the modular architecture of the Oxy SDK and how to use it across different platforms.
+`@oxyhq/services` is the **single UI SDK** for the Oxy ecosystem. It ships one provider and one set of auth/account surfaces for **Expo native and React Native Web**. The former web-only auth SDK package has been removed from the monorepo — web apps (Console, and the IdP at `auth.oxy.so` via RN Web) mount the same `OxyProvider` as native apps.
 
-## Overview
+Related docs:
 
-The Oxy SDK is designed with a layered architecture that separates concerns across dedicated packages:
+- [Session & device model](../../../docs/auth/device-session.md) — DeviceSession API, socket events, multi-account
+- [Third-party integration guide](../../../docs/auth/integration-guide.md) — "Sign in with Oxy" OAuth + PKCE
+- [Platform plan](../../../docs/architecture/oxy-auth-platform.md) — product/architecture decisions
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    @oxyhq/services (Main)                       │
-│         Full package with everything (Expo/RN)                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────┐  ┌─────────────┐                               │
-│  │   /native   │  │  @oxyhq/auth│                               │
-│  │  Expo/RN    │  │  Pure React │                               │
-│  │  Components │  │  No RN deps │                               │
-│  └──────┬──────┘  └──────┬──────┘                               │
-│         │                │                                      │
-│         └────────────────┘                                      │
-│                  │                                              │
-│                  ▼                                              │
-│          ┌───────────────┐                                      │
-│          │  @oxyhq/core  │                                      │
-│          │  API Client   │                                      │
-│          │  FedCM Auth   │                                      │
-│          │  Crypto/Utils │                                      │
-│          │  No UI deps   │                                      │
-│          └───────────────┘                                      │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+## Layer map
 
-## Packages
+| Layer | Package | Role |
+|-------|---------|------|
+| Contracts | `@oxyhq/contracts` | Zod schemas shared by server and clients (`deviceSessionStateSchema`, OAuth/consent contracts). Zero React/RN. |
+| Foundation | `@oxyhq/core` | `OxyServices` API client, the session module (`SessionClient`, cold boot, account projection, auth-state store), OAuth + PKCE helpers, i18n catalog, server middleware. Zero React/RN. |
+| UI SDK | `@oxyhq/services` (this package) | `OxyProvider` + `OxyContext`, `useAuth`/`useOxy`, `OxyAccountDialog`, `OxySignInButton`, `OxyConsentScreen`, `RequireOxyAuth`, account/management screens, bottom sheets, React Query hooks. |
+| Apps | accounts, console, inbox, commons, the IdP, third-party RPs | Mount `OxyProvider` with a registered `clientId`. No app-local auth code. |
 
-| Package | Use Case | Dependencies | Size |
-|---------|----------|--------------|------|
-| `@oxyhq/services` | Expo apps (native) | Full (RN, Expo) | Large |
-| `@oxyhq/auth` | Pure React apps (Vite, Next.js, CRA) | React only | Small |
-| `@oxyhq/core` | Node.js / Backend / Utilities / Crypto | None | Minimal |
+`@oxyhq/services` does **not** re-export from `@oxyhq/core` or `@oxyhq/contracts` — consumers import core/contract types directly from the owning package.
 
-## Package Descriptions
+## OxyProvider / OxyContext
 
-### `@oxyhq/core` - API Client, Authentication, Utilities & Crypto
+`OxyProvider` ([src/ui/components/OxyProvider.tsx](../src/ui/components/OxyProvider.tsx)) is the app root. It mounts:
 
-No UI dependencies. Works in Node.js and browsers. Includes platform-agnostic utilities, cryptographic identity management, and the core API client.
+`OxyContextProvider` — auth/session state machine. Implementation split across:
 
-```typescript
-import {
-  // API Client & Auth
-  OxyServices,
-  oxyClient,
-  CrossDomainAuth,
-  createCrossDomainAuth,
-
-  // Color utilities
-  darkenColor,
-  lightenColor,
-  isLightColor,
-  getContrastTextColor,
-
-  // Theme utilities
-  normalizeTheme,
-  normalizeColorScheme,
-  getSystemColorScheme,
-
-  // Error utilities
-  getErrorStatus,
-  getErrorMessage,
-  isRetryableError,
-
-  // Network utilities
-  withRetry,
-  delay,
-
-  // Crypto / Identity
-  KeyManager,
-  SignatureService,
-  RecoveryPhraseService,
-} from '@oxyhq/core';
-
-// Create client
-const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-
-// Use cross-domain auth (FedCM, popup, redirect)
-const auth = createCrossDomainAuth(oxy);
-const session = await auth.signIn(); // Auto-selects best method
-
-// Generate new identity
-const keyManager = new KeyManager();
-const keyPair = await keyManager.generateKeyPair();
-const recoveryPhrase = RecoveryPhraseService.generate();
-
-// Sign messages
-const signature = await SignatureService.sign(message, privateKey);
-```
-
-### `@oxyhq/auth` - Pure React Web Apps
-
-For Next.js, Vite, Create React App, and other pure web frameworks.
-No React Native dependencies = smaller bundles, no bundler config needed.
+| Module | Role |
+|--------|------|
+| [OxyContext.tsx](../src/ui/context/OxyContext.tsx) | Provider, session commit funnel, cold boot wiring |
+| [oxyContextTypes.ts](../src/ui/context/oxyContextTypes.ts) | `OxyContextState`, `PasswordSignInResult`, props |
+| [oxyContextHelpers.ts](../src/ui/context/oxyContextHelpers.ts) | Shared helpers (`loadUseFollowHook`, HTTP status) |
+| [useOxyAccountGraph.ts](../src/ui/context/useOxyAccountGraph.ts) | Account graph (`accounts`, `switchToAccount`, `createAccount`) |
+| [accountDialogManager.ts](../src/ui/navigation/accountDialogManager.ts) | Imperative `openAccountDialog` / `closeAccountDialog` |
+- TanStack `QueryClientProvider` with offline persistence (first paint serves cached data)
+- Bloom dialog + toast outlets, `SafeAreaProvider`, `GestureHandlerRootView`
+- Lazy overlays: `BottomSheetRouter` and the unified `OxyAccountDialog`
 
 ```tsx
-import { WebOxyProvider, useAuth } from '@oxyhq/auth';
+import { OxyProvider, useAuth } from '@oxyhq/services';
 
-function App() {
+export default function App() {
   return (
-    <WebOxyProvider baseURL="https://api.oxy.so">
-      <YourApp />
-    </WebOxyProvider>
-  );
-}
-
-function LoginButton() {
-  const { signIn, isFedCMSupported, isLoading } = useAuth();
-
-  return (
-    <button onClick={signIn} disabled={isLoading}>
-      {isFedCMSupported() ? 'Sign in with Oxy' : 'Sign in'}
-    </button>
-  );
-}
-```
-
-### Main Entry Point - Full Expo/RN
-
-For Expo apps that need everything (native + web).
-
-```tsx
-import { OxyProvider, useOxy, OxySignInButton } from '@oxyhq/services';
-
-function App() {
-  return (
-    <OxyProvider baseURL="https://api.oxy.so">
-      <YourApp />
+    <OxyProvider
+      clientId={process.env.EXPO_PUBLIC_OXY_CLIENT_ID}
+      baseURL="https://api.oxy.so"
+    >
+      <Root />
     </OxyProvider>
   );
 }
-```
 
-## Authentication Methods
-
-`OxyProvider` owns sign-in and cold boot across native and web surfaces. Apps
-pass their registered `clientId`; the SDK handles device sign-in, FedCM, silent
-restore, and cross-apex SSO without app-local callback routes.
-
-```tsx
-<OxyProvider clientId="oxy_dk_...">
-  <App />
-</OxyProvider>
-```
-
-## Silent Sign-In (SSO)
-
-Check for existing session without user interaction:
-
-```typescript
-// In useEffect or on app startup
-const session = await auth.silentSignIn();
-if (session) {
-  // User is already signed in
+function Root() {
+  const { user, isAuthenticated, isLoading, signIn } = useAuth();
+  if (isLoading) return null;
+  if (!isAuthenticated) return <SignedOutHome onSignIn={() => signIn()} />;
+  return <Home user={user} />;
 }
 ```
 
-## Choosing the Right Package
+Key props (`OxyProviderProps`):
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    What are you building?                    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-           ┌──────────────────┼──────────────────┐
-           ▼                  ▼                  ▼
-    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-    │ Expo App    │    │ React Web   │    │ Node.js     │
-    │ (iOS/And/Web)│    │ (Next/Vite) │    │ Backend     │
-    └──────┬──────┘    └──────┬──────┘    └──────┬──────┘
-           │                  │                  │
-           ▼                  ▼                  ▼
-    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-    │@oxyhq/      │    │@oxyhq/auth  │    │@oxyhq/core  │
-    │services     │    │             │    │             │
-    └─────────────┘    └─────────────┘    └─────────────┘
-```
+| Prop | Default | Purpose |
+|------|---------|---------|
+| `clientId` | — | The app's registered OAuth client id (`ApplicationCredential.publicKey`, `oxy_dk_…`). Required for the cross-app device sign-in flow (`POST /auth/session/create` identifies the requesting app by it). |
+| `authRedirectUri` | origin | OAuth redirect URI for third-party sign-in. Defaults to the current web origin (origin-only, e.g. `https://mention.earth`). Optional `/oauth/callback` path for new apps — mount `OxyOAuthCallback` on that route. |
+| `webAuthMode` | `'popup'` | How a web sign-in reaches the IdP. `'popup'` keeps the tab on its route; `'redirect'` navigates it. The popup transport falls back to a redirect on its own when the browser blocks the window, so the callback route must keep working in either mode. |
+| `baseURL` | — | Oxy API origin (`https://api.oxy.so`). |
+| `requireAuth` | `'off'` | Convenience wrapper: `'soft'` / `'hard'` wraps children in `<RequireOxyAuth prompt=…>`. |
+| `storageKeyPrefix`, `queryClient`, `oxyServices`, `onAuthStateChange` | — | Advanced overrides. |
 
-## Migration Guide
+### Device-first cold boot
 
-### From Old Structure
+On mount every app runs `runProviderColdBoot` → `runSessionColdBoot` from `@oxyhq/core` — an ordered step chain: `warm-token-plant` (replay a still-valid persisted access token, no network), then `device-secret-mint` (persisted `{deviceId, deviceSecret}` → `POST /session/device/token`, web + native), then `shared-key-signin` (native; `identity-key-signin` instead under `sessionMode: 'identity'`).
 
-```typescript
-// OLD (might import RN deps in web)
-import { normalizeTheme, darkenColor } from '@oxyhq/services';
+**Cold boot never navigates the top-level window.** An origin with no local credential resolves signed OUT and waits for the user's "Continue with Oxy" — there is no silent `prompt=none` restore and no post-login hub sync in any mode. Both were removed (issue #691 phase 7b) precisely because they moved the tab without a gesture, destroying in-page state on every cold boot. Do not reintroduce either, nor a `hubSync` prop.
 
-// NEW (guaranteed no RN deps)
-import { normalizeTheme, darkenColor } from '@oxyhq/core';
-```
+## Session model (consumed from `@oxyhq/core`)
 
-### For Web-Only Apps
+The SDK contains no session logic of its own — it binds UI to the shared session module in `packages/core/src/session/`:
 
-```typescript
-// OLD (pulls in RN deps, needs bundler config)
-import { WebOxyProvider } from '@oxyhq/services';
+| Module | Role |
+|--------|------|
+| `SessionClient` / `createSessionClient` / `createSessionClientHost` | Client of the server-authoritative device session: fetch/mutate state, subscribe to realtime sync. Consumers inject a `TokenTransport` and a `socketFactory` (socket.io-client's `io`). |
+| `projectSessionState` helpers | Pure projections of `DeviceSessionState` → client sessions / active user. |
+| `accountProjection` | `SwitchableAccount[]` — the ONE account list: device sign-ins ∪ account graph, deduped by account id. |
+| `accountDialogController` | Headless state machine for the account dialog (views, sign-in flow phases). Framework-agnostic; bound via `useSyncExternalStore`. |
+| `authStateStore`, `refresh` | Persisted auth state + the unified token-refresh handler/scheduler. |
+| `boot/sessionColdBoot` | `runSessionColdBoot` — ordered cold-boot runner (`device-secret-mint` then `shared-key-signin`). |
 
-// NEW (no RN deps, no config needed)
-import { WebOxyProvider, useAuth } from '@oxyhq/auth';
-```
+**Server authority:** the `DeviceSession` document (Mongo collection `devicesessions`: `deviceId`, `accounts[{ accountId, sessionId, authuser, operatedByUserId? }]`, `activeAccountId`, `secretHash`, `revision`) behind `/session/device/{token,state,add,switch,signout}`. Every mutation bumps `revision` and broadcasts a token-free `session_state` event to the Socket.IO room `device:<deviceId>`, so all apps on the same device converge instantly. See [device-session.md](../../../docs/auth/device-session.md).
 
-## Best Practices
+**Session transport (zero-cookie):** every successful sign-in returns `deviceId` + a 256-bit `deviceSecret`, persisted first-party (localStorage per web origin; SecureStore on native) — the server stores only `sha256(deviceSecret)` (`DeviceSession.secretHash`). To restore or refresh, the client POSTs `{ deviceId, deviceSecret }` to `POST /session/device/token` (no bearer, no cookies — possession of the secret is the proof) and gets a short access token plus a rotated secret (rotation-in-use, 60s grace). There is no cookie, no refresh-token family, and no `#oxy_boot` bootstrap hop — all deleted in the zero-cookie cutover. A `deviceId` is per web origin / per native app-group; there is no implicit cross-subdomain or cross-app device sync.
 
-1. **Use the most specific package** - Don't import from `@oxyhq/services` if you only need `@oxyhq/core`
-2. **Web apps should use `@oxyhq/auth`** - Smaller bundles, no bundler configuration
-3. **Backend should use `@oxyhq/core`** - No UI dependencies, works in Node.js
-4. **Check FedCM support** - Use `isFedCMSupported()` to show appropriate UI
-5. **Handle auth errors** - FedCM can fail, always have fallback to popup/redirect
+## Auth surfaces
+
+### OxyAccountDialog
+
+[src/ui/components/OxyAccountDialog.tsx](../src/ui/components/OxyAccountDialog.tsx) — the ONE unified account dialog, mounted automatically by `OxyProvider`. A thin RN binding over core's `AccountDialogController`, presented on Bloom's `<Dialog>` (`@oxyhq/bloom/dialog`) with responsive placement — bottom sheet on narrow viewports, centered card on wide ones (`placement={{ base: 'bottom', md: 'center' }}`). It replaced the five drifting legacy surfaces (profile/account menus, switcher, chooser, standalone sign-in modal).
+
+Views: `accounts` (the `SwitchableAccount[]` switcher + "Add account"), `signin`/`add` (primary "Sign in with Oxy" device flow, QR scan, collapsed password), and `qr` (cross-device QR). Per-account theming uses Bloom `BloomColorScope`; base styling is `useTheme()` + `StyleSheet` so it renders in apps without NativeWind.
+
+Entry points: `useOxy().openAccountDialog(view?)` inside React, `ProfileButton` (sidebar trigger), or imperative `openAccountDialog('signin')`.
+
+### OxySignInButton
+
+[src/ui/components/OxySignInButton.tsx](../src/ui/components/OxySignInButton.tsx) — the public "Sign in with Oxy" button. On first press it resolves the registered `Application` via `oxyServices.getPublicApplication(clientId)` (`GET /auth/oauth/client/:clientId`) and routes by type:
+
+- **Official apps** (`first_party` / `internal` / `system` / `isOfficial`) → opens the account dialog (`openAccountDialog('signin')`).
+- **`third_party`** → standard OAuth 2.0 Authorization Code + PKCE redirect to `auth.oxy.so/authorize`, built with `generatePkcePair` / `generateOAuthState` / `buildOAuthAuthorizeUrl` from `@oxyhq/core`. On web, the CSRF `state` and PKCE `code_verifier` persist across the redirect under `OXY_OAUTH_STATE_STORAGE_KEY` / `OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY` (sessionStorage); on native the flow completes inside a `WebBrowser` auth session and surfaces the handshake via `onOAuthResult` (`OxyOAuthResult`).
+
+See the [integration guide](../../../docs/auth/integration-guide.md) for the full third-party flow (Console registration, redirect URIs, `POST /auth/oauth/token`).
+
+### OxyConsentScreen
+
+[src/ui/components/OxyConsentScreen.tsx](../src/ui/components/OxyConsentScreen.tsx) — the unified OAuth authorize/consent surface. Pure and presentational: the caller (the IdP authorize page) resolves the requesting application, scopes, and user, and handles `onAllow` / `onDeny`; the component fetches nothing and owns no session state. `OxyConsentApplication` carries the registered app's identity including `privacyPolicyUrl` / `termsUrl` (fields on the `Application` model, shown as links). This is the RN/Bloom port of the IdP's web consent card, keeping both surfaces in lockstep.
+
+### RequireOxyAuth
+
+[src/ui/components/RequireOxyAuth.tsx](../src/ui/components/RequireOxyAuth.tsx) — the optional signed-out gate. `prompt`: `'off'` (render always), `'soft'` (dismissible sign-in banner), `'hard'` (block behind a signed-out wall). It gates on the SDK's own readiness (`canUsePrivateApi` / `isPrivateApiPending`), so the wall never flashes before cold boot resolves, and its sign-in CTA opens the one account dialog. Wrap a subtree directly, or the whole app via `OxyProvider`'s `requireAuth` prop.
+
+## Hooks: `useAuth` vs `useOxy`
+
+- **`useAuth()`** ([src/ui/hooks/useAuth.ts](../src/ui/hooks/useAuth.ts)) — the small standard surface: `user`, `isAuthenticated`, `isLoading`, `isReady`, `hasAccessToken`, `canUsePrivateApi`, `isPrivateApiPending`, plus `signIn`, `signOut`, `signOutAll`, `refresh`. Recommended for most app code.
+- **`useOxy()`** ([src/ui/context/OxyContext.tsx](../src/ui/context/OxyContext.tsx) + [oxyContextTypes.ts](../src/ui/context/oxyContextTypes.ts)) — the full `OxyContextState`: multi-session state (`sessions`, `activeSessionId`, `switchSession`), the account graph (`accounts`, `switchToAccount`, `createAccount` via [useOxyAccountGraph.ts](../src/ui/context/useOxyAccountGraph.ts)), the account dialog (`openAccountDialog`, `closeAccountDialog`, `isAccountDialogOpen`), password sign-in (`signInWithPassword` → `PasswordSignInResult`, `completeTwoFactorSignIn`), the device-flow commit (`handleWebSession`), language state, and the raw `oxyServices` instance.
+
+**Readiness rule:** private API calls wait for `canUsePrivateApi` (or hold on `isPrivateApiPending`). `isAuthResolved` marks the first cold-boot conclusion — before it, `isAuthenticated: false` is undetermined, not a definitive signed-out.
+
+Account switching is **uniform**: `switchToAccount(accountId)` switches through the server-authoritative `SessionClient.switchAccount()` when the account is already in the device set; only the first switch into a graph account mints a session (with `operatedByUserId` audit for managed accounts) and registers it into the `DeviceSession`, after which it persists across reloads like any device sign-in.
+
+## i18n
+
+The string catalog lives in `@oxyhq/core` (`packages/core/src/i18n/` — `translate(locale, key, vars)` + 11 locale JSON files, en-US fallback). This package binds it through the internal `useI18n()` hook on `useOxy().currentLanguage`; apps change language via `useOxy().setLanguage(languageId)`. SDK surfaces (dialog, consent, gate) are localized under their own key namespaces (e.g. `consent.*`).
+
+## Non-auth UI
+
+Bottom sheets remain for **non-auth** screens (`showBottomSheet` / `closeBottomSheet`, 29+ routes: ManageAccount, FileManagement, payments, Trust, etc.). Auth surfaces do not route through bottom sheets — the account dialog is a Bloom `<Dialog>`. Query hooks, mutation hooks, offline persistence, and the file/photo pickers are documented in [API_REFERENCE.md](./API_REFERENCE.md) and [EXAMPLES.md](./EXAMPLES.md).

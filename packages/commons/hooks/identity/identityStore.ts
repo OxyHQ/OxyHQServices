@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Platform } from 'react-native';
+import { readIdentityMarker, updateIdentityMarker } from '@oxyhq/core';
 
 /**
  * Minimal async key/value storage surface used by the identity store.
@@ -114,6 +115,34 @@ export const IDENTITY_SYNC_STORAGE_KEY = 'oxy_identity_synced';
  * The phrase itself is NEVER stored — only this acknowledgement flag.
  */
 export const RECOVERY_PHRASE_ACK_STORAGE_KEY = 'oxy_recovery_phrase_acknowledged';
+/**
+ * Storage key for the monotonic "this device finished Commons onboarding for the
+ * current identity" milestone.
+ *
+ * Set to `'true'` exactly once — when onboarding genuinely completes (a live
+ * server session whose user has a username). It is read on EVERY cold start so a
+ * RETURNING user who has a local identity routes straight to the vault even with
+ * ZERO network: the local keystore + this flag are the authority, and session
+ * restore/mint is a background concern that must never hide the local identity.
+ *
+ * Reset to `'false'` whenever a NEW identity is created or imported (see
+ * `useIdentity`), so the milestone can never leak across a delete → re-onboard on
+ * the same device. The identity-presence check in `useOnboardingStatus` gates
+ * BEFORE this flag anyway, so a stale `'true'` after deletion can never route a
+ * keyless device into the vault — the reset is belt-and-suspenders for the
+ * delete-then-import-on-the-same-device case.
+ *
+ * Offline-safe: a plain local secure-store read, never a network call.
+ */
+export const ONBOARDING_COMPLETE_STORAGE_KEY = 'oxy_onboarding_complete';
+/**
+ * Which onboarding wizard the user started (`create` vs `import`).
+ * Used on resume so an in-progress import is not mis-routed into the
+ * create-identity flow (which has no offline username skip).
+ */
+export const ONBOARDING_FLOW_STORAGE_KEY = 'oxy_onboarding_flow';
+
+export type OnboardingFlow = 'create' | 'import';
 
 /** Canonical serialized truthy value. Only this literal is treated as set. */
 const STORED_TRUE = 'true';
@@ -237,6 +266,69 @@ export const getIdentitySyncStateFromStorage = async (): Promise<boolean> => {
 };
 
 /**
+ * The SINGLE place the onboarding-complete flag is written to SecureStore — its
+ * one canonical storage location. `persistOnboardingComplete` (which ALSO mirrors
+ * into the identity marker) and the marker-derived self-heal in
+ * `getOnboardingCompleteFromStorage` both funnel through here so the flag's home
+ * is defined once.
+ */
+const writeOnboardingCompleteFlag = async (complete: boolean): Promise<void> => {
+  try {
+    await storage.setItem(ONBOARDING_COMPLETE_STORAGE_KEY, complete ? STORED_TRUE : STORED_FALSE);
+  } catch (error) {
+    console.error('[IdentityStore] Failed to persist onboarding-complete flag', error);
+  }
+};
+
+/**
+ * Persist the monotonic onboarding-complete milestone (see
+ * {@link ONBOARDING_COMPLETE_STORAGE_KEY}).
+ *
+ * Writes the SecureStore flag AND mirrors the value into the AndroidKeyStore-
+ * independent identity marker (`{ onboardingComplete }`). The mirror is what
+ * lets a milestone survive a SecureStore reset that leaves the marker
+ * (AsyncStorage) intact — see {@link getOnboardingCompleteFromStorage}.
+ * `updateIdentityMarker` fails open and is a no-op when no marker exists yet
+ * (a pre-identity device has nothing to mirror), so this can never throw or
+ * spuriously create a marker.
+ */
+export const persistOnboardingComplete = async (complete: boolean): Promise<void> => {
+  await writeOnboardingCompleteFlag(complete);
+  await updateIdentityMarker({ onboardingComplete: complete });
+};
+
+/**
+ * Read the onboarding-complete milestone directly (offline-safe local read).
+ * Returns `false` by default — only `true` when explicitly stored as `'true'`.
+ *
+ * ROBUSTNESS: the SecureStore flag can be lost independently of the identity
+ * (e.g. a keystore reset that wipes SecureStore but not AsyncStorage). When the
+ * flag is missing/false we fall back to the identity marker's mirrored
+ * `onboardingComplete`; if the marker says onboarding DID complete, we self-heal
+ * the SecureStore flag (fire-and-forget) so subsequent reads are fast and the
+ * flag and marker reconverge. A lost flag alone can therefore no longer re-route
+ * a fully-onboarded identity back into the wizard.
+ */
+export const getOnboardingCompleteFromStorage = async (): Promise<boolean> => {
+  let flag: string | null = null;
+  try {
+    flag = await storage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY);
+  } catch (error) {
+    console.error('[IdentityStore] Failed to read onboarding-complete flag', error);
+  }
+  if (flag === STORED_TRUE) {
+    return true;
+  }
+
+  const marker = await readIdentityMarker();
+  if (marker?.onboardingComplete === true) {
+    void writeOnboardingCompleteFlag(true);
+    return true;
+  }
+  return false;
+};
+
+/**
  * Read the recovery-phrase-acknowledged flag directly.
  */
 export const getRecoveryPhraseAcknowledgedFromStorage = async (): Promise<boolean> => {
@@ -246,5 +338,34 @@ export const getRecoveryPhraseAcknowledgedFromStorage = async (): Promise<boolea
   } catch (error) {
     console.error('[IdentityStore] Failed to read recovery phrase acknowledgement', error);
     return false;
+  }
+};
+
+/**
+ * Persist which onboarding wizard the user chose (create vs import).
+ * Cleared when a new identity is created/imported or onboarding resets.
+ */
+export const persistOnboardingFlow = async (flow: OnboardingFlow | null): Promise<void> => {
+  try {
+    if (flow === null) {
+      await storage.setItem(ONBOARDING_FLOW_STORAGE_KEY, '');
+      return;
+    }
+    await storage.setItem(ONBOARDING_FLOW_STORAGE_KEY, flow);
+  } catch (error) {
+    console.error('[IdentityStore] Failed to persist onboarding flow', error);
+  }
+};
+
+/**
+ * Read the persisted onboarding flow (offline-safe local read).
+ */
+export const getOnboardingFlowFromStorage = async (): Promise<OnboardingFlow | null> => {
+  try {
+    const flow = await storage.getItem(ONBOARDING_FLOW_STORAGE_KEY);
+    return flow === 'create' || flow === 'import' ? flow : null;
+  } catch (error) {
+    console.error('[IdentityStore] Failed to read onboarding flow', error);
+    return null;
   }
 };

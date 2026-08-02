@@ -9,6 +9,7 @@ import React, { useMemo } from 'react';
 import { TouchableOpacity } from 'react-native';
 import { Badge } from '@oxyhq/bloom/badge';
 
+import { useInboxPrefs } from '@/contexts/inbox-prefs-context';
 import type { Message } from '@/services/emailApi';
 
 export type ImportanceLevel = 'urgent' | 'action' | 'important' | 'fyi' | null;
@@ -89,9 +90,11 @@ const BADGE_CONFIG: Record<Exclude<ImportanceLevel, null>, {
 };
 
 export function ImportanceBadge({ message, onPress }: ImportanceBadgeProps) {
+  const { prefs } = useInboxPrefs();
   const importance = useMemo(() => detectImportance(message), [message]);
 
-  if (!importance) {
+  // Categorization is an AI convenience; respect the user's opt-out.
+  if (!prefs.aiCategorization || !importance) {
     return null;
   }
 

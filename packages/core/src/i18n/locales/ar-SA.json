@@ -43,11 +43,28 @@
     "currentAccount": "الحالي",
     "or": "أو",
     "viewAllAccounts": "عرض {{count}} المزيد",
+    "createAccountLink": "جديد على Oxy؟ أنشئ حسابًا",
     "status": {
-      "accountSwitched": "استخدام {{name}} الآن"
+      "accountSwitched": "استخدام {{name}} الآن",
+      "signingIn": "جارٍ تسجيل الدخول…"
     }
   },
   "signup": {
+    "title": "أنشئ حسابك",
+    "subtitle": "هوية واحدة لكل النظام البيئي.",
+    "commonsHeadline": "أنشئ هويتك في Commons",
+    "commonsExplainer": "‏Commons هي هوية Oxy الخاصة بك بحفظ ذاتي كامل — تطبيق واحد يعمل في كل مكان.",
+    "createInCommons": "أنشئ هويتك في Commons",
+    "passkeyAlternative": "لا تملك Commons؟ أنشئ مفتاح مرور على هذا الجهاز بدلاً من ذلك",
+    "createAccount": "إنشاء حساب",
+    "creating": "جارٍ الإنشاء…",
+    "usernamePlaceholder": "اختر اسم مستخدم",
+    "usernameChecking": "جارٍ التحقق…",
+    "usernameAvailable": "متاح",
+    "usernameTaken": "اسم المستخدم هذا مستخدم بالفعل",
+    "backToSignInLink": "لديك حساب بالفعل؟ سجّل الدخول",
+    "hubExplainer": "أنشئ هوية Oxy الخاصة بك في نافذة آمنة، ثم عد إلى هنا مباشرة.",
+    "continueInWindow": "المتابعة في نافذة جديدة",
     "welcome": {
       "title": "مرحبًا بك في Oxy!",
       "subtitle": "أنشئ حسابك في خطوات قليلة",
@@ -94,6 +111,33 @@
       "legalReminder": "بإنشاء حساب، فإنك توافق على شروط الخدمة وسياسة الخصوصية الخاصة بنا."
     }
   },
+  "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "حساباتك"
+    },
+    "loading": "جارٍ تحميل الحسابات...",
+    "qrHeadline": "سجّل الدخول بهوية Oxy الخاصة بك",
+    "signInWithOxy": "تسجيل الدخول باستخدام Oxy",
+    "useIdentityOnDevice": "لا تملك Commons؟ استخدم مفتاح مرور على هذا الجهاز بدلاً من ذلك",
+    "passkeySigningIn": "جارٍ تسجيل الدخول…",
+    "getCommons": "احصل على Commons",
+    "commonsNotInstalled": "لا تملك Commons؟ احصل على التطبيق لتسجيل الدخول بمعرّف Oxy الخاص بك.",
+    "showQrAnyway": "لدي Commons على جهاز آخر",
+    "switchWhileSignedInAs": "تبديل الحساب، مسجّل الدخول باسم {{name}}",
+    "manageOnDevice": "إدارة الحسابات على هذا الجهاز",
+    "continueWithOxy": "المتابعة باستخدام Oxy",
+    "havingTrouble": "هل تواجه مشكلة؟",
+    "progress": {
+      "preparing": "جارٍ تحضير الطلب",
+      "awaitingApproval": "في انتظار الموافقة",
+      "scanWithCommons": "امسح الرمز باستخدام Commons على هاتفك",
+      "continueInCommons": "تابع في Commons",
+      "checkCommons": "تحقّق من Commons على هاتفك",
+      "openedInCommons": "تم الفتح في Commons",
+      "confirming": "جارٍ تأكيد الهوية",
+      "confirmed": "تم تأكيد الهوية"
+    }
+  },
   "common": {
     "actions": {
       "back": "رجوع",
@@ -105,7 +149,8 @@
       "verify": "التحقق",
       "resetPassword": "إعادة تعيين كلمة المرور",
       "signedOut": "تم تسجيل الخروج",
-      "close": "إغلاق"
+      "close": "إغلاق",
+      "tryAgain": "حاول مرة أخرى"
     },
     "links": {
       "recoverAccount": "استعادة حسابك",
@@ -193,6 +238,7 @@
       "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
     },
     "item": {
+      "granted": "ممنوح {{relative}}",
       "lastUsed": "Last used {{relative}}"
     },
     "confirm": {
@@ -207,12 +253,30 @@
   "accountMenu": {
     "label": "قائمة الحساب",
     "manage": "إدارة حساب Oxy الخاص بك",
+    "viewProfile": "عرض الملف الشخصي",
     "addAnother": "إضافة حساب آخر",
     "signOutAll": "تسجيل الخروج من جميع الحسابات",
     "open": "قائمة الحساب",
     "openHint": "يفتح قائمة الحساب",
     "openWithUser": "قائمة حساب {{name}}",
     "switching": "جارٍ تبديل الحساب…",
-    "signOutAccount": "تسجيل خروج {{name}}"
+    "signOutAccount": "تسجيل خروج {{name}}",
+    "greeting": "مرحبًا، {{name}}!",
+    "switchAccount": "تبديل الحساب",
+    "storage": {
+      "title": "تخزين Oxy",
+      "usage": "{{used}} من {{total}} مستخدم",
+      "used": "مستخدم",
+      "free": "متاح",
+      "unavailable": "تفاصيل الاستخدام غير متاحة",
+      "upgrade": "ترقية الخطة",
+      "manage": "إدارة التخزين"
+    },
+    "data": "بياناتك في Oxy",
+    "settings": "إعدادات Oxy",
+    "help": "المساعدة والملاحظات",
+    "signOut": "تسجيل الخروج",
+    "privacy": "سياسة الخصوصية",
+    "terms": "شروط الخدمة"
   }
 }

@@ -129,19 +129,27 @@ describe('privacy cache invalidation', () => {
 
   it('invalidates the exact logical keys on block/restrict/settings writes', async () => {
     const clearSpy = jest.spyOn(oxy, 'clearCacheEntry');
+    const clearPrefixSpy = jest.spyOn(oxy, 'clearCacheByPrefix');
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'ok' }));
     await oxy.blockUser('u1');
     expect(clearSpy).toHaveBeenCalledWith('GET:/privacy/blocked');
+    expect(clearSpy).toHaveBeenCalledWith('GET:/users/me/graph');
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ message: 'ok' }));
     await oxy.restrictUser('u2');
     expect(clearSpy).toHaveBeenCalledWith('GET:/privacy/restricted');
+    expect(clearSpy).toHaveBeenCalledWith('GET:/users/me/graph');
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ isPrivateAccount: true }));
     await oxy.updatePrivacySettings({ isPrivateAccount: true }, 'me');
     expect(clearSpy).toHaveBeenCalledWith('GET:/privacy/me/privacy');
+    expect(clearSpy).toHaveBeenCalledWith('GET:/users/me');
+    expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/session/user/');
+    expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/users/me');
+    expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/profiles/username/');
 
     clearSpy.mockRestore();
+    clearPrefixSpy.mockRestore();
   });
 });

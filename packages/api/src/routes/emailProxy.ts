@@ -6,25 +6,24 @@
  *
  * Note: This endpoint is public (no auth) because it's called from sandboxed
  * iframes that cannot send credentials. Security is provided by:
- * - Rate limiting by IP
+ * - Rate limiting by privacy-preserving hashed IP key (never raw IPs in Redis)
  * - Only proxying image/font content types
  * - SSRF protection
  * - The proxied content is already publicly accessible
  */
 
-import { Router, RequestHandler } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler } from '../utils/asyncHandler';
 import { proxyResource } from '../controllers/emailProxy.controller';
 
 const router = Router();
 
-// Rate limit: 100 requests per minute per IP
+// Rate limit: 100 requests per minute per client (hashedIpKey default — no raw IPs at rest)
 const proxyRateLimit = rateLimit({
   prefix: 'rl:email:proxy:',
   windowMs: 60 * 1000,
   max: 100,
-  keyGenerator: (req) => (req as { ip?: string }).ip || 'unknown',
   message: 'Too many proxy requests, please try again later.',
 });
 

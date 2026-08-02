@@ -1,22 +1,13 @@
-import type { UserNameResponse } from '@oxyhq/contracts';
+import type {
+  OrganizationCategory,
+  UserNameResponse,
+  UserRelationship,
+  ThemePreference,
+} from '@oxyhq/contracts';
 
 export interface OxyConfig {
   baseURL: string;
   cloudURL?: string;
-  /**
-   * Base URL the SDK's first-party session/refresh calls target.
-   *
-   * Per the 2026 session architecture (docs/SESSION-ARCHITECTURE.md), every app
-   * keeps its OWN first-party session on its OWN domain. For non-`oxy.so` apps
-   * this is the app's own same-site backend (e.g. `https://api.mention.earth`),
-   * whose session bridge forwards the user's refresh credential to
-   * `api.oxy.so`. For `*.oxy.so` apps this is omitted and falls back to
-   * `baseURL` (`https://api.oxy.so`), so their behavior is unchanged.
-   *
-   * Resolve via {@link OxyServices.getSessionBaseUrl}; when unset it returns
-   * `baseURL`. This is purely additive — no refresh/auth logic reads it yet.
-   */
-  sessionBaseUrl?: string;
   authWebUrl?: string;
   authRedirectUri?: string;
   /**
@@ -93,6 +84,8 @@ export interface PrivacySettings {
   sensitiveContent?: boolean;
   autoFilter?: boolean;
   muteKeywords?: boolean;
+  /** Allow sharing this user's content on the fediverse. Defaults to true. */
+  fediverseSharing?: boolean;
 }
 
 export interface User {
@@ -115,10 +108,15 @@ export interface User {
    */
   name: UserNameResponse;
   bio?: string;
+  /**
+   * Longer public profile text. Emitted alongside `bio` by every user DTO the
+   * API produces (single profile, `getUsersByIds`, follower/following/mutual
+   * lists, profile search) — the two are separate fields on the User document.
+   */
+  description?: string;
   phone?: string;
   address?: string;
   birthday?: string;
-  location?: string;
   website?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -139,6 +137,8 @@ export interface User {
   // User type and external account support
   type?: 'local' | 'federated' | 'agent' | 'automated';
   isFederated?: boolean;
+  /** Allow sharing this user's content on the fediverse. Defaults to true. */
+  fediverseSharing?: boolean;
   isAgent?: boolean;
   isAutomated?: boolean;
   instance?: string;
@@ -153,11 +153,35 @@ export interface User {
   // Managed account fields
   isManagedAccount?: boolean;
   managedBy?: string;
+  /** Real-estate taxonomy when this user is a `kind: 'organization'` account. */
+  organizationCategory?: OrganizationCategory;
+  /**
+   * The account's languages as full BCP-47 locales (`language-REGION`, e.g.
+   * `en-US`, `es-MX`, `pt-BR`), ordered with the PRIMARY (UI) locale first.
+   * `languages[0]` is the primary locale — there is no singular `language`
+   * field. Resolve via `getUserLanguages` / `getPrimaryLanguage`, which
+   * normalize, validate against the supported catalog, and de-duplicate.
+   */
+  languages?: string[];
   // User-controlled notification preferences. All channels default to on; users
   // opt out per-channel. Updated via `PUT /users/me`.
   notificationPreferences?: NotificationPreferences;
   // General app-wide user preferences. Updated via `PUT /users/me`.
   userPreferences?: UserPreferences;
+  /**
+   * Portable theme preference (mode + Bloom color-preset key). Rides the
+   * self/session payload so it is present on the current-user DTO at cold boot
+   * (`useAuth().user.themePreference`) with no extra fetch. Absent until the
+   * user sets it. Updated via `updateThemePreference` / `updateProfile`.
+   */
+  themePreference?: ThemePreference;
+  /**
+   * The authenticated viewer's relationship to THIS profile. Populated ONLY on
+   * single-profile fetches (`getProfileByUsername` / `getUserById`) when the
+   * request is authenticated; absent for anonymous requests, self-views, and
+   * bulk fetches — so `undefined` means "unknown", not "not following".
+   */
+  relationship?: UserRelationship;
   [key: string]: unknown;
 }
 
@@ -222,6 +246,7 @@ export interface BlockedUser {
     _id: string;
     username: string;
     avatar?: string;
+    name?: { displayName?: string };
   };
   userId: string;
   createdAt?: string;
@@ -236,6 +261,7 @@ export interface RestrictedUser {
     _id: string;
     username: string;
     avatar?: string;
+    name?: { displayName?: string };
   };
   userId: string;
   createdAt?: string;
@@ -493,6 +519,26 @@ export interface AssetUrlResponse {
   expiresIn: number;
 }
 
+/**
+ * Per-file result of `POST /assets/batch-access`. `allowed` is authoritative:
+ * when `false` the entry carries an `error` string (e.g. `'Access denied'`,
+ * `'File not found'`) and no `url`. When `true`, `url` is a caller-scoped,
+ * `<img src>`-ready URL — the public CDN form for a public asset or an
+ * API-origin stream URL carrying a short-lived media token for a private one.
+ */
+export interface BatchFileAccessEntry {
+  allowed: boolean;
+  url?: string;
+  visibility?: FileVisibility;
+  mime?: string;
+  error?: string;
+}
+
+/** Envelope returned by `POST /assets/batch-access`, keyed by file id. */
+export interface BatchFileAccessResponse {
+  results: Record<string, BatchFileAccessEntry>;
+}
+
 export interface AssetDeleteSummary {
   fileId: string;
   wouldDelete: boolean;
@@ -512,6 +558,64 @@ export interface AssetUpdateVisibilityResponse {
     visibility: FileVisibility;
     updatedAt: string;
   };
+}
+
+/**
+ * Minimal, service-token-scoped asset metadata returned by
+ * `POST /assets/service/by-ids`.
+ *
+ * Resolves an Oxy asset `id` to its content-addressed identity (`sha256`),
+ * MIME type, byte `size`, and storage `status`. Used by server-to-server
+ * callers (e.g. Mention's MTN Protocol blob-ref resolution) that hold a
+ * `files:read`-scoped service token rather than a user session. Unknown or
+ * deleted ids are omitted from the response (never error the whole batch),
+ * so the result may be shorter than the requested id list.
+ */
+export interface ServiceAssetMetadata {
+  id: string;
+  sha256: string;
+  mime: string;
+  size: number;
+  status: 'active' | 'trash';
+  /** Intrinsic width in pixels when variant/metadata extraction has run. */
+  width?: number;
+  /** Intrinsic height in pixels when variant/metadata extraction has run. */
+  height?: number;
+  /** Playback duration in seconds for video/audio assets. */
+  durationSec?: number;
+  /** Derived once from width/height at asset processing time. */
+  orientation?: 'portrait' | 'landscape' | 'square';
+  /** width / height, derived at asset processing time. */
+  aspectRatio?: number;
+}
+
+/**
+ * Reverse-lookup asset metadata returned by `POST /assets/service/by-sha256`.
+ *
+ * Resolves a content-addressed `sha256` digest back to the live Oxy asset that
+ * holds those bytes: its file `id`, MIME type, byte `size`, storage `status`,
+ * and — for active, public, CDN-reachable assets only — a public `url`
+ * (`cloud.oxy.so`). This is the inverse of {@link ServiceAssetMetadata}: it lets
+ * a `files:read`-scoped service-to-server caller (e.g. Mention's MTN materializer
+ * / node-blob sync) turn a record's `blob.sha256` into a servable asset.
+ *
+ * `url` is omitted for private/unlisted assets (and for public assets whose
+ * bytes are not yet CDN-reachable) — those must be streamed through the origin.
+ * Unknown or deleted hashes are omitted from the response (never error the whole
+ * batch), so the result may be shorter than the requested hash list.
+ */
+export interface ServiceAssetMetadataBySha {
+  sha256: string;
+  id: string;
+  mime: string;
+  size: number;
+  status: 'active' | 'trash';
+  url?: string;
+  width?: number;
+  height?: number;
+  durationSec?: number;
+  orientation?: 'portrait' | 'landscape' | 'square';
+  aspectRatio?: number;
 }
 
 /**
@@ -585,7 +689,6 @@ export interface SecurityActivity {
   eventType: SecurityEventType;
   eventDescription: string;
   metadata?: Record<string, any>;
-  ipAddress?: string;
   userAgent?: string;
   deviceId?: string;
   timestamp: string;
@@ -613,8 +716,10 @@ export interface AssetUploadProgress {
   error?: string;
 }
 
-// Device Session interfaces
-export interface DeviceSession {
+// Device-linked session interfaces — the sessions that share one physical
+// device (GET /session/device/sessions/:sessionId). Distinct from the
+// server-authority `DeviceSession` Mongoose model / `DeviceSessionState`.
+export interface DeviceLinkedSession {
   sessionId: string;
   deviceId: string;
   deviceName: string;
@@ -626,12 +731,12 @@ export interface DeviceSession {
   createdAt?: string;
 }
 
-export interface DeviceSessionsResponse {
+export interface DeviceLinkedSessionsResponse {
   deviceId: string;
-  sessions: DeviceSession[];
+  sessions: DeviceLinkedSession[];
 }
 
-export interface DeviceSessionLogoutResponse {
+export interface DeviceLinkedSessionLogoutResponse {
   message: string;
   deviceId: string;
   sessionsTerminated: number;
@@ -642,67 +747,3 @@ export interface UpdateDeviceNameResponse {
   deviceName: string;
 }
 
-// ---------------------------------------------------------------------------
-// Multi-account "refresh-all" (Google-style)
-// ---------------------------------------------------------------------------
-// Wire shape of `POST /auth/refresh-all`. The server rotates every device-local
-// `oxy_rt_${authuser}` cookie in parallel and returns one entry per VALID
-// account, sorted by `authuser` ascending. Slot-level errors are silently
-// omitted; the response is `{ accounts: [] }` in the worst case (no signed-in
-// accounts, all cookies expired, or origin not allowlisted).
-
-/**
- * Minimal user shape included in a `RefreshAllAccount` entry. The server
- * projects a small whitelist (`username name avatar email color`) so the
- * client can render the account chooser without an extra `/users/me` round
- * trip per account.
- *
- * `avatar` and `color` are `string | null` because they are stored as nullable
- * fields in the user document.
- */
-export interface RefreshAllAccountUser {
-  id: string;
-  username: string;
-  /**
-   * Structured human name as emitted by `formatUserResponse` (the canonical
-   * {@link UserNameResponse} `{ first?, last?, full? }` subdocument), NOT a bare
-   * string. The server projects `name` verbatim from the user document. The
-   * single source of truth is `@oxyhq/contracts`.
-   */
-  name: UserNameResponse;
-  avatar?: string | null;
-  email?: string;
-  color?: string | null;
-}
-
-/**
- * One rotated account entry returned by `POST /auth/refresh-all`. `authuser` is
- * the device-local slot index (0..N-1) the cookie was bound to.
- */
-export interface RefreshAllAccount {
-  authuser: number;
-  accessToken: string;
-  expiresAt: string;
-  sessionId: string;
-  user: RefreshAllAccountUser | null;
-}
-
-/**
- * Wire shape of `POST /auth/refresh-all`. Always 200 with a (possibly empty)
- * accounts array — 401 means "no accounts signed in on this device" and is
- * normalised to `{ accounts: [] }` at the SDK layer.
- */
-export interface RefreshAllResponse {
-  accounts: RefreshAllAccount[];
-}
-
-/**
- * Wire shape of `POST /auth/refresh` (single-slot refresh, optionally targeting
- * a specific `?authuser=N` slot). The server always includes the numeric slot in
- * the response.
- */
-export interface RefreshCookieResponse {
-  accessToken: string;
-  expiresAt: string;
-  authuser: number;
-}

@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, type Document } from 'mongoose';
 import { APPLICATION_SCOPES, type ApplicationScope } from '../utils/applicationScopes';
 
 export const APPLICATION_TYPES = [
@@ -24,6 +24,10 @@ export interface IApplication extends Omit<Document, '_id'> {
   name: string;
   description?: string;
   websiteUrl?: string;
+  /** Public URL of the application's privacy policy — rendered as a legal link on the OAuth consent screen. */
+  privacyPolicyUrl?: string;
+  /** Public URL of the application's terms of service — rendered as a legal link on the OAuth consent screen. */
+  termsUrl?: string;
   icon?: string;
   /**
    * Trust/classification of the application. Staff-only — never settable via the
@@ -76,6 +80,14 @@ const ApplicationSchema = new Schema<IApplication>(
       maxlength: 500,
     },
     websiteUrl: {
+      type: String,
+      trim: true,
+    },
+    privacyPolicyUrl: {
+      type: String,
+      trim: true,
+    },
+    termsUrl: {
       type: String,
       trim: true,
     },
@@ -152,7 +164,6 @@ const ApplicationSchema = new Schema<IApplication>(
 
 ApplicationSchema.index({ createdByUserId: 1, status: 1 });
 ApplicationSchema.index({ ownerAccountId: 1, status: 1 });
-ApplicationSchema.index({ status: 1 });
 ApplicationSchema.index({ createdAt: -1 });
 
 export const Application = mongoose.model<IApplication>('Application', ApplicationSchema);

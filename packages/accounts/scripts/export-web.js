@@ -14,6 +14,7 @@ const path = require('path');
 
 const EXPORT_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes hard limit (DO build instances are slow)
 const projectRoot = path.resolve(__dirname, '..');
+
 const child = spawn('bun', ['x', 'expo', 'export', '--platform', 'web'], {
   cwd: projectRoot,
   stdio: ['inherit', 'pipe', 'pipe'],

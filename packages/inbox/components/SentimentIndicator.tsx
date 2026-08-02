@@ -11,12 +11,11 @@
 
 import React from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Alert01Icon, ThumbsUpIcon, SentIcon } from '@hugeicons/core-free-icons';
 import { Text } from '@oxyhq/bloom/typography';
 
-import { useColors } from '@/constants/theme';
 import type { SentimentResult } from '@/hooks/queries/useSentimentAnalysis';
 
 interface SentimentIndicatorProps {
@@ -30,8 +29,6 @@ export function SentimentIndicator({
   size = 'small',
   showLabel = false,
 }: SentimentIndicatorProps) {
-  const colors = useColors();
-
   if (!sentiment) return null;
 
   const iconSize = size === 'small' ? 12 : 16;

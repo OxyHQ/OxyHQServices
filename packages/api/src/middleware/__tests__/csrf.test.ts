@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { verifyCsrfToken } from '../csrf';
 
 const mockWarn = jest.fn();
@@ -65,6 +65,24 @@ describe('verifyCsrfToken', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('rejects cookie-authenticated requests when header and cookie tokens differ in length', () => {
+    const { res, next } = runVerify({
+      cookies: {
+        csrf_token: 'short',
+      },
+      headers: {
+        'x-csrf-token': 'much-longer-header-token-value',
+      },
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.body).toEqual({
+      message: 'Invalid CSRF token',
+      code: 'CSRF_TOKEN_INVALID',
+    });
   });
 
   it('still rejects cookie-authenticated state-changing requests without a CSRF header', () => {

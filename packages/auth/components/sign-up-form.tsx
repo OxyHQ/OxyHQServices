@@ -1,18 +1,16 @@
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
-import { Check, X, Loader2 } from "lucide-react"
+import { Check, KeyRound, X, Loader2 } from "lucide-react"
+import { useOxy } from "@oxyhq/services"
 
-import { buildAuthUrl, buildApiUrl } from "@/lib/oxy-api-client"
-import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
+import { buildApiUrl } from "@/lib/oxy-api-client"
+import { buildPostLoginRedirect } from "@/lib/auth-utils"
+import { describePasskeyError } from "@/lib/passkey-error"
 import { Button } from "@oxyhq/bloom/button"
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { PasswordInput } from "@/components/password-input"
-import { PasswordRequirements } from "@/components/password-requirements"
-import { SocialLoginButtons } from "@/components/social-login-buttons"
 import { AuthFormLayout, AuthFormHeader } from "@/components/auth-form-layout"
-import { validatePassword } from "@/lib/password-validation"
 
 type SignUpFormProps = React.ComponentProps<"div"> & {
     error?: string
@@ -23,6 +21,12 @@ type SignUpFormProps = React.ComponentProps<"div"> & {
     codeChallenge?: string
     codeChallengeMethod?: string
     scope?: string
+    /**
+     * `response_mode=web_message` (popup sign-in), carried through to
+     * `/authorize` so the result is posted to the opener rather than navigating
+     * this popup to the relying party.
+     */
+    responseMode?: string
 }
 
 type AvailabilityStatus = "idle" | "checking" | "available" | "taken"
@@ -63,6 +67,17 @@ function useAvailabilityCheck(endpoint: string) {
         setStatus("idle")
     }, [])
 
+    // Tear down on unmount: a debounce that survives the form fires its request
+    // several hundred milliseconds after the screen is gone, against whatever
+    // the page has become by then.
+    useEffect(
+        () => () => {
+            if (timerRef.current) clearTimeout(timerRef.current)
+            if (controllerRef.current) controllerRef.current.abort()
+        },
+        [],
+    )
+
     return { status, check, reset }
 }
 
@@ -83,19 +98,26 @@ export function SignUpForm({
     codeChallenge,
     codeChallengeMethod,
     scope,
+    responseMode,
     ...props
 }: SignUpFormProps) {
     const navigate = useNavigate()
+    // Sign-up commits its session through the SAME device-first SDK funnel every
+    // Oxy app uses (`registerWithPasskey`): it runs the WebAuthn creation
+    // ceremony, plants the access token, persists the zero-cookie
+    // `{deviceId, deviceSecret}` credential, and registers the new account into
+    // the device set as the active account — so `/authorize` targets it. Password
+    // and social sign-up were removed ecosystem-wide; a passkey is the sole
+    // first-party sign-up method (only a username is collected — the backend
+    // register/verify path reads `envelope.username` and nothing else).
+    const { registerWithPasskey } = useOxy()
     const [localError, setLocalError] = useState<string | undefined>()
-    const [serverErrors, setServerErrors] = useState<string[]>([])
     const [isSubmitting, setIsSubmitting] = useState(false)
-    const [password, setPassword] = useState("")
-    const [passwordTouched, setPasswordTouched] = useState(false)
+    const [passkeyUsername, setPasskeyUsername] = useState("")
 
     const displayError = localError ?? error
 
-    const username = useAvailabilityCheck("/auth/check-username")
-    const email = useAvailabilityCheck("/auth/check-email")
+    const passkeyUsernameCheck = useAvailabilityCheck("/auth/check-username")
 
     const errorShownRef = useRef(false)
     if (error && !errorShownRef.current) {
@@ -103,76 +125,23 @@ export function SignUpForm({
         queueMicrotask(() => toast.error("Sign up failed", { description: error }))
     }
 
-    async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    /**
+     * Passkey signup: register a brand-new account whose FIRST auth method is a
+     * passkey. Only a username is collected — the SDK runs the WebAuthn creation
+     * ceremony, verifies it, and commits the device-first session, so on success
+     * we redirect to the OAuth authorize step. A dismissed/aborted browser prompt
+     * is a normal user action: surface a calm inline message and let them retry.
+     */
+    async function handlePasskeySubmit(event: React.FormEvent<HTMLFormElement>) {
         event.preventDefault()
+        const usernameValue = passkeyUsername.trim()
+        if (!usernameValue || passkeyUsernameCheck.status === "taken" || isSubmitting) return
         setLocalError(undefined)
-        setServerErrors([])
         setIsSubmitting(true)
-
-        const formData = new FormData(event.currentTarget)
-        const emailValue = String(formData.get("email") || "").trim()
-        const usernameValue = String(formData.get("username") || "").trim()
-
-        const clientErrors = validatePassword(password)
-        if (clientErrors.length > 0) {
-            setPasswordTouched(true)
-            setIsSubmitting(false)
-            return
-        }
-
         let didRedirect = false
-
         try {
-            const response = await fetch(buildAuthUrl("/signup"), {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({ email: emailValue, username: usernameValue, password }),
-            })
-            const payload = await response.json().catch(() => ({}))
-
-            if (!response.ok) {
-                if (response.status === 429) {
-                    setLocalError("Too many attempts. Please try again later.")
-                    setIsSubmitting(false)
-                    return
-                }
-                const errors = Array.isArray(payload?.errors) ? (payload.errors as string[]) : []
-                if (errors.length > 0) {
-                    setServerErrors(errors)
-                } else {
-                    const msg = typeof payload?.message === "string" ? payload.message : "Unable to sign up"
-                    setLocalError(msg)
-                    toast.error("Sign up failed", { description: msg })
-                }
-                return
-            }
-
-            if (!payload?.sessionId) {
-                setLocalError("Unable to sign up")
-                return
-            }
-
+            await registerWithPasskey({ username: usernameValue })
             didRedirect = true
-
-            // FedCM login_url completion: a brand-new account created inside the
-            // browser's FedCM login_url dialog has no OAuth/cross-app context, so
-            // signal completion (after the session cookie is written) instead of
-            // navigating to /authorize and rendering "No authorization request".
-            // As in login-form, the close()-handoff branch does a single AWAITED
-            // cookie write and nothing else — a stray /fedcm/login-status iframe
-            // racing IdentityProvider.close() makes the handoff complete
-            // erratically. The fire-and-forget Set-Login iframe only runs on the
-            // non-FedCM redirect paths.
-            if (!sessionToken && !redirectUri) {
-                await registerFedCMSession(payload.sessionId)
-                if (completeFedCMLogin()) {
-                    return
-                }
-            } else {
-                setFedCMLoginStatus(payload.sessionId)
-            }
-
             navigate(buildPostLoginRedirect({
                 sessionToken,
                 redirectUri,
@@ -181,80 +150,45 @@ export function SignUpForm({
                 codeChallenge,
                 codeChallengeMethod,
                 scope,
-                authuser: typeof payload.authuser === "number" ? payload.authuser : undefined,
+                responseMode,
             }))
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "Unable to sign up"
-            setLocalError(msg)
-            toast.error("Sign up failed", { description: msg })
+            const message = describePasskeyError(err)
+            setLocalError(message)
+            toast.error("Passkey signup failed", { description: message })
         } finally {
             if (!didRedirect) setIsSubmitting(false)
         }
     }
 
     return (
-        <AuthFormLayout
-            className={className}
-            footer={<SocialLoginButtons
-                sessionToken={sessionToken}
-                redirectUri={redirectUri}
-                state={state}
-                clientId={clientId}
-                codeChallenge={codeChallenge}
-                codeChallengeMethod={codeChallengeMethod}
-                scope={scope}
-            />}
-            {...props}
-        >
-            <form onSubmit={handleSubmit}>
+        <AuthFormLayout className={className} {...props}>
+            <form onSubmit={handlePasskeySubmit}>
                 <FieldGroup>
                     <AuthFormHeader
                         title="Create your account"
-                        description={<>Already have an account? <Link to="/login">Sign in</Link></>}
+                        description="Pick a username — no password needed. Your device will create a passkey."
                     />
-                    <Field>
-                        <FieldLabel htmlFor="email">Email</FieldLabel>
+                    <Field data-invalid={displayError ? true : undefined}>
+                        <FieldLabel htmlFor="passkey-username">Username</FieldLabel>
                         <Input
-                            id="email"
-                            name="email"
-                            type="email"
-                            placeholder="m@example.com"
-                            autoComplete="email"
-                            required
-                            onChange={(e) => email.check(e.target.value.trim())}
-                        />
-                        <AvailabilityIndicator status={email.status} takenMessage="This email is already registered" />
-                    </Field>
-                    <Field>
-                        <FieldLabel htmlFor="username">Username</FieldLabel>
-                        <Input
-                            id="username"
-                            name="username"
+                            id="passkey-username"
+                            name="passkey-username"
                             type="text"
                             placeholder="yourname"
-                            autoComplete="username"
+                            autoComplete="username webauthn"
                             required
-                            onChange={(e) => username.check(e.target.value.trim())}
-                        />
-                        <AvailabilityIndicator status={username.status} takenMessage="This username is taken" />
-                    </Field>
-                    <Field>
-                        <FieldLabel htmlFor="password">Password</FieldLabel>
-                        <PasswordInput
-                            id="password"
-                            name="password"
-                            autoComplete="new-password"
-                            required
-                            value={password}
+                            autoFocus
+                            value={passkeyUsername}
                             onChange={(e) => {
-                                setPassword(e.target.value)
-                                setServerErrors([])
-                                if (!passwordTouched && e.target.value.length > 0) setPasswordTouched(true)
+                                const value = e.target.value
+                                setPasskeyUsername(value)
+                                if (localError) setLocalError(undefined)
+                                passkeyUsernameCheck.check(value.trim())
                             }}
-                            onBlur={() => { if (password.length > 0) setPasswordTouched(true) }}
                         />
-                        {passwordTouched && <PasswordRequirements password={password} />}
-                        {serverErrors.length > 0 && <FieldError errors={serverErrors.map((e) => ({ message: e }))} />}
+                        <AvailabilityIndicator status={passkeyUsernameCheck.status} takenMessage="This username is taken" />
+                        {displayError && <FieldError>{displayError}</FieldError>}
                     </Field>
                     <Field>
                         <Button
@@ -262,11 +196,15 @@ export function SignUpForm({
                             size="lg"
                             className="w-full"
                             loading={isSubmitting}
-                            disabled={isSubmitting || username.status === "taken" || email.status === "taken"}
+                            disabled={isSubmitting || passkeyUsernameCheck.status === "taken"}
                         >
-                            Sign Up
+                            <KeyRound className="size-4" />
+                            Create passkey
                         </Button>
                     </Field>
+                    <FieldDescription>
+                        Already have an account? <Link to="/login">Sign in</Link>
+                    </FieldDescription>
                 </FieldGroup>
             </form>
         </AuthFormLayout>

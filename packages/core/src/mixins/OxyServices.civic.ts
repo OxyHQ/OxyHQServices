@@ -49,17 +49,18 @@
  * session.
  */
 import type {
+  ChainHeadResponse,
   CredentialIssueResult,
   CredentialListResult,
   CredentialStatus,
   CredentialVerifyResult,
   ExportAttestation,
+  OxySignedRecordType,
   PersonhoodStatusResult,
   PublicCard,
   RealLifeAttestationResult,
   SignedPublicCard,
   SignedRecordEnvelope,
-  SignedRecordType,
   ValidationRequestSummary,
   ValidationVerdict,
   ValidationVoteResult,
@@ -67,7 +68,7 @@ import type {
   VouchResult,
 } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { canonicalize } from '../crypto/canonicalJson';
+import { canonicalize, verifySignature } from '@oxyhq/protocol';
 import { SignatureService } from '../crypto/signatureService';
 import { buildUserDid } from './OxyServices.identity';
 import { CACHE_TIMES } from './mixinHelpers';
@@ -290,7 +291,7 @@ export function parseAttestPayload(raw: string): ParsedAttestPayload | null {
  * key, matching the server which omits absent keys entirely) and checks the
  * `ES256K-DER-SHA256` signature against `attestation.publicKey`.
  *
- * NEVER throws: `SignatureService.verify` already swallows malformed-input
+ * NEVER throws: `verifySignature` already swallows malformed-input
  * errors and returns `false`, and an absent attestation short-circuits to
  * `false`. A pure, reusable helper (Commons can call it on a cached card).
  *
@@ -308,7 +309,7 @@ export async function verifyPublicCardAttestation(
   if (!signature || !publicKey) {
     return false;
   }
-  return SignatureService.verify(canonicalize(card), signature, publicKey);
+  return verifySignature(canonicalize(card), signature, publicKey);
 }
 
 /**
@@ -388,18 +389,6 @@ export interface IssueCredentialInput {
 export interface RevokeCredentialResult {
   revoked: boolean;
   credential: VerifiableCredentialResponse;
-}
-
-/**
- * The current chain head as returned by `GET /identity/records/:userId/chain/head`.
- * `headRecordId` is `null` and `seq` is `-1` when the subject has no chain yet,
- * so the next record's coordinates are always `seq: head.seq + 1` (genesis = 0)
- * and `prev: head.headRecordId` (genesis = null).
- */
-interface ChainHeadResponse {
-  headRecordId: string | null;
-  seq: number;
-  recordCount: number;
 }
 
 export function OxyServicesCivicMixin<T extends typeof OxyServicesBase>(Base: T) {
@@ -929,7 +918,7 @@ export function OxyServicesCivicMixin<T extends typeof OxyServicesBase>(Base: T)
      * @param rkey - The AtProto-style record key within the collection.
      */
     async _signMyCivicRecordV2(
-      type: SignedRecordType,
+      type: OxySignedRecordType,
       record: Record<string, unknown>,
       collection: string,
       rkey: string,

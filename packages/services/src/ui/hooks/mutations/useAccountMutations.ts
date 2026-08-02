@@ -17,7 +17,7 @@ import {
 } from '../queries/queryKeys';
 import { mutationKeys } from './mutationKeys';
 import { useOxy } from '../../context/OxyContext';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -109,7 +109,7 @@ export const useUpdateProfile = () => {
         refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
       }
 
-      // Invalidate all related queries so every consumer (AccountSwitcher,
+      // Invalidate all related queries so every consumer (the account dialog,
       // session lists, managed accounts, etc.) refetches the fresh profile.
       // This is critical right after `username` is set the first time, when
       // every cached "session profile" still reports the user as unnamed.
@@ -632,20 +632,20 @@ export const useUpdateUserPreferences = () => {
 };
 
 /**
- * Revoke the authenticated user's authorization for a specific RP origin.
- * Removes the FedCM grant so the origin no longer appears in the user's
- * "Connected apps" list — next sign-in from that origin will require explicit
+ * Revoke the current user's grant for a connected application (by its
+ * `applicationId`). Removes the grant so the app no longer appears in the user's
+ * "Connected apps" list — next sign-in for that app will require explicit
  * re-consent.
  */
-export const useRevokeAuthorizedApp = () => {
+export const useRevokeConnectedApp = () => {
   const { oxyServices, activeSessionId } = useOxy();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationKey: [...mutationKeys.connectedApps.revoke],
-    mutationFn: async (origin: string) => {
+    mutationFn: async (applicationId: string) => {
       return authenticatedApiCall<void>(oxyServices, activeSessionId, () =>
-        oxyServices.revokeAuthorizedApp(origin)
+        oxyServices.revokeAppGrant(applicationId)
       );
     },
     onSuccess: () => {
@@ -653,7 +653,7 @@ export const useRevokeAuthorizedApp = () => {
     },
     onError: (error) => {
       toast.error(
-        error instanceof Error ? error.message : 'Failed to revoke authorized app'
+        error instanceof Error ? error.message : 'Failed to revoke connected app'
       );
     },
   });

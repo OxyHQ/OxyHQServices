@@ -43,11 +43,28 @@
     "currentAccount": "Attuale",
     "or": "o",
     "viewAllAccounts": "Visualizza {{count}} altri",
+    "createAccountLink": "Nuovo su Oxy? Creane uno",
     "status": {
-      "accountSwitched": "Ora usando {{name}}"
+      "accountSwitched": "Ora usando {{name}}",
+      "signingIn": "Accesso in corso…"
     }
   },
   "signup": {
+    "title": "Crea il tuo account",
+    "subtitle": "Un'unica identità per tutto l'ecosistema.",
+    "commonsHeadline": "Crea la tua identità in Commons",
+    "commonsExplainer": "Commons è la tua identità Oxy in piena autocustodia: un'unica app, ovunque.",
+    "createInCommons": "Crea la tua identità in Commons",
+    "passkeyAlternative": "Non hai Commons? Crea una passkey su questo dispositivo",
+    "createAccount": "Crea account",
+    "creating": "Creazione…",
+    "usernamePlaceholder": "Scegli un nome utente",
+    "usernameChecking": "Verifica in corso…",
+    "usernameAvailable": "Disponibile",
+    "usernameTaken": "Questo nome utente è già in uso",
+    "backToSignInLink": "Hai già un account? Accedi",
+    "hubExplainer": "Crea il tuo Oxy ID in una finestra sicura, poi torna subito qui.",
+    "continueInWindow": "Continua in una nuova finestra",
     "welcome": {
       "title": "Benvenuto su Oxy!",
       "subtitle": "Crea il tuo account in pochi passaggi",
@@ -94,6 +111,33 @@
       "legalReminder": "Creando un account, accetti i nostri Termini di servizio e l'Informativa sulla privacy."
     }
   },
+  "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "I tuoi account"
+    },
+    "loading": "Caricamento account...",
+    "qrHeadline": "Accedi con la tua identità Oxy",
+    "signInWithOxy": "Accedi con Oxy",
+    "useIdentityOnDevice": "Non hai Commons? Usa una passkey su questo dispositivo",
+    "passkeySigningIn": "Accesso in corso…",
+    "getCommons": "Ottieni Commons",
+    "commonsNotInstalled": "Non hai Commons? Scarica l'app per accedere con il tuo Oxy ID.",
+    "showQrAnyway": "Ho Commons su un altro dispositivo",
+    "switchWhileSignedInAs": "Cambia account, connesso come {{name}}",
+    "manageOnDevice": "Gestisci account su questo dispositivo",
+    "continueWithOxy": "Continua con Oxy",
+    "havingTrouble": "Problemi?",
+    "progress": {
+      "preparing": "Preparazione della richiesta",
+      "awaitingApproval": "In attesa di approvazione",
+      "scanWithCommons": "Scansiona con Commons sul tuo telefono",
+      "continueInCommons": "Continua in Commons",
+      "checkCommons": "Controlla Commons sul tuo telefono",
+      "openedInCommons": "Aperto in Commons",
+      "confirming": "Conferma dell'identità in corso",
+      "confirmed": "Identità confermata"
+    }
+  },
   "common": {
     "actions": {
       "back": "Indietro",
@@ -105,7 +149,8 @@
       "verify": "Verifica",
       "resetPassword": "Reimposta password",
       "signedOut": "Disconnesso",
-      "close": "Chiudi"
+      "close": "Chiudi",
+      "tryAgain": "Riprova"
     },
     "links": {
       "recoverAccount": "Recupera il tuo account",
@@ -193,6 +238,7 @@
       "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
     },
     "item": {
+      "granted": "Concesso {{relative}}",
       "lastUsed": "Last used {{relative}}"
     },
     "confirm": {
@@ -207,12 +253,30 @@
   "accountMenu": {
     "label": "Menu account",
     "manage": "Gestisci il tuo account Oxy",
+    "viewProfile": "Visualizza profilo",
     "addAnother": "Aggiungi un altro account",
     "signOutAll": "Esci da tutti gli account",
     "open": "Menu account",
     "openHint": "Apre il menu dell'account",
     "openWithUser": "Menu dell'account di {{name}}",
     "switching": "Cambio account in corso…",
-    "signOutAccount": "Esci da {{name}}"
+    "signOutAccount": "Esci da {{name}}",
+    "greeting": "Ciao, {{name}}!",
+    "switchAccount": "Cambia account",
+    "storage": {
+      "title": "Archiviazione Oxy",
+      "usage": "{{used}} di {{total}} utilizzati",
+      "used": "Utilizzato",
+      "free": "Libero",
+      "unavailable": "Dettagli di utilizzo non disponibili",
+      "upgrade": "Aggiorna piano",
+      "manage": "Gestisci archiviazione"
+    },
+    "data": "I tuoi dati in Oxy",
+    "settings": "Impostazioni Oxy",
+    "help": "Aiuto e feedback",
+    "signOut": "Esci",
+    "privacy": "Informativa sulla privacy",
+    "terms": "Termini di servizio"
   }
 }

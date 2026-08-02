@@ -1,12 +1,12 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, Linking } from 'react-native';
+import { View, Linking } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useTheme } from '@oxyhq/bloom/theme';
-import Header from '../components/Header';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 
 const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -14,6 +14,8 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     navigate,
 }) => {
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('help.title') || 'Help & Support' });
     const bloomTheme = useTheme();
 
     const handleContactSupport = useMemo(() => () => {
@@ -55,16 +57,9 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     }, [t]);
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('help.title') || 'Help & Support'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
+        <>
 
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     {/* Help Options */}
                     <SettingsListGroup title={t('help.options') || 'Get Help'}>
                         <SettingsListItem
@@ -109,8 +104,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                         />
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

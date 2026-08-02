@@ -1,25 +1,40 @@
 import express from 'express';
 import type { Request } from 'express';
-import mongoose from 'mongoose';
+import { and, count, eq, ne } from 'drizzle-orm';
+import type { OrganizationCategory } from '@oxyhq/contracts';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { isStaffUser } from '../middleware/requireStaff';
 import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../utils/error';
-import { logger } from '../utils/logger';
-import { accountService, type AccountNode, type EffectiveAccess } from '../services/account.service';
-import { User, IUser } from '../models/User';
-import { IAccountMember } from '../models/AccountMember';
-import { IAccountCredential } from '../models/AccountCredential';
+import {
+  accountService,
+  type AccountCredentialRow,
+  type AccountMemberRow,
+  type AccountNode,
+  type AccountRow,
+  type EffectiveAccess,
+} from '../services/account.service';
+import { getDb } from '../config/postgres';
+import { publicColumns } from '../db/schema/protectedColumns';
+import { users } from '../db/schema/users';
 import sessionService from '../services/session.service';
-import { issueAndSetRefreshCookie } from '../services/refreshToken.service';
+import deviceSessionService from '../services/deviceSession.service';
+import { broadcastDeviceState } from '../utils/socket';
+import { decodeToken, extractTokenFromRequest } from '../middleware/authUtils';
+import { logger } from '../utils/logger';
 import type { SessionAuthResponse } from '../types/session';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import { isPrivilegedScope, type ApplicationScope } from '../utils/applicationScopes';
 import { stripSensitiveUrlQueryParams } from '../utils/sanitizeUrl';
 import { formatUserResponse } from '../utils/userTransform';
-import type { AccountPermission, AccountRole } from '../utils/accountRoles';
+import {
+  permissionsForAccountRole,
+  type AccountPermission,
+  type AccountRole,
+} from '../utils/accountRoles';
 import {
   accountIdRouteParams,
   accountMemberParams,
@@ -39,7 +54,7 @@ import {
  * the resolved account (a User doc) and the caller's effective access over it.
  */
 interface AccountContextRequest extends AuthRequest {
-  account?: IUser;
+  account?: AccountRow;
   access?: EffectiveAccess;
 }
 
@@ -57,11 +72,61 @@ function requireUserId(req: AuthRequest): string {
   return userId;
 }
 
+/**
+ * Resolve the caller's central deviceId from their verified bearer (the access
+ * token embeds a `deviceId` claim). Returns null when the token is absent or
+ * undecodable. Mirrors `resolveCallerDeviceId` in sessionDevice.ts.
+ */
+function resolveCallerDeviceId(req: AuthRequest): string | null {
+  const token = extractTokenFromRequest(req);
+  const decoded = token ? decodeToken(token) : null;
+  return decoded?.deviceId ?? null;
+}
+
+/**
+ * Resolve the OPERATOR anchoring the caller's account graph and switches — the
+ * HUMAN behind the request, NOT the account currently being acted-as.
+ *
+ * For an ordinary session the operator IS the authenticated account. For an
+ * operated (managed / sub-account) session — one minted by `POST /:id/switch`
+ * and carrying `operatedByUserId` — the operator is that recorded human, so
+ * every switcher surface stays anchored on the person no matter which of their
+ * accounts is currently active. Without this, acting-as a leaf sub-account
+ * (which has no children/memberships of its own) collapses the switchable set to
+ * just that account and makes sibling switches fail `verifyActingAs`.
+ *
+ * `operatedByUserId` is authoritative and server-set at switch time (bound to
+ * the operator's `account:act_as` membership, re-verified on validate/refresh),
+ * so trusting it here escalates nothing. The bearer JWT does not carry it
+ * (session-doc-only), so it is read from the (request-cached) session record; a
+ * missing/unreadable session degrades safely to the authenticated account.
+ */
+async function resolveOperatorId(req: AuthRequest): Promise<string> {
+  const authedUserId = requireUserId(req);
+  const token = extractTokenFromRequest(req);
+  const sessionId = token ? decodeToken(token)?.sessionId : undefined;
+  if (!sessionId) {
+    return authedUserId;
+  }
+  try {
+    const sessionDoc = await sessionService.getSession(sessionId, true);
+    const operator = sessionDoc?.operatedByUserId ? sessionDoc.operatedByUserId.toString() : null;
+    return operator ?? authedUserId;
+  } catch (error) {
+    logger.debug('[accounts] resolveOperatorId: session lookup failed, using active account', {
+      component: 'accounts',
+      method: 'resolveOperatorId',
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return authedUserId;
+  }
+}
+
 /** Per-user (or per-IP when anonymous) rate-limit key for a scope. */
 function userScopedKey(scope: string) {
   return (req: Request): string => {
     const userId = (req as AuthRequest).user?._id?.toString();
-    return userId ? `${scope}:${userId}` : `${scope}:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `${scope}:${userId}` : `${scope}:ip:${hashedIpKey(req)}`;
   };
 }
 
@@ -104,17 +169,21 @@ const credentialsLimiter = rateLimit({
  * the members list), `'inherited'` when surfaced as a node's `callerMembership`
  * resolved from an ancestor.
  */
-function serializeMember(member: IAccountMember, source: 'direct' | 'inherited' = 'direct') {
+function serializeMember(member: AccountMemberRow, source: 'direct' | 'inherited' = 'direct') {
   return {
-    _id: member._id.toString(),
-    accountId: member.accountId.toString(),
-    memberUserId: member.memberUserId.toString(),
+    _id: member.id,
+    accountId: member.accountId,
+    memberUserId: member.memberUserId,
     role: member.role,
-    permissions: member.permissions,
+    // `account_members.permissions` does not travel to Postgres: every write
+    // site set it to exactly `permissionsForAccountRole(role)`, making it a
+    // derivation rather than data. The wire keeps the field, computed here.
+    permissions: permissionsForAccountRole(member.role),
     inherit: member.inherit,
     status: member.status,
     source,
-    invitedByUserId: member.invitedByUserId?.toString(),
+    // Mongoose omitted an unset optional; a nullable column reads back `null`.
+    invitedByUserId: member.invitedByUserId ?? undefined,
     joinedAt: member.joinedAt,
     createdAt: member.createdAt,
     updatedAt: member.updatedAt,
@@ -145,17 +214,18 @@ function serializeAccountNode(node: AccountNode) {
  * effective access (used by the single-account endpoints).
  */
 function accountNodeFromAccess(
-  account: IUser,
+  account: AccountRow,
   access: EffectiveAccess,
   childCount: number
 ): AccountNode {
   const relationship: AccountNode['relationship'] =
     access.source === 'self' ? 'self' : access.role === 'owner' ? 'owner' : 'member';
   return {
-    accountId: account._id.toString(),
-    kind: (account.kind as AccountNode['kind']) ?? 'personal',
-    parentAccountId: account.parentAccountId ? account.parentAccountId.toString() : null,
-    rootAccountId: (account.rootAccountId ?? account._id).toString(),
+    accountId: account.id,
+    kind: account.kind,
+    parentAccountId: account.parentAccountId,
+    // `rootAccountId ?? id` — a root account stores no self-reference.
+    rootAccountId: account.rootAccountId ?? account.id,
     account,
     relationship,
     callerMembership: access.membership,
@@ -164,16 +234,25 @@ function accountNodeFromAccess(
   };
 }
 
-/** Count an account's non-archived direct children. */
-async function countChildren(accountId: mongoose.Types.ObjectId): Promise<number> {
-  return User.countDocuments({ parentAccountId: accountId, accountStatus: { $ne: 'archived' } });
+/**
+ * Count an account's non-archived direct children.
+ *
+ * `users_parent_account_id_idx` (partial, `where account_status <> 'archived'`)
+ * serves this exact predicate.
+ */
+async function countChildren(accountId: string): Promise<number> {
+  const [row] = await getDb()
+    .select({ value: count() })
+    .from(users)
+    .where(and(eq(users.parentAccountId, accountId), ne(users.accountStatus, 'archived')));
+  return row.value;
 }
 
 /** Serialise a credential — NEVER includes secret material. */
-function serializeCredential(credential: IAccountCredential) {
+function serializeCredential(credential: Omit<AccountCredentialRow, 'secretHash'>) {
   return {
-    _id: credential._id.toString(),
-    accountId: credential.accountId.toString(),
+    _id: credential.id,
+    accountId: credential.accountId,
     name: credential.name,
     publicKey: credential.publicKey,
     type: credential.type,
@@ -182,10 +261,9 @@ function serializeCredential(credential: IAccountCredential) {
     status: credential.status,
     lastUsedAt: credential.lastUsedAt,
     expiresAt: credential.expiresAt,
-    rotatedFromCredentialId: credential.rotatedFromCredentialId
-      ? credential.rotatedFromCredentialId.toString()
-      : undefined,
-    createdByUserId: credential.createdByUserId.toString(),
+    // Mongoose omitted an unset optional; a nullable column reads back `null`.
+    rotatedFromCredentialId: credential.rotatedFromCredentialId ?? undefined,
+    createdByUserId: credential.createdByUserId,
     createdAt: credential.createdAt,
     updatedAt: credential.updatedAt,
   };
@@ -196,7 +274,7 @@ function serializeCredential(credential: IAccountCredential) {
  * in directly (no wrapper). `extra` carries rotation metadata.
  */
 function serializeCredentialWithSecret(
-  credential: IAccountCredential,
+  credential: Omit<AccountCredentialRow, 'secretHash'>,
   secret: string,
   extra?: Record<string, unknown>
 ) {
@@ -208,17 +286,16 @@ function serializeCredentialWithSecret(
  * access over it. 404 when missing/archived, 403 when the caller has no access.
  */
 async function loadAccountContext(req: AccountContextRequest): Promise<{
-  account: IUser;
+  account: AccountRow;
   access: EffectiveAccess;
 }> {
   const userId = requireUserId(req);
   const id = req.params.id;
 
-  if (!mongoose.isValidObjectId(id)) {
-    throw new NotFoundError('Account not found');
-  }
-
-  const account = await User.findById(id);
+  // The `isValidObjectId` guard is gone: it only ever prevented a Mongoose
+  // `CastError`, and a Postgres text id that matches no row is already the 404
+  // this endpoint documents.
+  const [account] = await getDb().select(publicColumns(users)).from(users).where(eq(users.id, id)).limit(1);
   if (!account || account.accountStatus === 'archived') {
     throw new NotFoundError('Account not found');
   }
@@ -252,16 +329,22 @@ function requireAccountPermission(permission: AccountPermission) {
 // ============================================================================
 
 /**
- * The caller's accessible account forest: their own personal account plus every
+ * The OPERATOR's accessible account forest: their own personal account plus every
  * account they can reach (direct membership + inherited subtree). Flat by
  * default; `?tree=true` nests children under parents.
+ *
+ * Anchored on the operator (the human), NOT the currently-active account, so the
+ * switchable set is IDENTICAL regardless of which of the operator's accounts is
+ * active — switching only flips which account is marked current, never which are
+ * listed. (When acting-as a leaf sub-account, anchoring on the active account
+ * would collapse the list to just that account.)
  */
 router.get(
   '/',
   readLimiter,
   validate({ query: listAccountsQuerySchema }),
   asyncHandler(async (req: AuthRequest, res) => {
-    const userId = requireUserId(req);
+    const userId = await resolveOperatorId(req);
     const nodes = await accountService.listAccessibleAccounts(userId);
     const serialized = nodes.map(serializeAccountNode);
 
@@ -281,23 +364,28 @@ router.get(
  * The caller (operator) must hold `account:act_as` over the target. The minted
  * session records the operator (`operatedByUserId`) for audit and binds its
  * validity to that membership — revoking it kills the session (re-checked on
- * validate + refresh). The session is added to the device's multi-account set
- * (`oxy_rt_*` cookie family), so it survives reload and propagates cross-domain
- * via `/auth/refresh-all` exactly like a device account.
+ * validate + refresh).
  *
- * Returns the SAME shape as login / claimSession (`SessionAuthResponse` +
- * `authuser`) so the client plants it as the active session.
+ * The minted managed session is registered into the operator's device set
+ * server-side (`deviceSessionService.addAccount`, broadcast to the device room)
+ * so it survives reload and syncs across the device's apps via the socket.
+ *
+ * Returns the SAME shape as login / claimSession (`SessionAuthResponse`) so the
+ * client plants it as the active session.
  */
 router.post(
   '/:id/switch',
   writeLimiter,
   validate({ params: accountIdRouteParams }),
   asyncHandler(async (req: AuthRequest, res) => {
-    const operatorId = requireUserId(req);
+    // Anchor on the OPERATOR (the human), not the active account: acting-as a
+    // sub-account must still let the operator switch into their SIBLING accounts.
+    // For an ordinary session this is the authenticated account itself; for an
+    // operated session it is the recorded `operatedByUserId`, so the operator
+    // chain never nests (a switch out of a sub-account is still authorised as,
+    // and recorded against, the human — never the sub-account).
+    const operatorId = await resolveOperatorId(req);
     const id = req.params.id;
-    if (!mongoose.isValidObjectId(id)) {
-      throw new NotFoundError('Account not found');
-    }
 
     // Authorize: the operator must hold account:act_as over the target (directly
     // or inherited). Non-members / insufficient role → 403. This is the ONLY gate
@@ -307,7 +395,7 @@ router.post(
       throw new ForbiddenError('You are not authorized to switch into this account');
     }
 
-    const account = await User.findById(id);
+    const [account] = await getDb().select(publicColumns(users)).from(users).where(eq(users.id, id)).limit(1);
     if (!account || account.accountStatus === 'archived') {
       throw new NotFoundError('Account not found');
     }
@@ -319,34 +407,68 @@ router.post(
 
     // Mint a REAL session for the managed account, recording the operator so the
     // session's validity stays bound to their act_as membership.
-    const session = await sessionService.createSession(account._id.toString(), req, {
+    //
+    // Inherit the OPERATOR's central deviceId so the org session joins the SAME
+    // device doc as the operator's own session. Without this the switch mints a
+    // fresh deviceId (UA/IP-derived), the org lands in a device doc the browser
+    // never restores from on reload (it restores via the operator's personal
+    // session), and the switch silently reverts. If the caller's bearer has no
+    // decodable deviceId, keep today's behavior (let createSession allocate one).
+    const callerDeviceId = resolveCallerDeviceId(req);
+    if (!callerDeviceId) {
+      logger.warn('[accounts] switch: no deviceId on operator bearer — org session gets a fresh device', {
+        component: 'accounts',
+        method: 'switch',
+        operatorId,
+        targetAccountId: id,
+      });
+    }
+    const session = await sessionService.createSession(account.id, req, {
       operatedByUserId: operatorId,
+      ...(callerDeviceId ? { deviceId: callerDeviceId } : {}),
     });
+
+    // Register the managed session into the operator's device set server-side so
+    // it survives reload and syncs cross-domain via the socket room — a switch is
+    // a deliberate activation, so `activate: 'always'`. This replaces the client
+    // establishing the slot separately. Best-effort: never fail the switch on a
+    // device-set write. Only when the operator's device is known.
+    if (callerDeviceId) {
+      try {
+        const { state, changed } = await deviceSessionService.addAccount(
+          session.deviceId,
+          {
+            accountId: account.id,
+            sessionId: session.sessionId,
+            operatedByUserId: operatorId,
+          },
+          { activate: 'always' },
+        );
+        if (changed) broadcastDeviceState(state);
+      } catch (error) {
+        logger.warn('[accounts] switch: device-set registration failed', {
+          component: 'accounts',
+          method: 'switch',
+          operatorId,
+          targetAccountId: id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     const userData = formatUserResponse(account);
     if (!userData) {
       throw new Error('Failed to format account data');
     }
 
-    // Add the managed account to the device's multi-account set so it survives
-    // reload and propagates cross-domain via /auth/refresh-all (best-effort — a
-    // cookie failure must not break the switch).
-    let authuser: number | null = null;
-    try {
-      const issued = await issueAndSetRefreshCookie(res, session.sessionId, account._id, {
-        cookieHeader: req.headers.cookie,
-      });
-      authuser = issued.authuser;
-    } catch (error) {
-      logger.error('Failed to set refresh cookie during account switch', error instanceof Error ? error : new Error(String(error)), {
-        component: 'accounts',
-        method: 'switch',
-        accountId: account._id.toString(),
-      });
-    }
+    // No cookie is planted here — the device-set registration above
+    // (`deviceSessionService.addAccount` + `broadcastDeviceState`) is what makes
+    // the switch survive reload and sync cross-domain via the socket room. The
+    // SDK plants the returned `accessToken` directly; there is no separate
+    // cookie-establishing round trip.
 
     // Mirror the canonical login / claimSession response shape.
-    const response: SessionAuthResponse & { authuser?: number } = {
+    const response: SessionAuthResponse = {
       sessionId: session.sessionId,
       deviceId: session.deviceId,
       expiresAt: session.expiresAt.toISOString(),
@@ -357,9 +479,6 @@ router.post(
         avatar: userData.avatar,
       },
     };
-    if (authuser !== null) {
-      response.authuser = authuser;
-    }
 
     res.status(200).json(response);
   })
@@ -384,12 +503,10 @@ router.post(
       bio?: string;
       avatar?: string;
       description?: string;
+      organizationCategory?: OrganizationCategory;
     };
 
     const parentAccountId = body.parentAccountId ?? userId;
-    if (!mongoose.isValidObjectId(parentAccountId)) {
-      throw new BadRequestError('Invalid parentAccountId');
-    }
 
     // The caller must be allowed to create children on the chosen parent.
     const access = await accountService.resolveEffectiveAccess(userId, parentAccountId);
@@ -407,13 +524,14 @@ router.post(
       bio: body.bio,
       avatar: body.avatar ? stripSensitiveUrlQueryParams(body.avatar) : body.avatar,
       description: body.description,
+      organizationCategory: body.organizationCategory,
     });
 
     const node: AccountNode = {
-      accountId: account._id.toString(),
+      accountId: account.id,
       kind: (account.kind as AccountNode['kind']) ?? body.kind,
       parentAccountId: account.parentAccountId ? account.parentAccountId.toString() : null,
-      rootAccountId: (account.rootAccountId ?? account._id).toString(),
+      rootAccountId: account.rootAccountId ?? account.id,
       account,
       relationship: 'owner',
       callerMembership: membership,
@@ -436,7 +554,7 @@ router.get(
     if (!account || !access) {
       throw new NotFoundError('Account not found');
     }
-    const childCount = await countChildren(account._id);
+    const childCount = await countChildren(account.id);
     res.json({ account: serializeAccountNode(accountNodeFromAccess(account, access, childCount)) });
   })
 );
@@ -460,9 +578,10 @@ router.patch(
       description?: string;
       color?: string;
       links?: string[];
+      organizationCategory?: OrganizationCategory | null;
     };
 
-    const updated = await accountService.updateAccount(account._id.toString(), {
+    const updated = await accountService.updateAccount(account.id, {
       ...body,
       avatar: body.avatar !== undefined ? stripSensitiveUrlQueryParams(body.avatar) : undefined,
     });
@@ -471,7 +590,7 @@ router.patch(
     if (!access) {
       throw new NotFoundError('Account not found');
     }
-    const childCount = await countChildren(updated._id);
+    const childCount = await countChildren(updated.id);
     res.json({ account: serializeAccountNode(accountNodeFromAccess(updated, access, childCount)) });
   })
 );
@@ -487,7 +606,7 @@ router.delete(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    await accountService.archiveAccount(account._id.toString());
+    await accountService.archiveAccount(account.id);
     res.json({ success: true });
   })
 );
@@ -507,7 +626,7 @@ router.get(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    const children = await accountService.listChildren(requireUserId(req), account._id.toString());
+    const children = await accountService.listChildren(requireUserId(req), account.id);
     res.json({ accounts: children.map(serializeAccountNode) });
   })
 );
@@ -523,7 +642,7 @@ router.get(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    const subtree = await accountService.getSubtree(requireUserId(req), account._id.toString());
+    const subtree = await accountService.getSubtree(requireUserId(req), account.id);
     res.json({ accounts: subtree.map(serializeAccountNode) });
   })
 );
@@ -543,9 +662,6 @@ router.post(
       throw new NotFoundError('Account not found');
     }
     const { newParentId } = req.body as { newParentId: string };
-    if (!mongoose.isValidObjectId(newParentId)) {
-      throw new BadRequestError('Invalid newParentId');
-    }
 
     const userId = requireUserId(req);
     const destAccess = await accountService.resolveEffectiveAccess(userId, newParentId);
@@ -553,12 +669,12 @@ router.post(
       throw new ForbiddenError('Missing permission to add children to the destination account');
     }
 
-    const moved = await accountService.moveAccount(account._id.toString(), newParentId);
+    const moved = await accountService.moveAccount(account.id, newParentId);
     const access = req.access;
     if (!access) {
       throw new NotFoundError('Account not found');
     }
-    const childCount = await countChildren(moved._id);
+    const childCount = await countChildren(moved.id);
     res.json({ account: serializeAccountNode(accountNodeFromAccess(moved, access, childCount)) });
   })
 );
@@ -578,7 +694,7 @@ router.get(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    const members = await accountService.listMembers(account._id.toString());
+    const members = await accountService.listMembers(account.id);
     res.json({ members: members.map((member) => serializeMember(member)) });
   })
 );
@@ -606,9 +722,9 @@ router.post(
     }
 
     const member = await accountService.addMember(
-      account._id.toString(),
+      account.id,
       requireUserId(req),
-      targetUser._id.toString(),
+      targetUser.id,
       role,
       inherit
     );
@@ -628,16 +744,13 @@ router.patch(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    if (!mongoose.isValidObjectId(req.params.memberId)) {
-      throw new NotFoundError('Member not found');
-    }
     const { role, inherit } = req.body as {
       role: Exclude<AccountRole, 'owner'>;
       inherit?: boolean;
     };
 
     const member = await accountService.updateMemberRole(
-      account._id.toString(),
+      account.id,
       req.params.memberId,
       role,
       inherit
@@ -658,12 +771,9 @@ router.delete(
     if (!account || !access) {
       throw new NotFoundError('Account not found');
     }
-    if (!mongoose.isValidObjectId(req.params.memberId)) {
-      throw new NotFoundError('Member not found');
-    }
 
     await accountService.removeMember(
-      account._id.toString(),
+      account.id,
       req.params.memberId,
       access.role === 'owner'
     );
@@ -683,11 +793,8 @@ router.post(
       throw new NotFoundError('Account not found');
     }
     const { userId: targetUserId } = req.body as { userId: string };
-    if (!mongoose.isValidObjectId(targetUserId)) {
-      throw new BadRequestError('Invalid userId');
-    }
 
-    await accountService.transferOwnership(account._id.toString(), requireUserId(req), targetUserId);
+    await accountService.transferOwnership(account.id, requireUserId(req), targetUserId);
     res.json({ success: true });
   })
 );
@@ -707,7 +814,7 @@ router.get(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    const credentials = await accountService.listCredentials(account._id.toString());
+    const credentials = await accountService.listCredentials(account.id);
     res.json({ credentials: credentials.map(serializeCredential) });
   })
 );
@@ -728,7 +835,7 @@ router.post(
     }
     const body = req.body as {
       name: string;
-      environment: IAccountCredential['environment'];
+      environment: AccountCredentialRow['environment'];
       scopes?: ApplicationScope[];
     };
 
@@ -746,7 +853,7 @@ router.post(
     }
 
     const { credential, secret } = await accountService.createCredential(
-      account._id.toString(),
+      account.id,
       requireUserId(req),
       { name: body.name, environment: body.environment, scopes: requestedScopes }
     );
@@ -767,12 +874,9 @@ router.post(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    if (!mongoose.isValidObjectId(req.params.credId)) {
-      throw new NotFoundError('Credential not found');
-    }
 
     const result = await accountService.rotateCredential(
-      account._id.toString(),
+      account.id,
       req.params.credId,
       requireUserId(req)
     );
@@ -798,10 +902,7 @@ router.delete(
     if (!account) {
       throw new NotFoundError('Account not found');
     }
-    if (!mongoose.isValidObjectId(req.params.credId)) {
-      throw new NotFoundError('Credential not found');
-    }
-    await accountService.revokeCredential(account._id.toString(), req.params.credId);
+    await accountService.revokeCredential(account.id, req.params.credId);
     res.json({ success: true });
   })
 );

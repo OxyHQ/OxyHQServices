@@ -9,12 +9,22 @@
  * - Proper logging
  */
 
-import { Router, Request, Response, NextFunction } from 'express';
-import { Types } from 'mongoose';
-import User from '../models/User';
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
+import { canonicalFederationHost, isSameFederationHost } from '@oxyhq/federation';
+import { readBoundedBody } from '../services/linkPreview/boundedBody';
+import { getDb } from '../config/postgres';
+import { identityBackups } from '../db/schema/identityBackups';
+import { users } from '../db/schema/users';
 import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler';
+import {
+  FOLLOW_GRAPH_SORTS,
+  isFollowGraphSort,
+  type FollowGraphSort,
+} from '../types/user.types';
 import {
   NotFoundError,
   UnauthorizedError,
@@ -23,9 +33,10 @@ import {
   BadRequestError,
 } from '../utils/error';
 import { userService } from '../services/user.service';
+import graphCache from '../utils/graphCache';
 import { assetService } from '../services/assetServiceSingleton';
 import { UsersController } from '../controllers/users.controller';
-import { resolveUserIdToObjectId } from '../utils/validation';
+import { resolveUserIdToObjectId, isAccountIdFormat } from '../utils/validation';
 import userCache from '../utils/userCache';
 import SignatureService from '../services/signature.service';
 import { emailService } from '../services/email.service';
@@ -47,8 +58,11 @@ import {
 import { sanitizePlainText } from '../utils/sanitize';
 import { cleanDisplayName } from '../utils/displayNameSanitize';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { buildExportBundle } from '../services/identityExport.service';
 import { exportBundleSchema } from '@oxyhq/contracts';
+import sessionService from '../services/session.service';
+import deviceSessionService from '../services/deviceSession.service';
 
 // Types
 interface AuthRequest extends Request {
@@ -60,6 +74,11 @@ interface AuthRequest extends Request {
 interface PaginationQuery {
   limit?: string;
   offset?: string;
+}
+
+/** Pagination plus the follow-graph `sort` accepted by the list endpoints. */
+interface FollowGraphQuery extends PaginationQuery {
+  sort?: string;
 }
 
 // Maximum number of users that can be followed in a single bulk request.
@@ -74,7 +93,10 @@ const getUserIdsFromRequestBody = (body: unknown): unknown => {
 };
 
 import { PAGINATION } from '../utils/constants';
+import { MAX_MUTUAL_IDS, MAX_FOLLOWS_OF_FOLLOWS_IDS } from '../utils/recommendationWeights';
+import { bridgeVouchesForNetwork } from '../config/federationBridgeTrust';
 import { federationService, isOwnFederationDomain } from '../services/federation.service';
+import { isPublicGraphTarget } from '../utils/profileQuery';
 
 // Initialize router and controller
 const router = Router();
@@ -89,6 +111,14 @@ const usersController = new UsersController();
  * Accepts both ObjectId strings and publicKey strings
  * Stores the resolved ObjectId back in req.params.userId
  */
+/** 404 when the target user is archived, restricted, or private — same gate as /similar. */
+async function assertDiscoverableTargetUser(userId: string): Promise<void> {
+  const user = await userService.getPublicUserById(userId);
+  if (!isPublicGraphTarget(user)) {
+    throw new NotFoundError('User not found');
+  }
+}
+
 const resolveUserId = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { userId } = req.params;
@@ -136,8 +166,8 @@ const resolveUserId = async (req: Request, res: Response, next: NextFunction): P
  */
 const validatePagination = (req: Request, res: Response, next: NextFunction): void => {
   const query = req.query as PaginationQuery;
-  const limit = query.limit ? parseInt(query.limit, 10) : undefined;
-  const offset = query.offset ? parseInt(query.offset, 10) : undefined;
+  const limit = query.limit ? Number.parseInt(query.limit, 10) : undefined;
+  const offset = query.offset ? Number.parseInt(query.offset, 10) : undefined;
 
   if (limit !== undefined && (isNaN(limit) || limit < 0)) {
     res.status(400).json({
@@ -156,6 +186,33 @@ const validatePagination = (req: Request, res: Response, next: NextFunction): vo
   }
 
   next();
+};
+
+/**
+ * Validates the optional `sort` query parameter on the follow-graph list
+ * endpoints. Absent ⇒ the server default (`recent`); anything outside the
+ * supported vocabulary is rejected rather than silently coerced, so a client
+ * asking for an ordering we do not implement finds out instead of quietly
+ * receiving a different one.
+ */
+const validateFollowGraphSort = (req: Request, res: Response, next: NextFunction): void => {
+  const { sort } = req.query as FollowGraphQuery;
+
+  if (sort !== undefined && !isFollowGraphSort(sort)) {
+    res.status(400).json({
+      error: 'INVALID_SORT',
+      message: `sort must be one of: ${FOLLOW_GRAPH_SORTS.join(', ')}`,
+    });
+    return;
+  }
+
+  next();
+};
+
+/** Read the validated `sort` off a request. Undefined ⇒ the service default. */
+const readFollowGraphSort = (req: Request): FollowGraphSort | undefined => {
+  const { sort } = req.query as FollowGraphQuery;
+  return isFollowGraphSort(sort) ? sort : undefined;
 };
 
 /**
@@ -508,6 +565,54 @@ router.post(
 );
 
 /**
+ * POST /users/follow-status/bulk
+ *
+ * Resolve the authenticated viewer's follow status for MANY target users in a
+ * single request. Built for list UIs (a page of N FollowButtons) that would
+ * otherwise fire N `GET /users/:id/follow-status` calls — this collapses them
+ * into one round-trip served by a single indexed query.
+ *
+ * Registered BEFORE the `/:userId` param routes so Express never treats
+ * `follow-status` as a `:userId` value.
+ *
+ * @body {string[]} userIds - Target user ids to check (max MAX_BULK_FOLLOW).
+ * @returns {{ statuses: Record<string, boolean> }} Every requested id mapped to
+ *   whether the viewer follows it; unknown/unfollowed ids are `false`.
+ */
+router.post(
+  '/follow-status/bulk',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const currentUserId = req.user?.id;
+
+    if (!currentUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const userIds = getUserIdsFromRequestBody(req.body);
+
+    if (!Array.isArray(userIds)) {
+      throw new BadRequestError('userIds must be an array');
+    }
+    if (userIds.length === 0) {
+      throw new BadRequestError('userIds must not be empty');
+    }
+    if (userIds.length > MAX_BULK_FOLLOW) {
+      throw new BadRequestError(`Cannot request more than ${MAX_BULK_FOLLOW} follow statuses at once`);
+    }
+
+    const statuses = await userService.getFollowingStatuses(currentUserId, userIds);
+
+    logger.debug('POST /users/follow-status/bulk', {
+      currentUserId,
+      requested: userIds.length,
+    });
+
+    sendSuccess(res, { statuses });
+  })
+);
+
+/**
  * POST /users/by-ids
  *
  * Batch-resolve PUBLIC user DTOs for up to 100 ids in a single round-trip.
@@ -543,6 +648,158 @@ router.post(
 );
 
 /**
+ * GET /users/mutual-ids
+ *
+ * The authenticated VIEWER's OWN mutual-follow user ids — the accounts the viewer
+ * follows that ALSO follow the viewer back. Lean, ids-only, bounded payload built
+ * to SEED Mention's "Mutuals" feed (which then hydrates and ranks the posts
+ * itself), so it returns bare ids rather than the hydrated DTOs of
+ * `GET /users/:userId/mutuals` ("followers you know" about ANOTHER profile).
+ *
+ * The viewer is derived SERVER-SIDE from the auth token via `resolveViewerId`
+ * (the same dual-auth as `/mutuals` and `/by-ids`) — never a client-supplied id,
+ * and there is no `:userId` param to spoof (anti-IDOR). OPTIONAL semantics: an
+ * anonymous caller (or a service token with no user context) has no "you follow"
+ * set → `{ data: [] }`.
+ *
+ * Registered BEFORE the `/:userId` param routes so Express never treats
+ * `mutual-ids` as a `:userId` value.
+ *
+ * @query {number} limit - Max ids to return (capped at MAX_MUTUAL_IDS).
+ * @returns {{ data: string[] }} The viewer's mutual-follow user ids.
+ */
+router.get(
+  '/mutual-ids',
+  optionalUserOrServiceAuth,
+  validatePagination,
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
+    // Viewer is always the authenticated principal — never a client param.
+    const viewerId = resolveViewerId(req);
+    const { limit } = req.query as PaginationQuery;
+
+    const parsedLimit = limit
+      ? Math.min(Number.parseInt(limit, 10), MAX_MUTUAL_IDS)
+      : MAX_MUTUAL_IDS;
+
+    const ids = await userService.getMutualUserIds(viewerId, { limit: parsedLimit });
+
+    logger.debug('GET /users/mutual-ids', {
+      viewerId,
+      limit: parsedLimit,
+      count: ids.length,
+    });
+
+    sendSuccess(res, ids);
+  })
+);
+
+/**
+ * GET /users/follows-of-follows-ids
+ *
+ * The authenticated VIEWER's bounded "follows-of-follows" user ids — the union
+ * of the accounts followed by the accounts the viewer follows (a two-hop walk of
+ * the follow graph), MINUS the viewer's own follows and the viewer themselves.
+ * Lean, ids-only, bounded payload built to SEED Mention's friends-of-friends
+ * feed (which then hydrates and ranks the posts itself), so it returns bare ids
+ * rather than hydrated DTOs. Candidates are ordered by frequency (accounts
+ * followed by more of the viewer's follows first), then recency.
+ *
+ * The viewer is derived SERVER-SIDE from the auth token via `resolveViewerId`
+ * (the same dual-auth as `/mutual-ids` and `/by-ids`) — never a client-supplied
+ * id, and there is no `:userId` param to spoof (anti-IDOR). OPTIONAL semantics:
+ * an anonymous caller (or a service token with no user context) has no "you
+ * follow" set → `{ data: [] }`.
+ *
+ * Registered BEFORE the `/:userId` param routes so Express never treats
+ * `follows-of-follows-ids` as a `:userId` value.
+ *
+ * @query {number} limit - Max ids to return (capped at MAX_FOLLOWS_OF_FOLLOWS_IDS).
+ * @returns {{ data: string[] }} The viewer's follows-of-follows user ids.
+ */
+router.get(
+  '/follows-of-follows-ids',
+  optionalUserOrServiceAuth,
+  validatePagination,
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
+    // Viewer is always the authenticated principal — never a client param.
+    const viewerId = resolveViewerId(req);
+    const { limit } = req.query as PaginationQuery;
+
+    const parsedLimit = limit
+      ? Math.min(Number.parseInt(limit, 10), MAX_FOLLOWS_OF_FOLLOWS_IDS)
+      : MAX_FOLLOWS_OF_FOLLOWS_IDS;
+
+    const ids = await userService.getFollowsOfFollowsIds(viewerId, { limit: parsedLimit });
+
+    logger.debug('GET /users/follows-of-follows-ids', {
+      viewerId,
+      limit: parsedLimit,
+      count: ids.length,
+    });
+
+    sendSuccess(res, ids);
+  })
+);
+
+/**
+ * GET /users/me/graph
+ *
+ * The authenticated VIEWER's OWN social graph — the accounts they follow, the
+ * subset who follow back (mutuals), and the accounts they have blocked — as ONE
+ * ids-only payload `{ followingIds, mutualIds, blockedIds, restrictedIds }`. Consolidates the
+ * three per-viewer graph reads consuming apps (Mention, Allo, Homiio) otherwise
+ * make as separate round trips on nearly every feed request.
+ *
+ * The viewer is derived SERVER-SIDE from the auth token via `resolveViewerId`
+ * (the same dual-auth as `/mutual-ids` and `/follows-of-follows-ids`) — never a
+ * client-supplied id, and there is no `:userId` param to spoof (anti-IDOR).
+ * OPTIONAL semantics: an anonymous caller (or a service token with no user
+ * context) has no graph → every list is empty.
+ *
+ * Backed by a short-TTL Redis cache (`graphCache`) filled on miss and busted by
+ * the follow/unfollow/block/unblock write paths; degrades to a straight Mongo
+ * recompute when Redis is unconfigured.
+ *
+ * Registered as a two-segment `/me/graph` path (distinct from the single-segment
+ * `/:userId` param route) so Express never treats it as a `:userId` value.
+ *
+ * @returns {ViewerGraph} `{ followingIds, mutualIds, blockedIds, restrictedIds }`.
+ */
+router.get(
+  '/me/graph',
+  optionalUserOrServiceAuth,
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
+    // Viewer is always the authenticated principal — never a client param.
+    const viewerId = resolveViewerId(req);
+
+    // Anonymous / no-user-context callers have no graph. Short-circuit with the
+    // empty graph and never touch the cache (its keys are strictly per-viewer).
+    if (!viewerId) {
+      sendSuccess(res, { followingIds: [], mutualIds: [], blockedIds: [], restrictedIds: [] });
+      return;
+    }
+
+    const cached = await graphCache.get(viewerId);
+    if (cached) {
+      sendSuccess(res, cached);
+      return;
+    }
+
+    const graph = await userService.getViewerGraph(viewerId);
+    await graphCache.set(viewerId, graph);
+
+    logger.debug('GET /users/me/graph', {
+      viewerId,
+      following: graph.followingIds.length,
+      mutuals: graph.mutualIds.length,
+      blocked: graph.blockedIds.length,
+    });
+
+    sendSuccess(res, graph);
+  })
+);
+
+/**
  * GET /users/:userId
  *
  * Get user profile by ID
@@ -552,13 +809,18 @@ router.post(
  */
 router.get(
   '/:userId',
+  optionalUserOrServiceAuth,
   resolveUserId,
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
     const { userId } = req.params;
 
-    const user = await userService.getUserById(userId);
+    const user = await userService.getPublicUserById(userId);
 
-    if (!user) {
+    if (
+      !user ||
+      user.accountStatus === 'archived' ||
+      user.reputationTier === 'restricted'
+    ) {
       throw new NotFoundError('User not found');
     }
 
@@ -567,6 +829,15 @@ router.get(
 
     // Format response with stats
     const response = userService.formatUserResponse(user, stats);
+
+    // Viewer-relative relationship: computed in the SAME handler (no second
+    // round-trip) from the Follow model when the request is authenticated.
+    // `userId` is already resolved to the canonical ObjectId by `resolveUserId`.
+    // OMITTED for anonymous requests and for a self-view.
+    const viewerId = resolveViewerId(req);
+    if (viewerId && viewerId !== userId) {
+      response.relationship = await userService.getViewerRelationship(viewerId, userId);
+    }
 
     logger.debug('GET /users/:userId', { userId });
     sendSuccess(res, response);
@@ -581,30 +852,37 @@ router.get(
  * @param {string} userId - User ID
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
- * @returns {PaginatedResponse<UserProfile>} Paginated list of followers
+ * @query {string} sort - `recent` (default) or `oldest`
+ * @returns {PaginatedResponse<PublicUserProfile>} Paginated list of followers
  */
 router.get(
   '/:userId/followers',
   resolveUserId,
   validatePagination,
+  validateFollowGraphSort,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
-    const { limit, offset } = req.query as PaginationQuery;
+    const { limit, offset } = req.query as FollowGraphQuery;
+    const sort = readFollowGraphSort(req);
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
+
+    await assertDiscoverableTargetUser(userId);
 
     const result = await userService.getUserFollowers(userId, {
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
     });
 
     logger.debug('GET /users/:userId/followers', {
       userId,
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
       total: result.total,
     });
 
@@ -620,30 +898,37 @@ router.get(
  * @param {string} userId - User ID
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
- * @returns {PaginatedResponse<UserProfile>} Paginated list of following
+ * @query {string} sort - `recent` (default) or `oldest`
+ * @returns {PaginatedResponse<PublicUserProfile>} Paginated list of following
  */
 router.get(
   '/:userId/following',
   resolveUserId,
   validatePagination,
+  validateFollowGraphSort,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
-    const { limit, offset } = req.query as PaginationQuery;
+    const { limit, offset } = req.query as FollowGraphQuery;
+    const sort = readFollowGraphSort(req);
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
+
+    await assertDiscoverableTargetUser(userId);
 
     const result = await userService.getUserFollowing(userId, {
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
     });
 
     logger.debug('GET /users/:userId/following', {
       userId,
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
       total: result.total,
     });
 
@@ -669,28 +954,34 @@ router.get(
  * @param {string} userId - Target user ID (ObjectId or publicKey; resolved first)
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
- * @returns {PaginatedResponse<UserProfile>} Paginated list of mutual followers
+ * @query {string} sort - `recent` (default) or `oldest`
+ * @returns {PaginatedResponse<PublicUserProfile>} Paginated list of mutual followers
  */
 router.get(
   '/:userId/mutuals',
   optionalUserOrServiceAuth,
   resolveUserId,
   validatePagination,
+  validateFollowGraphSort,
   asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
     const { userId } = req.params;
-    const { limit, offset } = req.query as PaginationQuery;
+    const { limit, offset } = req.query as FollowGraphQuery;
+    const sort = readFollowGraphSort(req);
 
     // Viewer is always the authenticated principal — never a client param.
     const viewerId = resolveViewerId(req);
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      ? Math.min(Number.parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
-    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const parsedOffset = offset ? Number.parseInt(offset, 10) : 0;
+
+    await assertDiscoverableTargetUser(userId);
 
     const result = await userService.getUserMutuals(viewerId, userId, {
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
     });
 
     logger.debug('GET /users/:userId/mutuals', {
@@ -698,6 +989,7 @@ router.get(
       userId,
       limit: parsedLimit,
       offset: parsedOffset,
+      sort,
       total: result.total,
     });
 
@@ -850,41 +1142,27 @@ router.put(
       throw new BadRequestError('Invalid privacy settings');
     }
 
-    const user = await userService.getUserById(userId);
-
-    if (!user) {
+    // Merge only the provided fields. Replacing the whole settings object would
+    // wipe every toggle the client did not include, which is what Mongo's
+    // dot-path `$set` existed to avoid; the service owns that merge and the
+    // userCache invalidation that keeps the next session read fresh.
+    const incoming = req.body.privacySettings as Record<string, unknown>;
+    const updatedSettings = await userService.updatePrivacySettings(userId, incoming);
+    if (!updatedSettings) {
       throw new NotFoundError('User not found');
     }
 
-    // Merge only the provided fields into privacySettings using dot-path
-    // updates. Using `{ $set: { privacySettings: ... } }` would replace the
-    // whole subdocument and wipe any fields the client did not include.
-    const incoming = req.body.privacySettings as Record<string, unknown>;
-    const setOps: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(incoming)) {
-      setOps[`privacySettings.${key}`] = value;
-    }
-
-    // Update privacy settings
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      Object.keys(setOps).length > 0 ? { $set: setOps } : {},
-      { new: true, runValidators: true }
-    )
-      .select('-password -refreshToken')
-      .lean({ virtuals: true });
-
+    const updatedUser = await userService.getUserById(userId);
     if (!updatedUser) {
       throw new NotFoundError('User not found');
     }
 
-    // Bust the in-memory user cache so subsequent session-bound lookups
-    // return the fresh privacy state instead of the stale pre-write doc.
-    userCache.invalidate(userId);
-
     logger.info('User privacy settings updated', { userId });
 
-    sendSuccess(res, updatedUser);
+    sendSuccess(
+      res,
+      userService.formatUserResponse(updatedUser, undefined, { includePrivateFields: true }),
+    );
   })
 );
 
@@ -966,14 +1244,15 @@ router.get(
     }
 
     const format = (req.query.format as string) || 'json';
-    const user = await User.findById(userId).select('-refreshToken').lean();
+    // `readAccountDocument` selects through `publicColumns(users)`, so the
+    // protected set — the raw phone, the contact-discovery hashes, the refresh
+    // token, and the private mail configuration — is absent by construction
+    // rather than by a `-field` exclusion someone has to remember.
+    const safeUserData = await userService.readAccountDocument(userId);
 
-    if (!user) {
+    if (!safeUserData) {
       throw new NotFoundError('User not found');
     }
-
-    // Remove sensitive fields
-    const { refreshToken, ...safeUserData } = user;
 
     let data: string;
     let contentType: string;
@@ -1019,7 +1298,7 @@ const identityExportLimiter = rateLimit({
   message: 'Too many export requests. Please try again later.',
   keyGenerator: (req) => {
     const userId = (req as AuthRequest).user?.id;
-    return userId ? `identity:export:${userId}` : `identity:export:ip:${req.ip ?? 'unknown'}`;
+    return userId ? `identity:export:${userId}` : `identity:export:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -1178,7 +1457,11 @@ router.delete(
       throw new BadRequestError('Confirmation text is required');
     }
 
-    const user = await User.findById(userId).select('+publicKey +username');
+    const [user] = await getDb()
+      .select({ publicKey: users.publicKey, username: users.username })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
     if (!user) {
       throw new NotFoundError('User not found');
     }
@@ -1192,9 +1475,8 @@ router.delete(
     const message = `delete:${user.publicKey}:${timestamp}`;
     const isValidSignature = SignatureService.verifySignature(message, signature, user.publicKey);
     
-    // Check timestamp is recent (within 5 minutes)
-    const now = Date.now();
-    if (now - timestamp > 5 * 60 * 1000) {
+    // Check timestamp is recent (within 5 minutes), allowing modest client clock skew
+    if (!SignatureService.isTimestampFresh(timestamp)) {
       throw new BadRequestError('Signature has expired. Please try again.');
     }
     
@@ -1210,8 +1492,26 @@ router.delete(
     // Delete all email data (mailboxes, messages, S3 attachments)
     await emailService.deleteAllUserData(userId);
 
-    // Delete the user account
-    await User.findByIdAndDelete(userId);
+    // Drop any encrypted off-device identity backup for this account.
+    await getDb().delete(identityBackups).where(eq(identityBackups.userId, userId));
+
+    // Revoke every active session and detach the account from all device-session
+    // docs so a deleted user cannot keep minting tokens from a retained secret.
+    await sessionService.deactivateAllUserSessions(userId);
+    await deviceSessionService.purgeAccountFromAllDevices(userId);
+
+    // Remove follow edges, blocks, restrictions, and repair counterparty counts
+    // before deleting the user document (mirrors federation actor-delete).
+    await userService.purgeUserSocialGraph(userId);
+
+    // Delete the account row. Every remaining edge that references it is
+    // removed by its own foreign key; the graph purge above ran first because it
+    // is what invalidates each counterparty's cached graph by name — a cascade
+    // tells nobody whose graph just changed.
+    await getDb().delete(users).where(eq(users.id, userId));
+
+    userCache.invalidate(userId);
+    await graphCache.invalidate(userId);
 
     logger.info('Account deleted', { userId, username: user.username });
 
@@ -1271,25 +1571,16 @@ interface ResolveUserBody {
   forceAvatarRefresh?: unknown;
 }
 
-function normalizeFederatedResolveDomain(domain: string): string {
-  return domain.trim().toLowerCase();
-}
-
 function normalizeFederatedResolveUsername(username: string): string | null {
   const cleaned = username.trim().replace(/^acct:/i, '').replace(/^@/, '');
   const atIndex = cleaned.indexOf('@');
   if (atIndex <= 0 || atIndex === cleaned.length - 1) return null;
 
   const localPart = cleaned.substring(0, atIndex).toLowerCase();
-  const domain = normalizeFederatedResolveDomain(cleaned.substring(atIndex + 1));
+  const domain = canonicalFederationHost(cleaned.substring(atIndex + 1));
   if (!localPart || !domain) return null;
 
   return `${localPart}@${domain}`;
-}
-
-function actorHostnameMatchesFederatedDomain(actorHostname: string, domain: string): boolean {
-  const normalizedActorHostname = normalizeFederatedResolveDomain(actorHostname);
-  return normalizedActorHostname === domain || normalizedActorHostname === `www.${domain}`;
 }
 
 /**
@@ -1307,6 +1598,8 @@ function isAtprotoDidActorUri(actorUri: string): boolean {
   return ATPROTO_DID_ACTOR_URI.test(actorUri);
 }
 
+const WEBFINGER_MAX_BYTES = 64 * 1024;
+
 async function verifyFederatedWebFingerBinding(username: string, actorUri: string): Promise<boolean> {
   const atIndex = username.indexOf('@');
   if (atIndex === -1 || atIndex === username.length - 1) return false;
@@ -1316,32 +1609,49 @@ async function verifyFederatedWebFingerBinding(username: string, actorUri: strin
   const url = `https://${domain}/.well-known/webfinger?resource=${encodeURIComponent(resource)}`;
 
   try {
-    const response = await fetch(url, {
+    const result = await safeFetch(url, {
       headers: { Accept: 'application/jrd+json, application/json' },
+      headersTimeoutMs: 10_000,
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) return false;
 
-    const data = await response.json() as {
-      subject?: unknown;
-      links?: Array<{ rel?: unknown; type?: unknown; href?: unknown }>;
-    };
-    const normalizedSubject = typeof data.subject === 'string'
-      ? normalizeFederatedResolveUsername(data.subject.replace(/^acct:/, ''))
-      : null;
-    if (normalizedSubject !== username) return false;
+    const { response, status } = result;
+    try {
+      if (status < 200 || status >= 300) return false;
 
-    const selfLink = data.links?.find((link) => (
-      link.rel === 'self'
-      && typeof link.href === 'string'
-      && (
-        link.type === 'application/activity+json'
-        || link.type === 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
-      )
-    ));
+      const body = await readBoundedBody(response, { maxBytes: WEBFINGER_MAX_BYTES });
+      const data = JSON.parse(body) as {
+        subject?: unknown;
+        links?: Array<{ rel?: unknown; type?: unknown; href?: unknown }>;
+      };
+      const normalizedSubject = typeof data.subject === 'string'
+        ? normalizeFederatedResolveUsername(data.subject.replace(/^acct:/, ''))
+        : null;
+      if (normalizedSubject !== username) return false;
 
-    return selfLink?.href === actorUri;
+      const selfLink = data.links?.find((link) => (
+        link.rel === 'self'
+        && typeof link.href === 'string'
+        && (
+          link.type === 'application/activity+json'
+          || link.type === 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
+        )
+      ));
+
+      return selfLink?.href === actorUri;
+    } finally {
+      response.destroy();
+    }
   } catch (error) {
+    if (error instanceof SsrfRejection) {
+      logger.warn('Blocked federated WebFinger binding fetch', {
+        username,
+        actorUri,
+        reason: error.message,
+      });
+      return false;
+    }
+
     logger.warn('Failed to verify federated WebFinger binding', {
       username,
       actorUri,
@@ -1351,9 +1661,36 @@ async function verifyFederatedWebFingerBinding(username: string, actorUri: strin
   }
 }
 
+/**
+ * Dedicated per-app limiter for PUT /users/resolve — the federated/agent user
+ * find-or-create that a relying app's connectors call in BULK during a backfill
+ * (one resolve per unique external author), all through a single NAT egress IP.
+ *
+ * This path is EXEMPT from the global browser per-IP limiter (rl:general) and the
+ * slowDown penalty (see `isServiceToServiceBulkRequest` in middleware/security),
+ * because that per-IP browser budget — shared across ALL of the app's oxy-api
+ * calls from one NAT IP — 429'd bulk resolves (the same failure mode as the
+ * federation sign surface). This is therefore its dedicated budget. Keyed by the
+ * calling service app id (never the shared NAT IP), sized like
+ * `federationServiceLimiter` (60000/15min ≈ 66 req/s): generous enough for a
+ * large author backfill, still bounding a runaway or compromised credential.
+ * Applied AFTER serviceAuthMiddleware so `req.serviceApp` is populated for the key.
+ */
+const userResolveServiceLimiter = rateLimit({
+  prefix: 'rl:user-resolve:service:',
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 120000 : 60000,
+  message: 'Too many federated-user resolve requests, please slow down.',
+  keyGenerator: (req: Request) => {
+    const appId = (req as ServiceAuthRequest).serviceApp?.appId;
+    return appId ? `app:${appId}` : hashedIpKey(req);
+  },
+});
+
 router.put(
   '/resolve',
   serviceAuthMiddleware,
+  userResolveServiceLimiter,
   asyncHandler(async (req: ServiceAuthRequest, res: Response) => {
     // Scope gate — only service tokens explicitly granted `federation:write`
     // may create or update federated/agent/automated users.
@@ -1379,11 +1716,17 @@ router.put(
     if (!username || typeof username !== 'string') {
       throw new BadRequestError('username is required');
     }
+    if (type !== 'federated' && ownerId !== undefined && ownerId !== null) {
+      if (typeof ownerId !== 'string' || !isAccountIdFormat(ownerId)) {
+        throw new BadRequestError('ownerId must be a valid user id');
+      }
+    }
 
-    // Build the upsert filter and $set payload — never touch auth fields
-    let filter: Record<string, unknown>;
+    // Build the row predicate and the column payload — never touch auth fields.
+    // `existingPredicate` is what Mongo expressed as an upsert FILTER; it stays a
+    // predicate because the two branches key on different unique indexes.
+    let existingPredicate: SQL;
     const setFields: Record<string, unknown> = { username };
-    const unsetFields: Record<string, ''> = {};
 
     if (type === 'federated') {
       if (!actorUri || typeof actorUri !== 'string') {
@@ -1413,13 +1756,13 @@ router.put(
           throw new BadRequestError('actorUri must be a valid http(s) URL or a did: URI');
         }
       }
-      const normalisedDomain = normalizeFederatedResolveDomain(domain);
+      const normalisedDomain = canonicalFederationHost(domain);
       const normalisedUsername = normalizeFederatedResolveUsername(username);
       if (!normalisedUsername) {
         throw new BadRequestError('username must be a valid federated handle');
       }
       const usernameDomain = normalisedUsername.substring(normalisedUsername.indexOf('@') + 1);
-      if (usernameDomain !== normalisedDomain) {
+      if (!isSameFederationHost(usernameDomain, normalisedDomain)) {
         throw new BadRequestError('username domain does not match domain');
       }
 
@@ -1438,48 +1781,85 @@ router.put(
       // actors carry no host and are not WebFinger-resolvable, so this AP-only
       // check is skipped for them — the `federation:write` scope plus the
       // username↔domain binding above are the trust anchor for atproto actors.
+      //
+      // A BRIDGED identity is the one case where the two legitimately differ.
+      // `@wired@bird.makeup` is not a person on bird.makeup; it is WIRED on X,
+      // republished — so the actor URI's host is the bridge while the identity
+      // belongs to `x.com`. WebFinger cannot settle that: X publishes none, and
+      // no amount of asking bird.makeup would make it authoritative for x.com.
+      //
+      // So the question is answered from THIS service's own reviewed trust list
+      // (`config/federationBridgeTrust`) — a decision the API makes, never one the
+      // caller asserts, which is the entire point of the binding. The calling
+      // connector keeps its own list; the two are deliberately separate and NOT
+      // duplication — drift between them fails CLOSED in both directions, and
+      // consolidating them would delete that. See the note in
+      // `config/federationBridgeTrust` before "tidying" it.
+      // `bridgeVouchesForNetwork` requires BOTH
+      // halves to match, so a listed bridge can only ever claim the single
+      // network it mirrors, and an unlisted host still cannot claim anything.
+      // It is checked before the WebFinger probe purely because it is a local
+      // lookup and that is a network round trip.
       if (
         actorHostname !== null
-        && !actorHostnameMatchesFederatedDomain(actorHostname, normalisedDomain)
+        && !isSameFederationHost(actorHostname, normalisedDomain)
+        && !bridgeVouchesForNetwork(actorHostname, normalisedDomain)
         && !(await verifyFederatedWebFingerBinding(normalisedUsername, actorUri))
       ) {
         throw new BadRequestError('actorUri hostname does not match domain');
       }
-      filter = { 'federation.actorUri': actorUri };
+      existingPredicate = eq(users.federationActorUri, actorUri);
       setFields.username = normalisedUsername;
-      setFields['federation.actorUri'] = actorUri;
-      setFields['federation.domain'] = normalisedDomain;
-      setFields['federation.lastResolvedAt'] = new Date();
-      unsetFields['federation.unavailableAt'] = '';
-      unsetFields['federation.unavailableReason'] = '';
+      setFields.federationActorUri = actorUri;
+      setFields.federationDomain = normalisedDomain;
+      setFields.federationLastResolvedAt = new Date();
+      // A successful resolve clears the tombstone. NULL is what "available"
+      // means on these columns, so the Mongo `$unset` is a write of NULL.
+      setFields.federationUnavailableAt = null;
+      setFields.federationUnavailableReason = null;
     } else {
       // For agent / automated, refuse to clobber a username already taken
       // by a local user — that would be account takeover via the
       // federation pipeline.
-      const localCollision = await User.findOne({
-        username,
-        type: { $nin: ['agent', 'automated'] },
-      }).select('_id type').lean();
+      // Written against the EXPRESSION the unique index is built on
+      // (`lower(btrim(username))`, `db/schema/users.ts`); a plain `username = $1`
+      // is correct-looking, case-sensitive, and would miss a collision the
+      // index would then reject as a 500.
+      const [localCollision] = await getDb()
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            sql`lower(btrim(${users.username})) = lower(btrim(${username}))`,
+            sql`${users.type} not in ('agent', 'automated')`
+          )
+        )
+        .limit(1);
       if (localCollision) {
         throw new ConflictError('Username is already taken by a non-automated user');
       }
-      filter = { username, type: { $in: ['agent', 'automated'] } };
+      existingPredicate = and(
+        sql`lower(btrim(${users.username})) = lower(btrim(${username}))`,
+        inArray(users.type, ['agent', 'automated'])
+      ) ?? sql`false`;
       if (typeof ownerId === 'string') {
-        setFields['automation.ownerId'] = ownerId;
+        setFields.automationOwnerId = ownerId;
       }
     }
 
     // Type immutability check: if a user already exists, its `type` must
     // match what the caller is asserting. We never allow a federated user
-    // to be silently re-typed as an agent, or vice versa.
-    const existingByFilter = await User.findOne(filter).select('_id type').lean();
-    if (existingByFilter && existingByFilter.type && existingByFilter.type !== type) {
+    // to be silently re-typed as an agent, or vice versa. The same read also
+    // supplies the existing avatar file id below, so the two Mongo round trips
+    // that asked the same question collapse into one.
+    const [existingByFilter] = await getDb()
+      .select({ id: users.id, type: users.type, avatar: users.avatar })
+      .from(users)
+      .where(existingPredicate)
+      .limit(1);
+    if (existingByFilter && existingByFilter.type !== type) {
       throw new ConflictError('Cannot change the type of an existing user');
     }
-
-    // Only set `type` on initial insert; never overwrite on update. The
-    // immutability invariant above already rejected mismatched updates.
-    const setOnInsert: Record<string, unknown> = { type };
 
     // Clean free-text fields sourced from untrusted remote actors
     // (federated/agent/automated) before persisting. The bio renders as TEXT in
@@ -1492,7 +1872,11 @@ router.put(
       // Strip disallowed characters (emoji/symbols/shortcodes) from federated
       // names. cleanDisplayName's output can never contain an XSS vector and is
       // already clean, so it owns the name field here.
-      setFields['name.first'] = cleanDisplayName(displayName);
+      // The COLUMN PROPERTY, not Mongo's `name.first` dot path: drizzle keys
+      // `set()`/`values()` by property name and SILENTLY IGNORES a key that
+      // names no column, so the dot path stored nothing at all and every
+      // federated actor resolved through here landed with a null display name.
+      setFields.nameFirst = cleanDisplayName(displayName);
     }
     if (typeof bio === 'string') {
       setFields.bio = sanitizePlainText(bio);
@@ -1509,31 +1893,33 @@ router.put(
     let remoteAvatarUrl: string | undefined;
     let existingAvatarFileId: string | undefined;
     if (typeof avatar === 'string' && avatar.startsWith('http')) {
-      const existingUser = await User.findOne(filter).select('avatar').lean();
-      existingAvatarFileId = typeof existingUser?.avatar === 'string' ? existingUser.avatar : undefined;
+      existingAvatarFileId = existingByFilter?.avatar ?? undefined;
       remoteAvatarUrl = avatar;
     } else if (typeof avatar === 'string') {
       // Non-URL avatar (already a file ID) — set directly
       setFields.avatar = avatar;
     }
 
-    const update: {
-      $set: Record<string, unknown>;
-      $setOnInsert: Record<string, unknown>;
-      $unset?: Record<string, ''>;
-    } = { $set: setFields, $setOnInsert: setOnInsert };
-    if (Object.keys(unsetFields).length > 0) {
-      update.$unset = unsetFields;
+    // `type` is written only on INSERT, never on update — the immutability
+    // check above already rejected a mismatched update, and re-writing it would
+    // make that check the only thing standing between a caller and a silent
+    // re-type. Column DEFAULTs replace Mongoose's `setDefaultsOnInsert`.
+    let resolvedUserId: string;
+    if (existingByFilter) {
+      await getDb().update(users).set(setFields).where(eq(users.id, existingByFilter.id));
+      resolvedUserId = existingByFilter.id;
+    } else {
+      const [inserted] = await getDb()
+        .insert(users)
+        .values({ ...setFields, type })
+        .returning({ id: users.id });
+      if (!inserted) {
+        throw new Error('Failed to resolve user');
+      }
+      resolvedUserId = inserted.id;
     }
 
-    const user = await User.findOneAndUpdate(
-      filter,
-      update,
-      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
-    )
-      .select('-password -refreshToken')
-      .lean({ virtuals: true });
-
+    const user = await userService.readAccountDocument(resolvedUserId);
     if (!user) {
       throw new Error('Failed to resolve user');
     }
@@ -1541,7 +1927,7 @@ router.put(
     // This route mutates user state (avatar/name/bio/federation fields), so the
     // in-memory user cache must be invalidated — otherwise getUserBySession can
     // serve a stale record and silently revert this update.
-    userCache.invalidate(user._id.toString());
+    userCache.invalidate(resolvedUserId);
 
     // Kick the remote avatar download off the request path. The scheduler
     // resolves the user fresh, honours the throttle + conditional requests, and
@@ -1552,14 +1938,14 @@ router.put(
       && !existingAvatarFileId.startsWith('http');
     if (remoteAvatarUrl && (forceAvatarRefresh || !hasExistingStoredAvatar)) {
       federationService.scheduleAvatarRefresh(
-        user._id.toString(),
+        resolvedUserId,
         remoteAvatarUrl,
         existingAvatarFileId,
         { force: forceAvatarRefresh },
       );
     }
 
-    logger.info('External user resolved', { type, username, userId: user._id });
+    logger.info('External user resolved', { type, username, userId: resolvedUserId });
 
     sendSuccess(res, user);
   })

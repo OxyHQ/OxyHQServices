@@ -2,19 +2,17 @@ import type React from 'react';
 import { useState, useRef, useMemo, useCallback } from 'react';
 import {
     View,
-    ScrollView,
     Animated,
     Platform,
     useWindowDimensions,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeColors } from '../styles/theme';
-import { normalizeTheme } from '@oxyhq/core';
 import { Button } from '@oxyhq/bloom/button';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H4 } from '@oxyhq/bloom/typography';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import QRCode from 'react-native-qrcode-svg';
 
 import PaymentSummaryStep from '../components/payment/PaymentSummaryStep';
@@ -45,7 +43,6 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     const {
         navigate,
         goBack,
-        theme,
         onPaymentResult,
         amount,
         currency = 'FAIR',
@@ -76,11 +73,10 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const progressAnim = useRef(new Animated.Value(0.2)).current;
 
-    const normalizedTheme = normalizeTheme(theme);
-    // `colors` (PaymentColors) is the contract the wizard step components consume.
-    const colors = useThemeColors(normalizedTheme);
-    // Bloom theme drives screen-shell icon roles (no hardcoded hex).
+    // Bloom theme drives all payment colors — the wizard step components consume
+    // `colors` (PaymentColors === bloom ThemeColors) directly, no mapper.
     const bloomTheme = useTheme();
+    const colors = bloomTheme.colors;
     const { t } = useI18n();
 
     // Determine if the payment is for a recurring item (subscription)
@@ -180,10 +176,20 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         }
     }, [onPaymentResult, onClose, goBack]);
 
+    // Shared Dialog nav header: a stable "Payment" title + a back affordance that
+    // steps the wizard back once past the first step (the step components keep
+    // their own bottom Back/Continue CTAs; the header's close dismisses, matching
+    // the pre-existing backdrop-dismiss).
+    useSurfaceHeader({
+        title: t('payment.title'),
+        largeTitle: false,
+        onBack: currentStep > 0 ? prevStep : undefined,
+    });
+
     // Validate amount
     if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
         return (
-            <View className="flex-1 bg-bg items-center justify-center px-screen-margin gap-space-24">
+            <View className="items-center justify-center px-screen-margin gap-space-24 py-space-40">
                 <Ionicons name="alert-circle-outline" size={48} color={bloomTheme.colors.error} />
                 <H4 className="text-text text-center">
                     {t('payment.errors.invalidAmount')}
@@ -282,14 +288,8 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     };
 
     return (
-        <View className="flex-1 bg-bg">
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="p-space-16"
-                showsVerticalScrollIndicator={false}
-            >
-                {renderCurrentStep()}
-            </ScrollView>
+        <View className="p-space-16">
+            {renderCurrentStep()}
         </View>
     );
 };

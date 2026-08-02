@@ -41,6 +41,10 @@ export interface PublicApplication {
   icon?: string;
   /** Optional public website/homepage URL for the application. */
   websiteUrl?: string;
+  /** Optional public privacy-policy URL, rendered as a legal link on the consent screen. */
+  privacyPolicyUrl?: string;
+  /** Optional public terms-of-service URL, rendered as a legal link on the consent screen. */
+  termsUrl?: string;
   /** Application classification (set by Oxy platform staff). */
   type: ApplicationType;
   /** Whether the application is an officially endorsed Oxy application. */
@@ -101,7 +105,12 @@ export function OxyServicesConnectedAppsMixin<T extends typeof OxyServicesBase>(
           'GET',
           `/auth/oauth/client/${encodeURIComponent(clientId)}`,
           undefined,
-          { cache: true, cacheTTL: CACHE_TIMES.MEDIUM },
+          {
+            cache: true,
+            cacheTTL: CACHE_TIMES.MEDIUM,
+            // Public client metadata (pre-session consent UI) — skip the bearer preflight.
+            skipAuth: true,
+          },
         );
         return res.application;
       } catch (error) {

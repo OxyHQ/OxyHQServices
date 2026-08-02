@@ -1,4 +1,4 @@
-import { darkenColor, normalizeColorScheme } from '@/utils/color-utils';
+import { darkenColor } from '@/utils/color-utils';
 
 describe('darkenColor', () => {
   it('returns a hex string in #rrggbb form', () => {
@@ -35,35 +35,5 @@ describe('darkenColor', () => {
   it('pads single-digit hex components to two digits', () => {
     // 0x10 * 0.5 = 8 -> '08', not '8'
     expect(darkenColor('#101010', 0.5)).toBe('#080808');
-  });
-});
-
-describe('normalizeColorScheme', () => {
-  it('returns "light" when colorScheme is "light"', () => {
-    expect(normalizeColorScheme('light')).toBe('light');
-  });
-
-  it('returns "dark" when colorScheme is "dark"', () => {
-    expect(normalizeColorScheme('dark')).toBe('dark');
-  });
-
-  it('falls back to theme prop when colorScheme is null', () => {
-    expect(normalizeColorScheme(null, 'dark')).toBe('dark');
-  });
-
-  it('falls back to theme prop when colorScheme is undefined', () => {
-    expect(normalizeColorScheme(undefined, 'dark')).toBe('dark');
-  });
-
-  it('falls back to theme prop when colorScheme is an unexpected string', () => {
-    expect(normalizeColorScheme('auto', 'dark')).toBe('dark');
-  });
-
-  it('defaults to "light" when neither input resolves', () => {
-    expect(normalizeColorScheme(null, undefined)).toBe('light');
-  });
-
-  it('defaults to "light" when theme is also unexpected', () => {
-    expect(normalizeColorScheme('auto', 'system')).toBe('light');
   });
 });

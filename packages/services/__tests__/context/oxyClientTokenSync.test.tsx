@@ -21,29 +21,46 @@
  * network/socket seams that fire at mount (web SSO, session socket) are stubbed
  * so the test is deterministic offline; the token-mirroring wiring under test
  * is exercised end-to-end.
+ *
+ * `createSessionClient` is ALSO mocked (Fase 3-B): once cold boot resolves a
+ * token — whether via its own ladder or (as several cases here do) a manual
+ * `providerInstance.setTokens(...)` call that races cold boot's in-flight
+ * post-ladder check — `OxyContext` hands off to `SessionClient.addCurrentAccount`
+ * + `.start()`. Against the REAL `OxyServices` instance built here (no backend
+ * behind `https://api.oxy.so` in this unit test), that handoff would otherwise
+ * attempt a real, several-second-bounded network round-trip, which has nothing
+ * to do with the token-mirroring behavior under test here. Stubbing it to
+ * resolve instantly keeps this suite's own concern (token sync) isolated from
+ * the SessionClient wiring (covered separately by the ColdBoot-family suites).
  */
 
 import { render, waitFor, act, type RenderResult } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { oxyClient, type User } from '@oxyhq/core';
 
-// Neutralize the mount-time network/socket effects so the provider settles
-// deterministically without a backend. Neither touches the token-sync path.
-jest.mock('../../src/ui/hooks/useWebSSO', () => ({
+// Neutralize the mount-time network effects so the provider settles
+// deterministically without a backend. Forcing the cold boot onto the native
+// ladder keeps it offline; this does not touch the token-sync path under test.
+jest.mock('../../src/ui/utils/isWebBrowser', () => ({
   __esModule: true,
-  useWebSSO: () => ({
-    checkSSO: jest.fn(async () => null),
-    signInWithFedCM: jest.fn(async () => null),
-    isChecking: false,
-    isFedCMSupported: false,
-  }),
   isWebBrowser: () => false,
 }));
 
-jest.mock('../../src/ui/hooks/useSessionSocket', () => ({
-  __esModule: true,
-  useSessionSocket: () => undefined,
-}));
+jest.mock('../../src/ui/session', () => {
+  const actual = jest.requireActual('../../src/ui/session');
+  return {
+    ...actual,
+    createSessionClient: jest.fn(() => ({
+      client: {
+        getState: () => null,
+        subscribe: () => () => undefined,
+        addCurrentAccount: jest.fn(async () => undefined),
+        start: jest.fn(async () => undefined),
+      },
+      host: { setCurrentAccountId: jest.fn(), setDeviceCredential: jest.fn(), getDeviceCredential: () => null },
+    })),
+  };
+});
 
 import { OxyProvider, useOxy, type OxyContextState } from '../../src/ui/context/OxyContext';
 import { useAuthStore } from '../../src/ui/stores/authStore';
@@ -113,7 +130,7 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
     // Simulate what real auth flows do: they plant tokens on the provider's
     // instance through `setTokens`.
     act(() => {
-      providerInstance.setTokens('access-from-signin', 'refresh-from-signin');
+      providerInstance.setTokens('access-from-signin');
     });
 
     await waitFor(() => {
@@ -237,8 +254,11 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
       useAuthStore.getState().loginSuccess(authenticatedUser);
     });
 
+    // On auth-ready both the context's `refreshAccounts` AND the account-dialog
+    // controller's own graph refresh call `listAccounts` (two independent
+    // consumers of the same source); the 401 clears provider auth either way.
     await waitFor(() => {
-      expect(listAccountsSpy).toHaveBeenCalledTimes(1);
+      expect(listAccountsSpy).toHaveBeenCalled();
     });
     await waitFor(() => {
       expect(requireContext(sink).isAuthenticated).toBe(false);

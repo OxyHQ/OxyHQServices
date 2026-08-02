@@ -1,18 +1,20 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useState, useRef, useCallback } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  SentIcon,
-  StopIcon,
-  Delete02Icon,
-  Copy01Icon,
-  Settings01Icon,
-  ArrowDown01Icon,
   AiBrain01Icon,
-  SparklesIcon,
-  TextIcon,
+  ArrowDown01Icon,
+  Copy01Icon,
+  Delete02Icon,
   Mic01Icon,
+  SentIcon,
+  Settings01Icon,
+  SparklesIcon,
+  StopIcon,
+  TextIcon,
 } from '@hugeicons/core-free-icons';
+import { useAuth } from '@oxyhq/services';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -66,9 +68,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useModelsStats } from '@/hooks/use-models';
-import { useAuth } from '@oxyhq/auth';
 import config from '@/lib/config';
-import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_layout/playground')({
   component: PlaygroundPage,
@@ -87,10 +87,10 @@ interface UsageStats {
 
 function PlaygroundPage() {
   const { data: modelsData, isLoading: modelsLoading } = useModelsStats();
-  const { authManager, isAuthenticated } = useAuth();
+  const { oxyServices, isAuthenticated } = useAuth();
 
   // Chat state
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Array<Message>>([]);
   const [systemPrompt, setSystemPrompt] = useState(
     'You are a helpful AI assistant.'
   );
@@ -117,13 +117,20 @@ function PlaygroundPage() {
       return;
     }
 
-    const token = await authManager.getAccessToken();
+    let token = oxyServices.getAccessToken();
+    const expSeconds = token ? oxyServices.getAccessTokenExpiry() : null;
+    if (token && expSeconds !== null && expSeconds * 1000 - Date.now() < 60_000) {
+      // Expiring within the next minute — refresh before this direct fetch
+      // (OxyProvider's own proactive scheduler usually beats this, but a
+      // manual bearer read for a raw `fetch` call still checks defensively).
+      token = (await oxyServices.httpService.refreshAccessToken('preflight')) ?? token;
+    }
     if (!token) {
       toast.error('Authentication expired. Please sign in again.');
       return;
     }
 
-    const newMessages: Message[] = [
+    const newMessages: Array<Message> = [
       ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
       ...messages,
       { role: 'user' as const, content: userInput.trim() },
@@ -213,7 +220,7 @@ function PlaygroundPage() {
     userInput,
     isStreaming,
     isAuthenticated,
-    authManager,
+    oxyServices,
     messages,
     systemPrompt,
     selectedModel,

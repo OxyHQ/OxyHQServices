@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import {
     SegmentedControl,
     SegmentedControlItem,
@@ -9,11 +9,11 @@ import {
 } from '@oxyhq/bloom/segmented-control';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
-import Header from '../components/Header';
-import LoadingState from '../components/LoadingState';
-import EmptyState from '../components/EmptyState';
+import { Loading } from '@oxyhq/bloom/loading';
+import { Text } from '@oxyhq/bloom/typography';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 
 type SavesTab = 'saves' | 'collections';
@@ -42,6 +42,8 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     // switched, else the personal user).
     const { oxyServices, user } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('saves.title') || 'Saves & Collections' });
     const bloomTheme = useTheme();
     const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
     const [collections, setCollections] = useState<Collection[]>([]);
@@ -87,13 +89,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     };
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('saves.title') || 'Saves & Collections'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
+        <>
 
             {/* Tabs */}
             <View className="px-screen-margin py-space-12 border-b border-border">
@@ -116,19 +112,18 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                 </SegmentedControl>
             </View>
 
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     {isLoading ? (
-                        <LoadingState
-                            message={t('saves.loading') || 'Loading...'}
+                        <Loading
+                            size="large"
                             color={bloomTheme.colors.text}
+                            text={t('saves.loading') || 'Loading...'}
                         />
                     ) : activeTab === 'saves' ? (
                         savedItems.length === 0 ? (
-                            <EmptyState
-                                message={t('saves.empty') || 'No saved items yet'}
-                                textColor={bloomTheme.colors.text}
-                            />
+                            <Text className="text-text-secondary text-center p-space-40">
+                                {t('saves.empty') || 'No saved items yet'}
+                            </Text>
                         ) : (
                             <SettingsListGroup title={t('saves.savedItems') || 'Saved Items'}>
                                 {savedItems.map((item) => (
@@ -148,10 +143,9 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                         )
                     ) : (
                         collections.length === 0 ? (
-                            <EmptyState
-                                message={t('saves.noCollections') || 'No collections yet'}
-                                textColor={bloomTheme.colors.text}
-                            />
+                            <Text className="text-text-secondary text-center p-space-40">
+                                {t('saves.noCollections') || 'No collections yet'}
+                            </Text>
                         ) : (
                             <SettingsListGroup title={t('saves.collections') || 'Collections'}>
                                 {collections.map((collection) => (
@@ -166,8 +160,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                         )
                     )}
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

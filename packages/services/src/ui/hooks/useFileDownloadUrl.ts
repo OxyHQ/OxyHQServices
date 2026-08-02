@@ -15,8 +15,9 @@ export interface UseFileDownloadUrlResult {
 /**
  * Hook to resolve a file's download URL asynchronously.
  *
- * Uses `getFileDownloadUrlAsync` first, falling back to the synchronous
- * `getFileDownloadUrl` if the async call fails.
+ * Uses `getFileDownloadUrlAsync`, which returns a scoped media-token stream URL
+ * for private assets. There is no sync CDN fallback — the synchronous
+ * `getFileDownloadUrl` is public-CDN-only and 404s for private uploads.
  */
 export const useFileDownloadUrl = (
   oxyServices: OxyServices | null | undefined,
@@ -54,35 +55,18 @@ export const useFileDownloadUrl = (
       setError(null);
 
       try {
-        let resolvedUrl: string | null = null;
-
-        if (typeof instance.getFileDownloadUrlAsync === 'function') {
-          resolvedUrl = await instance.getFileDownloadUrlAsync(targetFileId, variant, expiresIn);
+        if (typeof instance.getFileDownloadUrlAsync !== 'function') {
+          throw new Error('getFileDownloadUrlAsync is not available on this OxyServices instance');
         }
 
-        if (!resolvedUrl && typeof instance.getFileDownloadUrl === 'function') {
-          resolvedUrl = instance.getFileDownloadUrl(targetFileId, variant, expiresIn);
-        }
+        const resolvedUrl = await instance.getFileDownloadUrlAsync(targetFileId, variant, expiresIn);
 
         if (!cancelled) {
           setUrl(resolvedUrl || null);
         }
       } catch (err: unknown) {
-        // Fallback to sync URL on error where possible
-        try {
-          if (typeof instance.getFileDownloadUrl === 'function') {
-            const fallbackUrl = instance.getFileDownloadUrl(targetFileId, variant, expiresIn);
-            if (!cancelled) {
-              setUrl(fallbackUrl || null);
-              setError(err instanceof Error ? err : new Error(String(err)));
-            }
-            return;
-          }
-        } catch {
-          // Secondary failure: surface the original error below.
-        }
-
         if (!cancelled) {
+          setUrl(null);
           setError(err instanceof Error ? err : new Error(String(err)));
         }
       } finally {

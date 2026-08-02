@@ -79,6 +79,15 @@ describe('parseScan', () => {
       });
     });
 
+    it('surfaces an expired attest payload as expired', () => {
+      expect(
+        parseScan(`oxycommons://attest?subject=did:web:oxy.so:u:x&nonce=n3&exp=${past()}`),
+      ).toEqual({
+        kind: 'invalid',
+        reason: 'expired',
+      });
+    });
+
     it('does not confuse an Oxy ID card with an attest request', () => {
       expect(parseScan('oxycommons://card?did=did:web:oxy.so:u:x').kind).toBe('id');
     });

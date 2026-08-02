@@ -1,4 +1,4 @@
-import mongoose, { Schema, Model, Document } from 'mongoose';
+import mongoose, { Schema, type Model, type Document } from 'mongoose';
 
 export interface IUserCredits extends Document<string> {
   _id: string;

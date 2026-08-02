@@ -1,20 +1,20 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
 import { Button } from '@oxyhq/bloom/button';
 import { useTheme } from '@oxyhq/bloom/theme';
-import Header from '../components/Header';
-import Avatar from '../components/Avatar';
-import LoadingState from '../components/LoadingState';
-import EmptyState from '../components/EmptyState';
+import { Avatar } from '@oxyhq/bloom/avatar';
+import { Loading } from '@oxyhq/bloom/loading';
+import { Text } from '@oxyhq/bloom/typography';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useSettingToggles } from '../hooks/useSettingToggle';
 import type { BlockedUser, RestrictedUser } from '@oxyhq/core';
-import { getAccountDisplayName } from '@oxyhq/core';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 
 interface PrivacySettings {
@@ -68,7 +68,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     // Privacy settings belong to the ACTIVE account (the org/project/bot when
     // switched, else the personal user).
     const { oxyServices, user } = useOxy();
-    const { t, locale } = useI18n();
+    const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('privacySettings.title') || 'Privacy Settings' });
     const bloomTheme = useTheme();
     const [isLoading, setIsLoading] = useState(true);
     const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
@@ -112,6 +114,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     }, [user?.id, oxyServices, t, setValues]);
 
     // Load blocked and restricted users
+    // biome-ignore lint/correctness/useExhaustiveDependencies: reload when active account switches
     useEffect(() => {
         const loadUsers = async () => {
             if (!oxyServices) return;
@@ -134,8 +137,8 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
 
         loadUsers();
         // Re-load when the active account changes so the block/restrict lists
-        // reflect the account currently switched into (they resolve via the
-        // X-Acting-As header).
+        // reflect the account currently switched into (they resolve from the
+        // active session, which IS that account).
     }, [oxyServices, user?.id]);
 
     const handleUnblock = useCallback(async (userId: string) => {
@@ -173,61 +176,50 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     }, [oxyServices, t]);
 
     // Helper to extract user info from blocked/restricted objects.
-    // Display names go through the canonical helper so the fallback chain is
-    // identical across every UI surface (name → username → publicKey → "Unnamed").
     const extractUserInfo = useCallback((
         item: BlockedUser | RestrictedUser,
         idField: 'blockedId' | 'restrictedId'
     ) => {
-        let userIdField: string | { _id: string; username?: string; avatar?: string };
-        let userShape: { username?: string };
+        let userIdField: string | { _id: string; username?: string; avatar?: string; name?: { displayName?: string } };
+        let userShape: { username?: string; name?: { displayName?: string } };
         let avatar: string | undefined;
 
         if (idField === 'blockedId' && 'blockedId' in item) {
             userIdField = item.blockedId;
             userShape = typeof item.blockedId === 'string'
                 ? { username: item.username }
-                : { username: item.blockedId.username };
+                : { username: item.blockedId.username, name: item.blockedId.name };
             avatar = typeof item.blockedId === 'string' ? item.avatar : item.blockedId.avatar;
         } else if (idField === 'restrictedId' && 'restrictedId' in item) {
             userIdField = item.restrictedId;
             userShape = typeof item.restrictedId === 'string'
                 ? { username: item.username }
-                : { username: item.restrictedId.username };
+                : { username: item.restrictedId.username, name: item.restrictedId.name };
             avatar = typeof item.restrictedId === 'string' ? item.avatar : item.restrictedId.avatar;
         } else {
-            return { userId: '', displayName: getAccountDisplayName(null, locale), avatar: undefined };
+            return { userId: '', displayName: getNormalizedUserHandle(null) ?? '', avatar: undefined };
         }
 
         const userId = typeof userIdField === 'string' ? userIdField : userIdField._id;
-        return { userId, displayName: getAccountDisplayName(userShape, locale), avatar };
-    }, [locale]);
+        return {
+            userId,
+            displayName: userShape.name?.displayName ?? getNormalizedUserHandle(userShape) ?? '',
+            avatar,
+        };
+    }, []);
 
     if (isLoading) {
         return (
-            <View className="flex-1 bg-bg">
-                <Header
-                    title={t('privacySettings.title') || 'Privacy Settings'}
-                    onBack={goBack || onClose}
-                    variant="minimal"
-                    elevation="subtle"
-                />
-                <LoadingState color={bloomTheme.colors.text} />
-            </View>
+            <>
+                <Loading size="large" color={bloomTheme.colors.text} />
+            </>
         );
     }
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('privacySettings.title') || 'Privacy Settings'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
+        <>
 
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     {/* Account Privacy */}
                     <SettingsListGroup title={t('privacySettings.sections.account') || 'ACCOUNT PRIVACY'}>
                         <SettingsListItem
@@ -359,12 +351,11 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                     {/* Blocked Users */}
                     <SettingsListGroup title={t('privacySettings.sections.blockedUsers') || 'BLOCKED USERS'}>
                         {isLoadingUsers ? (
-                            <LoadingState color={bloomTheme.colors.text} size="small" />
+                            <Loading size="small" color={bloomTheme.colors.text} />
                         ) : blockedUsers.length === 0 ? (
-                            <EmptyState
-                                message={t('privacySettings.noBlockedUsers') || 'No blocked users'}
-                                textColor={bloomTheme.colors.textSecondary}
-                            />
+                            <Text className="text-text-secondary text-center p-space-40">
+                                {t('privacySettings.noBlockedUsers') || 'No blocked users'}
+                            </Text>
                         ) : (
                             blockedUsers.map((blocked) => {
                                 const { userId, displayName, avatar } = extractUserInfo(blocked, 'blockedId');
@@ -372,7 +363,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                                 return (
                                     <SettingsListItem
                                         key={userId}
-                                        icon={<Avatar uri={avatarUri} name={displayName} size={20} />}
+                                        icon={<Avatar source={avatarUri} name={displayName} size={20} />}
                                         title={displayName}
                                         rightElement={
                                             <Button
@@ -393,12 +384,11 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                     {/* Restricted Users */}
                     <SettingsListGroup title={t('privacySettings.sections.restrictedUsers') || 'RESTRICTED USERS'}>
                         {isLoadingUsers ? (
-                            <LoadingState color={bloomTheme.colors.text} size="small" />
+                            <Loading size="small" color={bloomTheme.colors.text} />
                         ) : restrictedUsers.length === 0 ? (
-                            <EmptyState
-                                message={t('privacySettings.noRestrictedUsers') || 'No restricted users'}
-                                textColor={bloomTheme.colors.textSecondary}
-                            />
+                            <Text className="text-text-secondary text-center p-space-40">
+                                {t('privacySettings.noRestrictedUsers') || 'No restricted users'}
+                            </Text>
                         ) : (
                             restrictedUsers.map((restricted) => {
                                 const { userId, displayName, avatar } = extractUserInfo(restricted, 'restrictedId');
@@ -406,7 +396,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                                 return (
                                     <SettingsListItem
                                         key={userId}
-                                        icon={<Avatar uri={avatarUri} name={displayName} size={20} />}
+                                        icon={<Avatar source={avatarUri} name={displayName} size={20} />}
                                         title={displayName}
                                         description={t('privacySettings.restrictedDescription') || 'Limited interactions'}
                                         rightElement={
@@ -425,8 +415,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         )}
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

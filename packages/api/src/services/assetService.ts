@@ -1,17 +1,15 @@
 import crypto from 'crypto';
-import { IncomingMessage } from 'http';
-import { Readable, Transform } from 'stream';
-import mongoose from 'mongoose';
+import type { IncomingMessage } from 'http';
+import { type Readable, Transform } from 'stream';
+import { normalizeInlineText } from '@oxyhq/core';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
-import { File, IFile, IFileLink, IFileVariant, FileVisibility } from '../models/File';
-import { S3Service } from './s3Service';
+import type { S3Service } from './s3Service';
 import {
-  FEDERATION_CACHE_OWNER_ID,
   FEDERATION_MEDIA_CACHE_PURPOSE,
   isAllowedCacheMime,
 } from '../constants/federationCache';
-import { LINK_PREVIEW_OWNER_ID } from './linkPreview/constants';
 import { VariantService } from './variantService';
+import { enqueueAssetVariantGeneration } from '../queue/assetVariants.queue';
 import {
   buildCdnUrl,
   cdnUrlForStorageKey,
@@ -22,19 +20,39 @@ import {
 } from '../config/cdn';
 import { logger } from '../utils/logger';
 import { ConflictError } from '../utils/error';
-import path from 'path';
-import {
+import type {
   AssetInitResponse,
   AssetCompleteRequest,
   AssetLinkRequest,
   AssetDeleteSummary,
 } from '../types/asset.types';
+import type {
+  FileOwner,
+  FilePurpose,
+  FileRecord,
+  FileVariantRecord,
+  FileVisibility,
+} from '../types/file.types';
 
 import { mediaPrivacyService } from './mediaPrivacyService';
-import { MediaAccessContext } from '../types/mediaPrivacy.types';
+import type { MediaAccessContext } from '../types/mediaPrivacy.types';
 import fileCache from '../utils/fileCache';
 import { BadRequestError } from '../utils/error';
 import { isDeclaredImageContentValid } from '../utils/imageContentSignature';
+import {
+  deleteFileLink,
+  deleteVariant,
+  findFileById,
+  findFilesByIds,
+  findLiveFileBySha256,
+  findLiveFilesBySha256,
+  insertFile,
+  insertFileLink,
+  isUniqueViolation,
+  listFilesByOwner,
+  updateFile,
+  updateVariantKey,
+} from './fileRepository';
 
 /**
  * A readable stream that may also emit the HTTP `'aborted'` event. Express
@@ -48,16 +66,15 @@ type AbortableReadable = Readable & {
 };
 
 interface StreamedMediaOptions {
-  ownerUserId: string;
-  purpose: IFile['purpose'];
+  owner: FileOwner;
+  purpose: FilePurpose;
   visibility: FileVisibility;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   tempPrefix: string;
   logLabel: string;
-  dedupeScope?: 'any' | 'federation-cache';
+  dedupeScope?: 'any' | 'federation-cache' | 'owner';
 }
 
-const FEDERATION_AVATAR_OWNER_ID = '__federation__';
 const FEDERATION_REPAIR_MAX_BYTES = 10 * 1024 * 1024;
 const FEDERATION_REPAIR_MAX_REDIRECTS = 3;
 const FEDERATION_REPAIR_USER_AGENT = 'OxyHQ/1.0 (Federation Asset Repair)';
@@ -69,37 +86,55 @@ export class AssetService {
     this.variantService = new VariantService(s3Service);
   }
 
-  private isDuplicateKeyError(error: unknown): boolean {
-    const err = error as { code?: number; message?: string } | null;
-    return err?.code === 11000 || Boolean(err?.message?.includes('E11000'));
-  }
-
   /**
    * Content-addressed dedup lookup. Deliberately excludes `deleted` tombstones:
    * a deleted record is a deletion intent, not a reusable asset. Matching a
    * tombstone and reassigning its ownership to the next uploader was a
    * cross-tenant ownership-takeover vector (any user who can produce content
    * whose SHA-256 collides with a victim's deleted file could revive that
-   * record under their own ownership). The File model's sha256 uniqueness is
-   * scoped to live records, so a fresh upload whose content matches only a
-   * tombstone can insert a brand-new record owned by the uploader.
+   * record under their own ownership). The `files_sha256_live_key` partial
+   * unique is scoped to live rows, so a fresh upload whose content matches only
+   * a tombstone can insert a brand-new row owned by the uploader.
    */
-  private async findActiveFileBySha(sha256: string): Promise<IFile | null> {
-    return File.findOne({ sha256, status: { $ne: 'deleted' } });
+  private async findActiveFileBySha(sha256: string): Promise<FileRecord | null> {
+    return findLiveFileBySha256(sha256);
   }
 
-  private getFederationRepairRemoteUrl(file: IFile): string | null {
-    const metadata = file.metadata || {};
+  /**
+   * Batch reverse content-address lookup: resolve many content hashes to their
+   * live (non-deleted) file records in a single query.
+   *
+   * This is the batched counterpart of {@link findActiveFileBySha}, used by the
+   * service-token `POST /assets/service/by-sha256` route to resolve a record's
+   * `blob.sha256` back to a servable asset without issuing one query per hash.
+   * The result is unordered and may be shorter than the input — unresolvable
+   * hashes are simply absent, and at most one record per hash is returned.
+   */
+  async findActiveFilesBySha256(sha256s: string[]): Promise<FileRecord[]> {
+    return findLiveFilesBySha256(sha256s);
+  }
+
+  /**
+   * The remote URL a missing federation asset may be re-fetched from, or `null`
+   * when this asset is not a federation asset and must not be repaired from the
+   * network.
+   *
+   * The first two branches used to compare `ownerUserId` against a sentinel
+   * STRING stored in the same column that holds user ids; the sentinel now lives
+   * in `files.system_owner`, so the namespace check is a real column comparison
+   * against a closed set instead of a string convention.
+   */
+  private getFederationRepairRemoteUrl(file: FileRecord): string | null {
+    const metadata = file.metadata ?? {};
     const remoteUrl = metadata.remoteUrl;
     if (typeof remoteUrl !== 'string' || remoteUrl.length === 0) {
       return null;
     }
 
-    const ownerUserId = file.ownerUserId?.toString();
-    const isFederationAvatar = ownerUserId === FEDERATION_AVATAR_OWNER_ID
+    const isFederationAvatar = file.systemOwner === '__federation__'
       && metadata.source === 'federation'
       && metadata.role === 'avatar';
-    const isFederationCache = ownerUserId === FEDERATION_CACHE_OWNER_ID
+    const isFederationCache = file.systemOwner === '__federation_media_cache__'
       && file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE;
     const isFederationMedia = metadata.source === 'federation'
       && file.visibility === 'public';
@@ -249,18 +284,25 @@ export class AssetService {
     }
   }
 
+  /** Publish a freshly-read record to the shared cache and hand it back. */
+  private cacheFile(file: FileRecord): FileRecord {
+    fileCache.invalidate(file.id);
+    fileCache.set(file.id, file);
+    return file;
+  }
+
   private async restoreMissingDirectUploadContent(
-    file: IFile,
+    file: FileRecord,
     fileBuffer: Buffer,
     mimeType: string,
     logLabel: string,
-  ): Promise<boolean> {
+  ): Promise<{ file: FileRecord; restored: boolean }> {
     if (await this.s3Service.fileExists(file.storageKey)) {
-      return false;
+      return { file, restored: false };
     }
 
     logger.warn('Active file metadata points to a missing storage object; restoring from direct upload bytes', {
-      fileId: file._id.toString(),
+      fileId: file.id,
       sha256: file.sha256,
       storageKey: file.storageKey,
       logLabel,
@@ -271,17 +313,17 @@ export class AssetService {
     });
 
     if (file.size !== fileBuffer.length) {
-      file.size = fileBuffer.length;
-      await file.save();
+      const updated = await updateFile(file.id, { size: fileBuffer.length });
+      if (updated) {
+        return { file: this.cacheFile(updated), restored: true };
+      }
     }
 
-    fileCache.invalidate(file._id.toString());
-    fileCache.set(file._id.toString(), file);
-    return true;
+    return { file: this.cacheFile(file), restored: true };
   }
 
   private async restoreMissingStreamedMediaContent(
-    file: IFile,
+    file: FileRecord,
     sourceKey: string,
     logLabel: string,
   ): Promise<boolean> {
@@ -290,7 +332,7 @@ export class AssetService {
     }
 
     logger.warn('Active file metadata points to a missing storage object; restoring from streamed upload bytes', {
-      fileId: file._id.toString(),
+      fileId: file.id,
       sha256: file.sha256,
       storageKey: file.storageKey,
       sourceKey,
@@ -298,52 +340,62 @@ export class AssetService {
     });
 
     await this.s3Service.copyFile(sourceKey, file.storageKey);
-    fileCache.invalidate(file._id.toString());
-    fileCache.set(file._id.toString(), file);
+    this.cacheFile(file);
     return true;
   }
 
   private async prepareExistingDirectUploadFile(
-    file: IFile,
+    file: FileRecord,
     userId: string,
     visibility?: FileVisibility,
-    metadata?: Record<string, any>
-  ): Promise<IFile> {
+    metadata?: Record<string, unknown>
+  ): Promise<FileRecord> {
     const wasCacheFile = file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE;
     if (!wasCacheFile) {
       return file;
     }
 
-    file.ownerUserId = userId;
-    file.purpose = 'user';
-    if (visibility) {
-      file.visibility = visibility;
-    }
-    file.metadata = {
-      ...(file.metadata || {}),
-      ...(metadata || {}),
-      promotedFromFederationCache: true,
-    };
+    const updated = await updateFile(file.id, {
+      ownerUserId: userId,
+      systemOwner: null,
+      purpose: 'user',
+      ...(visibility ? { visibility } : {}),
+      metadata: {
+        ...(file.metadata ?? {}),
+        ...(metadata ?? {}),
+        promotedFromFederationCache: true,
+      },
+    });
 
-    await file.save();
-    fileCache.invalidate(file._id.toString());
-    fileCache.set(file._id.toString(), file);
-    return file;
+    return updated ? this.cacheFile(updated) : file;
   }
 
-  private assertStreamedDedupeAllowed(file: IFile, options: StreamedMediaOptions): void {
-    if (options.dedupeScope !== 'federation-cache') {
-      return;
+  private assertStreamedDedupeAllowed(file: FileRecord, options: StreamedMediaOptions): void {
+    if (options.dedupeScope === 'federation-cache') {
+      if (file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE) {
+        return;
+      }
+
+      throw new ConflictError('Federated media content already exists outside the federation cache');
     }
 
-    if (file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE) {
+    if (options.dedupeScope === 'owner') {
+      if (file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE) {
+        return;
+      }
+
+      if (file.ownerUserId !== options.owner.ownerUserId) {
+        throw new ConflictError('Media content already exists for another user');
+      }
+
       return;
     }
-
-    throw new ConflictError('Federated media content already exists outside the federation cache');
   }
 
-  private async prepareExistingStreamedMediaFile(file: IFile, options: StreamedMediaOptions): Promise<IFile> {
+  private async prepareExistingStreamedMediaFile(
+    file: FileRecord,
+    options: StreamedMediaOptions
+  ): Promise<FileRecord> {
     if (options.purpose === FEDERATION_MEDIA_CACHE_PURPOSE) {
       return file;
     }
@@ -353,23 +405,26 @@ export class AssetService {
       return file;
     }
 
-    file.ownerUserId = options.ownerUserId;
-    file.purpose = options.purpose;
-    file.visibility = options.visibility;
-    file.metadata = {
-      ...(file.metadata || {}),
-      ...options.metadata,
-      promotedFromFederationCache: true,
-    };
+    const updated = await updateFile(file.id, {
+      ...options.owner,
+      purpose: options.purpose,
+      visibility: options.visibility,
+      metadata: {
+        ...(file.metadata ?? {}),
+        ...options.metadata,
+        promotedFromFederationCache: true,
+      },
+    });
 
-    await file.save();
-    fileCache.invalidate(file._id.toString());
-    fileCache.set(file._id.toString(), file);
-    return file;
+    return updated ? this.cacheFile(updated) : file;
   }
 
-  async ensureVariant(fileId: string, variantType: string, file?: IFile): Promise<IFileVariant> {
-    const fileObj = file || await this.getFile(fileId);
+  async ensureVariant(
+    fileId: string,
+    variantType: string,
+    file?: FileRecord
+  ): Promise<FileVariantRecord> {
+    const fileObj = file ?? await this.getFile(fileId);
     if (!fileObj) {
       throw new Error('File not found');
     }
@@ -381,20 +436,34 @@ export class AssetService {
       }
 
       logger.warn('Ready variant metadata points to a missing storage object; regenerating', {
-        fileId: fileObj._id.toString(),
+        fileId: fileObj.id,
         variantType,
         key: existing.key,
       });
-      fileObj.variants = fileObj.variants.filter(v => !(v.type === variantType && v.key === existing.key));
+      await deleteVariant(fileObj.id, existing.type, existing.key);
+      fileObj.variants = fileObj.variants.filter(v => v.id !== existing.id);
+      fileCache.invalidate(fileObj.id);
     }
 
     if (fileObj.mime.startsWith('image/')) {
-      const variant = await this.variantService.ensureImageVariant(fileObj, variantType);
-      return variant;
+      return this.variantService.ensureImageVariant(fileObj, variantType);
     }
 
-    if (fileObj.mime.startsWith('video/') && variantType === 'poster') {
-      const variant = await this.variantService.ensureVideoPoster(fileObj);
+    if (fileObj.mime.startsWith('video/')) {
+      if (variantType === 'poster') {
+        const variant = await this.variantService.ensureVideoPoster(fileObj);
+        return variant;
+      }
+      if (this.variantService.isVideoMp4Rendition(variantType)) {
+        return this.variantService.ensureVideoMp4Rendition(fileObj, variantType);
+      }
+      // A SIZE name (`thumb`, `w320`, …) asked of a video means "an image of
+      // this asset at that size", which for a video is a render of its poster
+      // frame. Callers hold a bare file id and cannot know the mime — the URL
+      // builder they use is synchronous and lexical — so refusing a size name
+      // here is what turned every video thumbnail into a 404. A name that is
+      // not a real size still throws, preserving the 404 for a bogus variant.
+      const variant = await this.variantService.ensureVideoImageVariant(fileObj, variantType);
       return variant;
     }
 
@@ -406,20 +475,11 @@ export class AssetService {
    */
   async listFilesByUser(
     userId: string,
-    limit: number = 50,
-    offset: number = 0
-  ): Promise<{ files: IFile[]; total: number }> {
+    limit = 50,
+    offset = 0
+  ): Promise<{ files: FileRecord[]; total: number }> {
     try {
-      const query = { ownerUserId: userId, status: { $ne: 'deleted' } } as const;
-      const [files, total] = await Promise.all([
-        File.find(query)
-          .sort({ createdAt: -1 })
-          .skip(offset)
-          .limit(limit),
-        File.countDocuments(query)
-      ]);
-
-      return { files, total };
+      return await listFilesByOwner(userId, limit, offset);
     } catch (error) {
       logger.error('Error listing files by user:', error);
       throw error;
@@ -430,7 +490,7 @@ export class AssetService {
    * Initialize file upload - returns pre-signed URL and file ID
    */
   async initUpload(
-    userId: string, 
+    userId: string,
     expectedSha256: string,
     expectedSize: number,
     expectedMime: string
@@ -445,10 +505,10 @@ export class AssetService {
         const storageKey = existingFile.storageKey || this.generateStorageKey(expectedSha256, expectedMime);
         let uploadUrl = '';
         const objectExists = await this.s3Service.fileExists(storageKey);
-        const requesterOwnsExisting = existingFile.ownerUserId?.toString() === userId;
+        const requesterOwnsExisting = existingFile.ownerUserId === userId;
         if (!objectExists && requesterOwnsExisting) {
           logger.warn('Existing asset record has no storage object; returning upload URL for the existing key', {
-            fileId: existingFile._id.toString(),
+            fileId: existingFile.id,
             sha256: expectedSha256,
             storageKey,
           });
@@ -462,7 +522,7 @@ export class AssetService {
           });
         } else if (!objectExists) {
           logger.warn('Existing asset record has no storage object; not returning repair URL to non-owner', {
-            fileId: existingFile._id.toString(),
+            fileId: existingFile.id,
             sha256: expectedSha256,
             storageKey,
             requesterUserId: userId,
@@ -472,12 +532,12 @@ export class AssetService {
 
         logger.info('File already exists, returning existing', {
           sha256: expectedSha256,
-          fileId: existingFile._id
+          fileId: existingFile.id
         });
 
         return {
           uploadUrl,
-          fileId: existingFile._id.toString(),
+          fileId: existingFile.id,
           sha256: expectedSha256
         };
       }
@@ -485,8 +545,8 @@ export class AssetService {
       // Create new file record
       const ext = this.getExtensionFromMime(expectedMime);
       const storageKey = this.generateStorageKey(expectedSha256, expectedMime);
-      
-      const file = new File({
+
+      const file = await insertFile({
         sha256: expectedSha256,
         size: expectedSize,
         mime: expectedMime,
@@ -494,11 +554,7 @@ export class AssetService {
         ownerUserId: userId,
         status: 'active',
         storageKey,
-        links: [],
-        variants: []
       });
-
-      await file.save();
 
       // Generate pre-signed upload URL
       // Do not include metadata in the presigned URL signature; clients aren't required to send it
@@ -507,15 +563,15 @@ export class AssetService {
         expiresIn: 3600
       });
 
-      logger.info('Asset upload initialized', { 
-        fileId: file._id, 
+      logger.info('Asset upload initialized', {
+        fileId: file.id,
         sha256: expectedSha256,
-        storageKey 
+        storageKey
       });
 
       return {
         uploadUrl,
-        fileId: file._id.toString(),
+        fileId: file.id,
         sha256: expectedSha256
       };
     } catch (error) {
@@ -533,8 +589,8 @@ export class AssetService {
     mimeType: string,
     originalName: string,
     visibility?: FileVisibility,
-    metadata?: Record<string, any>
-  ): Promise<IFile> {
+    metadata?: Record<string, unknown>
+  ): Promise<FileRecord> {
     try {
       // Calculate SHA256 hash on backend
       const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
@@ -558,14 +614,14 @@ export class AssetService {
       const existingFile = await this.findActiveFileBySha(sha256);
 
       if (existingFile) {
-        const restored = await this.restoreMissingDirectUploadContent(
+        const { file: restoredFile, restored } = await this.restoreMissingDirectUploadContent(
           existingFile,
           fileBuffer,
           mimeType,
           'direct upload',
         );
         const preparedFile = await this.prepareExistingDirectUploadFile(
-          existingFile,
+          restoredFile,
           userId,
           visibility,
           metadata,
@@ -575,7 +631,7 @@ export class AssetService {
         }
         logger.info('File already exists, returning existing', {
           sha256,
-          fileId: preparedFile._id
+          fileId: preparedFile.id
         });
 
         // File already exists, return existing file
@@ -587,35 +643,32 @@ export class AssetService {
       const resolvedVisibility: FileVisibility = visibility || 'private';
       const storageKey = this.generateStorageKey(sha256, mimeType, resolvedVisibility);
 
-      const file = new File({
-        sha256,
-        size,
-        mime: mimeType,
-        ext,
-        ownerUserId: userId,
-        status: 'active',
-        storageKey,
-        originalName,
-        visibility: resolvedVisibility,
-        metadata: metadata || {},
-        links: [],
-        variants: []
-      });
-
+      let file: FileRecord;
       try {
-        await file.save();
+        file = await insertFile({
+          sha256,
+          size,
+          mime: mimeType,
+          ext,
+          ownerUserId: userId,
+          status: 'active',
+          storageKey,
+          originalName: normalizeInlineText(originalName),
+          visibility: resolvedVisibility,
+          metadata: metadata ?? {},
+        });
       } catch (error) {
-        if (this.isDuplicateKeyError(error)) {
+        if (isUniqueViolation(error)) {
           const racedFile = await this.findActiveFileBySha(sha256);
           if (racedFile) {
-            const restored = await this.restoreMissingDirectUploadContent(
+            const { file: restoredFile, restored } = await this.restoreMissingDirectUploadContent(
               racedFile,
               fileBuffer,
               mimeType,
               'direct upload duplicate race',
             );
             const preparedFile = await this.prepareExistingDirectUploadFile(
-              racedFile,
+              restoredFile,
               userId,
               visibility,
               metadata,
@@ -625,7 +678,7 @@ export class AssetService {
             }
             logger.info('File already exists after concurrent upload, returning existing', {
               sha256,
-              fileId: preparedFile._id,
+              fileId: preparedFile.id,
             });
             return preparedFile;
           }
@@ -641,8 +694,8 @@ export class AssetService {
       // Queue variant generation
       this.queueVariantGeneration(file);
 
-      logger.info('File uploaded directly', { 
-        fileId: file._id, 
+      logger.info('File uploaded directly', {
+        fileId: file.id,
         sha256,
         size,
         originalName
@@ -662,10 +715,10 @@ export class AssetService {
    * the source stream is piped to S3 via the multipart `Upload` manager while
    * a parallel hash computes the SHA-256 for content addressing and dedup.
    *
-   * Hardening: the asset is force-owned by {@link FEDERATION_CACHE_OWNER_ID}
-   * and stamped with {@link FEDERATION_MEDIA_CACHE_PURPOSE}; callers cannot
-   * override the owner or purpose. Visibility is `public` so the existing
-   * public download/stream routes can serve cached media without auth.
+   * Hardening: the asset is force-owned by the `__federation_media_cache__`
+   * system namespace and stamped with {@link FEDERATION_MEDIA_CACHE_PURPOSE};
+   * callers cannot override the owner or purpose. Visibility is `public` so the
+   * existing public download/stream routes can serve cached media without auth.
    *
    * Abort handling: when the client disconnects or the request times out the
    * source emits `'aborted'`/`'close'` before completion. We abort the in-flight
@@ -680,9 +733,9 @@ export class AssetService {
     mimeType: string,
     originalName: string,
     maxBytes: number
-  ): Promise<IFile> {
+  ): Promise<FileRecord> {
     return this.uploadStreamedMedia(source, mimeType, originalName, maxBytes, {
-      ownerUserId: FEDERATION_CACHE_OWNER_ID,
+      owner: { ownerUserId: null, systemOwner: '__federation_media_cache__' },
       purpose: FEDERATION_MEDIA_CACHE_PURPOSE,
       visibility: 'public',
       metadata: {},
@@ -703,15 +756,15 @@ export class AssetService {
     originalName: string,
     maxBytes: number,
     ownerUserId: string,
-    metadata?: Record<string, any>
-  ): Promise<IFile> {
+    metadata?: Record<string, unknown>
+  ): Promise<FileRecord> {
     return this.uploadStreamedMedia(source, mimeType, originalName, maxBytes, {
-      ownerUserId,
+      owner: { ownerUserId, systemOwner: null },
       purpose: 'user',
       visibility: 'public',
       metadata: {
         source: 'federation',
-        ...(metadata || {}),
+        ...(metadata ?? {}),
       },
       tempPrefix: 'federation/incoming',
       logLabel: 'Federated media',
@@ -720,10 +773,37 @@ export class AssetService {
   }
 
   /**
+   * Stream-upload durable media owned by a local Oxy user. Used when a backend
+   * service (e.g. Mention MCP intent-media) holds a service token but must
+   * attribute the asset to the requesting user.
+   */
+  async uploadUserMediaStream(
+    source: AbortableReadable,
+    mimeType: string,
+    originalName: string,
+    maxBytes: number,
+    ownerUserId: string,
+    metadata?: Record<string, unknown>
+  ): Promise<FileRecord> {
+    return this.uploadStreamedMedia(source, mimeType, originalName, maxBytes, {
+      owner: { ownerUserId, systemOwner: null },
+      purpose: 'user',
+      visibility: 'public',
+      metadata: {
+        source: 'mention-service',
+        ...(metadata ?? {}),
+      },
+      tempPrefix: 'user/incoming',
+      logLabel: 'User media',
+      dedupeScope: 'owner',
+    });
+  }
+
+  /**
    * Stream a remote OG / oEmbed image into PUBLIC, CDN-served asset storage for
    * the link-preview service, in its own reserved namespace
-   * ({@link LINK_PREVIEW_OWNER_ID} + `purpose: 'link-preview'`) so these assets
-   * are kept distinct from user media and from the federation media cache.
+   * (`__link_preview_cache__` + `purpose: 'link-preview'`) so these assets are
+   * kept distinct from user media and from the federation media cache.
    *
    * The bytes are content-addressed and CDN-reachable (`public/` prefix) exactly
    * like any other public asset, so the resulting file id resolves via
@@ -736,9 +816,9 @@ export class AssetService {
     mimeType: string,
     originalName: string,
     maxBytes: number
-  ): Promise<IFile> {
+  ): Promise<FileRecord> {
     return this.uploadStreamedMedia(source, mimeType, originalName, maxBytes, {
-      ownerUserId: LINK_PREVIEW_OWNER_ID,
+      owner: { ownerUserId: null, systemOwner: '__link_preview_cache__' },
       purpose: 'link-preview',
       visibility: 'public',
       metadata: { source: 'link-preview' },
@@ -753,7 +833,7 @@ export class AssetService {
     originalName: string,
     maxBytes: number,
     options: StreamedMediaOptions
-  ): Promise<IFile> {
+  ): Promise<FileRecord> {
     const hash = crypto.createHash('sha256');
     let size = 0;
 
@@ -856,7 +936,7 @@ export class AssetService {
       }
       logger.info(`${options.logLabel} already exists, returning existing`, {
         sha256,
-        fileId: preparedFile._id,
+        fileId: preparedFile.id,
       });
       return preparedFile;
     }
@@ -877,26 +957,23 @@ export class AssetService {
     // public asset. We deliberately do not set `publicRead` on the upload —
     // making the raw S3 object public would let it be fetched/listed directly,
     // bypassing the stream route's access checks.
-    const file = new File({
-      sha256,
-      size,
-      mime: mimeType,
-      ext,
-      ownerUserId: options.ownerUserId,
-      purpose: options.purpose,
-      status: 'active',
-      storageKey,
-      originalName,
-      visibility: options.visibility,
-      metadata: options.metadata,
-      links: [],
-      variants: [],
-    });
-
+    let file: FileRecord;
     try {
-      await file.save();
+      file = await insertFile({
+        sha256,
+        size,
+        mime: mimeType,
+        ext,
+        ...options.owner,
+        purpose: options.purpose,
+        status: 'active',
+        storageKey,
+        originalName: normalizeInlineText(originalName),
+        visibility: options.visibility,
+        metadata: options.metadata,
+      });
     } catch (error) {
-      if (this.isDuplicateKeyError(error)) {
+      if (isUniqueViolation(error)) {
         const racedFile = await this.findActiveFileBySha(sha256);
         if (racedFile) {
           try {
@@ -939,7 +1016,7 @@ export class AssetService {
           }
           logger.info(`${options.logLabel} already exists after concurrent upload, returning existing`, {
             sha256,
-            fileId: preparedFile._id,
+            fileId: preparedFile.id,
           });
           return preparedFile;
         }
@@ -948,11 +1025,13 @@ export class AssetService {
     }
 
     logger.info(`${options.logLabel} uploaded via stream`, {
-      fileId: file._id,
+      fileId: file.id,
       sha256,
       size,
       mime: mimeType,
     });
+
+    this.queueVariantGeneration(file);
 
     return file;
   }
@@ -960,30 +1039,27 @@ export class AssetService {
   /**
    * Delete a cached-media asset created via {@link uploadCachedMediaStream}.
    *
-   * Hard scoping: the asset MUST belong to the reserved cache owner AND carry
-   * the cache purpose, otherwise the call is rejected so a service token can
-   * never delete user-owned media. The boolean return distinguishes
-   * "not found" from "found but out of scope".
+   * Hard scoping: the asset MUST sit in the `__federation_media_cache__` system
+   * namespace AND carry the cache purpose, otherwise the call is rejected so a
+   * service token can never delete user-owned media. The boolean return
+   * distinguishes "not found" from "found but out of scope".
    */
   async deleteCachedMedia(fileId: string): Promise<{ deleted: boolean; outOfScope: boolean }> {
-    if (!mongoose.Types.ObjectId.isValid(fileId)) {
-      return { deleted: false, outOfScope: false };
-    }
-
-    const file = await File.findById(fileId);
+    const file = await findFileById(fileId);
     if (!file || file.status === 'deleted') {
       return { deleted: false, outOfScope: false };
     }
 
     const inCacheNamespace =
       file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE &&
-      file.ownerUserId === FEDERATION_CACHE_OWNER_ID;
+      file.systemOwner === '__federation_media_cache__';
 
     if (!inCacheNamespace) {
       logger.warn('Refusing to delete non-cache asset via cache endpoint', {
         fileId,
         purpose: file.purpose,
         ownerUserId: file.ownerUserId,
+        systemOwner: file.systemOwner,
       });
       return { deleted: false, outOfScope: true };
     }
@@ -997,8 +1073,7 @@ export class AssetService {
       }
     }
 
-    file.status = 'deleted';
-    await file.save();
+    await updateFile(fileId, { status: 'deleted' });
     fileCache.invalidate(fileId);
 
     logger.info('Cached media deleted', { fileId });
@@ -1009,51 +1084,48 @@ export class AssetService {
   /**
    * Complete file upload - commit metadata and trigger variant generation
    */
-  async completeUpload(request: AssetCompleteRequest): Promise<IFile> {
+  async completeUpload(request: AssetCompleteRequest): Promise<FileRecord> {
     try {
-      const file = await File.findById(request.fileId);
-      if (!file) {
+      const existing = await findFileById(request.fileId);
+      if (!existing) {
         throw new Error('File not found');
       }
 
       // Verify file exists in storage
-      const exists = await this.s3Service.fileExists(file.storageKey);
+      const exists = await this.s3Service.fileExists(existing.storageKey);
       if (!exists) {
         throw new Error('File not found in storage');
       }
 
-      // Update file metadata
-      file.originalName = request.originalName;
-      file.size = request.size;
-      file.mime = request.mime;
-      file.metadata = request.metadata || {};
-      
-      // Set visibility if provided
-      if (request.visibility) {
-        file.visibility = request.visibility;
+      const file = await updateFile(request.fileId, {
+        originalName: normalizeInlineText(request.originalName),
+        size: request.size,
+        mime: request.mime,
+        metadata: request.metadata ?? {},
+        ...(request.visibility ? { visibility: request.visibility } : {}),
+      });
+      if (!file) {
+        throw new Error('File not found');
       }
-
-      await file.save();
-      fileCache.invalidate(file._id.toString());
-      fileCache.set(file._id.toString(), file);
+      this.cacheFile(file);
 
       // Align the object's S3 prefix with its (now-known) visibility so public
       // uploads are immediately CDN-reachable. `initUpload` generated a private
       // key before visibility was known, so a public asset's bytes start under
       // the non-public prefix; relocate them under `public/` here.
-      await this.relocateAllForVisibility(file);
+      const relocated = await this.relocateAllForVisibility(file);
 
       // Variant generation reads `file.storageKey` (now relocated) and writes
       // variant keys under the prefix matching `file.visibility`.
-      this.queueVariantGeneration(file);
+      this.queueVariantGeneration(relocated);
 
       logger.info('Asset upload completed', {
-        fileId: file._id,
+        fileId: relocated.id,
         originalName: request.originalName,
-        visibility: file.visibility
+        visibility: relocated.visibility
       });
 
-      return file;
+      return relocated;
     } catch (error) {
       logger.error('Error completing asset upload:', error);
       throw error;
@@ -1063,9 +1135,9 @@ export class AssetService {
   /**
    * Link file to an entity
    */
-  async linkFile(fileId: string, linkRequest: AssetLinkRequest): Promise<IFile> {
+  async linkFile(fileId: string, linkRequest: AssetLinkRequest): Promise<FileRecord> {
     try {
-      const file = await File.findById(fileId);
+      const file = await findFileById(fileId);
       if (!file) {
         throw new Error('File not found');
       }
@@ -1074,64 +1146,51 @@ export class AssetService {
         throw new Error('Cannot link to deleted file');
       }
 
-      // Check if link already exists
-      const existingLink = file.links.find(link => 
-        link.app === linkRequest.app &&
-        link.entityType === linkRequest.entityType &&
-        link.entityId === linkRequest.entityId
-      );
-
-      if (existingLink) {
-        logger.warn('Link already exists', { fileId, linkRequest });
-        return file;
-      }
-
-      // Add new link
-      const newLink: IFileLink = {
+      // `(file_id, app, entity_type, entity_id)` is UNIQUE, so a duplicate is
+      // refused by the database rather than by a read-then-write two concurrent
+      // requests could both pass — which mattered because a duplicate would
+      // inflate the link count that decides `trash` vs `active`.
+      const created = await insertFileLink(fileId, {
         app: linkRequest.app,
         entityType: linkRequest.entityType,
         entityId: linkRequest.entityId,
         createdBy: linkRequest.createdBy,
-        createdAt: new Date(),
-        webhookUrl: linkRequest.webhookUrl
-      };
+        webhookUrl: linkRequest.webhookUrl,
+      });
 
-      file.links.push(newLink);
+      if (!created) {
+        logger.warn('Link already exists', { fileId, linkRequest });
+        return file;
+      }
 
       // Auto-set visibility based on entity type
       const previousVisibility = file.visibility;
-      if (linkRequest.visibility) {
-        file.visibility = linkRequest.visibility;
-      } else {
-        // Auto-detect public entities (avatar, profile content, etc.)
-        file.visibility = this.inferVisibilityFromEntityType(
-          linkRequest.app,
-          linkRequest.entityType
-        );
-      }
+      const visibility = linkRequest.visibility
+        ?? this.inferVisibilityFromEntityType(linkRequest.app, linkRequest.entityType);
 
-      if (file.status === 'trash' && file.links.length > 0) {
-        file.status = 'active';
+      const updated = await updateFile(fileId, {
+        visibility,
+        ...(file.status === 'trash' ? { status: 'active' } : {}),
+      });
+      if (!updated) {
+        throw new Error('File not found');
       }
-
-      await file.save();
-      fileCache.invalidate(fileId);
-      fileCache.set(fileId, file);
+      this.cacheFile(updated);
 
       // Linking an asset to a public entity (e.g. an avatar) flips its
       // visibility to `public`; relocate its bytes under the CDN-reachable
       // `public/` prefix so the new public asset serves from the CDN.
-      if (file.visibility !== previousVisibility) {
-        await this.relocateAllForVisibility(file);
-      }
+      const relocated = visibility !== previousVisibility
+        ? await this.relocateAllForVisibility(updated)
+        : updated;
 
       logger.info('File linked successfully', {
         fileId,
         linkRequest,
-        totalLinks: file.links.length
+        totalLinks: relocated.links.length
       });
 
-      return file;
+      return relocated;
     } catch (error) {
       logger.error('Error linking file:', error);
       throw error;
@@ -1142,16 +1201,18 @@ export class AssetService {
    * Send webhook notifications to links that have webhookUrl set.
    * Non-blocking: failures are logged but do not throw.
    */
-  private async notifyLinks(file: IFile, event: 'visibility_changed' | 'deleted', details: Record<string, any>): Promise<void> {
+  private async notifyLinks(
+    file: FileRecord,
+    event: 'visibility_changed' | 'deleted',
+    details: Record<string, unknown>
+  ): Promise<void> {
     try {
-      const axios = (await import('axios')).default;
       const notifyPromises = file.links
-        .filter(l => l.webhookUrl)
-        .map(async (link) => {
-          const url = link.webhookUrl!;
+        .flatMap((link) => (link.webhookUrl ? [{ link, url: link.webhookUrl }] : []))
+        .map(async ({ link, url }) => {
           const payload = {
             event,
-            fileId: file._id.toString(),
+            fileId: file.id,
             visibility: file.visibility,
             status: file.status,
             link: {
@@ -1164,10 +1225,21 @@ export class AssetService {
           };
 
           try {
-            await axios.post(url, payload, { timeout: 5000 });
-            logger.info('Webhook delivered', { url, fileId: file._id, event });
+            const result = await safeFetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+              headersTimeoutMs: 5000,
+              maxRedirects: 0,
+            });
+            result.response.resume();
+            logger.info('Webhook delivered', { url, fileId: file.id, event, status: result.status });
           } catch (err) {
-            logger.warn('Failed to deliver webhook', { url, fileId: file._id, event, error: err instanceof Error ? err.message : String(err) });
+            if (err instanceof SsrfRejection) {
+              logger.warn('Blocked SSRF webhook target', { url, fileId: file.id, event, reason: err.message });
+              return;
+            }
+            logger.warn('Failed to deliver webhook', { url, fileId: file.id, event, error: err instanceof Error ? err.message : String(err) });
           }
         });
 
@@ -1181,42 +1253,42 @@ export class AssetService {
    * Unlink file from an entity
    */
   async unlinkFile(
-    fileId: string, 
-    app: string, 
-    entityType: string, 
+    fileId: string,
+    app: string,
+    entityType: string,
     entityId: string
-  ): Promise<IFile> {
+  ): Promise<FileRecord> {
     try {
-      const file = await File.findById(fileId);
+      const file = await findFileById(fileId);
       if (!file) {
         throw new Error('File not found');
       }
 
-      // Remove the specified link
-      file.links = file.links.filter(link => !(
-        link.app === app &&
-        link.entityType === entityType &&
-        link.entityId === entityId
-      ));
+      await deleteFileLink(fileId, app, entityType, entityId);
 
-      // If no links remain, move to trash
-      if (file.links.length === 0 && file.status === 'active') {
-        file.status = 'trash';
+      const remaining = await findFileById(fileId);
+      if (!remaining) {
+        throw new Error('File not found');
       }
 
-      await file.save();
-      fileCache.invalidate(fileId);
-      fileCache.set(fileId, file);
+      // If no links remain, move to trash
+      const updated = remaining.links.length === 0 && remaining.status === 'active'
+        ? await updateFile(fileId, { status: 'trash' })
+        : remaining;
+      if (!updated) {
+        throw new Error('File not found');
+      }
+      this.cacheFile(updated);
 
-      logger.info('File unlinked successfully', { 
-        fileId, 
-        app, 
-        entityType, 
-        entityId, 
-        remainingLinks: file.links.length 
+      logger.info('File unlinked successfully', {
+        fileId,
+        app,
+        entityType,
+        entityId,
+        remainingLinks: updated.links.length
       });
 
-      return file;
+      return updated;
     } catch (error) {
       logger.error('Error unlinking file:', error);
       throw error;
@@ -1224,22 +1296,23 @@ export class AssetService {
   }
 
   /**
-   * Get multiple files by ID
+   * Get multiple files by ID.
+   *
+   * The result is unordered and may be shorter than the input — batch resolvers
+   * are lenient and simply omit ids they cannot resolve.
    */
-  async getFilesByIds(fileIds: string[]): Promise<IFile[]> {
-    return File.find({ _id: { $in: fileIds } });
+  async getFilesByIds(fileIds: string[]): Promise<FileRecord[]> {
+    return findFilesByIds(fileIds);
   }
 
   /**
    * Get file by ID with full metadata
    */
-  async getFile(fileId: string): Promise<IFile | null> {
+  async getFile(fileId: string): Promise<FileRecord | null> {
     try {
+      // A `temp-` id is a client-side placeholder for an upload that has not
+      // been committed yet; it is never a stored row.
       if (fileId.startsWith('temp-')) {
-        return null;
-      }
-      
-      if (!mongoose.Types.ObjectId.isValid(fileId)) {
         return null;
       }
 
@@ -1248,7 +1321,7 @@ export class AssetService {
         return cached;
       }
 
-      const file = await File.findById(fileId).lean() as IFile | null;
+      const file = await findFileById(fileId);
       if (file) {
         fileCache.set(fileId, file);
         return file;
@@ -1271,13 +1344,13 @@ export class AssetService {
     return this.s3Service.downloadBuffer(file.storageKey);
   }
 
-  async fileContentExists(fileId: string, file?: IFile): Promise<boolean> {
-    const fileObj = file || await this.getFile(fileId);
+  async fileContentExists(fileId: string, file?: FileRecord): Promise<boolean> {
+    const fileObj = file ?? await this.getFile(fileId);
     if (!fileObj || fileObj.status === 'deleted') return false;
     return this.s3Service.fileExists(fileObj.storageKey);
   }
 
-  async repairMissingFederationFileContent(file: IFile): Promise<boolean> {
+  async repairMissingFederationFileContent(file: FileRecord): Promise<boolean> {
     if (!file || file.status === 'deleted') {
       return false;
     }
@@ -1300,22 +1373,25 @@ export class AssetService {
         contentType: repaired.mime,
       });
 
-      const setFields: Partial<IFile> = {
+      const updated = await updateFile(file.id, {
         size: repaired.buffer.length,
         mime: repaired.mime,
         ext: this.getExtensionFromMime(repaired.mime),
-      };
-      await File.updateOne({ _id: file._id }, { $set: setFields });
+      });
+      if (!updated) {
+        return false;
+      }
 
-      file.size = setFields.size as number;
-      file.mime = setFields.mime as string;
-      file.ext = setFields.ext as string;
-      fileCache.invalidate(file._id.toString());
-      fileCache.set(file._id.toString(), file);
-      this.queueVariantGeneration(file);
+      // The caller holds this record; keep its in-hand copy consistent with the
+      // row that was just written.
+      file.size = updated.size;
+      file.mime = updated.mime;
+      file.ext = updated.ext;
+      this.cacheFile(updated);
+      this.queueVariantGeneration(updated);
 
       logger.info('Repaired missing federation asset storage from remote URL', {
-        fileId: file._id.toString(),
+        fileId: file.id,
         storageKey: file.storageKey,
         mime: repaired.mime,
         size: repaired.buffer.length,
@@ -1323,7 +1399,7 @@ export class AssetService {
       return true;
     } catch (error) {
       logger.warn('Failed to repair missing federation asset storage', {
-        fileId: file._id.toString(),
+        fileId: file.id,
         storageKey: file.storageKey,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1412,30 +1488,35 @@ export class AssetService {
    * objects stop being reachable when made private, and become reachable when
    * made public.
    */
-  private async relocateAllForVisibility(file: IFile): Promise<void> {
+  private async relocateAllForVisibility(file: FileRecord): Promise<FileRecord> {
     const newOriginalKey = await this.relocateObjectForVisibility(file.storageKey, file.visibility);
     let changed = newOriginalKey !== file.storageKey;
-    file.storageKey = newOriginalKey;
 
     for (const variant of file.variants) {
       const newVariantKey = await this.relocateObjectForVisibility(variant.key, file.visibility);
       if (newVariantKey !== variant.key) {
+        await updateVariantKey(variant.id, newVariantKey);
         variant.key = newVariantKey;
         changed = true;
       }
     }
 
-    if (changed) {
-      await file.save();
-      fileCache.invalidate(file._id.toString());
-      fileCache.set(file._id.toString(), file);
-      logger.info('Relocated asset objects to match visibility', {
-        fileId: file._id.toString(),
-        visibility: file.visibility,
-        storageKey: file.storageKey,
-        variantCount: file.variants.length,
-      });
+    if (!changed) {
+      return file;
     }
+
+    const updated = await updateFile(file.id, { storageKey: newOriginalKey });
+    if (!updated) {
+      return file;
+    }
+    this.cacheFile(updated);
+    logger.info('Relocated asset objects to match visibility', {
+      fileId: updated.id,
+      visibility: updated.visibility,
+      storageKey: updated.storageKey,
+      variantCount: updated.variants.length,
+    });
+    return updated;
   }
 
   /**
@@ -1455,7 +1536,7 @@ export class AssetService {
    *
    * No client URL produced here is ever an `amazonaws.com` URL.
    */
-  async getPublicCdnUrl(file: IFile, variant?: string): Promise<string | null> {
+  async getPublicCdnUrl(file: FileRecord, variant?: string): Promise<string | null> {
     // A trashed/deleted asset must never be reachable via the public CDN, even
     // if its visibility is still `public`. Gate on active status first so a
     // soft-deleted or trashed object can't continue serving from cloud.oxy.so.
@@ -1465,7 +1546,7 @@ export class AssetService {
 
     let storageKey = file.storageKey;
     if (variant) {
-      const ensured = await this.ensureVariant(file._id.toString(), variant, file);
+      const ensured = await this.ensureVariant(file.id, variant, file);
       storageKey = ensured.key;
     }
 
@@ -1506,10 +1587,10 @@ export class AssetService {
   async getFileUrl(
     fileId: string,
     variant?: string,
-    _expiresIn: number = 3600,
-    file?: IFile
+    _expiresIn = 3600,
+    file?: FileRecord
   ): Promise<string | null> {
-    const fileObj = file || await this.getFile(fileId);
+    const fileObj = file ?? await this.getFile(fileId);
     if (!fileObj) {
       return null;
     }
@@ -1522,7 +1603,7 @@ export class AssetService {
    */
   async getDeletionSummary(fileId: string): Promise<AssetDeleteSummary> {
     try {
-      const file = await File.findById(fileId);
+      const file = await findFileById(fileId);
       if (!file) {
         throw new Error('File not found');
       }
@@ -1547,15 +1628,15 @@ export class AssetService {
   /**
    * Delete file permanently
    */
-  async deleteFile(fileId: string, force: boolean = false, requestingUserId?: string): Promise<void> {
+  async deleteFile(fileId: string, force = false, requestingUserId?: string): Promise<void> {
     try {
-      const file = await File.findById(fileId);
+      const file = await findFileById(fileId);
       if (!file) {
         throw new Error('File not found');
       }
 
       // Authorization Check
-      if (requestingUserId && file.ownerUserId.toString() !== requestingUserId) {
+      if (requestingUserId && file.ownerUserId !== requestingUserId) {
         throw new Error('Unauthorized: You do not own this file');
       }
 
@@ -1580,17 +1661,16 @@ export class AssetService {
         }
       }
 
-      file.status = 'deleted';
-      await file.save();
+      await updateFile(fileId, { status: 'deleted' });
       fileCache.invalidate(fileId);
 
       // Notify linked apps that file was deleted
-      await this.notifyLinks(file, 'deleted', { force });
+      await this.notifyLinks({ ...file, status: 'deleted' }, 'deleted', { force });
 
-      logger.info('File deleted permanently', { 
-        fileId, 
-        force, 
-        linksRemoved: file.links.length 
+      logger.info('File deleted permanently', {
+        fileId,
+        force,
+        linksRemoved: file.links.length
       });
     } catch (error) {
       logger.error('Error deleting file:', error);
@@ -1601,9 +1681,9 @@ export class AssetService {
   /**
    * Restore file from trash
    */
-  async restoreFile(fileId: string): Promise<IFile> {
+  async restoreFile(fileId: string): Promise<FileRecord> {
     try {
-      const file = await File.findById(fileId);
+      const file = await findFileById(fileId);
       if (!file) {
         throw new Error('File not found');
       }
@@ -1612,14 +1692,15 @@ export class AssetService {
         throw new Error('File is not in trash');
       }
 
-      file.status = 'active';
-      await file.save();
-      fileCache.invalidate(fileId);
-      fileCache.set(fileId, file);
+      const restored = await updateFile(fileId, { status: 'active' });
+      if (!restored) {
+        throw new Error('File not found');
+      }
+      this.cacheFile(restored);
 
       logger.info('File restored from trash', { fileId });
 
-      return file;
+      return restored;
     } catch (error) {
       logger.error('Error restoring file:', error);
       throw error;
@@ -1647,11 +1728,11 @@ export class AssetService {
       'profile-cover',
       'public-profile-content'
     ];
-    
+
     if (publicEntityTypes.includes(entityType.toLowerCase())) {
       return 'public';
     }
-    
+
     // Default to private for all other types
     return 'private';
   }
@@ -1668,7 +1749,7 @@ export class AssetService {
       if (!fileId || fileId.startsWith('temp-')) return;
       const file = await this.getFile(fileId);
       if (!file) return;
-      if (file.ownerUserId?.toString() !== userId.toString()) return;
+      if (file.ownerUserId !== userId) return;
       if (file.visibility === 'public') return;
       await this.updateFileVisibility(fileId, 'public');
       logger.info('Profile media asset promoted to public', { fileId, userId });
@@ -1684,9 +1765,9 @@ export class AssetService {
   /**
    * Update file visibility
    */
-  async updateFileVisibility(fileId: string, visibility: FileVisibility): Promise<IFile> {
+  async updateFileVisibility(fileId: string, visibility: FileVisibility): Promise<FileRecord> {
     try {
-      const file = await File.findById(fileId);
+      const file = await findFileById(fileId);
       if (!file) {
         throw new Error('File not found');
       }
@@ -1696,24 +1777,25 @@ export class AssetService {
         return file;
       }
 
-      file.visibility = visibility;
-      await file.save();
-      fileCache.invalidate(fileId);
-      fileCache.set(fileId, file);
+      const updated = await updateFile(fileId, { visibility });
+      if (!updated) {
+        throw new Error('File not found');
+      }
+      this.cacheFile(updated);
 
       // Relocate the object + variants so their S3 prefix matches the new
       // visibility: a now-private asset's bytes leave the CDN-reachable
       // `public/` prefix; a now-public asset's bytes move under it.
-      await this.relocateAllForVisibility(file);
+      const relocated = await this.relocateAllForVisibility(updated);
 
       // Notify linked apps about visibility change
       try {
-        await this.notifyLinks(file, 'visibility_changed', { visibility });
+        await this.notifyLinks(relocated, 'visibility_changed', { visibility });
       } catch (err) {
         logger.error('Failed to notify links after visibility change', err);
       }
 
-      return file;
+      return relocated;
     } catch (error) {
       logger.error('Error updating file visibility:', error);
       throw error;
@@ -1723,7 +1805,11 @@ export class AssetService {
   /**
    * Check if a user can access a file
    */
-  async canUserAccessFile(file: IFile, userId?: string, context?: MediaAccessContext): Promise<boolean> {
+  async canUserAccessFile(
+    file: FileRecord,
+    userId?: string,
+    context?: MediaAccessContext
+  ): Promise<boolean> {
     // Use the centralized MediaPrivacyService for comprehensive checks
     const result = await mediaPrivacyService.checkMediaAccess(file, userId, context);
     return result.allowed;
@@ -1778,25 +1864,25 @@ export class AssetService {
   }
 
   /**
-   * Queue variant generation
+   * Schedule variant generation for a freshly stored (or relocated/replaced)
+   * file.
+   *
+   * This HANDS THE WORK OFF and returns; it does not generate anything. The
+   * previous implementation awaited `generateVariants` here, which meant every
+   * upload started up to seven sharp encodes — or three x264 transcodes plus HLS
+   * segmentation — in this process with nothing bounding how many ran at once.
+   * None of the eight call sites await this method, so the response was never
+   * blocked; the damage was CPU and memory contention on a fractional-vCPU task,
+   * which starved the JS thread until the ELB's `/health` probe timed out and
+   * the task was killed. See `queue/assetVariants.queue.ts`.
+   *
+   * Synchronous by design so a caller cannot accidentally await a transcode.
    */
-  private async queueVariantGeneration(file: IFile): Promise<void> {
-    try {
-      logger.info('Starting variant generation', { 
-        fileId: file._id, 
-        mime: file.mime 
-      });
-
-      // For now, generate variants synchronously
-      // In production, this would be queued to a background worker
-      await this.variantService.generateVariants(file._id.toString());
-      
-      logger.info('Variant generation completed', { 
-        fileId: file._id 
-      });
-    } catch (error) {
-      logger.error('Error in variant generation:', error);
-      // Don't throw error here to avoid failing the upload
-    }
+  private queueVariantGeneration(file: FileRecord): void {
+    logger.info('Queueing variant generation', {
+      fileId: file.id,
+      mime: file.mime,
+    });
+    enqueueAssetVariantGeneration(file.id);
   }
 }

@@ -9,6 +9,8 @@ import React, { useMemo } from 'react';
 import { Ticket as OxyID } from '@/components/OxyID';
 import { FrontSide } from '@/components/OxyID/front-side';
 import { BackSide } from '@/components/OxyID/back-side';
+import { IdQrBack } from '@/components/civic/IdQrBack';
+import { shortenKey } from '@/utils/shorten-key';
 
 export interface IdentityCardProps {
   displayName?: string;
@@ -16,6 +18,10 @@ export interface IdentityCardProps {
   avatarUrl?: string;
   accountCreated?: string;
   publicKey?: string;
+  /** Optional QR payload — revealed on the back by a long-press. */
+  qrPayload?: string;
+  /** Caption under the QR (required when `qrPayload` is set). */
+  qrCaption?: string;
   width?: number;
   height?: number;
 }
@@ -26,15 +32,16 @@ export function IdentityCard({
   avatarUrl,
   accountCreated,
   publicKey,
-  width = 340,
-  height = 214,
+  qrPayload,
+  qrCaption,
+  width = 240,
+  height = 380,
 }: IdentityCardProps) {
-  // Format public key for FrontSide display (first 8 + last 8 characters)
-  const publicKeyShort = useMemo(() => {
-    if (!publicKey) return undefined;
-    if (publicKey.length <= 16) return publicKey;
-    return `${publicKey.substring(0, 8)}...${publicKey.substring(publicKey.length - 8)}`;
-  }, [publicKey]);
+  // Format public key for FrontSide display (first 8 + last 8 characters).
+  const publicKeyShort = useMemo(
+    () => (publicKey ? shortenKey(publicKey) : undefined),
+    [publicKey],
+  );
 
   return (
     <OxyID
@@ -55,6 +62,9 @@ export function IdentityCard({
           displayName={displayName}
           accountCreated={accountCreated}
         />
+      }
+      qrSide={
+        qrPayload ? <IdQrBack payload={qrPayload} caption={qrCaption ?? ''} /> : undefined
       }
     />
   );

@@ -1,6 +1,7 @@
 import express from 'express';
 import { SessionController } from '../controllers/session.controller';
 import { authMiddleware } from '../middleware/auth';
+import { idpServiceLimiter } from '../middleware/security';
 import { validate } from '../middleware/validate';
 import { sessionIdParams, updateDeviceNameSchema, batchUsersSchema } from '../schemas/session.schemas';
 
@@ -204,7 +205,9 @@ router.post('/logout-all/:sessionId', validate({ params: sessionIdParams }), Ses
  *       404:
  *         description: Session not found or expired.
  */
-router.get('/validate/:sessionId', validate({ params: sessionIdParams }), SessionController.validateSession);
+// Excluded from rl:general (IdP worker server-to-server session resolution; see
+// isIdpServiceToServicePath). idpServiceLimiter is this route's sole per-IP cap.
+router.get('/validate/:sessionId', idpServiceLimiter, validate({ params: sessionIdParams }), SessionController.validateSession);
 
 /**
  * @openapi

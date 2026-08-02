@@ -1,13 +1,20 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { RecoveryPhraseService, IdentityAlreadyExistsError } from '@oxyhq/core';
+import {
+  RecoveryPhraseService,
+  IdentityAlreadyExistsError,
+  IdentityUnavailableError,
+} from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { ImportPhraseStep } from '@/components/auth/ImportPhraseStep';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
+import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
 import { useIdentity } from '@/hooks/useIdentity';
-import { useIdentityStore } from '@/hooks/identity/identityStore';
+import { useIdentityStore, persistOnboardingFlow } from '@/hooks/identity/identityStore';
+import { IdentityMayExistError } from '@/hooks/identity/identityErrors';
+import { useTranslation } from '@/lib/i18n';
 
 /**
  * Import Identity - Phrase Screen (Index)
@@ -17,6 +24,7 @@ import { useIdentityStore } from '@/hooks/identity/identityStore';
 export default function ImportIdentityPhraseScreen() {
   const router = useRouter();
   const colors = useColors();
+  const { t } = useTranslation();
   const { importIdentity } = useIdentity();
   const { error, setAuthError } = useAuthFlowContext();
   const setRecoveryPhraseAcknowledgedPersisted = useIdentityStore(
@@ -28,6 +36,20 @@ export default function ImportIdentityPhraseScreen() {
   const textColor = colors.text;
 
   const [phraseWords, setPhraseWords] = useState<string[]>(new Array(RECOVERY_PHRASE_LENGTH).fill(''));
+
+  useEffect(() => {
+    void persistOnboardingFlow('import');
+  }, []);
+
+  const handleRestoreFromBackup = useCallback(() => {
+    setAuthError(null);
+    router.push('/(auth)/import-identity/restore-from-backup');
+  }, [router, setAuthError]);
+
+  const handleImportPrivateKey = useCallback(() => {
+    setAuthError(null);
+    router.push('/(auth)/import-identity/private-key');
+  }, [router, setAuthError]);
 
   const handleWordChange = useCallback((index: number, word: string) => {
     setPhraseWords(prev => {
@@ -49,7 +71,7 @@ export default function ImportIdentityPhraseScreen() {
     const phrase = phraseWords.join(' ');
 
     if (!RecoveryPhraseService.validatePhrase(phrase)) {
-      setAuthError('Invalid recovery phrase. Please check the words and try again.');
+      setAuthError(t('auth.errors.invalidPhrase'));
       return;
     }
 
@@ -57,8 +79,15 @@ export default function ImportIdentityPhraseScreen() {
     setIsLoading(true);
 
     try {
-      const result = await importIdentity(phrase);
-      const wasOffline = !result.synced;
+      const offline = await checkIfOffline();
+      const result = await importIdentity(phrase, { skipSync: offline });
+
+      // Online but server sync failed: do not advance — username would call
+      // authenticated APIs with no session (same guard as create-identity).
+      if (!offline && !result.synced) {
+        setAuthError(t('auth.errors.importSyncFailed'));
+        return;
+      }
 
       // The user just typed the phrase by hand, so they unambiguously
       // already have it written down somewhere. Mark it as acknowledged
@@ -66,28 +95,34 @@ export default function ImportIdentityPhraseScreen() {
       // already possess.
       setRecoveryPhraseAcknowledgedPersisted(true);
 
-      // Check if offline - if so, skip username step
-      if (wasOffline) {
+      // Offline: skip username (deferred until reconnect). Online: choose username.
+      if (offline) {
         router.replace('/(auth)/import-identity/notifications');
       } else {
         router.replace('/(auth)/import-identity/username');
       }
     } catch (err: unknown) {
+      if (err instanceof IdentityMayExistError) {
+        router.replace('/(auth)/recover-identity');
+        return;
+      }
+      if (err instanceof IdentityUnavailableError) {
+        router.replace('/(auth)');
+        return;
+      }
       if (err instanceof IdentityAlreadyExistsError) {
         // The user is trying to import a different identity on top of an
         // existing one. We don't quietly clobber — they must use the
         // settings UI to remove the current identity (with a written
         // recovery phrase warning) before importing a new one.
-        setAuthError(
-          'An identity already exists on this device. Sign in with your existing identity or remove it from settings before importing a new one.',
-        );
+        setAuthError(t('auth.errors.identityAlreadyExists'));
       } else {
-        setAuthError(extractAuthErrorMessage(err, 'Failed to import identity'));
+        setAuthError(extractAuthErrorMessage(err, t('auth.errors.importFailed')));
       }
     } finally {
       setIsLoading(false);
     }
-  }, [phraseWords, importIdentity, router, setAuthError, setRecoveryPhraseAcknowledgedPersisted]);
+  }, [phraseWords, importIdentity, router, setAuthError, setRecoveryPhraseAcknowledgedPersisted, t]);
 
   return (
     <ImportPhraseStep
@@ -95,6 +130,8 @@ export default function ImportIdentityPhraseScreen() {
       onWordChange={handleWordChange}
       onPaste={handlePaste}
       onImport={handleImport}
+      onRestoreFromBackup={handleRestoreFromBackup}
+      onImportPrivateKey={handleImportPrivateKey}
       error={error}
       isLoading={isLoading}
       backgroundColor={backgroundColor}

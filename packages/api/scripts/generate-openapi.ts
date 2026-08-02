@@ -65,7 +65,10 @@ interface OpenApiDocument {
   [key: string]: unknown;
 }
 
-const PACKAGE_ROOT = path.resolve(import.meta.dir, '..');
+// `__dirname`, not `import.meta.dir`: this package compiles as CommonJS
+// (`module: NodeNext`, no `"type": "module"`), where `import.meta` is a type
+// error. Bun populates `__dirname` identically when running this file.
+const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const BASE_YAML = path.join(PACKAGE_ROOT, 'openapi.base.yaml');
 const OUTPUT_JSON = path.join(PACKAGE_ROOT, 'openapi.json');
 const ROUTES_DIR = path.join(PACKAGE_ROOT, 'src', 'routes');
@@ -209,8 +212,7 @@ function zodToOpenApi(schema: ZodTypeAny): Record<string, unknown> {
   if (!schema || typeof (schema as { _def?: unknown })._def !== 'object') {
     return { type: 'string' };
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const def = (schema as any)._def as { typeName?: string; [key: string]: unknown };
+  const def = (schema as { _def: { typeName?: string; [key: string]: unknown } })._def;
   const typeName = def.typeName ?? '';
 
   switch (typeName) {
@@ -276,8 +278,7 @@ function zodToOpenApi(schema: ZodTypeAny): Record<string, unknown> {
       return out;
     }
     case 'ZodObject': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const shape = (schema as any)._def.shape();
+      const shape = (schema as { _def: { shape: () => Record<string, ZodTypeAny> } })._def.shape();
       const properties: Record<string, unknown> = {};
       const required: string[] = [];
       for (const [key, value] of Object.entries(shape) as Array<[string, ZodTypeAny]>) {
@@ -301,20 +302,16 @@ function zodToOpenApi(schema: ZodTypeAny): Record<string, unknown> {
       };
     }
     case 'ZodOptional': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return zodToOpenApi(((def as any).innerType as ZodTypeAny));
+      return zodToOpenApi((def as { innerType: ZodTypeAny }).innerType);
     }
     case 'ZodNullable': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const inner = zodToOpenApi(((def as any).innerType as ZodTypeAny));
+      const inner = zodToOpenApi((def as { innerType: ZodTypeAny }).innerType);
       return { ...inner, nullable: true };
     }
     case 'ZodDefault': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const innerSchema = zodToOpenApi(((def as any).innerType as ZodTypeAny));
+      const innerSchema = zodToOpenApi((def as { innerType: ZodTypeAny }).innerType);
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const defaultFn = (def as any).defaultValue as () => unknown;
+        const defaultFn = (def as { defaultValue: () => unknown }).defaultValue;
         innerSchema.default = defaultFn();
       } catch {
         // Default produced an error — drop it; OpenAPI default is optional anyway.
@@ -322,18 +319,15 @@ function zodToOpenApi(schema: ZodTypeAny): Record<string, unknown> {
       return innerSchema;
     }
     case 'ZodUnion': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const options = ((def as any).options as ZodTypeAny[]).map(zodToOpenApi);
+      const options = (def as { options: ZodTypeAny[] }).options.map((option) => zodToOpenApi(option));
       return { oneOf: options };
     }
     case 'ZodEffects': {
       // superRefine / refine wraps the underlying schema. Unwrap and reuse.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return zodToOpenApi(((def as any).schema as ZodTypeAny));
+      return zodToOpenApi((def as { schema: ZodTypeAny }).schema);
     }
     case 'ZodPipeline': {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return zodToOpenApi(((def as any).out as ZodTypeAny));
+      return zodToOpenApi((def as { out: ZodTypeAny }).out);
     }
     case 'ZodAny':
     case 'ZodUnknown':
@@ -390,10 +384,13 @@ const MOUNT_MAP: Record<string, string> = {
   'auth.ts': '/auth',
   'authLinking.ts': '/auth',
   'assets.ts': '/assets',
+  'cdn.ts': '/cdn',
   'storage.ts': '/storage',
   'search.ts': '/search',
   'profiles.ts': '/profiles',
   'users.ts': '/users',
+  'userData.ts': '/users/me/app-data',
+  'sessionDevice.ts': '/session/device',
   'session.ts': '/session',
   'privacy.ts': '/privacy',
   'analytics.routes.ts': '/analytics',
@@ -402,12 +399,13 @@ const MOUNT_MAP: Record<string, string> = {
   'reputation.routes.ts': '/reputation',
   'wallet.routes.ts': '/wallet',
   'linkMetadata.ts': '/link-metadata',
+  'links.ts': '/links',
   'locationSearch.ts': '/location-search',
-  'developer.ts': '/developer',
+  'applications.ts': '/applications',
+  'accounts.ts': '/accounts',
   'devices.ts': '/devices',
   'security.ts': '/security',
   'subscription.routes.ts': '/subscription',
-  'fedcm.ts': '/fedcm',
   'emailProxy.ts': '/email/proxy',
   'emailInbound.ts': '/email/inbound',
   'email.ts': '/email',
@@ -417,9 +415,14 @@ const MOUNT_MAP: Record<string, string> = {
   'models-stats.ts': '/models',
   'platform-stats.ts': '/platform-stats',
   'topics.routes.ts': '/topics',
-  'managedAccounts.ts': '/managed-accounts',
   'contacts.ts': '/contacts',
   'socialAuth.ts': '/auth/social',
+  'appSignals.ts': '/app-signals',
+  'identity.ts': '/identity',
+  'civic.ts': '/civic',
+  'nodes.ts': '/nodes',
+  'federation.ts': '/federation',
+  'did.ts': '/',
 };
 
 /**
@@ -430,10 +433,13 @@ const TAG_GROUPS: Record<string, string> = {
   '/auth': 'Authentication',
   '/auth/social': 'Authentication',
   '/assets': 'Files',
+  '/cdn': 'Files',
   '/storage': 'Files',
   '/search': 'Search',
   '/profiles': 'Profiles',
   '/users': 'Users',
+  '/users/me/app-data': 'Users',
+  '/session/device': 'Sessions',
   '/session': 'Sessions',
   '/privacy': 'Privacy',
   '/analytics': 'Analytics',
@@ -442,12 +448,13 @@ const TAG_GROUPS: Record<string, string> = {
   '/reputation': 'Reputation',
   '/wallet': 'Wallet',
   '/link-metadata': 'Misc',
+  '/links': 'Misc',
   '/location-search': 'Misc',
-  '/developer': 'Developer',
+  '/applications': 'Developer',
+  '/accounts': 'Users',
   '/devices': 'Devices',
   '/security': 'Security',
   '/subscription': 'Subscription',
-  '/fedcm': 'Federation',
   '/email/proxy': 'Email',
   '/email/inbound': 'Email',
   '/email': 'Email',
@@ -457,8 +464,13 @@ const TAG_GROUPS: Record<string, string> = {
   '/models': 'AI',
   '/platform-stats': 'System',
   '/topics': 'Misc',
-  '/managed-accounts': 'Users',
   '/contacts': 'Contacts',
+  '/app-signals': 'Analytics',
+  '/identity': 'Identity',
+  '/civic': 'Identity',
+  '/nodes': 'System',
+  '/federation': 'Federation',
+  '/': 'Identity',
 };
 
 /**
@@ -471,7 +483,7 @@ const SCHEMA_MODULE_MAP: Record<string, string> = {
   'assets.ts': 'assets.schemas.ts',
   'contacts.ts': 'contacts.schemas.ts',
   'credits.ts': 'credits.schemas.ts',
-  'developer.ts': 'developer.schemas.ts',
+  'applications.ts': 'application.schemas.ts',
   'devices.ts': 'devices.schemas.ts',
   'email.ts': 'email.schemas.ts',
   'reputation.routes.ts': 'reputation.schemas.ts',

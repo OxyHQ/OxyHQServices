@@ -1,12 +1,12 @@
 /**
  * Contract tests for `consentDecisionSchema` + `consentRequiredFromBody` — the
  * `GET /auth/oauth/consent` decision the authorize page runs to decide whether
- * the OAuth ConsentCard must be shown or the request can be auto-approved.
+ * the OAuth consent screen must be shown or the request can be auto-approved.
  *
  * The page calls this for the OAuth code path right after an account is
  * selected. The security-critical invariant: ANY response the schema cannot
  * validate (transport failure, malformed body, missing field, unknown `reason`)
- * MUST fail safe to `consentRequired: true` so the ConsentCard is shown — we
+ * MUST fail safe to `consentRequired: true` so the consent screen is shown — we
  * never silently auto-approve on a parse error.
  */
 import { describe, expect, test } from "bun:test"

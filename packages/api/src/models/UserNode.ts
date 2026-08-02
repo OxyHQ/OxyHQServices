@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { type Document, Schema } from 'mongoose';
 
 /**
  * UserNode (self-sovereign identity layer — F5a user nodes / decentralization)

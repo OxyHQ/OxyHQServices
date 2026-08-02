@@ -1,7 +1,7 @@
 import { isInvalidSessionError } from '@oxyhq/services';
 import { KeyManager, SignatureService } from '@oxyhq/core';
 import type { User, OxyServices } from '@oxyhq/core';
-import { isAlreadyRegisteredError } from './errorUtils';
+import { isAlreadyRegisteredError } from './identityErrors';
 
 export interface SyncServiceOptions {
   /** OxyServices instance */
@@ -113,7 +113,11 @@ export const syncIdentityWithServer = async (
 ): Promise<SyncServiceResult> => {
   const { oxyServices, signIn, isAlreadySynced, signal, onSessionExpired } = options;
 
-  // Get local public key
+  // Get local public key. `getPublicKey()` returns `null` ONLY for a genuine
+  // absence and now THROWS `IdentityUnavailableError` when storage is
+  // locked/unreadable — we let that typed error propagate (the caller's sync
+  // handler reports it) rather than mislabeling a locked keystore as
+  // "No identity found on this device".
   const publicKey = await KeyManager.getPublicKey();
   if (!publicKey) {
     throw new Error('No identity found on this device');

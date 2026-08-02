@@ -4,13 +4,26 @@
  * Centralized type definitions for session-related operations.
  */
 
-import type { ISession } from '../models/Session';
+import type { CachedSession } from '../utils/sessionCache';
+import type { AccountDocument } from '../services/user.service';
 import type { DeviceFingerprintInput } from '../utils/deviceUtils';
+import type { SessionTokenPayload } from '../utils/sessionUtils';
 
 export interface SessionValidationResult {
-  session: ISession;
-  user: any;
-  payload: any;
+  session: CachedSession;
+  /**
+   * The authenticated account, as `userService.readAccountDocument` builds it —
+   * the SAME serializer `GET /users/me/data` and `PUT /users/resolve` return,
+   * so `req.user` and those responses can never describe the same account
+   * differently.
+   *
+   * It carries `_id` (the account id) beside `id`, which is the documented
+   * contract (`@oxyhq/contracts` `resolveUserId` = `user.id ?? user._id`). See
+   * `middleware/auth.ts` for why `req.user._id` — not `id` — is the account id
+   * every authenticated call site reads.
+   */
+  user: AccountDocument;
+  payload: SessionTokenPayload;
 }
 
 export interface SessionCreateOptions {
@@ -18,12 +31,19 @@ export interface SessionCreateOptions {
   deviceFingerprint?: DeviceFingerprintInput;
   /**
    * When set, the session's deviceId is derived deterministically from
-   * (userId, stableDeviceKey) via `deriveServiceDeviceId` — used for
-   * IdP/FedCM-issued sessions so one (user, RP) reuses a single session. The
-   * request's IP/UA are NOT used for the deviceId on this path. Real device
-   * logins (no stableDeviceKey) are unaffected.
+   * (userId, stableDeviceKey) via `deriveServiceDeviceId` so one (user, RP)
+   * reuses a single session, independent of request IP/UA. Originally added
+   * for IdP server-minted sessions; no current call site passes this option
+   * post-wave-2 (kept for any future server-minted-session caller that needs
+   * the same stable-per-RP-session property). Real device logins (no
+   * stableDeviceKey) are unaffected.
    */
   stableDeviceKey?: string;
+  /**
+   * An explicit central deviceId, used verbatim (bypasses stableDeviceKey/UA-IP
+   * derivation). Precedence: deviceId > stableDeviceKey > UA/IP > random.
+   */
+  deviceId?: string;
   /**
    * The OPERATOR user id when this session is minted by switching INTO a managed
    * account (`userId` = the managed account). Recorded on the session for audit
@@ -35,6 +55,6 @@ export interface SessionCreateOptions {
 export interface SessionRefreshResult {
   accessToken: string;
   refreshToken: string;
-  session: ISession;
+  session: CachedSession;
 }
 

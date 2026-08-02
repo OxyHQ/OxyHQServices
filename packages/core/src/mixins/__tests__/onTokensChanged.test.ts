@@ -115,7 +115,6 @@ describe('OxyServices.onTokensChanged', () => {
           deviceId: 'dev_1',
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           accessToken: 'access_verify',
-          refreshToken: 'refresh_verify',
           user: { id: 'user_1', username: 'tester' },
         } as never;
       }

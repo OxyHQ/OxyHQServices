@@ -11,6 +11,7 @@ import {
   CenteredState,
   PrimaryButton,
   SecondaryButton,
+  SessionGate,
 } from '@/components/ui';
 import { CivicBadge } from '@/components/civic/CivicBadge';
 import { useValidatorInbox } from '@/hooks/useValidatorInbox';
@@ -31,7 +32,7 @@ export default function ValidationVoteScreen() {
   const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const { data, isPending } = useValidatorInbox();
+  const { data, isPending, isError, refetch } = useValidatorInbox();
   const request = useMemo(() => data?.find((r) => r.id === id) ?? null, [data, id]);
 
   const { state, biometricFailed, errorCode, vote, deny } = useValidationVote(
@@ -82,6 +83,19 @@ export default function ValidationVoteScreen() {
 
     if (isPending && !request) {
       return <CenteredState loading />;
+    }
+
+    if (isError && !request) {
+      return (
+        <CenteredState
+          icon="cloud-alert"
+          title={t('civic.validate.inbox.error.title')}
+          body={t('civic.validate.inbox.error.body')}
+          action={
+            <PrimaryButton label={t('common.retry')} onPress={() => refetch()} fullWidth={false} />
+          }
+        />
+      );
     }
 
     if (!request) {
@@ -180,7 +194,7 @@ export default function ValidationVoteScreen() {
   return (
     <Screen gap={20}>
       <StackHeader title={t('civic.validate.vote.title')} onBack={handleClose} backAccessibilityLabel={t('common.back')} />
-      {renderBody()}
+      <SessionGate>{renderBody()}</SessionGate>
     </Screen>
   );
 }

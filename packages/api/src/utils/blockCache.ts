@@ -80,14 +80,14 @@ class BlockCache {
     }
   }
 
-  private evictOldest(count: number = 1): void {
+  private evictOldest(count = 1): void {
     if (count <= 0 || this.cache.size === 0) {
       return;
     }
 
     if (count === 1) {
       let oldestKey: string | null = null;
-      let oldestTimestamp = Infinity;
+      let oldestTimestamp = Number.POSITIVE_INFINITY;
 
       for (const [key, cached] of this.cache.entries()) {
         if (cached.timestamp < oldestTimestamp) {
@@ -128,6 +128,7 @@ class BlockCache {
     this.cleanupTimer = setInterval(() => {
       this.cleanup();
     }, this.config.cleanupInterval);
+    this.cleanupTimer.unref?.();
   }
 
   clear(): void {
@@ -150,5 +151,7 @@ class BlockCache {
 }
 
 const blockCache = new BlockCache();
+const restrictCache = new BlockCache();
+export { restrictCache };
 export default blockCache;
 

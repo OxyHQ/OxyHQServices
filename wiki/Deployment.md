@@ -2,13 +2,13 @@
 
 ## Overview
 
-The Oxy API runs on **AWS ECS Fargate** in `eu-west-1`. Static frontends ship to **Cloudflare Pages**.
+The Oxy API runs on **AWS ECS Fargate** in `us-west-2`. Static frontends ship to **Cloudflare Pages**.
 
 | Environment | Platform | URL | Trigger |
 |-------------|----------|-----|---------|
-| **API (production)** | ECS Fargate (eu-west-1) | `api.oxy.so` | Push to `main` -> `deploy-aws.yml` |
+| **API (production)** | ECS Fargate (us-west-2) | `api.oxy.so` | Push to `main` -> `deploy-aws.yml` |
 | **Static frontends** | Cloudflare Pages | `auth.oxy.so`, `accounts.oxy.so`, `inbox.oxy.so`, `console.oxy.so` | Push to `main` -> `deploy-cloudflare.yml` |
-| **Other backends** | ECS Fargate (eu-west-1) | `api.mention.earth`, `api.homiio.com`, `api.alia.onl`, `api.syra.oxy.so`, `api.allo.oxy.so` | Per-repo `deploy-aws.yml` |
+| **Other backends** | ECS Fargate (us-west-2) | `api.mention.earth`, `api.homiio.com`, `api.alia.onl`, `api.syra.oxy.so`, `api.allo.oxy.so` | Per-repo `deploy-aws.yml` |
 
 ## AWS deployment (`api.oxy.so`)
 
@@ -39,7 +39,7 @@ No Caddy, no on-box SMTP, no NAT gateway. Outbound email goes through AWS SES; i
 1. Sync the relevant GitHub Actions secrets to SSM (`/oxy/oxy-api/*` and the shared parameter namespace). See lines 36-46 of the workflow.
 2. Authenticate to AWS via **GitHub OIDC** (no long-lived AWS keys in repo secrets) -> assume `oxy-github-deploy`.
 3. `docker buildx build --platform linux/arm64 ...`.
-4. Push to ECR (`<aws-account-id>.dkr.ecr.eu-west-1.amazonaws.com/oxy/oxy-api`).
+4. Push to ECR (`237343248947.dkr.ecr.us-west-2.amazonaws.com/oxy/oxy-api`).
 5. `aws ecs update-service --cluster oxy-cluster --service oxy-api --force-new-deployment`.
 
 Task definitions are versioned (`oxy-oxy-api:N`). New revisions are registered with `aws ecs register-task-definition` whenever env / secret mappings change. Image-only updates reuse the existing task definition.
@@ -51,7 +51,6 @@ Task definitions are versioned (`oxy-oxy-api:N`). New revisions are registered w
 | `AWS_GITHUB_OIDC_ROLE_ARN` | ARN of `oxy-github-deploy`; assumed via OIDC |
 | `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens |
 | `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens |
-| `FEDCM_TOKEN_SECRET` | JWT secret for FedCM tokens |
 | `DEVICE_ID_SALT` | 64-hex salt for `deriveStableDeviceId` |
 | `MONGODB_URI` | MongoDB cluster URI (no DB name) |
 | `REDIS_URL` | ElastiCache Valkey URI |
@@ -95,9 +94,8 @@ CMD ["bun", "run", "packages/api/dist/server.js"]
 | `MONGODB_URI` | MongoDB cluster URI (no DB name -- apps pass `dbName`) | `mongodb://<private-mongo-host>:27017` |
 | `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens | 64+ hex |
 | `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens | 64+ hex |
-| `FEDCM_TOKEN_SECRET` | JWT secret for FedCM tokens | 64+ hex |
 | `DEVICE_ID_SALT` | 64-hex salt scoping `deriveStableDeviceId` | 64 hex |
-| `AWS_REGION` | S3/SES region | `eu-west-1` |
+| `AWS_REGION` | S3/SES region | `us-west-2` |
 | `AWS_S3_BUCKET` | Asset storage bucket | |
 | `NODE_ENV` | Environment | `production` |
 | `PORT` | API port | `8080` |
@@ -126,7 +124,7 @@ openssl rand -hex 64
 
 | Project | Source | Notes |
 |---------|--------|-------|
-| `oxy-auth` | `packages/auth/` | Builds the Vite SPA **and** the FedCM IdP `_worker.js`. The workflow has a safety check that fails if `dist/_worker.js` is missing — a static-only deploy would 404 on `/fedcm/*`. |
+| `oxy-auth` | `packages/auth/` | Pure-static Vite SPA (no Pages Function, no `_worker.js`) — the OAuth authorize/consent IdP. Post-deploy smoke gate (`bun run smoke:idp`) asserts the SPA renders and that the FedCM manifest stays deleted. |
 | `oxy-accounts` | `packages/accounts/` | Expo Web export |
 | `oxy-inbox` | `packages/inbox/` | Expo Web export |
 | `oxy-console` | `packages/console/` | Nuxt or Vite output |
@@ -150,7 +148,7 @@ curl https://api.oxy.so/health
 
 ## Operational notes
 
-- **Logs**: ECS task stdout/stderr -> CloudWatch Logs (`/ecs/oxy-api`). `aws logs tail /ecs/oxy-api --follow` (profile `oxy`) streams live output.
+- **Logs**: ECS task stdout/stderr -> CloudWatch Logs (`/oxy/ecs`). `aws logs tail /oxy/ecs --follow --log-stream-name-prefix oxy-api` (profile `oxy`) streams live output.
 - **Rollback**: re-run a prior successful deploy workflow, or `aws ecs update-service --task-definition oxy-oxy-api:<previous-rev>`.
 - **SSH-less ops**: MongoDB EC2 has no SSH keys. Use `aws ssm start-session --target <mongo-instance-id>`.
 - **Backups**: `s3://<mongo-backup-bucket>/daily/`. Restore runbook: `~/Oxy/oxy-infra/docs/runbooks/10-mongo-restore.md`.

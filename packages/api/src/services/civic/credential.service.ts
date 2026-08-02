@@ -4,7 +4,7 @@
  * A Verifiable Credential (VC) is an ISSUER (an employer / course / app that
  * holds a DID) cryptographically attesting a CLAIM about a HOLDER — e.g. "worked
  * at X 2020–2024", "completed course Y". The credential is a SIGNED record
- * (envelope `type: 'credential'`, already in the `SignedRecordType` union) whose
+ * (envelope `type: 'credential'`, an Oxy record type in `OxySignedRecordType`) whose
  * `record.about` is the HOLDER's DID (the W3C `credentialSubject`). It is
  * verifiable OFFLINE against the issuer DID's CURRENT verification method plus a
  * revocation/expiry check — anyone the holder shows the credential to can verify
@@ -31,29 +31,35 @@
  * envelope — never from the projection's denormalized claims.
  */
 
-import type { SignedRecordEnvelope, VerifiableCredentialResponse, CredentialStatus } from '@oxyhq/contracts';
+import type {
+  SignedRecordEnvelope,
+  VerifiableCredentialResponse,
+  CredentialStatus,
+  DidDocument,
+  Secp256k1VerificationMethod,
+} from '@oxyhq/contracts';
 import { credentialRecordSchema } from '@oxyhq/contracts';
-import { signedRecordSigningInput } from '@oxyhq/core';
+import { signedRecordSigningInput, verifyEnvelopeSignature, type RejectionReason } from '@oxyhq/protocol';
 import SignatureService from '../signature.service';
 import {
   buildUserDid,
+  isSelfIssuedByUser,
   parseUserDid,
   buildDidDocument,
   buildOxyDidDocument,
   OXY_DID,
   type DidUserInput,
 } from '../did.service';
-import {
-  verifyEnvelopeSignature,
-  verifyAndStoreRecord,
-  type SignedRecordSubject,
-  type EnvelopeRejectionReason,
-} from '../signedRecord.service';
+import { and, desc, eq } from 'drizzle-orm';
+import { verifyAndStoreRecord } from '../signedRecord.service';
 import { getHead } from '../repoLog.service';
-import { User } from '../../models/User';
-import SignedRecord from '../../models/SignedRecord';
-import VerifiableCredential, { type IVerifiableCredential } from '../../models/VerifiableCredential';
-import { isValidObjectId } from '../../utils/validation';
+import { oxyRecordStore } from '../oxyRecordStore';
+import { getDb } from '../../config/postgres';
+import { isUniqueViolation } from '../../db/pgErrors';
+import { userAuthMethods } from '../../db/schema/userAuthMethods';
+import { userVerifiedDomains } from '../../db/schema/userVerifiedDomains';
+import { users } from '../../db/schema/users';
+import { verifiableCredentials } from '../../db/schema/verifiableCredentials';
 import { CREDENTIAL_COLLECTION, CREDENTIAL_BASE_TYPE } from '../../utils/civic.constants';
 import { logger } from '../../utils/logger';
 
@@ -73,7 +79,7 @@ export type CredentialIssueRejectionReason =
   | 'holder_not_found'
   | 'invalid_expiry'
   | 'oxy_key_unconfigured'
-  | EnvelopeRejectionReason;
+  | RejectionReason;
 
 export type CredentialIssueResult =
   | { ok: true; credential: VerifiableCredentialResponse }
@@ -93,38 +99,51 @@ export interface CredentialVerification {
   credential: VerifiableCredentialResponse | null;
 }
 
-/** True when an error is a MongoDB duplicate-key (E11000) error. */
-function isDuplicateKeyError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: number }).code === 11000
-  );
-}
+/** A stored credential projection row. */
+type VerifiableCredentialRow = typeof verifiableCredentials.$inferSelect;
+
+/** The unique index behind the idempotent projection insert. */
+const CREDENTIAL_RECORD_UNIQUE = 'verifiable_credentials_record_id_unique';
 
 /**
  * The effective status of a credential AT READ TIME: an `active` credential past
  * its `expiresAt` reads as `expired` even if the row has not yet been flipped by
  * the lazy sweep. `revoked` is terminal and never overridden.
  */
-function effectiveStatus(vc: Pick<IVerifiableCredential, 'status' | 'expiresAt'>, now: number): CredentialStatus {
+function effectiveStatus(
+  vc: Pick<VerifiableCredentialRow, 'status' | 'expiresAt'>,
+  now: number,
+): CredentialStatus {
   if (vc.status === 'active' && vc.expiresAt && vc.expiresAt.getTime() <= now) {
     return 'expired';
   }
   return vc.status;
 }
 
+/**
+ * The issuer-asserted claim set, as `jsonb` hands it back. The column carries a
+ * `default {}` and every writer supplies an object, so a non-object here means
+ * the row was written outside this service — reported as an empty claim set
+ * rather than passed to a consumer that expects to index it.
+ */
+function readClaims(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
 /** Serialize a stored credential to the public wire shape. */
-function serializeCredential(vc: IVerifiableCredential): VerifiableCredentialResponse {
+function serializeCredential(vc: VerifiableCredentialRow): VerifiableCredentialResponse {
   return {
-    id: vc._id.toString(),
+    id: vc.id,
     recordId: vc.recordId,
-    holderUserId: vc.holderUserId.toString(),
+    holderUserId: vc.holderUserId,
     holderDid: vc.holderDid,
-    ...(vc.issuerUserId ? { issuerUserId: vc.issuerUserId.toString() } : {}),
+    ...(vc.issuerUserId ? { issuerUserId: vc.issuerUserId } : {}),
     issuerDid: vc.issuerDid,
     types: vc.types,
-    claims: vc.claims,
+    claims: readClaims(vc.claims),
     status: effectiveStatus(vc, Date.now()),
     issuedAt: vc.issuedAt.getTime(),
     ...(vc.expiresAt ? { expiresAt: vc.expiresAt.getTime() } : {}),
@@ -152,22 +171,29 @@ interface PersistCredentialInput {
  */
 async function persistCredentialRow(input: PersistCredentialInput): Promise<VerifiableCredentialResponse> {
   try {
-    const created = await VerifiableCredential.create({
-      holderUserId: input.holderUserId,
-      holderDid: input.holderDid,
-      ...(input.issuerUserId ? { issuerUserId: input.issuerUserId } : {}),
-      issuerDid: input.issuerDid,
-      types: input.types,
-      claims: input.claims,
-      recordId: input.recordId,
-      status: 'active',
-      issuedAt: new Date(input.issuedAt),
-      ...(input.expiresAt !== undefined ? { expiresAt: new Date(input.expiresAt) } : {}),
-    });
+    const [created] = await getDb()
+      .insert(verifiableCredentials)
+      .values({
+        holderUserId: input.holderUserId,
+        holderDid: input.holderDid,
+        issuerUserId: input.issuerUserId,
+        issuerDid: input.issuerDid,
+        types: input.types,
+        claims: input.claims,
+        recordId: input.recordId,
+        status: 'active',
+        issuedAt: new Date(input.issuedAt),
+        expiresAt: input.expiresAt === undefined ? undefined : new Date(input.expiresAt),
+      })
+      .returning();
     return serializeCredential(created);
   } catch (error) {
-    if (isDuplicateKeyError(error)) {
-      const existing = await VerifiableCredential.findOne({ recordId: input.recordId }).lean<IVerifiableCredential | null>();
+    if (isUniqueViolation(error, CREDENTIAL_RECORD_UNIQUE)) {
+      const [existing] = await getDb()
+        .select()
+        .from(verifiableCredentials)
+        .where(eq(verifiableCredentials.recordId, input.recordId))
+        .limit(1);
       if (existing) {
         return serializeCredential(existing);
       }
@@ -195,10 +221,13 @@ export async function issueCredential(
   }
 
   // User-issued: the envelope is self-issued by the caller (their key signs).
-  const issuerDid = buildUserDid(issuerUserId);
-  if (envelope.subject !== issuerDid || envelope.issuer !== issuerDid) {
+  // Account-based check — the SDK's DID spelling may differ from the server's
+  // `DID_WEB_DOMAIN` anchor for the same account. The persisted row keeps the
+  // server-canonical spelling (`issuerDid` below), consistent with org rows.
+  if (!isSelfIssuedByUser(envelope, issuerUserId)) {
     return { ok: false, reason: 'not_self_issued' };
   }
+  const issuerDid = buildUserDid(issuerUserId);
 
   const parsedRecord = credentialRecordSchema.safeParse(envelope.record);
   if (!parsedRecord.success) {
@@ -211,7 +240,7 @@ export async function issueCredential(
   }
 
   const holderUserId = parseUserDid(record.about);
-  if (!holderUserId || !isValidObjectId(holderUserId)) {
+  if (!holderUserId) {
     return { ok: false, reason: 'invalid_holder' };
   }
   if (holderUserId === issuerUserId) {
@@ -224,29 +253,24 @@ export async function issueCredential(
     return { ok: false, reason: 'invalid_expiry' };
   }
 
-  const [holderExists, issuer] = await Promise.all([
-    User.exists({ _id: holderUserId }),
-    User.findById(issuerUserId).select('publicKey authMethods').lean(),
-  ]);
-  if (!holderExists) {
+  if (!(await userExists(holderUserId))) {
     return { ok: false, reason: 'holder_not_found' };
   }
-  const issuerSubject: SignedRecordSubject = {
-    publicKey: issuer?.publicKey,
-    authMethods: issuer?.authMethods,
-  };
 
   // Cheap forgery gate before the authoritative verify-and-store (which repeats
   // signature + current-VM + chain-continuity checks transactionally).
-  if (!verifyEnvelopeSignature(envelope)) {
+  if (!(await verifyEnvelopeSignature(envelope))) {
     return { ok: false, reason: 'bad_signature' };
   }
 
-  const stored = await verifyAndStoreRecord(envelope, issuerSubject, issuerUserId);
+  // A `credential` must be a v2 (chained) envelope — `oxyStorePolicy` enforces
+  // that — so the returned content address always names a stored row, which is
+  // what `verifiable_credentials.record_id`'s foreign key requires.
+  const stored = await verifyAndStoreRecord(envelope, issuerUserId);
   if (!stored.ok) {
     return { ok: false, reason: stored.reason };
   }
-  const recordId = stored.record.recordId ?? '';
+  const recordId = stored.record.recordId;
 
   const credential = await persistCredentialRow({
     holderUserId,
@@ -306,14 +330,13 @@ export async function issueOrgCredential(input: IssueOrgCredentialInput): Promis
   }
 
   const holderUserId = parseUserDid(input.holderDid);
-  if (!holderUserId || !isValidObjectId(holderUserId)) {
+  if (!holderUserId) {
     return { ok: false, reason: 'invalid_holder' };
   }
   if (input.expiresAt !== undefined && input.expiresAt <= Date.now()) {
     return { ok: false, reason: 'invalid_expiry' };
   }
-  const holderExists = await User.exists({ _id: holderUserId });
-  if (!holderExists) {
+  if (!(await userExists(holderUserId))) {
     return { ok: false, reason: 'holder_not_found' };
   }
 
@@ -350,10 +373,10 @@ export async function issueOrgCredential(input: IssueOrgCredentialInput): Promis
     const envelope: SignedRecordEnvelope = { ...fields, signature };
 
     // The holder account's VMs are NOT consulted for a custodial record (the
-    // issuer is OXY_DID), so an empty subject is sufficient here.
-    const stored = await verifyAndStoreRecord(envelope, { publicKey: null, authMethods: [] }, holderUserId);
+    // issuer is OXY_DID); the resolver resolves the subject either way.
+    const stored = await verifyAndStoreRecord(envelope, holderUserId);
     if (stored.ok) {
-      const recordId = stored.record.recordId ?? '';
+      const recordId = stored.record.recordId;
       const credential = await persistCredentialRow({
         holderUserId,
         holderDid: input.holderDid,
@@ -383,18 +406,82 @@ export async function issueOrgCredential(input: IssueOrgCredentialInput): Promis
   return { ok: false, reason: 'chain_conflict' };
 }
 
+/**
+ * Assemble the {@link DidUserInput} `buildDidDocument` needs for an account.
+ *
+ * The Mongoose document carried `authMethods[]` and `verifiedDomains[]` as
+ * embedded arrays; both are child tables now, so the three reads are explicit.
+ * Only the fields the DID document is built from are selected — the rest of the
+ * users row (including its protected columns) never enters this path.
+ */
+async function loadDidUser(userId: string): Promise<DidUserInput | null> {
+  const [user] = await getDb()
+    .select({
+      id: users.id,
+      publicKey: users.publicKey,
+      username: users.username,
+      type: users.type,
+      federationDomain: users.federationDomain,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!user) {
+    return null;
+  }
+
+  const [authMethods, verifiedDomains] = await Promise.all([
+    getDb()
+      .select({ type: userAuthMethods.type, methodPublicKey: userAuthMethods.methodPublicKey })
+      .from(userAuthMethods)
+      .where(eq(userAuthMethods.userId, userId)),
+    getDb()
+      .select({ domain: userVerifiedDomains.domain })
+      .from(userVerifiedDomains)
+      .where(eq(userVerifiedDomains.userId, userId)),
+  ]);
+
+  return {
+    _id: user.id,
+    publicKey: user.publicKey,
+    username: user.username,
+    type: user.type,
+    federation: user.federationDomain ? { domain: user.federationDomain } : null,
+    authMethods: authMethods.map((method) => ({
+      type: method.type,
+      metadata: { publicKey: method.methodPublicKey },
+    })),
+    verifiedDomains,
+  };
+}
+
+/** Whether an account exists. */
+async function userExists(userId: string): Promise<boolean> {
+  const [row] = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row !== undefined;
+}
+
 /** List a holder's credentials, newest first, optionally filtered by stored status. */
 export async function listCredentialsForHolder(
   holderUserId: string,
   options: { status?: CredentialStatus } = {},
 ): Promise<VerifiableCredentialResponse[]> {
-  const filter: Record<string, unknown> = { holderUserId };
-  if (options.status) {
-    filter.status = options.status;
-  }
-  const rows = await VerifiableCredential.find(filter)
-    .sort({ issuedAt: -1 })
-    .lean<IVerifiableCredential[]>();
+  const rows = await getDb()
+    .select()
+    .from(verifiableCredentials)
+    .where(
+      options.status
+        ? and(
+            eq(verifiableCredentials.holderUserId, holderUserId),
+            eq(verifiableCredentials.status, options.status),
+          )
+        : eq(verifiableCredentials.holderUserId, holderUserId),
+    )
+    .orderBy(desc(verifiableCredentials.issuedAt));
   return rows.map(serializeCredential);
 }
 
@@ -407,25 +494,39 @@ export async function listCredentialsForHolder(
  */
 async function resolveIssuerVmKeys(issuerDid: string): Promise<string[] | null> {
   if (issuerDid === OXY_DID) {
-    return buildOxyDidDocument().verificationMethod.map((vm) => vm.publicKeyHex);
+    return secp256k1KeysOf(buildOxyDidDocument());
   }
   const issuerUserId = parseUserDid(issuerDid);
-  if (!issuerUserId || !isValidObjectId(issuerUserId)) {
+  if (!issuerUserId) {
     return null;
   }
-  const issuer = await User.findById(issuerUserId)
-    .select('publicKey authMethods username type federation verifiedDomains')
-    .lean<DidUserInput | null>();
+  const issuer = await loadDidUser(issuerUserId);
   if (!issuer) {
     return null;
   }
-  return buildDidDocument(issuer).verificationMethod.map((vm) => vm.publicKeyHex);
+  return secp256k1KeysOf(buildDidDocument(issuer));
+}
+
+/**
+ * The hex public keys of a DID document's secp256k1 verification methods. The
+ * atproto `Multikey` VM carries the SAME key in multibase form (not hex), so it
+ * is intentionally excluded — credential signatures verify against the hex key.
+ */
+function secp256k1KeysOf(document: DidDocument): string[] {
+  return document.verificationMethod
+    .filter((vm): vm is Secp256k1VerificationMethod => vm.type === 'EcdsaSecp256k1VerificationKey2019')
+    .map((vm) => vm.publicKeyHex);
 }
 
 /** Best-effort lazy flip of an expired credential's status (never throws). */
-async function markExpired(id: IVerifiableCredential['_id']): Promise<void> {
+async function markExpired(id: string): Promise<void> {
   try {
-    await VerifiableCredential.updateOne({ _id: id, status: 'active' }, { $set: { status: 'expired' } });
+    await getDb()
+      .update(verifiableCredentials)
+      .set({ status: 'expired' })
+      .where(
+        and(eq(verifiableCredentials.id, id), eq(verifiableCredentials.status, 'active')),
+      );
   } catch (error) {
     logger.warn('Credential lazy-expire failed (non-fatal)', {
       component: 'civic.credential',
@@ -445,19 +546,30 @@ async function markExpired(id: IVerifiableCredential['_id']): Promise<void> {
  * source of truth, so any tampering of the signed bytes fails the signature.
  */
 export async function verifyCredential(idOrRecordId: string): Promise<CredentialVerification> {
-  let vc = await VerifiableCredential.findOne({ recordId: idOrRecordId }).lean<IVerifiableCredential | null>();
-  if (!vc && isValidObjectId(idOrRecordId)) {
-    vc = await VerifiableCredential.findById(idOrRecordId).lean<IVerifiableCredential | null>();
+  // Two lookups because the argument is EITHER a content address or a row id;
+  // the Mongo version needed an `isValidObjectId` guard before the second so
+  // Mongoose would not throw a `CastError`, and a text id simply matches no row.
+  const [byRecordId] = await getDb()
+    .select()
+    .from(verifiableCredentials)
+    .where(eq(verifiableCredentials.recordId, idOrRecordId))
+    .limit(1);
+  let vc: VerifiableCredentialRow | undefined = byRecordId;
+  if (!vc) {
+    [vc] = await getDb()
+      .select()
+      .from(verifiableCredentials)
+      .where(eq(verifiableCredentials.id, idOrRecordId))
+      .limit(1);
   }
   if (!vc) {
     return { valid: false, reason: 'not_found', credential: null };
   }
 
-  const signed = await SignedRecord.findOne({ recordId: vc.recordId }).lean<{ envelope: SignedRecordEnvelope } | null>();
-  if (!signed?.envelope) {
+  const env = await oxyRecordStore.envelopeByRecordId(vc.recordId);
+  if (!env) {
     return { valid: false, reason: 'record_missing', credential: serializeCredential(vc) };
   }
-  const env = signed.envelope;
 
   const issuerVmKeys = await resolveIssuerVmKeys(env.issuer);
   if (issuerVmKeys === null) {
@@ -466,15 +578,15 @@ export async function verifyCredential(idOrRecordId: string): Promise<Credential
   if (!issuerVmKeys.includes(env.publicKey)) {
     return { valid: false, reason: 'issuer_key_not_current', credential: serializeCredential(vc) };
   }
-  if (!verifyEnvelopeSignature(env)) {
+  if (!(await verifyEnvelopeSignature(env))) {
     return { valid: false, reason: 'bad_signature', credential: serializeCredential(vc) };
   }
 
   // Lazy expiry: flip an active-but-past-expiry row before reporting it.
   const now = Date.now();
   if (vc.status === 'active' && vc.expiresAt && vc.expiresAt.getTime() <= now) {
-    await markExpired(vc._id);
-    vc = { ...vc, status: 'expired' } as IVerifiableCredential;
+    await markExpired(vc.id);
+    vc = { ...vc, status: 'expired' };
   }
 
   if (vc.status === 'revoked') {
@@ -496,30 +608,41 @@ export async function verifyCredential(idOrRecordId: string): Promise<Credential
  * admin concern owned by the org seam.
  */
 export async function revokeCredential(id: string, issuerUserId: string): Promise<CredentialRevokeResult> {
-  if (!isValidObjectId(id)) {
-    return { ok: false, reason: 'not_found' };
-  }
-  const vc = await VerifiableCredential.findById(id);
+  const [vc] = await getDb()
+    .select()
+    .from(verifiableCredentials)
+    .where(eq(verifiableCredentials.id, id))
+    .limit(1);
   if (!vc) {
     return { ok: false, reason: 'not_found' };
   }
-  if (!vc.issuerUserId || vc.issuerUserId.toString() !== issuerUserId) {
+  if (!vc.issuerUserId || vc.issuerUserId !== issuerUserId) {
     return { ok: false, reason: 'not_issuer' };
   }
   if (vc.status === 'revoked') {
     return { ok: false, reason: 'already_revoked' };
   }
 
-  vc.status = 'revoked';
-  vc.revokedAt = new Date();
-  await vc.save();
+  // `status` and `revoked_at` move in ONE statement because the table's
+  // revocation CHECK requires them to agree — Mongo could store a revocation
+  // date on an active credential, and `verifyCredential` reads only the status.
+  const [revoked] = await getDb()
+    .update(verifiableCredentials)
+    .set({ status: 'revoked', revokedAt: new Date() })
+    .where(
+      and(eq(verifiableCredentials.id, vc.id), eq(verifiableCredentials.status, vc.status)),
+    )
+    .returning();
+  if (!revoked) {
+    return { ok: false, reason: 'already_revoked' };
+  }
 
   logger.info('Verifiable credential revoked', {
     component: 'civic.credential',
     issuerUserId,
     credentialId: id,
-    recordId: vc.recordId,
+    recordId: revoked.recordId,
   });
 
-  return { ok: true, credential: serializeCredential(vc) };
+  return { ok: true, credential: serializeCredential(revoked) };
 }

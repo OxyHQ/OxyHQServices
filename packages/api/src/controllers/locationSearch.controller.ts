@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { logger } from '../utils/logger';
 import locationService from '../services/locationService';
 import locationQueryService from '../services/locationQueryService';
@@ -24,7 +24,7 @@ export class LocationSearchController {
         });
       }
 
-      const limitNum = parseInt(limit as string) || 5;
+      const limitNum = Number.parseInt(limit as string) || 5;
       const useCacheBool = useCache === 'true';
 
       logger.info(`Searching locations for query: ${query} (limit: ${limitNum}, cache: ${useCacheBool})`);
@@ -78,8 +78,8 @@ export class LocationSearchController {
         });
       }
 
-      const latitude = parseFloat(lat as string);
-      const longitude = parseFloat(lon as string);
+      const latitude = Number.parseFloat(lat as string);
+      const longitude = Number.parseFloat(lon as string);
 
       if (isNaN(latitude) || isNaN(longitude)) {
         return res.status(400).json({ 
@@ -179,11 +179,11 @@ export class LocationSearchController {
         });
       }
 
-      const latitude = parseFloat(lat as string);
-      const longitude = parseFloat(lon as string);
-      const maxDistanceNum = parseFloat(maxDistance as string);
-      const limitNum = parseInt(limit as string);
-      const skipNum = parseInt(skip as string);
+      const latitude = Number.parseFloat(lat as string);
+      const longitude = Number.parseFloat(lon as string);
+      const maxDistanceNum = Number.parseFloat(maxDistance as string);
+      const limitNum = Number.parseInt(limit as string);
+      const skipNum = Number.parseInt(skip as string);
 
       const result = await locationQueryService.findLocationsNear(
         latitude,
@@ -218,8 +218,8 @@ export class LocationSearchController {
         });
       }
 
-      const limitNum = parseInt(limit as string);
-      const skipNum = parseInt(skip as string);
+      const limitNum = Number.parseInt(limit as string);
+      const skipNum = Number.parseInt(skip as string);
 
       const result = await locationQueryService.searchLocationsByText(
         query,

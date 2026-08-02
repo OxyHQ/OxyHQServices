@@ -1,8 +1,8 @@
 /**
  * Zod schemas for validating API responses in the auth app.
  *
- * The user / account / session RESPONSE contracts (`refreshAllResponseSchema`,
- * `currentUserResponseSchema`, `deviceSessionsResponseSchema`) plus the
+ * The user / account / session RESPONSE contracts (`currentUserResponseSchema`,
+ * `deviceLinkedSessionsResponseSchema`) plus the
  * device-flow `publicApplicationSchema` / `sessionStatusSchema` are NOT defined
  * here — they are owned by `@oxyhq/contracts` as the single source of truth
  * shared between the API (producer) and every consumer. Importing them straight
@@ -16,9 +16,8 @@
  */
 import { z } from "zod"
 import {
-    refreshAllResponseSchema,
     currentUserResponseSchema,
-    deviceSessionsResponseSchema,
+    deviceLinkedSessionsResponseSchema,
     publicApplicationSchema,
     sessionStatusSchema,
     safeParseContract,
@@ -31,9 +30,8 @@ import type {
 
 // Canonical, contracts-owned schemas re-exported for local import sites.
 export {
-    refreshAllResponseSchema,
     currentUserResponseSchema,
-    deviceSessionsResponseSchema,
+    deviceLinkedSessionsResponseSchema,
     publicApplicationSchema,
     sessionStatusSchema,
 }
@@ -42,23 +40,6 @@ export type {
     SessionStatusResponse,
     ApplicationTypeContract,
 }
-
-export const loginResponseSchema = z.object({
-    sessionId: z.string().optional(),
-    accessToken: z.string().optional(),
-    expiresAt: z.string().optional(),
-    authuser: z.number().int().nonnegative().optional(),
-    twoFactorRequired: z.boolean().optional(),
-    loginToken: z.string().optional(),
-    message: z.string().optional(),
-})
-
-export const signupResponseSchema = z.object({
-    sessionId: z.string().optional(),
-    authuser: z.number().int().nonnegative().optional(),
-    message: z.string().optional(),
-    errors: z.array(z.string()).optional(),
-})
 
 export const lookupResponseSchema = z.object({
     exists: z.boolean(),
@@ -69,16 +50,6 @@ export const lookupResponseSchema = z.object({
 })
 
 export const tokenResponseSchema = z.object({
-    accessToken: z.string(),
-    expiresAt: z.string().optional(),
-})
-
-/**
- * `POST /auth/refresh` reads the durable httpOnly `oxy_rt` cookie, rotates it,
- * and mints a fresh access token. It returns ONLY `{ accessToken, expiresAt }`
- * (no `sessionId` — that is decoded from the access token's JWT claims).
- */
-export const refreshResponseSchema = z.object({
     accessToken: z.string(),
     expiresAt: z.string().optional(),
 })
@@ -97,7 +68,7 @@ export const oauthStateSchema = z.object({
  *
  *   - `trusted`       — official/first-party app: never asks for consent.
  *   - `granted`       — a stored grant already covers the requested scopes.
- *   - `new`           — no grant yet; show the ConsentCard.
+ *   - `new`           — no grant yet; show the consent screen.
  *   - `scope_changed` — grant exists but the request adds scopes; re-consent.
  *
  * SECURITY: any response the schema rejects MUST fail safe to
@@ -116,7 +87,7 @@ export type ConsentDecisionResponse = z.infer<typeof consentDecisionSchema>
  * `GET /auth/oauth/consent` response body. Accepts either the API's wrapped
  * `{ data: { ... } }` envelope or a bare decision object. Fails safe: any body
  * the schema cannot validate (malformed, missing fields, unknown `reason`,
- * `null`) returns `true` so the caller renders the ConsentCard rather than
+ * `null`) returns `true` so the caller renders the consent screen rather than
  * auto-approving on a parse error.
  */
 export function consentRequiredFromBody(body: unknown): boolean {

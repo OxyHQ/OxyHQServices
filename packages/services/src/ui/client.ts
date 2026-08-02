@@ -5,7 +5,7 @@
  * These are direct exports without runtime detection overhead.
  *
  * @example
- * import { OxyProvider, useOxy, Avatar } from '@oxyhq/services/ui/client';
+ * import { OxyProvider, useOxy, LogoIcon } from '@oxyhq/services/ui/client';
  */
 
 // Components
@@ -13,16 +13,10 @@ export { default as OxyProvider } from './components/OxyProvider';
 export { default as OxySignInButton } from './components/OxySignInButton';
 export { default as OxyAuthPrompt } from './components/OxyAuthPrompt';
 export type { OxyAuthPromptProps } from './components/OxyAuthPrompt';
-export { default as OxyLogo } from './components/OxyLogo';
-export { default as Avatar } from './components/Avatar';
+export { LogoIcon } from './components/logo/LogoIcon';
+export { LogoText } from './components/logo/LogoText';
 export { default as FollowButton } from './components/FollowButton';
 export { default as OxyPayButton } from './components/OxyPayButton';
-export { FontLoader, setupFonts } from './components/FontLoader';
-export { default as OxyIcon } from './components/icon/OxyIcon';
-export { default as AccountMenu } from './components/AccountMenu';
-export type { AccountMenuProps } from './components/AccountMenu';
-export { default as AccountMenuButton } from './components/AccountMenuButton';
-export type { AccountMenuButtonProps } from './components/AccountMenuButton';
 
 // Context
 export { useOxy } from './context/OxyContext';

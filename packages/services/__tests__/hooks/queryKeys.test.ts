@@ -44,6 +44,49 @@ describe('queryKeys.users', () => {
     expect(queryKeys.users.detail('u1')).toEqual(['users', 'detail', 'u1']);
   });
 
+  it('detailForViewer() scopes relationship-bearing fetches by viewer', () => {
+    expect(queryKeys.users.detailForViewer('u1', '')).toEqual([
+      'users',
+      'detail',
+      'u1',
+      'viewer',
+      '',
+    ]);
+    expect(queryKeys.users.detailForViewer('u1', 'viewer-2')).toEqual([
+      'users',
+      'detail',
+      'u1',
+      'viewer',
+      'viewer-2',
+    ]);
+  });
+
+  it('byUsername() scopes relationship-bearing fetches by viewer', () => {
+    expect(queryKeys.users.byUsername('alice', '')).toEqual([
+      'users',
+      'detail',
+      'username',
+      'alice',
+      'viewer',
+      '',
+    ]);
+    expect(queryKeys.users.byUsername('alice', 'viewer-2')).toEqual([
+      'users',
+      'detail',
+      'username',
+      'alice',
+      'viewer',
+      'viewer-2',
+    ]);
+  });
+
+  it('byUsername() normalizes username casing/whitespace so seeders agree by construction', () => {
+    const canonical = queryKeys.users.byUsername('alice', 'viewer-2');
+    expect(queryKeys.users.byUsername('Alice', 'viewer-2')).toEqual(canonical);
+    expect(queryKeys.users.byUsername('ALICE', 'viewer-2')).toEqual(canonical);
+    expect(queryKeys.users.byUsername('  Alice  ', 'viewer-2')).toEqual(canonical);
+  });
+
   it('list() includes the supplied userIds', () => {
     expect(queryKeys.users.list(['a', 'b'])).toEqual(['users', 'list', ['a', 'b']]);
   });

@@ -95,21 +95,21 @@ export class BadRequestError extends ApiError {
 }
 
 export class UnauthorizedError extends ApiError {
-  constructor(message: string = 'Authentication required', details?: Record<string, unknown>) {
+  constructor(message = 'Authentication required', details?: Record<string, unknown>) {
     super(401, message, ErrorCodes.UNAUTHORIZED, details);
     this.name = 'UnauthorizedError';
   }
 }
 
 export class ForbiddenError extends ApiError {
-  constructor(message: string = 'Access forbidden', details?: Record<string, unknown>) {
+  constructor(message = 'Access forbidden', details?: Record<string, unknown>) {
     super(403, message, ErrorCodes.FORBIDDEN, details);
     this.name = 'ForbiddenError';
   }
 }
 
 export class NotFoundError extends ApiError {
-  constructor(message: string = 'Resource not found', details?: Record<string, unknown>) {
+  constructor(message = 'Resource not found', details?: Record<string, unknown>) {
     super(404, message, ErrorCodes.NOT_FOUND, details);
     this.name = 'NotFoundError';
   }
@@ -130,7 +130,7 @@ export class ValidationError extends ApiError {
 }
 
 export class InternalServerError extends ApiError {
-  constructor(message: string = 'Internal server error', details?: Record<string, unknown>) {
+  constructor(message = 'Internal server error', details?: Record<string, unknown>) {
     super(500, message, ErrorCodes.INTERNAL_SERVER_ERROR, details);
     this.name = 'InternalServerError';
   }

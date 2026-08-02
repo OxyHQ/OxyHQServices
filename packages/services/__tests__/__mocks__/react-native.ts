@@ -11,6 +11,17 @@ import React from 'react';
 
 type PlatformOS = 'ios' | 'android' | 'web' | 'windows' | 'macos';
 
+/**
+ * NOTE: `OS` defaults to `'web'`. A test that does not set it is testing WEB.
+ *
+ * That is a fine default for the UI, but it silently mis-aims any test of
+ * native-only behaviour: ten tests written for a native code path passed while
+ * exercising its web branch, and only went red once that branch gained a real
+ * `Platform.OS === 'web'` guard (`ui/session/backgroundSession.ts`). Nothing about
+ * such a test looks wrong, so set `Platform.OS` explicitly — per test, restoring
+ * or re-importing after `jest.resetModules()` — whenever the code under test
+ * branches on the platform.
+ */
 export const Platform: {
   OS: PlatformOS;
   select: <T>(obj: Partial<Record<PlatformOS | 'default' | 'native', T>>) => T | undefined;
@@ -69,6 +80,8 @@ export const AppState: {
  */
 export const Linking = {
   openURL: async (_url: string): Promise<void> => undefined,
+  /** Deep-link into the OS app-settings page (a refused-permission escape hatch). */
+  openSettings: async (): Promise<void> => undefined,
   addEventListener: (_event: string, _handler: (event: { url: string }) => void) => ({
     remove: () => undefined,
   }),
@@ -97,3 +110,104 @@ export const Text = ({
 
 export const ActivityIndicator = (props: Record<string, unknown>) =>
   React.createElement('span', { ...props, role: 'status' });
+
+export const TextInput = ({
+  value,
+  onChangeText,
+  onSubmitEditing,
+  placeholder,
+  accessibilityLabel,
+  testID,
+}: {
+  value?: string;
+  onChangeText?: (text: string) => void;
+  onSubmitEditing?: () => void;
+  placeholder?: string;
+  accessibilityLabel?: string;
+  testID?: string;
+  [key: string]: unknown;
+}) =>
+  React.createElement('input', {
+    value: value ?? '',
+    placeholder,
+    'aria-label': accessibilityLabel,
+    'data-testid': testID,
+    onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+    onKeyDown: (event: { key: string }) => {
+      if (event.key === 'Enter') onSubmitEditing?.();
+    },
+  });
+
+/** Minimal `AccessibilityInfo` stub — reduced-motion probe resolves false. */
+export const AccessibilityInfo = {
+  isReduceMotionEnabled: () => Promise.resolve(false),
+  addEventListener: () => ({ remove: () => undefined }),
+  announceForAccessibility: () => undefined,
+};
+
+/**
+ * Keep only DOM-safe props for the layout-primitive stubs below. RN passes
+ * `style` arrays, `hitSlop`/`accessibilityState` objects, `className`, etc. that
+ * would warn or throw when spread onto a jsdom host node — forward just the
+ * accessibility label (as `aria-label`) and test id.
+ */
+const domSafeProps = (props: Record<string, unknown>): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  if (typeof props.accessibilityLabel === 'string') {
+    out['aria-label'] = props.accessibilityLabel;
+  }
+  if (typeof props.testID === 'string') {
+    out['data-testid'] = props.testID;
+  }
+  // Forward `aria-expanded` verbatim, exactly as react-native-web does — it
+  // dropped the legacy `accessibilityState` object in 0.21, so `aria-expanded`
+  // is the one prop that reaches the DOM (and RN maps it to
+  // `accessibilityState.expanded` natively). Lets tests observe collapse state.
+  if (typeof props['aria-expanded'] === 'boolean') {
+    out['aria-expanded'] = props['aria-expanded'];
+  }
+  return out;
+};
+
+export const View = ({
+  children,
+  ...props
+}: {
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}) => React.createElement('div', domSafeProps(props), children);
+
+export const ScrollView = ({
+  children,
+  ...props
+}: {
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}) => React.createElement('div', domSafeProps(props), children);
+
+export const Modal = ({
+  children,
+  visible = true,
+  ...props
+}: {
+  children?: React.ReactNode;
+  visible?: boolean;
+  [key: string]: unknown;
+}) => (visible ? React.createElement('div', domSafeProps(props), children) : null);
+
+export const Pressable = ({
+  children,
+  onPress,
+  disabled,
+  ...props
+}: {
+  children?: React.ReactNode | ((state: { pressed: boolean }) => React.ReactNode);
+  onPress?: () => void;
+  disabled?: boolean;
+  [key: string]: unknown;
+}) =>
+  React.createElement(
+    'button',
+    { type: 'button', disabled, onClick: onPress, ...domSafeProps(props) },
+    typeof children === 'function' ? children({ pressed: false }) : children,
+  );

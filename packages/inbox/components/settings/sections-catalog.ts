@@ -12,6 +12,7 @@ import type { ComponentType } from 'react';
 import type { Props as IconProps } from '@oxyhq/bloom/icons';
 import {
   UserCircle_Stroke2_Corner0_Rounded,
+  Contacts_Stroke2_Corner2_Rounded,
   Bell_Stroke2_Corner0_Rounded,
   Envelope_Stroke2_Corner0_Rounded,
   ColorPalette_Stroke2_Corner0_Rounded,
@@ -33,6 +34,7 @@ export type SettingsSectionKey =
   | 'inbox-prefs'
   | 'privacy'
   | 'labels'
+  | 'contacts'
   | 'ai'
   | 'storage'
   | 'advanced'
@@ -46,6 +48,7 @@ export type SettingsSectionPath =
   | '/settings/inbox-prefs'
   | '/settings/privacy'
   | '/settings/labels'
+  | '/settings/contacts'
   | '/settings/ai'
   | '/settings/storage'
   | '/settings/advanced'
@@ -120,6 +123,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     description: 'Organize your inbox with custom labels',
     icon: Pin_Stroke2_Corner0_Rounded,
     tint: 'labels',
+    requiresAuth: true,
+  },
+  {
+    key: 'contacts',
+    path: '/settings/contacts',
+    label: 'Contacts',
+    description: 'People you email, for faster composing',
+    icon: Contacts_Stroke2_Corner2_Rounded,
+    tint: 'contacts',
     requiresAuth: true,
   },
   {

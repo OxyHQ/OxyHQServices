@@ -11,7 +11,6 @@
 import {
   fetchSessionsWithFallback,
   mapSessionsToClient,
-  validateSessionBatch,
 } from '../../src/ui/utils/sessionHelpers';
 
 describe('mapSessionsToClient', () => {
@@ -112,44 +111,5 @@ describe('fetchSessionsWithFallback', () => {
       getSessionsBySessionId: jest.fn().mockRejectedValue(new Error('user down')),
     };
     await expect(fetchSessionsWithFallback(oxy, 's1')).rejects.toThrow('user down');
-  });
-});
-
-describe('validateSessionBatch', () => {
-  it('returns an empty array for no sessions', async () => {
-    const result = await validateSessionBatch({ validateSession: jest.fn() }, []);
-    expect(result).toEqual([]);
-  });
-
-  it('deduplicates session ids before validating', async () => {
-    const validateSession = jest.fn().mockResolvedValue({ valid: true });
-    await validateSessionBatch({ validateSession }, ['s1', 's1', 's2'], { maxConcurrency: 5 });
-    expect(validateSession).toHaveBeenCalledTimes(2);
-  });
-
-  it('marks errored sessions as invalid', async () => {
-    const validateSession = jest.fn().mockImplementation((id: string) => {
-      if (id === 'bad') {
-        return Promise.reject(new Error('boom'));
-      }
-      return Promise.resolve({ valid: true, user: { id: 'u1' } });
-    });
-    const result = await validateSessionBatch({ validateSession }, ['good', 'bad'], { maxConcurrency: 2 });
-    const good = result.find((r) => r.sessionId === 'good');
-    const bad = result.find((r) => r.sessionId === 'bad');
-    expect(good?.valid).toBe(true);
-    expect(bad?.valid).toBe(false);
-    expect(bad?.error).toBeInstanceOf(Error);
-  });
-
-  it('clamps concurrency to at least 1 even when caller passes 0', async () => {
-    const validateSession = jest.fn().mockResolvedValue({ valid: true });
-    const result = await validateSessionBatch(
-      { validateSession },
-      ['s1', 's2', 's3'],
-      { maxConcurrency: 0 },
-    );
-    expect(result).toHaveLength(3);
-    expect(validateSession).toHaveBeenCalledTimes(3);
   });
 });

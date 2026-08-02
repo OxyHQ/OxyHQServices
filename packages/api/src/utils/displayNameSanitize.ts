@@ -2,39 +2,93 @@
  * Display-name character policy.
  *
  * A clean display name is composed ONLY of:
- *   - letters of any script (`\p{L}`),
+ *   - letters from the curated ALLOWLIST of scripts real names use — NOT `\p{L}`
+ *     (letters of ANY script), which admits decorative / historic / limited-use
+ *     scripts whose characters are `\p{L}` yet never appear in a real name (e.g.
+ *     `ᯅ` U+1BC5 Batak, Runic, Deseret, dingbat letters),
  *   - combining marks / accents (`\p{M}`, e.g. the acute accent in a decomposed
  *     "é"),
- *   - whitespace (`\s`),
- *   - the straight apostrophe (`'`, e.g. "O'Brien").
+ *   - Unicode space separators (`\p{Zs}`: the ASCII space, NBSP, ideographic
+ *     space, …) — but NOT control whitespace such as tab, newline, or carriage
+ *     return, which would break layout or enable multi-line spoofing,
+ *   - the straight apostrophe (`'`, e.g. "O'Brien"),
+ *   - four name separators (`·` U+00B7, `־` U+05BE, `་` U+0F0B, `・` U+30FB) —
+ *     but ONLY directly between two letters. `Codeur·euses`, `お坐・エガード`,
+ *     `אברמסקי־קרוננברג` and `འོད་ཟེར` survive intact; the same characters used
+ *     as ornament (`Roberto ·`) are still stripped. See
+ *     {@link UNFLANKED_SEPARATOR_PATTERN}. The ASCII hyphen is NOT among them.
  *
  * Everything else is removed: emoji (🐧), symbols (⁂ ⏚), `:emoji:` shortcodes,
- * digits, hyphens, dots, and any other punctuation.
+ * digits, hyphens, dots, control whitespace (tab/newline/CR), letters from
+ * non-allowlisted scripts, and any other punctuation. This holds for NON-ASCII
+ * input too — the allowlist is intersected with General_Category L, so an
+ * allowlisted script's own digits (`٥`, `०`), symbols (`۞`, `৳`), punctuation
+ * (`।`, `،`) and invisible controls (U+061C ARABIC LETTER MARK, U+180E) are
+ * stripped just like their ASCII counterparts.
+ *
+ * A code point that is formally a letter but reads as a hate symbol (`卐`
+ * U+5350, `卍` U+534D — both CJK Unified Ideographs, General_Category Lo,
+ * Script_Extensions Han) is stripped like any other disallowed character. That
+ * is NOT a rule of its own here: those code points are subtracted from the
+ * allowlist at generation time in `@oxyhq/core`, so they are simply absent from
+ * `DISPLAY_NAME_DISALLOWED_SOURCE`'s allowed set and this module removes them
+ * without knowing they exist — which is exactly why the strip path and the core
+ * reject gate cannot drift on them. A character policy cannot see MEANING, and
+ * no script- or category-level rule could have excluded these two without also
+ * rejecting every real Chinese, Japanese and Korean name.
+ *
+ * KNOWN LIMIT: a character policy still cannot see WORDS. A slur spelled in
+ * ordinary allowlisted letters survives, because it is built from the same
+ * characters every real name needs. That needs a word-level moderation layer,
+ * NOT a change to the script allowlist or the denylist.
+ *
+ * The character policy is NOT re-derived here: the allowlist and its patterns
+ * are the ONE source of truth in `@oxyhq/core` `validationUtils.ts`
+ * (`DISPLAY_NAME_DISALLOWED_SOURCE`, `DISPLAY_NAME_ORPHANED_MARK_SOURCE`). This
+ * module imports those sources and compiles the global-flag variants it needs to
+ * STRIP, so the strip path here and the core reject path (`isValidDisplayName`)
+ * can never drift.
  *
  * XSS reasoning
  * -------------
- * The allowed set `\p{L}\p{M}\s'` explicitly EXCLUDES `<`, `>`, `&`, and `"`,
- * so the output of {@link cleanDisplayName} can never contain an HTML/XSS
- * vector — there is simply no character in the output that can open a tag, an
- * entity, or an attribute. The only special character that survives is the
- * straight apostrophe `'`, which is inert in text and JSON and is escaped by
+ * The allowed set never includes `<`, `>`, `&`, or `"`, so the output of
+ * {@link cleanDisplayName} can never contain an HTML/XSS vector — there is
+ * simply no character in the output that can open a tag, an entity, or an
+ * attribute. The only special character that survives is the straight
+ * apostrophe `'`, which is inert in text and JSON and is escaped by
  * React / React Native at render time. That is why federated write sites
  * replace `sanitizeHtml(...)` with `cleanDisplayName(...)` for the NAME field:
  * `sanitizeHtml` would turn `O'Brien` into `O&#x27;Brien` (which then renders
  * literally), whereas `cleanDisplayName` yields a clean, already-safe `O'Brien`.
+ *
+ * Whitespace/Unicode normalization is NOT implemented here: it is delegated to
+ * the canonical `normalizeInlineText` from `@oxyhq/core`. This module owns only
+ * the display-name PRODUCT rules (character policy, shortcode stripping, length
+ * cap).
  */
 
-/** Maximum stored length of a display name, in code units after cleaning. */
-export const MAX_DISPLAY_NAME_LENGTH = 80;
+import {
+  DISPLAY_NAME_DISALLOWED_SOURCE,
+  DISPLAY_NAME_ORPHANED_MARK_SOURCE,
+  DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE,
+  MAX_DISPLAY_NAME_LENGTH,
+  normalizeInlineText,
+} from '@oxyhq/core';
+
+/** Re-exported from `@oxyhq/core` — single source of truth for API + clients. */
+export { MAX_DISPLAY_NAME_LENGTH };
 
 /** Matches a `:shortcode:` emoji token (e.g. `:bongoCat:`, `:+1:`). */
 const SHORTCODE_PATTERN = /:[A-Za-z0-9_+-]+:/g;
 
-/** Matches any character NOT allowed in a display name (global, Unicode). */
-const DISALLOWED_PATTERN = /[^\p{L}\p{M}\s']/gu;
-
-/** Single test for the presence of a disallowed character (non-global). */
-const DISALLOWED_PROBE = /[^\p{L}\p{M}\s']/u;
+/**
+ * Matches any character NOT allowed in a display name (global, Unicode),
+ * compiled from the core allowlist source so it can never drift from the reject
+ * gate. The whitespace class is `\p{Zs}` (space separators only), NOT `\s` — the
+ * latter would admit tab/newline/carriage return, which break layout and enable
+ * multi-line spoofing.
+ */
+const DISALLOWED_PATTERN = new RegExp(DISPLAY_NAME_DISALLOWED_SOURCE, 'gu');
 
 /**
  * Matches a run of combining marks (`\p{M}`) that is NOT attached to a base
@@ -43,17 +97,33 @@ const DISALLOWED_PROBE = /[^\p{L}\p{M}\s']/u;
  * or a position vacated by a stripped character). The whole orphaned run is
  * removed. A mark preceded by `\p{L}` (a base letter, e.g. the decomposed
  * accent in "Renée") or by another `\p{M}` (a multi-mark cluster) is KEPT
- * because the negative lookbehind fails at its position.
+ * because the negative lookbehind fails at its position. Compiled (global) from
+ * the same core source as the reject gate.
  *
  * This catches lone Tibetan/diacritic marks (e.g. U+0F18 in `"༘⋆"`) and the
  * trailing variation selector (U+FE0F) left behind after an emoji base such as
  * U+2764 (❤) is stripped, both of which would otherwise survive the
  * `\p{M}`-friendly policy as meaningless garbage.
  */
-const ORPHANED_MARK_PATTERN = /(?<![\p{L}\p{M}])\p{M}+/gu;
+const ORPHANED_MARK_PATTERN = new RegExp(DISPLAY_NAME_ORPHANED_MARK_SOURCE, 'gu');
 
-/** Single test for the presence of an orphaned combining mark (non-global). */
-const ORPHANED_MARK_PROBE = /(?<![\p{L}\p{M}])\p{M}/u;
+/**
+ * Matches a name separator (`·` U+00B7, `־` U+05BE, `་` U+0F0B, `・` U+30FB) that
+ * is NOT directly between two letters. Those four are admitted by the character
+ * class above because they JOIN two letters inside one real name
+ * (`Codeur·euses`, `お坐・エガード`); this pattern is the other half of that rule
+ * and removes the same characters when they are used as ornament instead
+ * (`Roberto ·`). Compiled (global) from the same core source as the reject gate,
+ * so the strip path and the gate cannot disagree about placement any more than
+ * they can about the character set.
+ *
+ * A preceding combining mark counts as letter-like, so an accent between the base
+ * letter and the separator does not make it look unflanked.
+ */
+const UNFLANKED_SEPARATOR_PATTERN = new RegExp(
+  DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE,
+  'gu'
+);
 
 /**
  * Produce a clean display name from arbitrary (possibly federated/untrusted)
@@ -69,42 +139,37 @@ const ORPHANED_MARK_PROBE = /(?<![\p{L}\p{M}])\p{M}/u;
  *      letter (e.g. a lone Tibetan mark `U+0F18`, or a `U+FE0F` variation
  *      selector left after its emoji base was stripped in step 3). Marks that
  *      are still attached to a base letter are kept.
- *   5. Collapse runs of whitespace to a single space and trim the ends.
- *   6. Cap the length to {@link MAX_DISPLAY_NAME_LENGTH}, trimming again in case
+ *   5. Replace every name separator that is not letter-flanked with a space,
+ *      keeping the ones that join two letters. This runs AFTER steps 3 and 4,
+ *      and the order is load-bearing in both directions: step 3 can vacate the
+ *      position next to a separator (`a☺·b` → `a ·b`, now genuinely unflanked),
+ *      and step 4 can remove an orphaned mark that would otherwise have posed as
+ *      the separator's left-hand flank. A space, not deletion, because these are
+ *      separators — deleting would silently fuse two tokens the author kept
+ *      apart (`a··b` → `a b`, never `ab`). Orphaned marks ARE deleted outright
+ *      one step earlier, because a base-less accent is noise rather than a
+ *      boundary.
+ *   6. Collapse whitespace and trim — delegated to {@link normalizeInlineText}, the
+ *      ecosystem's canonical single-line normalizer. A display name is a
+ *      one-line value, so every whitespace run (including a `\n` smuggled in by
+ *      a federated actor) becomes a single space. The explicit NFC pass in step 1
+ *      is kept because the character policy in steps 3–5 must see the composed
+ *      form; `normalizeInlineText` re-normalizing an already-NFC string is a no-op.
+ *   7. Cap the length to {@link MAX_DISPLAY_NAME_LENGTH}, trimming again in case
  *      the slice landed on a boundary space.
  */
 export function cleanDisplayName(raw: string): string {
-  const collapsed = String(raw)
-    .normalize('NFC')
-    .replace(SHORTCODE_PATTERN, ' ')
-    .replace(DISALLOWED_PATTERN, ' ')
-    .replace(ORPHANED_MARK_PATTERN, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const collapsed = normalizeInlineText(
+    String(raw)
+      .normalize('NFC')
+      .replace(SHORTCODE_PATTERN, ' ')
+      .replace(DISALLOWED_PATTERN, ' ')
+      .replace(ORPHANED_MARK_PATTERN, '')
+      .replace(UNFLANKED_SEPARATOR_PATTERN, ' ')
+  );
 
   if (collapsed.length <= MAX_DISPLAY_NAME_LENGTH) {
     return collapsed;
   }
   return collapsed.slice(0, MAX_DISPLAY_NAME_LENGTH).trim();
-}
-
-/**
- * Whether `raw` already satisfies the display-name policy, i.e. it contains no
- * disallowed characters AND no orphaned combining marks. Used to REJECT native
- * (signup / profile edit) names with a 400 rather than silently stripping them.
- *
- * This mirrors {@link cleanDisplayName}: a value that the cleaner would alter
- * (beyond whitespace collapsing) is invalid here. The orphaned-mark probe runs
- * on the NFC-normalized form so a legitimate decomposed accent (`e`+◌́) — which
- * the cleaner recomposes into `é` — is NOT rejected, while a lone, base-less
- * mark (e.g. `"༘"`) IS.
- *
- * The function only checks the character set; an empty or whitespace-only
- * string is considered valid (`true`). Call sites that require a non-empty name
- * enforce that separately.
- */
-export function isValidDisplayName(raw: string): boolean {
-  return (
-    !DISALLOWED_PROBE.test(raw) && !ORPHANED_MARK_PROBE.test(raw.normalize('NFC'))
-  );
 }

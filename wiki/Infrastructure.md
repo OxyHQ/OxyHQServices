@@ -1,20 +1,20 @@
 # Infrastructure
 
-All Oxy production infrastructure runs on **AWS** in the **eu-west-1 (Ireland)** region in the production AWS account. Terraform IaC lives in the `oxy-infra` repo (state in a private S3 backend).
+All Oxy production infrastructure runs on **AWS** in the **us-west-2 (Oregon)** region in the production AWS account. Terraform IaC lives in the `oxy-infra` repo (state in a private S3 backend).
 
 ## Resources Overview
 
 | Resource | Type | Identifier | Region | Purpose |
 |----------|------|------------|--------|---------|
-| `oxy-cluster` | ECS Fargate cluster | — | eu-west-1 | All 6 backend services as Fargate tasks (linux/arm64) |
-| `oxy-alb` | Application Load Balancer | `<alb-dns-name>` | eu-west-1 | HTTPS termination (ACM multi-SAN cert) + host-based routing |
-| `oxy-valkey` | ElastiCache (Valkey) | — | eu-west-1 | Rate limiting + Socket.IO adapter |
-| `oxy-mongo` | EC2 (MongoDB 8 self-hosted) | `<mongo-instance-id>` (EIP `<mongo-public-ip>`) | eu-west-1 | Shared MongoDB for all Oxy apps. `/data` on a 100 GB gp3 EBS volume |
-| `<mongo-backup-bucket>` | S3 bucket | — | eu-west-1 | Daily `mongodump` archives under `daily/` (14-day retention) |
-| `<terraform-state-bucket>` | S3 bucket | — | eu-west-1 | Terraform remote state |
-| ECR | `<aws-account-id>.dkr.ecr.eu-west-1.amazonaws.com/oxy/<app>` | one per service | eu-west-1 | linux/arm64 images |
+| `oxy-cluster` | ECS Fargate cluster | — | us-west-2 | All 6 backend services as Fargate tasks (linux/arm64) |
+| `oxy-alb` | Application Load Balancer | `<alb-dns-name>` | us-west-2 | HTTPS termination (ACM multi-SAN cert) + host-based routing |
+| `oxy-valkey` | ElastiCache (Valkey) | — | us-west-2 | Rate limiting + Socket.IO adapter |
+| `oxy-mongo` | EC2 (MongoDB 8 self-hosted) | `<mongo-instance-id>` (EIP `<mongo-public-ip>`) | us-west-2 | Shared MongoDB for all Oxy apps. `/data` on a 100 GB gp3 EBS volume |
+| `<mongo-backup-bucket>` | S3 bucket | — | us-west-2 | Daily `mongodump` archives under `daily/` (14-day retention) |
+| `<terraform-state-bucket>` | S3 bucket | — | us-west-2 | Terraform remote state |
+| ECR | `237343248947.dkr.ecr.us-west-2.amazonaws.com/oxy/<app>` | one per service | us-west-2 | linux/arm64 images |
 | `oxy-github-deploy` | IAM role | — | — | GitHub OIDC trust; no static AWS keys in repo secrets |
-| SES | — | — | eu-west-1 | Outbound email + inbound via Cloudflare Email Routing |
+| SES | — | — | us-west-2 | Outbound email + inbound via Cloudflare Email Routing |
 | Cloudflare Pages | — | — | — | Static frontends (accounts, auth, console, inbox) |
 
 ### Backend services on `oxy-cluster`

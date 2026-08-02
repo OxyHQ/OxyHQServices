@@ -1,12 +1,14 @@
 import mongoose, { Document, Schema } from "mongoose";
+import {
+  ORGANIZATION_CATEGORIES,
+  TRUST_TIERS,
+  type OrganizationCategory,
+  type TrustTier,
+} from "@oxyhq/contracts";
 import { maybeHashEmail, maybeHashPhone } from "../utils/contactHash";
 import { composeDisplayName } from "../utils/displayName";
 import { buildUserDid } from "../services/did.service";
-import {
-  TRUST_TIERS,
-  INFLUENCE_MIN,
-  type TrustTier,
-} from "../utils/reputation.constants";
+import { INFLUENCE_MIN } from "../utils/reputation.constants";
 
 /**
  * Methods by which a user can prove ownership of a custom domain for the
@@ -60,15 +62,16 @@ export function isValidUserColor(value: unknown): boolean {
 
 /**
  * Represents an authentication method linked to a user account.
- * Users can have multiple auth methods (identity, password, social) linked to the same account.
+ * An account may link an identity key and/or one or more passkeys (webauthn).
  */
 export interface AuthMethod {
-  type: 'identity' | 'password' | 'google' | 'apple' | 'github';
+  type: 'identity' | 'webauthn';
   linkedAt: Date;
   metadata?: {
     publicKey?: string;      // For identity type
-    email?: string;          // For password/social types
-    providerId?: string;     // For social types (Google ID, Apple ID, etc.)
+    email?: string;          // Optional contact email captured at link time
+    credentialID?: string;   // For webauthn type — the passkey's base64url credential id
+    name?: string;           // For webauthn type — the passkey's user-facing label
   };
 }
 
@@ -77,11 +80,10 @@ export type AuthMethodType = AuthMethod['type'];
 /**
  * Canonical constructor for an {@link AuthMethod} entry.
  *
- * Every entry point that links an auth method (register, signup, social
- * sign-in, identity/password/social linking) stamps `linkedAt = new Date()`
- * and the provider `metadata` by hand. Centralising that here keeps the shape
- * identical across all of them and makes the linked-at semantics a single
- * source of truth.
+ * Every entry point that links an auth method (register, passkey registration,
+ * identity linking) stamps `linkedAt = new Date()` and the provider `metadata`
+ * by hand. Centralising that here keeps the shape identical across all of them
+ * and makes the linked-at semantics a single source of truth.
  */
 export function buildAuthMethod(type: AuthMethodType, metadata?: AuthMethod['metadata']): AuthMethod {
   return { type, linkedAt: new Date(), metadata };
@@ -94,6 +96,9 @@ export function buildAuthMethod(type: AuthMethodType, metadata?: AuthMethod['met
  */
 export const ACCOUNT_KINDS = ['personal', 'organization', 'project', 'bot'] as const;
 export type AccountKind = (typeof ACCOUNT_KINDS)[number];
+
+/** Re-export — single source of truth is `@oxyhq/contracts`. */
+export { ORGANIZATION_CATEGORIES, type OrganizationCategory };
 
 /** Account-graph lifecycle state (additive — non-personal accounts only). */
 export const ACCOUNT_STATUSES = ['active', 'archived'] as const;
@@ -119,7 +124,6 @@ export interface IUser extends Document {
    */
   hashedPhone?: string;
   publicKey?: string; // ECDSA secp256k1 public key (hex) - primary identifier for local identity
-  password?: string; // Hashed password for password-based accounts
   refreshToken?: string | null;
   authMethods?: AuthMethod[]; // Linked authentication methods for unified auth
   /**
@@ -152,6 +156,12 @@ export interface IUser extends Document {
    * {@link AccountMember} rows.
    */
   kind?: AccountKind;
+  /**
+   * Real-estate / team taxonomy for `kind: 'organization'` accounts only
+   * (agency, cooperative, landlord, other). Orthogonal to `kind` — never use
+   * `kind` for Homiio-specific profile types.
+   */
+  organizationCategory?: OrganizationCategory;
   /** Adjacency edge: the immediate parent account in the tree (null for roots). */
   parentAccountId?: mongoose.Types.ObjectId | null;
   /** Materialised path of ancestor account ids, ordered root → immediate parent. */
@@ -188,12 +198,6 @@ export interface IUser extends Document {
   };
   automation?: {
     ownerId?: string;   // User ID of the human owner/creator
-  };
-  twoFactorAuth?: {
-    enabled: boolean;
-    secret?: string; // TOTP secret (encrypted)
-    backupCodes?: string[]; // Hashed backup codes
-    verifiedAt?: Date; // When 2FA was last verified
   };
   following?: mongoose.Types.ObjectId[];
   followers?: mongoose.Types.ObjectId[];
@@ -245,7 +249,15 @@ export interface IUser extends Document {
    * Defaults to `false`, so it is a no-op until populated.
    */
   isSensitive?: boolean;
-  language?: string;
+  /**
+   * Ordered account locales (full BCP-47 `language-REGION`, e.g. `en-US`,
+   * `es-ES`), PRIMARY (UI) locale first. This is the ONLY language field on the
+   * account — there is no singular `language`. Entries are normalized and
+   * validated at the write boundary via `@oxyhq/core` (`normalizeLocale` /
+   * `isSupportedLocale`); the read path resolves them with `getUserLanguages`.
+   * Defaults to `['en-US']` for new accounts with no declared locale.
+   */
+  languages?: string[];
   privacySettings: {
     isPrivateAccount: boolean;
     hideOnlineStatus: boolean;
@@ -268,6 +280,7 @@ export interface IUser extends Document {
     muteKeywords: boolean;
     discoverableByEmail?: boolean;
     discoverableByPhone?: boolean;
+    fediverseSharing: boolean;
   };
   // Avatar file ID referencing assets collection
   avatar?: string; // file id
@@ -343,6 +356,14 @@ export interface IUser extends Document {
     reduceMotion?: boolean;
     timezone?: string;
   };
+  // Portable theme preference (mode + Bloom color-preset KEY). Distinct from the
+  // mode-only `userPreferences.theme`: it carries the color preset Bloom needs to
+  // fully theme. Rides the self/session payload so every Oxy app themes at cold
+  // boot with no extra round-trip. Absent until the user sets it.
+  themePreference?: {
+    mode: 'light' | 'dark' | 'system';
+    colorPreset: string;
+  };
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -377,9 +398,13 @@ export interface IUser extends Document {
   updateLocationCoordinates(locationId: string, lat: number, lon: number): Promise<IUser>;
 }
 
+// `trim` is a storage-level backstop only. The real display-name policy (NFC,
+// character set, whitespace collapse, length cap) is `cleanDisplayName`, applied
+// by every write path — native profile edits (`user.service`), signup
+// (`session.controller`) and federated actor sync (`federation.service`).
 const NameSchema = new Schema({
-  first: { type: String, default: "" },
-  last: { type: String, default: "" },
+  first: { type: String, default: "", trim: true },
+  last: { type: String, default: "", trim: true },
 });
 
 // Virtual for full name
@@ -443,35 +468,31 @@ const UserSchema: Schema = new Schema(
       unique: true,
       sparse: true,
       trim: true,
+      // Canonical secp256k1 keys are stored uncompressed + lowercased (see
+      // SignatureService.canonicalizePublicKey). `lowercase` guards the case
+      // dimension of the unique index so a re-cased duplicate cannot slip past
+      // it. Existing keys are already lowercase-uncompressed, so this is safe.
+      lowercase: true,
       select: true,
-    },
-    password: {
-      type: String,
-      select: false,
     },
     refreshToken: {
       type: String,
       default: null,
       select: false,
     },
-    twoFactorAuth: {
-      enabled: { type: Boolean, default: false },
-      secret: { type: String, select: false }, // TOTP secret
-      backupCodes: { type: [String], select: false, default: [] }, // Hashed backup codes
-      verifiedAt: { type: Date },
-    },
     authMethods: {
       type: [{
         type: {
           type: String,
-          enum: ['identity', 'password', 'google', 'apple', 'github'],
+          enum: ['identity', 'webauthn'],
           required: true,
         },
         linkedAt: { type: Date, default: Date.now },
         metadata: {
           publicKey: { type: String },
           email: { type: String },
-          providerId: { type: String },
+          credentialID: { type: String },
+          name: { type: String },
         },
       }],
       default: [],
@@ -524,11 +545,20 @@ const UserSchema: Schema = new Schema(
       default: false,
       index: true,
     },
-    language: {
-      type: String,
-      default: 'en',
+    // Ordered account locales (full BCP-47 `language-REGION`), PRIMARY first.
+    // The ONLY language field on the account — there is no singular `language`.
+    // Entries are normalized/validated at the write boundary (`updateUserProfile`
+    // via `@oxyhq/core`). Defaults to `['en-US']` for new accounts.
+    //
+    // NOTE: there is deliberately no top-level `language` field. The `locations`
+    // text index below leaves `language_override` at its implicit default
+    // (`language`); with no such field on any document, MongoDB uses the index's
+    // `default_language` and never reads a locale (e.g. `es-ES`) as a text-search
+    // language — which would raise error 17262.
+    languages: {
+      type: [String],
+      default: ['en-US'],
       select: true,
-      trim: true,
     },
     following: [
       {
@@ -570,6 +600,7 @@ const UserSchema: Schema = new Schema(
       // target user explicitly chooses to be discoverable by that channel.
       discoverableByEmail: { type: Boolean, default: false },
       discoverableByPhone: { type: Boolean, default: false },
+      fediverseSharing: { type: Boolean, default: true },
     },
   avatar: { type: String },
     color: {
@@ -595,8 +626,8 @@ const UserSchema: Schema = new Schema(
     birthday: { type: String, trim: true },
     locations: [{
       id: { type: String, required: true },
-      name: { type: String, required: true },
-      label: { type: String },
+      name: { type: String, required: true, trim: true },
+      label: { type: String, trim: true },
       type: { 
         type: String, 
         enum: ['home', 'work', 'school', 'other'],
@@ -626,11 +657,15 @@ const UserSchema: Schema = new Schema(
       createdAt: { type: Date, default: Date.now },
       updatedAt: { type: Date, default: Date.now }
     }],
-    links: [{ type: String }],
+    links: [{ type: String, trim: true }],
+    // `title` / `description` hold text scraped from a REMOTE page. `trim` is a
+    // backstop; the full normalization (interior newlines from an indented
+    // `<title>`, length caps) happens on the write path — see
+    // `utils/profileTextNormalization.ts`.
     linksMetadata: [{
-      url: { type: String, required: true },
-      title: { type: String, required: true },
-      description: { type: String, required: true },
+      url: { type: String, required: true, trim: true },
+      title: { type: String, required: true, trim: true },
+      description: { type: String, required: true, trim: true },
       image: { type: String }
     }],
     accountExpiresAfterInactivityDays: {
@@ -676,6 +711,11 @@ const UserSchema: Schema = new Schema(
       enum: ACCOUNT_KINDS,
       default: 'personal',
       index: true,
+    },
+    organizationCategory: {
+      type: String,
+      enum: ORGANIZATION_CATEGORIES,
+      required: false,
     },
     parentAccountId: {
       type: Schema.Types.ObjectId,
@@ -744,6 +784,18 @@ const UserSchema: Schema = new Schema(
       reduceMotion: { type: Boolean, default: false },
       timezone: { type: String, default: '' },
     },
+    // Portable theme preference (mode + Bloom color-preset key). Persisted via
+    // `PUT /users/me`; rides the self/session payload so every Oxy app themes at
+    // cold boot with no extra network call. Deliberately NO default — the whole
+    // subdoc stays absent until the user chooses a theme, so consumers fall back
+    // to their own default until then.
+    themePreference: {
+      mode: {
+        type: String,
+        enum: ['light', 'dark', 'system'],
+      },
+      colorPreset: { type: String },
+    },
   },
   {
     timestamps: true,
@@ -773,8 +825,9 @@ UserSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
   transform: function(doc, ret) {
-    // Ensure id is set to publicKey or fallback to _id
-    ret.id = ret.publicKey || ret.id || ret._id?.toString();
+    // DTO `id` is the stable Mongo ObjectId — NEVER the publicKey. Social graph
+    // edges, posts, and client follow maps all key on `_id`.
+    ret.id = ret._id?.toString() || ret.id;
     delete ret.password;
     delete ret._id;
     // Strip contact-discovery internals — these must never leak to clients.
@@ -787,8 +840,9 @@ UserSchema.set("toJSON", {
 UserSchema.set("toObject", {
   virtuals: true,
   transform: function(doc, ret) {
-    // Ensure id is set to publicKey or fallback to _id
-    ret.id = ret.publicKey || ret.id || ret._id?.toString();
+    // DTO `id` is the stable Mongo ObjectId — NEVER the publicKey. Social graph
+    // edges, posts, and client follow maps all key on `_id`.
+    ret.id = ret._id?.toString() || ret.id;
     delete ret.password;
     delete ret._id;
     // Strip contact-discovery internals — these must never leak to clients.

@@ -43,11 +43,28 @@
     "currentAccount": "Actuel",
     "or": "ou",
     "viewAllAccounts": "Voir {{count}} de plus",
+    "createAccountLink": "Nouveau sur Oxy ? Créez un compte",
     "status": {
-      "accountSwitched": "Utilisation de {{name}}"
+      "accountSwitched": "Utilisation de {{name}}",
+      "signingIn": "Connexion…"
     }
   },
   "signup": {
+    "title": "Créez votre compte",
+    "subtitle": "Une seule identité pour tout l'écosystème.",
+    "commonsHeadline": "Créez votre identité dans Commons",
+    "commonsExplainer": "Commons est votre identité Oxy en autoconservation complète : une seule app, partout.",
+    "createInCommons": "Créez votre identité dans Commons",
+    "passkeyAlternative": "Pas de Commons ? Créez une clé d'accès sur cet appareil",
+    "createAccount": "Créer un compte",
+    "creating": "Création…",
+    "usernamePlaceholder": "Choisissez un nom d'utilisateur",
+    "usernameChecking": "Vérification…",
+    "usernameAvailable": "Disponible",
+    "usernameTaken": "Ce nom d'utilisateur est déjà pris",
+    "backToSignInLink": "Vous avez déjà un compte ? Connectez-vous",
+    "hubExplainer": "Créez votre Oxy ID dans une fenêtre sécurisée, puis revenez directement.",
+    "continueInWindow": "Continuer dans une nouvelle fenêtre",
     "welcome": {
       "title": "Bienvenue sur Oxy !",
       "subtitle": "Créez votre compte en quelques étapes",
@@ -94,6 +111,33 @@
       "legalReminder": "En créant un compte, vous acceptez nos Conditions d'utilisation et notre Politique de confidentialité."
     }
   },
+  "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "Vos comptes"
+    },
+    "loading": "Chargement des comptes...",
+    "qrHeadline": "Connectez-vous avec votre identité Oxy",
+    "signInWithOxy": "Se connecter avec Oxy",
+    "useIdentityOnDevice": "Pas de Commons ? Utilisez une clé d'accès sur cet appareil",
+    "passkeySigningIn": "Connexion…",
+    "getCommons": "Obtenir Commons",
+    "commonsNotInstalled": "Pas de Commons ? Téléchargez l'app pour vous connecter avec votre Oxy ID.",
+    "showQrAnyway": "J'ai Commons sur un autre appareil",
+    "switchWhileSignedInAs": "Changer de compte, connecté en tant que {{name}}",
+    "manageOnDevice": "Gérer les comptes sur cet appareil",
+    "continueWithOxy": "Continuer avec Oxy",
+    "havingTrouble": "Un problème ?",
+    "progress": {
+      "preparing": "Préparation de la demande",
+      "awaitingApproval": "En attente d'approbation",
+      "scanWithCommons": "Scannez avec Commons sur votre téléphone",
+      "continueInCommons": "Continuez dans Commons",
+      "checkCommons": "Consultez Commons sur votre téléphone",
+      "openedInCommons": "Ouvert dans Commons",
+      "confirming": "Confirmation de l'identité",
+      "confirmed": "Identité confirmée"
+    }
+  },
   "common": {
     "actions": {
       "back": "Retour",
@@ -105,7 +149,8 @@
       "verify": "Vérifier",
       "resetPassword": "Réinitialiser le mot de passe",
       "signedOut": "Déconnecté",
-      "close": "Fermer"
+      "close": "Fermer",
+      "tryAgain": "Réessayer"
     },
     "links": {
       "recoverAccount": "Récupérer votre compte",
@@ -193,6 +238,7 @@
       "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
     },
     "item": {
+      "granted": "Accordé {{relative}}",
       "lastUsed": "Last used {{relative}}"
     },
     "confirm": {
@@ -207,12 +253,30 @@
   "accountMenu": {
     "label": "Menu du compte",
     "manage": "Gérer votre compte Oxy",
+    "viewProfile": "Voir le profil",
     "addAnother": "Ajouter un autre compte",
     "signOutAll": "Se déconnecter de tous les comptes",
     "open": "Menu du compte",
     "openHint": "Ouvre le menu du compte",
     "openWithUser": "Menu du compte de {{name}}",
     "switching": "Changement de compte…",
-    "signOutAccount": "Déconnecter {{name}}"
+    "signOutAccount": "Déconnecter {{name}}",
+    "greeting": "Bonjour, {{name}} !",
+    "switchAccount": "Changer de compte",
+    "storage": {
+      "title": "Stockage Oxy",
+      "usage": "{{used}} sur {{total}} utilisés",
+      "used": "Utilisé",
+      "free": "Libre",
+      "unavailable": "Détails d'utilisation indisponibles",
+      "upgrade": "Améliorer l'offre",
+      "manage": "Gérer le stockage"
+    },
+    "data": "Vos données dans Oxy",
+    "settings": "Paramètres Oxy",
+    "help": "Aide et commentaires",
+    "signOut": "Se déconnecter",
+    "privacy": "Politique de confidentialité",
+    "terms": "Conditions d'utilisation"
   }
 }

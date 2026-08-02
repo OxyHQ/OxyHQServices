@@ -1,71 +1,51 @@
 import React from 'react';
-import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { Tabs } from 'expo-router/tabs';
+import { TabBarMinimizeProvider } from '@oxyhq/bloom/tab-bar';
 import { ErrorFallback } from '@/components/error-fallback';
-import { useColors } from '@/hooks/useColors';
-import { useTranslation } from '@/lib/i18n';
+import { CommonsTabBar } from '@/components/CommonsTabBar';
 
 /**
- * Native bottom tab bar — the post-auth navigation shell for Commons.
+ * Bottom tab bar — the post-auth navigation shell for Commons.
  *
- * Uses expo-router's native tab bar (`NativeTabs`, Expo SDK 56) so the tab bar
- * is a real platform UITabBar / BottomNavigationView, not a JS component. Three
- * static tabs (well under Android's max of 5), each backed by its own route
- * group + nested `<Stack>` (native tabs render no headers, so each group owns
+ * The bar itself is Bloom's floating glass pill (`CommonsTabBar`), rendered
+ * through the navigator's `tabBar` slot. It replaced the platform `NativeTabs`
+ * bar so Commons matches the rest of the ecosystem; the navigator underneath is
+ * still a real tab navigator, which is what keeps each group's nested `<Stack>`
+ * alive when the user switches tabs. Three static tabs, each backed by its own
+ * route group + nested `<Stack>` (the tabs render no headers, so each group owns
  * its titles and detail-screen pushes):
  *
  *   (id)         ID           — Oxy ID card + identity overview + scanned-card view
  *   (reputation) Reputación   — reputation breakdown
  *   (settings)   Ajustes      — identity/vault management
  *
- * `(id)` is the first trigger, so the native tab bar lands there on cold start.
- * The QR scanner is NOT a tab — it is an action opened from the ID landing's
- * Bloom FAB as a root-level full-screen modal (`app/(scan)`).
+ * `(id)` is declared first, so the bar lands there on cold start. The QR scanner
+ * is NOT a tab — it is an action opened from the ID landing's Bloom FAB as a
+ * root-level full-screen modal (`app/(scan)`).
  *
- * `name` MUST match each route-group folder name INCLUDING parentheses. The
- * trigger set is static (no conditional/loop rendering) per the native-tabs
- * contract; only the localized labels vary.
+ * `name` MUST match each route-group folder name INCLUDING parentheses.
  *
- * The native tab bar is themed from Bloom tokens via `useColors()` (the same
- * resolver every Commons screen uses, which wraps `@oxyhq/bloom/theme`'s
- * `useTheme()`): the active icon + label use the normal `text` color (white in
- * dark / black in light) sitting on the SOFT `primarySubtle` active-indicator
- * pill (Bloom's Material-3 "primary container"), so the active item reads as a
- * high-contrast glyph on a tinted pill. The Android tap ripple also uses
- * `primarySubtle` so the touch feedback feels on-brand instead of the bright
- * system default. `card`/`textSecondary` drive the bar background and the
- * inactive icon/label. Since `useColors()` is a hook, the layout re-renders on a
- * light/dark flip and the bar re-tints — no hardcoded colors, no native config
- * (Fast-Refresh-safe). The surrounding navigation chrome already inherits Bloom
- * via the root layout's `ThemeProvider value={useNavigationTheme()}`.
+ * Theming is no longer wired here: Bloom's bar resolves all five of its colors
+ * from the same `BloomThemeProvider` tokens `useColors()` reads, so it follows a
+ * light/dark flip and the active preset on its own. The surrounding navigation
+ * chrome still inherits Bloom via the root layout's
+ * `ThemeProvider value={useNavigationTheme()}`.
+ *
+ * `TabBarMinimizeProvider` wraps the navigator rather than sitting inside it: it
+ * has to be an ancestor of BOTH the screens that drive the minimize signal
+ * (through `ScreenContentWrapper`'s scroll handler) and the bar that reads it.
+ * Mounted any lower, `useMinimizeState()` silently hands each consumer its own
+ * local fallback and the bar never minimizes, with no error anywhere.
  */
 export default function TabsLayout() {
-  const { t } = useTranslation();
-  const colors = useColors();
-
   return (
-    <NativeTabs
-      tintColor={colors.text}
-      backgroundColor={colors.card}
-      iconColor={colors.textSecondary}
-      indicatorColor={colors.primarySubtle}
-      rippleColor={colors.primarySubtle}
-      labelStyle={{ color: colors.textSecondary }}
-    >
-      <NativeTabs.Trigger name="(id)">
-        <NativeTabs.Trigger.Icon sf="person.text.rectangle" md="badge" />
-        <NativeTabs.Trigger.Label>{t('tabs.id')}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="(reputation)">
-        <NativeTabs.Trigger.Icon sf="star.circle" md="stars" />
-        <NativeTabs.Trigger.Label>{t('tabs.reputation')}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="(settings)">
-        <NativeTabs.Trigger.Icon sf="gearshape" md="settings" />
-        <NativeTabs.Trigger.Label>{t('tabs.settings')}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
+    <TabBarMinimizeProvider>
+      <Tabs tabBar={(props) => <CommonsTabBar {...props} />} screenOptions={{ headerShown: false }}>
+        <Tabs.Screen name="(id)" />
+        <Tabs.Screen name="(reputation)" />
+        <Tabs.Screen name="(settings)" />
+      </Tabs>
+    </TabBarMinimizeProvider>
   );
 }
 

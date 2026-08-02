@@ -7,12 +7,9 @@
 
 import { OxyServicesBase } from '../OxyServices.base';
 import { OxyServicesAuthMixin } from './OxyServices.auth';
-import { OxyServicesFedCMMixin } from './OxyServices.fedcm';
-import { OxyServicesSilentAuthMixin } from './OxyServices.silent';
-import { OxyServicesRedirectAuthMixin } from './OxyServices.redirect';
-import { OxyServicesSsoMixin } from './OxyServices.sso';
 import { OxyServicesUserMixin } from './OxyServices.user';
 import { OxyServicesIdentityMixin } from './OxyServices.identity';
+import { OxyServicesIdentityBackupMixin } from './OxyServices.identityBackup';
 import { OxyServicesPrivacyMixin } from './OxyServices.privacy';
 import { OxyServicesLanguageMixin } from './OxyServices.language';
 import { OxyServicesPaymentMixin } from './OxyServices.payment';
@@ -28,10 +25,13 @@ import { OxyServicesUtilityMixin } from './OxyServices.utility';
 import { OxyServicesFeaturesMixin } from './OxyServices.features';
 import { OxyServicesTopicsMixin } from './OxyServices.topics';
 import { OxyServicesContactsMixin } from './OxyServices.contacts';
+import { OxyServicesNotificationsMixin } from './OxyServices.notifications';
 import { OxyServicesAppDataMixin } from './OxyServices.appData';
 import { OxyServicesCivicMixin } from './OxyServices.civic';
 import { OxyServicesNodesMixin } from './OxyServices.nodes';
 import { OxyServicesLinksMixin } from './OxyServices.links';
+import { OxyServicesDeviceBootMixin } from './OxyServices.deviceBoot';
+import { OxyServicesDeviceTransferMixin } from './OxyServices.deviceTransfer';
 
 /**
  * Instance shape of every mixin in the pipeline, intersected. The runtime
@@ -44,12 +44,9 @@ import { OxyServicesLinksMixin } from './OxyServices.links';
  */
 type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesAuthMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesFedCMMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesSilentAuthMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesRedirectAuthMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesSsoMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUserMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesIdentityMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesIdentityBackupMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesPrivacyMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLanguageMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesPaymentMixin<typeof OxyServicesBase>>>
@@ -64,10 +61,13 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesFeaturesMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesTopicsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesContactsMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesNotificationsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAppDataMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesCivicMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesNodesMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLinksMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesDeviceBootMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesDeviceTransferMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUtilityMixin<typeof OxyServicesBase>>>;
 
 /**
@@ -90,10 +90,9 @@ type MixinFunction = (Base: new (...args: unknown[]) => OxyServicesBase) => new 
  *
  * Order matters for dependencies:
  * 1. Base auth mixin first (required by all others)
- * 2. Cross-domain auth mixins (FedCM, silent iframe, Redirect)
- * 3. User mixin (requires auth)
- * 4. Feature mixins (can depend on user)
- * 5. Utility mixin last (augments all)
+ * 2. User mixin (requires auth)
+ * 3. Feature mixins (can depend on user)
+ * 4. Utility mixin last (augments all)
  *
  * To add a new mixin: insert it at the appropriate position in this array.
  */
@@ -101,21 +100,13 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     // Base authentication
     OxyServicesAuthMixin,
 
-    // Cross-domain authentication (web-only)
-    // - FedCM: Modern browser-native identity federation (Google-style)
-    // - Silent: iframe-based restore for first-party IdP hosts
-    // - Redirect: Traditional redirect-based authentication
-    OxyServicesFedCMMixin,
-    OxyServicesSilentAuthMixin,
-    OxyServicesRedirectAuthMixin,
-
-    // Central cross-domain SSO (opaque-code exchange).
-    OxyServicesSsoMixin,
-
     // User management (requires auth)
     OxyServicesUserMixin,
     // Self-sovereign identity (DID, signed records, auth-method ↔ VM mapping)
     OxyServicesIdentityMixin,
+    // Encrypted off-device identity backup (b3 Feature 1): store/restore an
+    // encrypted copy of the self-custody key, keyed off the recovery phrase.
+    OxyServicesIdentityBackupMixin,
     OxyServicesPrivacyMixin,
 
     // Feature mixins
@@ -137,6 +128,10 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesFeaturesMixin,
     OxyServicesTopicsMixin,
     OxyServicesContactsMixin,
+    // Push-token registration: the one SDK-owned register/unregister pair every
+    // Oxy app uses, and what lets a "Sign in with Oxy" request be delivered to a
+    // known Commons installation instead of falling back to a QR.
+    OxyServicesNotificationsMixin,
     OxyServicesAppDataMixin,
     // Civic / Commons "Oxy ID" (public signed cards, Oxy ID QR payload)
     OxyServicesCivicMixin,
@@ -146,6 +141,14 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     // Link previews / unfurls: SDK-owned link-metadata resolution via oxy-api,
     // so apps stop scraping link metadata locally.
     OxyServicesLinksMixin,
+
+    // Device-first token mint: the client half of the zero-cookie transport
+    // (`mintFromDeviceSecret` → `POST /session/device/token`).
+    OxyServicesDeviceBootMixin,
+
+    // Device-to-device identity transfer ("add a device"): E2E-encrypted key
+    // clone over a short-lived relay (b3 Feature 2).
+    OxyServicesDeviceTransferMixin,
 
     // Utility (last, can use all above)
     OxyServicesUtilityMixin,

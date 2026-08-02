@@ -6,7 +6,7 @@
  *
  * It is NOT a secret — it's a stable identifier the server uses to dedupe
  * device-local refresh-cookie slots (Google-style multi-account): a second
- * sign-in from the SAME device fingerprint reuses an existing `oxy_rt_${n}`
+ * sign-in from the SAME device fingerprint reuses an existing device-account
  * slot rather than spawning a new one. Persisted in `localStorage` under
  * `oxy_device_fingerprint` so subsequent visits send the same value.
  *

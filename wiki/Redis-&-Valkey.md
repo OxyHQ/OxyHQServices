@@ -1,6 +1,6 @@
 # Redis & Valkey
 
-The Oxy API uses **AWS ElastiCache (Valkey)** — cluster `oxy-valkey` in `eu-west-1` — for distributed rate limiting and Socket.IO cross-instance broadcasting. Valkey is a Redis-compatible in-memory data store, so the client and protocol are unchanged.
+The Oxy API uses **AWS ElastiCache (Valkey)** — cluster `oxy-valkey` in `us-west-2` — for distributed rate limiting and Socket.IO cross-instance broadcasting. Valkey is a Redis-compatible in-memory data store, so the client and protocol are unchanged.
 
 ## What It's Used For
 

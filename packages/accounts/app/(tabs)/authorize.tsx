@@ -8,12 +8,14 @@ import {
   Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useOxy, Avatar } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import { toast } from '@oxyhq/bloom';
 import { useColors } from '@/hooks/useColors';
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Button } from '@/components/ui';
-import { getDisplayName } from '@/utils/date-utils';
+import { getAccountDisplayName, getNormalizedUserHandle } from '@oxyhq/core';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useTranslation } from '@/lib/i18n';
 
@@ -133,7 +135,10 @@ export default function AuthorizeScreen() {
   }, [params.token, oxyServices, router]);
 
   // Get user display name via the canonical helper.
-  const displayName = useMemo(() => getDisplayName(user, locale), [user, locale]);
+  const displayName = useMemo(
+    () => user?.name?.displayName ?? getNormalizedUserHandle(user) ?? getAccountDisplayName(null, locale),
+    [user, locale],
+  );
 
   // Get avatar URL
   const avatarUrl = useAvatarUrl(user);
@@ -200,7 +205,7 @@ export default function AuthorizeScreen() {
           {/* Account summary — who you're authorizing as. */}
           <View style={styles.identityCardContainer}>
             <View style={[styles.accountSummary, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Avatar name={displayName} uri={avatarUrl} size={48} />
+              <Avatar name={displayName} source={avatarUrl} size={48} />
               <View style={styles.accountSummaryText}>
                 <Text style={[styles.accountSummaryName, { color: textColor }]} numberOfLines={1}>
                   {displayName}

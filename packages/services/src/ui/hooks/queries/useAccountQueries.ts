@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { authenticatedApiCall } from '@oxyhq/core';
-import type { AuthorizedApp, User } from '@oxyhq/core';
+import type { ConnectedApp, User } from '@oxyhq/core';
 import { queryKeys } from './queryKeys';
 import { mutationKeys } from '../mutations/mutationKeys';
 import { useOxy } from '../../context/OxyContext';
@@ -50,6 +50,15 @@ export const useUserProfiles = (sessionIds: string[], options?: { enabled?: bool
 /**
  * Get current authenticated user.
  *
+ * Hydrates from `GET /users/me` (the bearer identifies the session) rather than
+ * `GET /session/user/:activeSessionId`. Post zero-cookie cutover the bearer is
+ * the single source of session truth, so keying the CURRENT user off a session
+ * id in the URL was a second, independently-updated source that could disagree
+ * with the bearer during an account switch — the request fired under the
+ * previous account's token against the new account's session id and 404'd. The
+ * query KEY stays scoped to the active account so the cache re-scopes (and
+ * refetches) on a switch; only the URL stopped carrying a session id.
+ *
  * The store-mirror effect must NOT overwrite the in-memory user while a
  * write mutation is in flight — otherwise a stale background refetch
  * landing between optimistic update and server-confirmed update would
@@ -67,10 +76,7 @@ export const useCurrentUser = (options?: { enabled?: boolean }) => {
   const query = useQuery({
     queryKey: queryKeys.accounts.current(activeSessionId),
     queryFn: async () => {
-      if (!activeSessionId) {
-        throw new Error('No active session');
-      }
-      return await oxyServices.getUserBySession(activeSessionId);
+      return await oxyServices.getCurrentUser();
     },
     enabled: (options?.enabled !== false) && isAuthenticated && !!activeSessionId,
     staleTime: 1 * 60 * 1000, // 1 minute for current user
@@ -145,7 +151,20 @@ function parseUpdatedAt(value: unknown): number | null {
 }
 
 /**
- * Get user by ID
+ * Get user by ID (identity-by-id).
+ *
+ * Keyed on the viewer-INDEPENDENT `queryKeys.users.detail(id)`: this hook is
+ * the card-identity workhorse (name, avatar, username, verified) and does NOT
+ * read the viewer-relative `relationship` field. Keeping the key
+ * viewer-independent lets external by-id identity seeders / precache layers
+ * (e.g. Mention's card enrichment) that all write `queryKeys.users.detail(id)`
+ * share a single cache entry — a viewer-scoped key would dead-end every seed
+ * and cause avatar/name flashes plus N+1 fetches.
+ *
+ * A viewer-scoped, relationship-aware by-id PROFILE fetch is intentionally NOT
+ * this hook — it would be a separate future `useUserProfileById` keyed on
+ * `queryKeys.users.detailForViewer(id, viewerId)`. No current consumer reads
+ * `relationship` from a by-id fetch (only the username path does).
  */
 export const useUserById = (userId: string | null, options?: { enabled?: boolean }) => {
   const { oxyServices } = useOxy();
@@ -168,19 +187,49 @@ export const useUserById = (userId: string | null, options?: { enabled?: boolean
  * Get user profile by username
  */
 export const useUserByUsername = (username: string | null, options?: { enabled?: boolean }) => {
-  const { oxyServices } = useOxy();
+  const { oxyServices, user } = useOxy();
+  // Viewer-scope the cache. Authenticated single-profile fetches embed a
+  // viewer-relative `relationship` ({ isFollowing, followsYou }); anonymous
+  // fetches omit it and different viewers get different values. Without the
+  // active viewer in the key, react-query freezes the first (often anonymous
+  // cold-boot) copy and never refetches when the session lands ~5-25s later,
+  // so the "Follows you" tag flashes then vanishes forever. Adding the viewer
+  // makes anon vs authed distinct entries AND forces a refetch when the
+  // session resolves or the account switches. (The SDK's GET response cache is
+  // already identity-scoped by the access-token user id via `computeIdentityTag`,
+  // so it never cross-poisons `relationship` — the only gap was this key.)
+  const viewerId = user?.id ?? '';
 
   return useQuery({
-    queryKey: [...queryKeys.users.details(), 'username', username || ''],
+    queryKey: queryKeys.users.byUsername(username || '', viewerId),
     queryFn: async () => {
       if (!username) {
         throw new Error('Username is required');
       }
-      return await oxyServices.getProfileByUsername(username);
+      // Match queryKeys.users.byUsername normalization so the cache key and
+      // the API request agree (case-insensitive local handles).
+      const normalizedUsername = username.trim().toLowerCase();
+      return await oxyServices.getProfileByUsername(normalizedUsername);
     },
     enabled: (options?.enabled !== false) && !!username,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
+    // Enforce the `upsertCachedUser` stale-seed contract from THIS hook rather
+    // than relying on the consuming app's global `refetchOnMount` default.
+    // When a feed/post author is precached into the by-username key it is seeded
+    // SPARSE (no `createdAt`/`relationship`/`_count`) and marked STALE
+    // (`updatedAt: 0`) precisely so this hook refetches the full authoritative
+    // profile on mount. A consumer whose QueryClient sets
+    // `defaultOptions.queries.refetchOnMount: false` (a common perf setting —
+    // Mention does this) would otherwise serve the stale sparse seed forever and
+    // the authoritative fetch (which carries `createdAt`) would never run — the
+    // "Joined <date> missing depending on where you came from" bug. `true` (NOT
+    // `'always'`) with the 5m `staleTime` keeps it efficient: a genuinely fresh
+    // real fetch is NOT refetched, only a stale seed / >5m-old entry is.
+    // `useUserByUsername` is consumed ONLY for single-profile views (never an
+    // N-instance list), so this is exactly one fetch. `useUserById` — the card
+    // workhorse in N-instance lists — deliberately does NOT do this.
+    refetchOnMount: true,
   });
 };
 
@@ -205,21 +254,20 @@ export const useUsersBySessions = (sessionIds: string[], options?: { enabled?: b
 };
 
 /**
- * List the authenticated user's authorized RP apps (FedCM grants).
- *
- * Returns the intersection of the user's grants with the currently-approved
- * RP catalog. Drives the "Connected apps" management screen.
+ * List the third-party OAuth applications the current user has connected via
+ * the consent flow (`GET /auth/grants`). Drives the "Connected apps" management
+ * screen.
  */
-export const useAuthorizedApps = (options?: { enabled?: boolean }) => {
+export const useConnectedApps = (options?: { enabled?: boolean }) => {
   const { oxyServices, activeSessionId, isAuthenticated } = useOxy();
 
-  return useQuery<AuthorizedApp[]>({
+  return useQuery<ConnectedApp[]>({
     queryKey: queryKeys.connectedApps.list(),
     queryFn: async () => {
-      return authenticatedApiCall<AuthorizedApp[]>(
+      return authenticatedApiCall<ConnectedApp[]>(
         oxyServices,
         activeSessionId,
-        () => oxyServices.listAuthorizedApps()
+        () => oxyServices.listConnectedApps()
       );
     },
     enabled: (options?.enabled !== false) && isAuthenticated,

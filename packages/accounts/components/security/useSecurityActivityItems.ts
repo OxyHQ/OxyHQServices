@@ -25,7 +25,7 @@ interface UseSecurityActivityItemsArgs {
 
 /**
  * Builds the recent-activity `GroupedSection` rows for the security screen.
- * Each row opens a detail alert (type, severity, IP, device, browser, time)
+ * Each row opens a detail alert (type, severity, device, browser, time)
  * with an optional "view device" navigation action for device/sign-in events.
  *
  * Extracted verbatim from the security screen's inline `useMemo`.
@@ -49,12 +49,11 @@ export function useSecurityActivityItems({
       const description = formatEventDescription(activity);
       const deviceId = activity.deviceId;
 
-      // Show details on press - include IP, device info, etc.
+      // Show details on press - include device info, etc.
       const onPress = () => {
         const details = [
           `${t('security.activity.detailType')}: ${activity.eventType}`,
           `${t('security.activity.detailSeverity')}: ${severity}`,
-          activity.ipAddress ? `${t('security.activity.detailIp')}: ${activity.ipAddress}` : null,
           activity.deviceId && activity.metadata?.deviceName
             ? `${t('security.activity.detailDevice')}: ${activity.metadata.deviceName}`
             : activity.deviceId

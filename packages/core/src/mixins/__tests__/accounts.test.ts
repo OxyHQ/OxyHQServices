@@ -83,7 +83,7 @@ const appFixture: Application = {
   isOfficial: true,
   isInternal: false,
   capabilities: [],
-  redirectUris: ['https://mention.earth/__oxy/sso-callback'],
+  redirectUris: ['https://mention.earth/oauth/callback'],
   scopes: ['profile'],
   createdByUserId: 'u1',
   ownerAccountId: 'acc1',
@@ -176,55 +176,71 @@ describe('OxyServices.accounts', () => {
   });
 
   describe('switchToAccount', () => {
+    // Device-first: the switch route registers the switched session in the
+    // server-side DeviceSession set directly and returns the fresh access token
+    // + the resolved `authuser`. There is NO follow-up POST /auth/session.
     const switchResponse: SwitchAccountResult = {
       sessionId: 'sess_switch',
       deviceId: 'dev_switch',
       expiresAt: '2026-06-30T01:00:00.000Z',
       accessToken: 'access_switch',
+      authuser: 1,
       user: { id: 'acc1', username: 'oxy-org', name: { displayName: 'Oxy Org' } },
-      authuser: 2,
     };
 
-    it('posts to /:id/switch (no body, no cache), plants the token, sweeps the cache, and returns the session', async () => {
+    const routeByPath = (response = switchResponse) =>
+      makeRequestSpy.mockResolvedValue(response);
+
+    it('posts to /:id/switch, plants the token, carries the response authuser, and sweeps the cache', async () => {
       const setTokensSpy = jest.spyOn(oxy, 'setTokens');
       const clearCacheSpy = jest.spyOn(oxy, 'clearCache');
-      makeRequestSpy.mockResolvedValue(switchResponse);
+      routeByPath();
 
       const result = await oxy.switchToAccount('acc1');
 
-      // Request shape: POST, exact path, no body, cache disabled.
+      // Switch request shape: POST, exact path, no body, cache disabled.
       expect(makeRequestSpy).toHaveBeenCalledWith(
         'POST',
         '/accounts/acc1/switch',
         undefined,
         expect.objectContaining({ cache: false }),
       );
+      // No secondary /auth/session establishment — the switch registers the
+      // session server-side on its own.
+      expect(makeRequestSpy).toHaveBeenCalledTimes(1);
 
-      // Session planting: the access token from the body is installed as the
-      // active token (mirrors claimSessionByToken / verifyChallenge).
+      // The switch token is planted; the cache is swept AFTER planting.
       expect(setTokensSpy).toHaveBeenCalledWith('access_switch');
       expect(oxy.getAccessToken()).toBe('access_switch');
       expect(oxy.hasValidToken()).toBe(true);
-
-      // Identity changed → the whole GET cache is swept so reads refetch as the
-      // new account, AND it happens AFTER the token is planted.
       expect(clearCacheSpy).toHaveBeenCalledTimes(1);
       expect(setTokensSpy.mock.invocationCallOrder[0]).toBeLessThan(
         clearCacheSpy.mock.invocationCallOrder[0],
       );
 
-      // The returned session carries the target account (id-normalised) + authuser.
-      expect(result).toEqual({ ...switchResponse, user: { id: 'acc1', username: 'oxy-org', name: { displayName: 'Oxy Org' } } });
-      expect(result.authuser).toBe(2);
+      // The returned session carries the target account (id-normalised) + slot.
+      expect(result.sessionId).toBe('sess_switch');
+      expect(result.user).toEqual({ id: 'acc1', username: 'oxy-org', name: { displayName: 'Oxy Org' } });
+      expect(result.authuser).toBe(1);
 
       setTokensSpy.mockRestore();
       clearCacheSpy.mockRestore();
     });
 
     it('URL-encodes the accountId path segment', async () => {
-      makeRequestSpy.mockResolvedValue(switchResponse);
+      routeByPath();
       await oxy.switchToAccount('a b/c');
       expect(makeRequestSpy.mock.calls[0][1]).toBe('/accounts/a%20b%2Fc/switch');
+    });
+
+    it('omits authuser from the result when the switch response has none', async () => {
+      const { authuser, ...noAuthuser } = switchResponse;
+      routeByPath(noAuthuser as SwitchAccountResult);
+
+      const result = await oxy.switchToAccount('acc1');
+
+      expect(oxy.getAccessToken()).toBe('access_switch');
+      expect(result.authuser).toBeUndefined();
     });
 
     it('does NOT plant or sweep when the operator is not authorized (403 surfaces via handleError)', async () => {
@@ -235,9 +251,16 @@ describe('OxyServices.accounts', () => {
       );
 
       await expect(oxy.switchToAccount('acc1')).rejects.toThrow();
-      // A failed switch must NOT mutate session state.
+      // A failed switch must NOT mutate session state, and must NOT attempt the
+      // /auth/session establishment.
       expect(setTokensSpy).not.toHaveBeenCalled();
       expect(clearCacheSpy).not.toHaveBeenCalled();
+      expect(makeRequestSpy).not.toHaveBeenCalledWith(
+        'POST',
+        '/auth/session',
+        undefined,
+        expect.anything(),
+      );
 
       setTokensSpy.mockRestore();
       clearCacheSpy.mockRestore();

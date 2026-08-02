@@ -4,468 +4,94 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from 'react';
+import { Linking } from 'react-native';
+import { io } from 'socket.io-client';
 import { OxyServices, oxyClient } from '@oxyhq/core';
-import type { User, ApiError, SessionLoginResponse } from '@oxyhq/core';
-import type { AccountNode, CreateAccountInput } from '@oxyhq/core';
-import { KeyManager } from '@oxyhq/core';
-import type { ClientSession } from '@oxyhq/core';
-import {
-  runColdBoot,
-  resolveCentralAuthUrl,
-  registrableApex,
-  SSO_CALLBACK_PATH,
-  ssoStateKey,
-  ssoGuardKey,
-  ssoDestKey,
-  ssoNoSessionKey,
-  ssoAttemptedKey,
-  isCentralIdPOrigin,
-  guardActive,
-  allowSsoBounce,
-  ssoNavigate,
-  buildSsoBounceUrl,
-  consumeSsoReturn,
+import type {
+  User,
+  SessionLoginResponse,
+  AuthStateStore,
+  PersistedAuthState,
+  AccountDialogController,
+  AccountDialogView,
 } from '@oxyhq/core';
-import { toast } from '@oxyhq/bloom';
+import {
+  KeyManager,
+  establishIdentitySession,
+  installAuthRefreshHandler,
+  startTokenRefreshScheduler,
+  createAccountDialogController,
+  logger as loggerUtil,
+} from '@oxyhq/core';
+import {
+  registerAccountDialogControls,
+  notifyAccountDialogVisibility,
+} from '../navigation/accountDialogManager';
+import { redirectToAuthorize } from '../components/oauthNavigation';
+import { openPasskeyHubPopup } from '../components/passkeyHubPopup';
+import {
+  startWebOAuthSignIn,
+  type StartWebOAuthSignInOptions,
+} from '../oauth/browserAuthTransport';
+import type { WebOAuthSignInResult } from '../oauth/types';
+import { isWebBrowser } from '../utils/isWebBrowser';
+import { resolveDeliveryPlatform } from '../utils/deliveryPlatform';
+import { runProviderColdBoot } from '../boot/runProviderColdBoot';
+import { loadPersistedDeviceCredential } from '../utils/deviceCredential';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
-import { useSessionSocket } from '../hooks/useSessionSocket';
-import type { UseFollowHook } from '../hooks/useFollow.types';
 import { useLanguageManagement } from '../hooks/useLanguageManagement';
 import { useSessionManagement } from '../hooks/useSessionManagement';
-import { useAuthOperations } from './hooks/useAuthOperations';
+import { useAuthOperations, clearPersistedAuthSafe } from './hooks/useAuthOperations';
 import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys, createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
-import { isInvalidSessionError, isTimeoutOrNetworkError } from '../utils/errorHandlers';
-import { readActiveAuthuser, writeActiveAuthuser } from '../utils/activeAuthuser';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
-import { useQueryClient } from '@tanstack/react-query';
+import {
+  presentDetached,
+  topRouteSurface,
+  type SurfaceInstance,
+  type TrackedSurface,
+} from '../navigation/surfaces';
+import { useQueryClient, onlineManager } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
 import { useAvatarPicker } from '../hooks/useAvatarPicker';
 import { useAccountStore } from '../stores/accountStore';
-import { logger as loggerUtil } from '@oxyhq/core';
-import { useWebSSO, isWebBrowser } from '../hooks/useWebSSO';
-import { buildSilentGuardKey } from '../../utils/silentGuardKey';
-import { isCrossApexWeb, CrossApexDirectSignInError } from '../../utils/crossApex';
-import { createInSessionRefreshHandler, startTokenRefreshScheduler } from './inSessionTokenRefresh';
-import { mintSessionViaPerApexIframe, selectActiveRefreshAccount } from './silentSessionRestore';
+import {
+  createSessionClient,
+  createIdentitySessionBinding,
+  createPlatformAuthStateStore,
+  deviceStateToClientSessions,
+  activeSessionIdOf,
+  activeUserOf,
+  accountIdsOf,
+  IdentityBoundSessionError,
+  useBackgroundSessionSync,
+  type IdentitySessionBinding,
+} from '../session';
+import type {
+  OxyContextState,
+  OxyContextProviderProps,
+  CommitInput,
+} from './oxyContextTypes';
+import { DEFAULT_SESSION_VALIDITY_MS, loadUseFollowHook } from './oxyContextHelpers';
+import { commitDeviceSetAndResolve } from './commitSessionFlow';
+import { runPasskeyLogin, runPasskeyRegister, runPasskeyAdd } from './passkeyFlow';
+import {
+  isPasskeySupported,
+  runRegistrationCeremony,
+  runAuthenticationCeremony,
+} from '../../webauthn/passkeyClient';
+import { queryKeys } from '../hooks/queries/queryKeys';
+import { useOxyAccountGraph } from './useOxyAccountGraph';
 
-export interface OxyContextState {
-  user: User | null;
-  sessions: ClientSession[];
-  activeSessionId: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  isTokenReady: boolean;
-  hasAccessToken: boolean;
-  canUsePrivateApi: boolean;
-  isPrivateApiPending: boolean;
-  /**
-   * Whether the initial auth determination has concluded.
-   *
-   * `false` from mount until the FIRST cold-boot session restore finishes —
-   * during that window `isAuthenticated: false` is UNDETERMINED, not a
-   * definitive "logged out". Flips to `true` exactly once the restore concludes
-   * (a session was committed OR none exists) and never reverts. Consumers should
-   * defer their first auth-dependent fetch until this is `true` so a cold-boot
-   * web reload with an existing session does not fetch anonymous data.
-   *
-   * On native, cold boot runs only the `stored-session` step, so this resolves
-   * promptly. It is set in the restore `finally`, so the success, no-session,
-   * and error paths all reach `true` — it can never get stuck `false`.
-   */
-  isAuthResolved: boolean;
-  isStorageReady: boolean;
-  error: string | null;
-  currentLanguage: string;
-  currentLanguageMetadata: ReturnType<typeof useLanguageManagement>['metadata'];
-  currentLanguageName: string;
-  currentNativeLanguageName: string;
-
-  // Identity (cryptographic key pair)
-  hasIdentity: () => Promise<boolean>;
-  getPublicKey: () => Promise<string | null>;
-
-  // Authentication
-  signIn: (publicKey: string, deviceName?: string) => Promise<User>;
-
-  /**
-   * Sign in with a username/email + password.
-   *
-   * Commits a successful session into context state through the SAME path FedCM
-   * / SSO use (so `isAuthenticated` / `user` update and the session is persisted
-   * durably). Returns a discriminated result so the caller can branch on the
-   * two-factor-required case — which creates NO session; the caller completes
-   * the 2FA challenge with the returned `loginToken`.
-   *
-   * This is the keyless native sign-in path for the slimmed Accounts app, which
-   * no longer holds a local cryptographic identity key.
-   */
-  signInWithPassword: (
-    identifier: string,
-    password: string,
-    opts?: { deviceName?: string; deviceFingerprint?: string },
-  ) => Promise<PasswordSignInResult>;
-
-  /**
-   * Handle a session returned by web SSO.
-   * Updates auth state, persists session metadata to storage.
-   */
-  handleWebSession: (session: SessionLoginResponse) => Promise<void>;
-
-  // Session management
-  logout: (targetSessionId?: string) => Promise<void>;
-  logoutAll: () => Promise<void>;
-  switchSession: (sessionId: string) => Promise<User>;
-  removeSession: (sessionId: string) => Promise<void>;
-  refreshSessions: () => Promise<void>;
-  setLanguage: (languageId: string) => Promise<void>;
-  getDeviceSessions: () => Promise<
-    Array<{
-      sessionId: string;
-      deviceId: string;
-      deviceName?: string;
-      lastActive?: string;
-      expiresAt?: string;
-    }>
-  >;
-  logoutAllDeviceSessions: () => Promise<void>;
-  updateDeviceName: (deviceName: string) => Promise<void>;
-  clearSessionState: () => Promise<void>;
-  clearAllAccountData: () => Promise<void>;
-  storageKeyPrefix: string;
-  /**
-   * The app's Oxy OAuth client id / ApplicationCredential publicKey, as
-   * supplied via the `clientId` prop. Required for the cross-app device
-   * sign-in flow: the sign-in components send it to
-   * `POST /auth/session/create` so the API can identify the requesting app by
-   * its real registered client id (the consent identity is then resolved
-   * server-side and shown by the central auth web). `null` when the consuming
-   * app did not configure a client id — the device sign-in flow surfaces a
-   * configuration error in that case.
-   */
-  clientId: string | null;
-  oxyServices: OxyServices;
-  useFollow?: UseFollowHook;
-  showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
-  openAvatarPicker: () => void;
-
-  // Unified account graph (self, owned orgs/projects/bots, accounts shared with
-  // the caller). The cryptographic Commons/DID "identity" is a SEPARATE concept.
-  //
-  // UX concept: the user picks an account and the WHOLE app becomes that account
-  // — a genuine, REAL-SESSION switch (`switchToAccount`), identical to switching
-  // between device sign-ins. There is NO separate "active account" concept:
-  // `user` IS the active account after a switch. The removed `X-Acting-As`
-  // delegation header is gone entirely.
-  /** Every account the caller can access — own personal root, owned, and shared — from `listAccounts()`. */
-  accounts: AccountNode[];
-  /**
-   * Switch the active session INTO an account from the {@link accounts} graph
-   * (a managed org/project/bot, or an account shared with the caller).
-   *
-   * Mints and plants a REAL session for the target via
-   * `oxyServices.switchToAccount`, then commits it into context state the SAME
-   * way sign-in / {@link switchSession} do — so afterwards `user` IS the target
-   * account and every request authenticates as it. The minted session joins the
-   * device multi-account set (server-set httpOnly `oxy_rt_<authuser>` cookie), so
-   * it survives reload / `refresh-all` and appears in the device account list
-   * exactly like a device sign-in. Refreshes the account graph and invalidates
-   * all React Query data so everything reloads as the new account.
-   */
-  switchToAccount: (accountId: string) => Promise<void>;
-  refreshAccounts: () => Promise<void>;
-  createAccount: (data: CreateAccountInput) => Promise<AccountNode>;
-}
+export type { OxyContextState, OxyContextProviderProps } from './oxyContextTypes';
 
 const OxyContext = createContext<OxyContextState | null>(null);
-
-/**
- * Result of {@link OxyContextState.signInWithPassword}.
- *
- * `'ok'` — the password was accepted and the resulting session has been
- * committed into context state (the SAME path FedCM / SSO sessions use), so
- * `isAuthenticated` / `user` are updated and the session is durably persisted;
- * the caller can proceed (e.g. navigate into the app).
- *
- * `'2fa_required'` — the account has two-factor auth enabled, so NO session was
- * created. The caller must complete the challenge with the returned short-lived
- * `loginToken` (`POST /security/2fa/verify-login`) before a session exists.
- */
-export type PasswordSignInResult =
-  | { status: 'ok' }
-  | { status: '2fa_required'; loginToken: string };
-
-// Active-authuser persistence helpers (web localStorage; native no-op) live in
-// `../utils/activeAuthuser` so the session-management and auth-operations hooks
-// can share them without re-importing this 1k-line context file.
-
-export interface OxyContextProviderProps {
-  children: ReactNode;
-  oxyServices?: OxyServices;
-  baseURL?: string;
-  authWebUrl?: string;
-  authRedirectUri?: string;
-  storageKeyPrefix?: string;
-  /**
-   * The app's Oxy OAuth client id / ApplicationCredential publicKey; required
-   * for the cross-app device sign-in flow. See {@link OxyContextState.clientId}.
-   */
-  clientId?: string;
-  onAuthStateChange?: (user: User | null) => void;
-  onError?: (error: ApiError) => void;
-}
-
-/**
- * Module-level run-once guard for the cold-boot `fedcm-silent` step.
- *
- * The FedCM silent step triggers a one-shot `navigator.credentials.get`
- * handshake that must fire AT MOST ONCE per page load — otherwise a provider
- * remount storm (route churn, StrictMode double-invoke, error-boundary
- * recovery) becomes a credential request storm. A per-instance ref resets on
- * every remount, so the guard must live at module scope. Keyed on
- * `origin|baseURL` so two providers pointed at the same API from the same
- * origin share one attempt; never cleared because only a fresh page load can
- * change the central IdP session state, and a fresh page load starts a fresh
- * module scope.
- *
- * This is a dedicated set — distinct from `useWebSSO`'s `silentSSOAttempted`
- * (which guards the post-boot INTERACTIVE button path) and never a core
- * module-level singleton (that re-evaluates under Metro web bundling and the
- * guard would not hold).
- */
-const servicesSilentAttempted = new Set<string>();
-
-/**
- * Build the `origin|baseURL` signature used as the silent-cold-boot guard key.
- */
-function silentColdBootKey(oxyServices: OxyServices): string {
-  // `buildSilentGuardKey` reads `window.location.origin` behind a guard that
-  // also verifies `window.location` exists. This is critical: it runs
-  // UNCONDITIONALLY at the top of `restoreSessionsFromStorage` (before the
-  // cold-boot try/catch) on EVERY platform, and React Native aliases a global
-  // `window` with NO `window.location`. Without that guard the read threw
-  // `Cannot read property 'origin' of undefined` on native, escaping the
-  // restore path so `markAuthResolved` never ran and stored-session restore was
-  // never reached.
-  return buildSilentGuardKey(() => oxyServices.getBaseURL?.());
-}
-
-/**
- * Per-step fail-fast budget for the cold-boot silent iframe (`silentSignIn`
- * against the per-apex `/auth/silent` host).
- *
- * This step ONLY succeeds when a durable per-apex `fedcm_session` cookie exists
- * (established by a prior `/sso` bounce). On the common reload of a logged-out
- * tab — or a tab that restores via the now-earlier stored-session step — the
- * iframe never posts a message, so the full wait would be dead latency in front
- * of the terminal `/sso` bounce. `silentSignIn` already fails fast on a load
- * error via `iframe.onerror`; this caps the no-message case. 2.5s is well above
- * a same-origin iframe handshake without blocking cold boot for several seconds.
- */
-const SILENT_IFRAME_TIMEOUT = 2500;
-
-/**
- * Per-step fail-fast budget for the cold-boot refresh-cookie restore
- * (`refreshAllSessions`).
- *
- * On a cross-domain RP the `Domain=oxy.so` refresh cookie never reaches
- * `api.<apex>`, so this request returns no accounts (or stalls behind a slow
- * endpoint) with no useful answer. As one cold-boot step it must not block the
- * fall-through to the terminal `/sso` bounce. 3s bounds the wait while leaving
- * ample headroom for a genuine first-party `*.oxy.so` rotation round-trip.
- */
-const COOKIE_RESTORE_TIMEOUT = 3000;
-
-/**
- * Per-step fail-fast budget (ms) for the native shared-key cold-boot step
- * (`signInWithSharedIdentity`).
- *
- * That step does a challenge round-trip plus a verify against the shared
- * cross-app identity key; if the device holds no shared identity it returns
- * `null` quickly, but a slow/offline network must not let it block the cold
- * boot. 8s mirrors the stored-session bearer-validation budget
- * (`VALIDATION_TIMEOUT`) since both perform comparable bounded network work; on
- * expiry the step resolves to `null` and cold boot falls through (native then
- * reaches the unauthenticated backstop, web never runs this step at all).
- */
-const SHARED_KEY_SIGNIN_TIMEOUT = 8000;
-
-/**
- * HARD overall deadline (ms) for the entire cold-boot step loop —
- * defense-in-depth so a single non-settling step can NEVER hang auth resolution
- * forever (the production regression: a `navigator.credentials.get()` that
- * ignored its abort signal left the `fedcm-silent` step's promise unsettled, so
- * `runColdBoot` never advanced to the terminal `/sso` bounce and auth hung
- * indefinitely).
- *
- * Every step ALREADY bounds its own network work (the stored-session bearer
- * validation at 8s, the silent iframe at `SILENT_IFRAME_TIMEOUT`, the refresh
- * cookie at `COOKIE_RESTORE_TIMEOUT`, FedCM silent at `FEDCM_SILENT_TIMEOUT`
- * plus its hard settle). On a healthy load the FIRST recovering step wins in a
- * single round-trip (1–3s) and the chain short-circuits long before this fires.
- * This budget only trips when one of those per-step bounds regresses.
- *
- * 20s is the chosen value: comfortably ABOVE the worst-case bounded
- * stored-session path under transient slowness (the 8s parallel validation
- * window plus a `switchSession` round-trip) so a genuinely slow-but-healthy
- * reload is never cut off, yet well BELOW the ~28–30s the previous
- * probe-first ordering took — and, critically, finite, so the user can never
- * sit on an indefinite spinner. When the deadline trips, `runColdBoot` keeps
- * iterating to the terminal `sso-bounce` step (whose navigation side effect
- * runs synchronously), so a genuine no-local-session first visit STILL reaches
- * the cross-domain `/sso` fallback. Native runs only the stored-session step,
- * which is bounded well under this, so the deadline never alters native flow.
- */
-const COLD_BOOT_OVERALL_DEADLINE = 20000;
-
-/**
- * Per-session soft timeout (ms) for the parallel stored-session validation in
- * `restoreStoredSession`. Each `validateSession` call races against this timer
- * so a single slow/offline session never blocks the whole startup validation
- * sweep. Sessions that don't answer in time are treated as unvalidated and kept
- * in the persisted ID list; only explicit invalid-session responses are pruned.
- */
-const VALIDATION_TIMEOUT = 8000;
-const VALIDATION_TIMEOUT_RESULT = 'validation-timeout' as const;
-type StoredSessionValidationResult =
-  | { session: ClientSession | null; timedOut: false }
-  | { sessionId: string; timedOut: true };
-
-/**
- * Fallback client-session validity window (ms) — 7 days — applied when a
- * restored account/session does not carry an explicit `expiresAt`. This is only
- * a local display/bookkeeping hint for the multi-session store; the server
- * remains the source of truth for actual session expiry. Used in the refresh
- * cookie restore, stored-session restore, and web-SSO session paths.
- */
-const DEFAULT_SESSION_VALIDITY_MS = 7 * 24 * 60 * 60 * 1000;
-
-/**
- * Minimum interval (ms) between visibility-driven IdP `/auth/session-check`
- * probes. Debounces the hidden-iframe session check so rapid tab focus/blur
- * cycles can't spawn a check-iframe storm; at most one probe runs per window.
- */
-const IDP_SESSION_CHECK_COOLDOWN = 30000;
-
-/**
- * Hard timeout (ms) for a single visibility-driven IdP `/auth/session-check`
- * iframe. If the IdP never posts a `oxy-session-check` message back, the iframe
- * and its listener are torn down after this budget so a non-responsive check
- * can never leak an iframe or a `message` listener.
- */
-const IDP_SESSION_CHECK_TIMEOUT = 5000;
-
-function getHttpStatus(error: unknown): number | undefined {
-  if (!error || typeof error !== 'object') {
-    return undefined;
-  }
-
-  if ('status' in error) {
-    const status = (error as { status?: unknown }).status;
-    if (typeof status === 'number') {
-      return status;
-    }
-  }
-
-  if ('response' in error) {
-    const response = (error as { response?: unknown }).response;
-    if (response && typeof response === 'object' && 'status' in response) {
-      const status = (response as { status?: unknown }).status;
-      if (typeof status === 'number') {
-        return status;
-      }
-    }
-  }
-
-  return undefined;
-}
-
-function isUnauthorizedStatus(error: unknown): boolean {
-  return getHttpStatus(error) === 401;
-}
-
-/**
- * Whether `idpOrigin` is a same-site, first-party host of the current page —
- * i.e. it shares the page's registrable apex (last two labels), so a "no
- * session" answer from its `/auth/session-check` iframe is authoritative for
- * THIS app and may force a local sign-out.
- *
- * On a cross-site IdP (or any host whose relationship to the page can't be
- * positively established) this returns `false`, so the visibility-driven check
- * may surface a session-ended toast but MUST NOT clear local state — a
- * third-party / undetermined IdP answer can never force logout. Returns `false`
- * off-browser.
- */
-function isSameSiteIdP(idpOrigin: string): boolean {
-  // Native defines a global `window` but no `window.location`; guard the
-  // latter so reading `.hostname` can never throw off-browser. (Only reachable
-  // from the web-only visibility check, but kept robust for parity.)
-  if (typeof window === 'undefined' || typeof window.location === 'undefined') {
-    return false;
-  }
-  let idpHostname: string;
-  try {
-    idpHostname = new URL(idpOrigin).hostname;
-  } catch (parseError) {
-    if (__DEV__) {
-      loggerUtil.debug('Invalid IdP origin while checking same-site session status', { component: 'OxyContext' }, parseError as unknown);
-    }
-    return false;
-  }
-  const pageHostname = window.location.hostname;
-  if (!idpHostname || !pageHostname) return false;
-  if (idpHostname === pageHostname) return true;
-  const pageApex = registrableApex(pageHostname);
-  const idpApex = registrableApex(idpHostname);
-  // Require a real registrable apex (not a shared/public suffix) AND an exact
-  // apex match AND that the IdP host is the page apex itself or a subdomain of it.
-  if (!pageApex || idpApex !== pageApex) return false;
-  return idpHostname === pageApex || idpHostname.endsWith(`.${pageApex}`);
-}
-
-function isOnSsoCallbackPath(): boolean {
-  return isWebBrowser() && window.location.pathname === SSO_CALLBACK_PATH;
-}
-
-const useBrowserLayoutEffect = typeof document !== 'undefined' ? useLayoutEffect : useEffect;
-
-let cachedUseFollowHook: UseFollowHook | null = null;
-
-const loadUseFollowHook = (): UseFollowHook => {
-  if (cachedUseFollowHook) {
-    return cachedUseFollowHook;
-  }
-
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { useFollow } = require('../hooks/useFollow');
-    cachedUseFollowHook = useFollow as UseFollowHook;
-    return cachedUseFollowHook;
-  } catch (error) {
-    if (__DEV__) {
-      loggerUtil.warn(
-        'useFollow hook is not available. Please import useFollow from @oxyhq/services directly.',
-        { component: 'OxyContext', method: 'loadUseFollowHook' },
-        error
-      );
-    }
-
-    const fallback: UseFollowHook = () => {
-      throw new Error('useFollow hook is only available in the UI bundle. Import it from @oxyhq/services.');
-    };
-
-    cachedUseFollowHook = fallback;
-    return cachedUseFollowHook;
-  }
-};
 
 export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   children,
@@ -473,38 +99,54 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   baseURL,
   authWebUrl,
   authRedirectUri,
+  authorizeBaseUrl,
   storageKeyPrefix = 'oxy_session',
   clientId: clientIdProp,
+  sessionMode = 'account',
+  webAuthMode = 'popup',
+  backgroundSession = false,
   onAuthStateChange,
   onError,
 }) => {
   const oxyServicesRef = useRef<OxyServices | null>(null);
-
   if (!oxyServicesRef.current) {
     if (providedOxyServices) {
       oxyServicesRef.current = providedOxyServices;
     } else if (baseURL) {
-      // Target the CENTRAL IdP for TRUE cross-domain SSO. Every RP
-      // (mention.earth, homiio.com, alia.onl, …) delegates to the one central
-      // `auth.oxy.so` — it owns the host-only `fedcm_session` cookie and the
-      // central session store reached via `api.oxy.so`, so a single sign-in
-      // there is observed by all RPs through the opaque-code `/sso` bounce.
-      // `resolveCentralAuthUrl(authWebUrl)` returns the explicit `authWebUrl`
-      // prop when provided (explicit always wins) and the central default
-      // otherwise. This is NOT per-apex auto-detection — central SSO is
-      // deliberately central. A consumer-provided `OxyServices` instance is
-      // never mutated; only the baseURL-only construction path applies this.
-      oxyServicesRef.current = new OxyServices({
-        baseURL,
-        authWebUrl: resolveCentralAuthUrl(authWebUrl),
-        authRedirectUri,
-      });
+      // `authWebUrl` now only points the OAuth "Sign in with Oxy" third-party
+      // link builder at the central auth host; there is no cold-boot redirect.
+      oxyServicesRef.current = new OxyServices({ baseURL, authWebUrl, authRedirectUri });
     } else {
       throw new Error('Either oxyServices or baseURL must be provided to OxyContextProvider');
     }
   }
-
   const oxyServices = oxyServicesRef.current;
+
+  // The device-first persisted auth-state store (per-origin zero-cookie device
+  // credential on web; SecureStore session blob on native). Built ONCE per
+  // provider mount.
+  const authStoreRef = useRef<AuthStateStore | null>(null);
+  if (!authStoreRef.current) {
+    authStoreRef.current = createPlatformAuthStateStore();
+  }
+  const authStore = authStoreRef.current;
+
+  // Identity-bound session binding (`sessionMode: 'identity'`) — the platform pin
+  // store plus the memoised pinned account id every lane below binds to. Built
+  // ONCE per provider mount and ONLY in identity mode: an account-mode provider
+  // never constructs one, so `identity` is `null` there and every branch keyed on
+  // it collapses to today's behaviour.
+  //
+  // Like `oxyServices` / `baseURL`, `sessionMode` is mount-time configuration: it
+  // is read once and a later change does not re-bind the provider. Latching it
+  // this way also fails SAFE — a provider that started identity-bound can never
+  // be downgraded mid-flight into following the device's active account.
+  const identityRef = useRef<IdentitySessionBinding | null>(null);
+  if (sessionMode === 'identity' && !identityRef.current) {
+    identityRef.current = createIdentitySessionBinding();
+  }
+  const identity = identityRef.current;
+  const isIdentityBound = identity !== null;
 
   const {
     user,
@@ -528,13 +170,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const [tokenReady, setTokenReady] = useState(true);
   const [hasAccessToken, setHasAccessToken] = useState(() => Boolean(oxyServices.getAccessToken()));
-  // Whether the FIRST cold-boot auth restore has concluded. Starts `false`
-  // (auth undetermined) and flips to `true` exactly once — monotonic, never
-  // reverts. It now flips the MOMENT a session commits (the common reload case
-  // unblocks immediately, without waiting for the rest of the cold-boot chain),
-  // with the restore `finally` as the no-session/error backstop. The ref makes
-  // the flip idempotent across both sites so the setters fire at most once. See
-  // `isAuthResolved` on the context type for the consumer contract.
   const [authResolved, setAuthResolved] = useState(false);
   const authResolvedRef = useRef(false);
   const userRef = useRef<User | null>(user);
@@ -542,29 +177,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   userRef.current = user;
   isAuthenticatedRef.current = isAuthenticated;
   const [initialized, setInitialized] = useState(false);
-  const [ssoCallbackIntercepting, setSsoCallbackIntercepting] = useState(false);
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const setAuthState = useAuthStore.setState;
 
   // Keep the shared `oxyClient` singleton's token store in lockstep with the
-  // session owned by THIS provider's instance. Many apps construct their api
-  // clients against the exported `oxyClient` singleton (reading
-  // `oxyClient.getAccessToken()` to build Authorization headers) while passing
-  // only `baseURL` to OxyProvider — in which case the provider owns a DIFFERENT
-  // `OxyServices` instance and the singleton would otherwise never receive the
-  // token, producing `Authorization: Bearer null`.
-  //
-  // Subscribing to `onTokensChanged` mirrors EVERY token mutation — sign-in,
-  // session restore, switch, silent refresh, and sign-out/clear — onto the
-  // singleton at the single source of truth in @oxyhq/core, with no per-app
-  // plumbing and regardless of which auth code path fired.
-  //
-  // When the app passed the singleton itself as `oxyServices` (Mention's
-  // pattern), `oxyServices === oxyClient`, so we skip the redundant self-write.
+  // session owned by THIS provider's instance (many apps build API clients
+  // against the exported singleton while passing only `baseURL` here). Skipped
+  // when the app passed the singleton itself as `oxyServices`.
   useEffect(() => {
     if (oxyServices === oxyClient) {
       return;
     }
-
     const applyToSingleton = (accessToken: string | null) => {
       if (accessToken) {
         oxyClient.setTokens(accessToken);
@@ -572,12 +195,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         oxyClient.clearTokens();
       }
     };
-
-    // Seed the singleton with whatever token the instance already holds (it may
-    // have been planted synchronously before this effect ran — e.g. a token set
-    // during the same tick as mount), then keep it in sync going forward.
     applyToSingleton(oxyServices.getAccessToken());
-
     return oxyServices.onTokensChanged(applyToSingleton);
   }, [oxyServices]);
 
@@ -589,37 +207,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const storageKeys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
 
-  // The app's Oxy OAuth client id surfaced on the context so the cross-app
-  // device sign-in components (SignInModal / OxyAuthScreen) can identify the
-  // requesting app to `POST /auth/session/create`. Normalized to a trimmed
-  // non-empty string, or `null` when the consumer did not configure one — the
-  // sign-in components surface a clear configuration error in that case rather
-  // than falling back to any display string.
   const clientId = useMemo(() => {
     const trimmed = clientIdProp?.trim();
     return trimmed ? trimmed : null;
   }, [clientIdProp]);
 
-  // Storage initialization.
-  //
-  // `storage` (state) drives render-time gating (`isStorageReady`) and the
-  // hooks below. But it is `null` for a brief window after mount while
-  // `createPlatformStorage()` resolves (a microtask on web; a dynamic
-  // `import()` on native). Any persistence path that fires during that window
-  // — e.g. an interactive FedCM sign-in the instant the screen mounts — would
-  // read `storage === null` and SILENTLY skip writing the session, leaving the
-  // user signed-in in-memory but with nothing to restore on reload.
-  //
-  // To make persistence robust regardless of timing we ALSO expose the storage
-  // as an awaitable promise (`getReadyStorage`). Persistence code awaits the
-  // ready instance instead of branching on the possibly-null state, so a write
-  // is never silently dropped just because it raced storage init.
+  // Local display/bookkeeping storage (session id list, language). Distinct
+  // from `authStore` (the durable credential blob). Exposed as an awaitable so
+  // a persistence write is never dropped because it raced storage init.
   const storageRef = useRef<StorageInterface | null>(null);
   const [storage, setStorage] = useState<StorageInterface | null>(null);
-
-  // A single, stable deferred that resolves with the initialized storage. Built
-  // lazily via a ref initializer so the resolver is captured exactly once and
-  // the promise identity is stable across renders.
   const buildStorageDeferred = () => {
     let resolve: (storage: StorageInterface) => void = () => undefined;
     const promise = new Promise<StorageInterface>((res) => {
@@ -633,41 +230,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }
   const storageReady = storageReadyRef.current;
 
-  // Resolve the storage instance that is guaranteed to be ready. Returns the
-  // already-initialized instance synchronously when available, otherwise awaits
-  // the init promise. Never resolves to `null`.
-  const getReadyStorage = useCallback((): Promise<StorageInterface> => {
-    if (storageRef.current) {
-      return Promise.resolve(storageRef.current);
-    }
-    return storageReady.promise;
-  }, [storageReady]);
-
-  // Clear the durable "had a signed-in Oxy session before" hint.
-  //
-  // The hint (`storageKeys.priorSession`) is WRITTEN whenever a session is
-  // established/restored — every commit funnels through `persistSessionDurably`,
-  // and the stored-session reload winner sets it directly to backfill
-  // pre-existing installs. It lives in the SAME `storageKeyPrefix`-scoped
-  // durable store as the session ids, so it SURVIVES a session expiring; it is
-  // cleared ONLY here, on EXPLICIT full sign-out (wired into `clearAllAccountData`
-  // and the `useAuthOperations` logout paths — never the passive token-expiry
-  // path). At cold boot the hint is read into `hadPriorSession` and feeds
-  // `allowSsoBounce`: a RETURNING visitor (hint present) whose local session has
-  // lapsed still gets ONE terminal `/sso` establish bounce so a central-only
-  // cross-domain session recovers, while a truly first-time anonymous visitor is
-  // never force-redirected.
-  const clearPriorSessionHint = useCallback(async (): Promise<void> => {
-    const readyStorage = await getReadyStorage();
-    await readyStorage.removeItem(storageKeys.priorSession);
-  }, [getReadyStorage, storageKeys.priorSession]);
-
   useEffect(() => {
     let mounted = true;
     createPlatformStorage()
       .then((storageInstance) => {
-        // Resolve the ready-promise even if the component unmounted: in-flight
-        // persistence awaiting it must still complete against a real store.
         storageRef.current = storageInstance;
         storageReady.resolve(storageInstance);
         if (mounted) {
@@ -677,33 +243,25 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       .catch((err) => {
         if (mounted) {
           logger('Failed to initialize storage', err);
-          onError?.({
-            message: 'Failed to initialize storage',
-            code: 'STORAGE_INIT_ERROR',
-            status: 500,
-          });
+          onError?.({ message: 'Failed to initialize storage', code: 'STORAGE_INIT_ERROR', status: 500 });
         }
       });
-
     return () => {
       mounted = false;
     };
   }, [logger, onError, storageReady]);
 
-
-  // Offline queuing is now handled by TanStack Query mutations
-  // No need for custom offline queue
-
   const {
     currentLanguage,
+    languages: currentLanguages,
     metadata: currentLanguageMetadata,
     languageName: currentLanguageName,
     nativeLanguageName: currentNativeLanguageName,
     setLanguage,
-    applyLanguagePreference,
   } = useLanguageManagement({
     storage,
     languageKey: storageKeys.language,
+    user,
     onError,
     logger,
   });
@@ -716,17 +274,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     setActiveSessionId,
     updateSessions,
     switchSession,
-    refreshSessions,
     clearSessionState,
     saveActiveSessionId,
-    trackRemovedSession,
   } = useSessionManagement({
     oxyServices,
     storage,
     storageKeyPrefix,
     loginSuccess,
     logoutStore,
-    applyLanguagePreference,
     onAuthStateChange,
     onError,
     setAuthError: (message) => setAuthState({ error: message }),
@@ -735,22 +290,210 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     queryClient,
   });
 
-  const {
-    signIn,
-    logout,
-    logoutAll,
-  } = useAuthOperations({
+  // Refs so callbacks below can invoke the latest session-management functions
+  // without widening dependency arrays.
+  const switchSessionRef = useRef(switchSession);
+  switchSessionRef.current = switchSession;
+  const clearSessionStateRef = useRef(clearSessionState);
+  clearSessionStateRef.current = clearSessionState;
+  const setActiveSessionIdRef = useRef(setActiveSessionId);
+  setActiveSessionIdRef.current = setActiveSessionId;
+  const loginSuccessRef = useRef(loginSuccess);
+  loginSuccessRef.current = loginSuccess;
+  const onAuthStateChangeRef = useRef(onAuthStateChange);
+  onAuthStateChangeRef.current = onAuthStateChange;
+
+  // Flip the auth-resolution gate (`authResolved` + `tokenReady`) the moment a
+  // session commits or the boot concludes signed out. Idempotent + monotonic.
+  const markAuthResolved = useCallback(() => {
+    if (authResolvedRef.current) {
+      return;
+    }
+    authResolvedRef.current = true;
+    setTokenReady(true);
+    setAuthResolved(true);
+  }, []);
+  const markAuthResolvedRef = useRef(markAuthResolved);
+  markAuthResolvedRef.current = markAuthResolved;
+
+  // Server-authoritative device session client. Built ONCE per `oxyServices`
+  // instance. Device-scoped sockets connect with deviceId+deviceSecret when no
+  // bearer is planted yet, so cross-origin apps sync via `session_state` after
+  // the one-shot join redirect.
+  const sessionClientPairRef = useRef<ReturnType<typeof createSessionClient> | null>(null);
+  if (!sessionClientPairRef.current) {
+    sessionClientPairRef.current = createSessionClient(
+      oxyServices,
+      (origin) => {
+        // Erase the DURABLE device credential only on a `request`-origin verdict
+        // (a REST sign-out / revocation). A `push`-origin empty state is a socket
+        // broadcast that may be a transient reconnect artifact — clearing the
+        // credential on it would strand the user signed out with no way back, so
+        // we clear only the local UI session and keep the credential (a dead one
+        // re-mints to `no_active_session` and resolves signed-out on next boot).
+        if (origin === 'request') {
+          clearPersistedAuthSafe(authStore, logger);
+        }
+        void clearSessionStateRef.current().catch((clearError) => {
+          logger('Failed to clear local state on remote sign-out', clearError);
+        });
+      },
+      // `null` for every account-mode provider — identical to omitting the
+      // option — and the pinned account id once an identity-bound provider has
+      // resolved its pin. Read through the ref so the resolver stays stable for
+      // the client's lifetime while still seeing later resolutions.
+      () => identityRef.current?.getPinnedAccountId() ?? null,
+    );
+  }
+  const { client: sessionClient, host: sessionClientHost } = sessionClientPairRef.current;
+
+  // Re-establishment lane for an identity-bound provider whose pin is missing or
+  // whose pinned account is no longer part of this device's session set (another
+  // app signed it out, or the device was re-provisioned). Adopting whichever
+  // account the device is currently switched to is exactly the drift
+  // `sessionMode: 'identity'` exists to prevent, so the only correct answer is to
+  // re-derive the session from the local identity key.
+  //
+  // Bounded on purpose: at most ONE attempt per applied device revision, and
+  // never two concurrently — a repeated failure (locked keychain, offline, no
+  // local identity) must never spin a sign-in loop against the server. Nothing
+  // awaits it, so it can never deadlock against the projection that triggers it;
+  // the `bootstrap()` below re-applies device state, whose notify re-runs the
+  // projection with the pin now resolved.
+  const identityEstablishRef = useRef<{ revision: number | null; inFlight: boolean }>({
+    revision: null,
+    inFlight: false,
+  });
+
+  const reestablishIdentitySession = useCallback(
+    (binding: IdentitySessionBinding, revision: number): void => {
+      const tracker = identityEstablishRef.current;
+      if (tracker.inFlight || tracker.revision === revision) {
+        return;
+      }
+      tracker.revision = revision;
+      tracker.inFlight = true;
+      void (async () => {
+        const established = await establishIdentitySession({
+          oxy: oxyServices,
+          store: authStore,
+          binding: binding.binding,
+        });
+        if (!established) {
+          return;
+        }
+        // The verify wrote a fresh pin; adopt it before re-reading device state
+        // so the notify that follows projects against the new binding.
+        await binding.refreshPinnedAccountId();
+        await sessionClient.bootstrap();
+      })()
+        .catch((establishError) => {
+          logger('Failed to re-establish the identity-bound session', establishError);
+        })
+        .finally(() => {
+          tracker.inFlight = false;
+        });
+    },
+    [oxyServices, authStore, sessionClient, logger],
+  );
+
+  // Projects `client.getState()` onto the exposed `sessions`/`activeSessionId`/
+  // `user`. Sole authority for both locally-initiated mutations (switch/logout)
+  // AND remotely-pushed `session_state` over the `device:<deviceId>` socket.
+  const syncFromClient = useCallback(async (): Promise<void> => {
+    const state = sessionClient.getState();
+    if (state === null) {
+      return;
+    }
+    if (state.accounts.length === 0) {
+      // Clear the LOCAL UI session on any applied empty state, but NEVER the
+      // durable device credential here: `syncFromClient` runs for socket-pushed
+      // (possibly transient) states too, and wiping the credential on one would
+      // strand the user signed out. The credential wipe is gated on a
+      // `request`-origin verdict in `onUnauthenticated` above.
+      sessionClientHost.setCurrentAccountId(null);
+      await clearSessionState();
+      return;
+    }
+    // Last-write-wins guard: capture the revision this projection is for, then
+    // after the async profile fetch bail if a fresher state has landed.
+    const capturedRevision = state.revision;
+    // Resolve the pin BEFORE the profile fetch (memoised: one storage + keychain
+    // read per boot) so every projection below is bound on the FIRST pass over a
+    // freshly applied state. Deferring it would let a sibling app's switch render
+    // once as this client's user before the pin corrected it. `null` for every
+    // account-mode provider, where each projection falls back to the device's
+    // active account exactly as before.
+    const pinnedAccountId = identity ? await identity.ensurePinnedAccountId() : null;
+    const ids = accountIdsOf(state);
+    let users: User[] = [];
+    try {
+      users = ids.length > 0 ? await oxyServices.getUsersByIds(ids) : [];
+    } catch (fetchError) {
+      logger('Failed to resolve account profiles during syncFromClient', fetchError);
+      return;
+    }
+    const latest = sessionClient.getState();
+    if (!latest || latest.revision !== capturedRevision) {
+      return;
+    }
+    if (identity && (pinnedAccountId === null || activeSessionIdOf(latest, pinnedAccountId) === null)) {
+      // Either no verified pin, or the pinned account left this device's session
+      // set. Projecting anything here would mean projecting SOMEBODY ELSE's
+      // account, so leave the current projection untouched and re-derive the
+      // session from the local identity key instead.
+      reestablishIdentitySession(identity, latest.revision);
+      return;
+    }
+    const usersById = new Map(users.map((resolvedUser) => [resolvedUser.id, resolvedUser]));
+    updateSessions(deviceStateToClientSessions(latest, usersById, pinnedAccountId));
+    setActiveSessionId(activeSessionIdOf(latest, pinnedAccountId));
+    const activeUser = activeUserOf(latest, usersById, pinnedAccountId);
+    if (activeUser) {
+      loginSuccess(activeUser);
+    }
+    // The host's current account feeds the socket handshake and the bearer's
+    // token-account comparisons, so it tracks the PIN — never the account another
+    // app switched the device to.
+    sessionClientHost.setCurrentAccountId(pinnedAccountId ?? latest.activeAccountId);
+  }, [
+    identity,
     oxyServices,
+    reestablishIdentitySession,
+    sessionClient,
+    sessionClientHost,
+    updateSessions,
+    setActiveSessionId,
+    loginSuccess,
+    clearSessionState,
+    logger,
+  ]);
+  const syncFromClientRef = useRef(syncFromClient);
+  syncFromClientRef.current = syncFromClient;
+
+  const syncDeviceCredentialToHost = useCallback(async (): Promise<void> => {
+    const cred = await loadPersistedDeviceCredential(authStore);
+    sessionClientHost.setDeviceCredential(cred);
+  }, [authStore, sessionClientHost]);
+
+  useEffect(() => {
+    return sessionClient.subscribe(() => {
+      void syncFromClient();
+    });
+  }, [sessionClient, syncFromClient]);
+
+  const { signIn, logout, logoutAll } = useAuthOperations({
+    oxyServices,
+    store: authStore,
     storage,
-    sessions,
     activeSessionId,
     setActiveSessionId,
     updateSessions,
     saveActiveSessionId,
     clearSessionState,
-    clearPriorSessionHint,
     switchSession,
-    applyLanguagePreference,
+    sessionClient,
+    syncFromClient,
     onAuthStateChange,
     onError,
     loginSuccess,
@@ -758,14 +501,25 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logoutStore,
     setAuthState,
     logger,
+    ...(identity
+      ? {
+          identityBinding: identity.binding,
+          refreshPinnedAccountId: () => identity.refreshPinnedAccountId(),
+        }
+      : {}),
   });
 
-  // Clear all account data (sessions, cache, etc.)
-  const clearAllAccountData = useCallback(async (): Promise<void> => {
-    // Clear TanStack Query cache (in-memory)
-    queryClient.clear();
+  // "That wasn't me": repudiating a flagged sign-in IS revoking the device
+  // session that just committed — the same server-authoritative
+  // `sessionClient.signOut(...)` path `logout` uses, which also clears the
+  // persisted device credential + local state when no sibling account remains.
+  // No dedicated "report suspicious" API endpoint exists (or is needed).
+  const revokeSuspiciousSignIn = useCallback(async (): Promise<void> => {
+    await logout();
+  }, [logout]);
 
-    // Clear persisted query cache
+  const clearAllAccountData = useCallback(async (): Promise<void> => {
+    queryClient.clear();
     if (storage) {
       try {
         await clearQueryCache(storage);
@@ -773,22 +527,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         logger('Failed to clear persisted query cache', error);
       }
     }
-
-    // Clear session state (sessions, activeSessionId, storage)
     await clearSessionState();
-
-    // Explicit FULL sign-out: drop the durable returning-user hint so the next
-    // cold boot treats this device as a first-time anonymous visitor (no forced
-    // `/sso` bounce). NOT done on the passive token-expiry path, so an expired
-    // session still recovers via a returning-user bounce.
-    await clearPriorSessionHint();
-
-    // Reset account store
+    // Explicit FULL wipe: also drop the persisted device credential so a reload
+    // finds nothing to restore.
+    await authStore.clear();
     useAccountStore.getState().reset();
-
-    // Clear HTTP service cache
     oxyServices.clearCache();
-  }, [queryClient, storage, clearSessionState, clearPriorSessionHint, logger, oxyServices]);
+  }, [queryClient, storage, clearSessionState, authStore, logger, oxyServices]);
 
   const { getDeviceSessions, logoutAllDeviceSessions, updateDeviceName } = useDeviceManagement({
     oxyServices,
@@ -800,23 +545,23 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const useFollowHook = loadUseFollowHook();
 
-  // Refs for mutable callbacks to avoid stale closures in restoreSessionsFromStorage (#187)
-  const switchSessionRef = useRef(switchSession);
-  switchSessionRef.current = switchSession;
-  const updateSessionsRef = useRef(updateSessions);
-  updateSessionsRef.current = updateSessions;
-  const clearSessionStateRef = useRef(clearSessionState);
-  clearSessionStateRef.current = clearSessionState;
+  // Token-change side effects: an invalidated bearer (HttpService clears tokens
+  // on an unrecoverable 401 and emits `null`) must locally sign out an
+  // authenticated user so `isAuthenticated` never lingers true with no token.
+  // The persisted store is NOT cleared here — the refresh handler already
+  // cleared it if the family was revoked; a transient null leaves it intact so a
+  // later reload can still restore.
   const clearingInvalidTokenRef = useRef(false);
-
   useEffect(() => {
     const handleTokenChange = (accessToken: string | null) => {
       setHasAccessToken(Boolean(accessToken));
       if (accessToken) {
         setTokenReady(true);
+        if (sessionClient.getState()?.accounts.length) {
+          void syncFromClientRef.current();
+        }
         return;
       }
-
       if (userRef.current || isAuthenticatedRef.current) {
         setTokenReady(false);
         if (clearingInvalidTokenRef.current) {
@@ -835,1156 +580,592 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           });
         return;
       }
-
       if (authResolvedRef.current) {
         setTokenReady(true);
       }
     };
-
     handleTokenChange(oxyServices.getAccessToken());
     return oxyServices.onTokensChanged(handleTokenChange);
-  }, [logger, oxyServices]);
+  }, [logger, oxyServices, sessionClient]);
 
-  // In-session access-token refresh (SDK-owned; every Expo RP inherits it).
-  //
-  // The services path never installed an `authRefreshHandler`, so the owner
-  // `HttpService.refreshAccessToken` short-circuited to null and a 15-minute
-  // access token expired with the app open while `isAuthenticated` stayed true —
-  // a zombie logged-in state whose cross-apex feed calls 401-looped. Here we (1)
-  // install a handler that re-mints a fresh token WITHOUT a reload using the SAME
-  // durable silent-restore arms cold boot uses, and (2) start a proactive
-  // scheduler that refreshes ~60s before expiry (and on tab-focus / app-
-  // foreground) so the common case never even hits the reactive 401 path. The
-  // linked client (`createLinkedClient`) delegates its refresh back to this owner
-  // handler, so it is fixed for free.
-  //
-  // Runs once per `oxyServices` instance (stable, ref-constructed), and BEFORE
-  // any cold-boot request can 401: cold boot is gated on async storage init, so
-  // this synchronous mount effect installs the handler first. On cleanup the
-  // handler is detached and the scheduler torn down (timer + foreground listener)
-  // so nothing leaks across a provider remount. `setAuthRefreshHandler` is
-  // optional-chained to tolerate partial test stubs.
+  // Unified in-session refresh (SDK-owned; every RP inherits it). Installs the
+  // ONE core refresh handler (re-mint from the persisted zero-cookie device
+  // credential via `POST /session/device/token`) plus the proactive scheduler
+  // that refreshes ~60s before expiry and on tab-focus. Replaces the deleted
+  // services-local `inSessionTokenRefresh` module.
+  // An identity binding turns every re-mint pinned: it targets the pinned
+  // account instead of the device's active one, and its recovery arm becomes the
+  // PRIMARY-key identity sign-in rather than the cross-app shared keychain.
   useEffect(() => {
-    oxyServices.httpService.setAuthRefreshHandler?.(createInSessionRefreshHandler(oxyServices));
+    const dispose = installAuthRefreshHandler({
+      oxy: oxyServices,
+      store: authStore,
+      ...(identity ? { identity: identity.binding } : {}),
+    });
     const scheduler = startTokenRefreshScheduler(oxyServices);
     return () => {
       scheduler.dispose();
-      oxyServices.httpService.setAuthRefreshHandler?.(null);
+      dispose();
     };
-  }, [oxyServices]);
+  }, [oxyServices, authStore, identity]);
 
-  // Durable, navigation-safe session persistence.
-  //
-  // Writes the active-session id and appends the session id to the durable
-  // `session_ids` list, awaiting the READY storage instance (never the possibly
-  // -null `storage` state) so a write is never dropped because it raced storage
-  // init. Callers MUST invoke this BEFORE any work that can trigger a route
-  // navigation (`onAuthStateChange`) — navigation can interrupt a still-pending
-  // async write, which is exactly what once left `session_ids` empty after a
-    // successful sign-in. Shared by the FedCM/SSO path and the cold-boot
-  // refresh-cookie restore so both land the same durable record.
-  const persistSessionDurably = useCallback(async (sessionId: string): Promise<void> => {
-    const readyStorage = await getReadyStorage();
-    await readyStorage.setItem(storageKeys.activeSessionId, sessionId);
-    const existingIds = await readyStorage.getItem(storageKeys.sessionIds);
-    let sessionIds: string[] = [];
-    try {
-      sessionIds = existingIds ? JSON.parse(existingIds) : [];
-    } catch (parseError) {
-      logger('Failed to parse persisted session ids; replacing corrupted storage value', parseError);
-    }
-    if (!sessionIds.includes(sessionId)) {
-      sessionIds.push(sessionId);
-      await readyStorage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
-    }
-    // A session is now durably committed — set the returning-user hint so a
-    // future cold boot whose local session has lapsed still gets ONE `/sso`
-    // establish bounce (see `markPriorSessionHint`). Every web commit path
-    // (FedCM / silent iframe / SSO return / password / cookie restore) funnels
-    // through here, so this is the single chokepoint for the hint.
-    await readyStorage.setItem(storageKeys.priorSession, '1');
-  }, [getReadyStorage, logger, storageKeys.activeSessionId, storageKeys.sessionIds, storageKeys.priorSession]);
-
-  // Refs so the cold-boot restore can plant session state without widening its
-  // dependency array (mirrors the existing ref pattern above).
-  const setActiveSessionIdRef = useRef(setActiveSessionId);
-  setActiveSessionIdRef.current = setActiveSessionId;
-  const loginSuccessRef = useRef(loginSuccess);
-  loginSuccessRef.current = loginSuccess;
-  const onAuthStateChangeRef = useRef(onAuthStateChange);
-  onAuthStateChangeRef.current = onAuthStateChange;
-
-  // Flip the auth-resolution gate (`authResolved` + `tokenReady`) the MOMENT a
-  // session commits, instead of waiting for the whole cold-boot chain to finish.
-  // Idempotent and monotonic via `authResolvedRef`: the first call wins and the
-  // setters fire at most once, so the restore `finally` backstop becomes a no-op
-  // once a commit site has already marked resolution. Called from EVERY place a
-  // user is actually committed (the FedCM/iframe/SSO path
-  // `handleWebSSOSession`, the cookie-restore path, and the stored-session path)
-  // so the common reload case unblocks the loading gate without sitting behind
-  // the remaining (now-skipped) cold-boot steps.
-  const markAuthResolved = useCallback(() => {
-    if (authResolvedRef.current) {
-      return;
-    }
-    authResolvedRef.current = true;
-    setTokenReady(true);
-    setAuthResolved(true);
-  }, []);
-  const markAuthResolvedRef = useRef(markAuthResolved);
-  markAuthResolvedRef.current = markAuthResolved;
-
-  // `handleWebSSOSession` is declared further down (it depends on values that
-  // are only available there). The FedCM/iframe cold-boot steps need to commit
-  // a recovered session through it, so we route the call through a ref that is
-  // populated once the callback exists. The ref is assigned synchronously on
-  // every render before the cold-boot effect can fire (the effect is gated on
-  // `storage` + `initialized`, both of which settle after first render).
-  const handleWebSSOSessionRef = useRef<((session: SessionLoginResponse) => Promise<void>) | null>(null);
-
-  // Cold-boot session restore via the secure refresh cookies (web only).
-  //
-  // Calls `oxyServices.refreshAllSessions()` → `POST /auth/refresh-all` with
-  // `credentials: 'include'`. The server rotates every device-local
-  // `oxy_rt_${authuser}` cookie in parallel and returns one entry per valid
-  // account (Google-style multi-account).
-  //
-  // Active-account selection: the persisted `oxy_active_authuser` slot index
-  // wins when it matches a returned account; otherwise the lowest `authuser`
-  // is picked. JS never sees the refresh cookies (httpOnly).
-  //
-  // Returns `true` when at least one session was restored (caller short-
-  // circuits the bearer path); `false` on no signed-in accounts / any failure
-  // (caller proceeds unauthenticated through the existing flow — nothing is
-  // cleared).
-  const restoreViaRefreshCookie = useCallback(async (): Promise<boolean> => {
-    if (!isWebBrowser()) {
-      return false;
-    }
-
-    let snapshot;
-    try {
-      // Bound the refresh so a cross-domain/stalled call cannot hang the cold
-      // boot in front of the terminal `/sso` bounce (see COOKIE_RESTORE_TIMEOUT).
-      snapshot = await oxyServices.refreshAllSessions({ timeout: COOKIE_RESTORE_TIMEOUT });
-    } catch (fetchError) {
-      // Offline / network error — fall through to the cached/stored-session flow.
-      if (__DEV__) {
-        loggerUtil.debug('Refresh-all cookie restore network error (expected when offline)', { component: 'OxyContext', method: 'restoreViaRefreshCookie' }, fetchError as unknown);
+  // ── Session commit funnel ────────────────────────────────────────────────
+  // The single place a session becomes committed: plant tokens, persist the
+  // zero-cookie device credential (`deviceId` + `deviceSecret`), register the
+  // account into the server-authoritative device set, and hydrate the full user.
+  // Used by the QR device flow (`handleWebSession`), password sign-in, 2FA
+  // completion, and the cold boot.
+  const commitSession = useCallback(
+    async (input: CommitInput, options: { activate: boolean }): Promise<void> => {
+      if (input.accessToken) {
+        oxyServices.setTokens(input.accessToken);
       }
-      return false;
-    }
 
-    if (snapshot.accounts.length === 0) {
-      return false;
-    }
-
-    // Pick the active account: persisted authuser if it still matches a returned
-    // account, otherwise the lowest authuser (deterministic). The server has
-    // already sorted ascending so [0] is the lowest.
-    const activeAccount = selectActiveRefreshAccount(snapshot.accounts, readActiveAuthuser());
-
-    // Plant the active access token. Sibling accounts' access tokens stay in
-    // the snapshot (the chooser can drive a per-account refresh via
-    // `refreshTokenViaCookie({authuser})` on switch).
-    oxyServices.httpService.setTokens(activeAccount.accessToken);
-
-    // Fetch the full user with the freshly planted token. The refresh-all
-    // payload includes a minimal user shape (id, username, name, avatar,
-    // email, color) — sufficient for the chooser but the auth store wants the
-    // canonical User document for downstream rendering.
-    let fullUser: User;
-    try {
-      fullUser = await oxyServices.getCurrentUser();
-    } catch (userError) {
-      // Token planted but profile fetch failed (e.g. transient network). Do
-      // not claim a restored session; fall through so the stored-session flow
-      // can retry. Leave the planted token in place — it is valid and harmless.
-      if (__DEV__) {
-        loggerUtil.debug('Refresh-all cookie restore: getCurrentUser failed', { component: 'OxyContext', method: 'restoreViaRefreshCookie' }, userError as unknown);
-      }
-      return false;
-    }
-
-    // Build a ClientSession per returned account so the multi-session store
-    // reflects every device-local slot, not just the active one. The active
-    // account is flagged `isCurrent: true`.
-    const now = new Date();
-    const clientSessions: ClientSession[] = snapshot.accounts.map((account) => ({
-      sessionId: account.sessionId,
-      deviceId: '',
-      expiresAt: account.expiresAt || new Date(now.getTime() + DEFAULT_SESSION_VALIDITY_MS).toISOString(),
-      lastActive: now.toISOString(),
-      userId: account.user?.id,
-      isCurrent: account.sessionId === activeAccount.sessionId,
-      authuser: account.authuser,
-    }));
-
-    updateSessionsRef.current(clientSessions, { merge: true });
-    setActiveSessionIdRef.current(activeAccount.sessionId);
-    writeActiveAuthuser(activeAccount.authuser);
-    await persistSessionDurably(activeAccount.sessionId);
-
-    loginSuccessRef.current(fullUser);
-    // A session is now committed — unblock the auth-resolution gate immediately
-    // rather than waiting for `runColdBoot` to return (idempotent).
-    markAuthResolvedRef.current();
-    onAuthStateChangeRef.current?.(fullUser);
-    return true;
-  }, [oxyServices, persistSessionDurably]);
-
-  // Native (and offline) stored-session restore — the ONLY restore path that
-  // runs on React Native, and the web fallback when no cross-domain step won.
-  //
-  // Stored-session restore. Web uses this only as a fast local winner after
-  // URL-return handling; native uses it as the durable SecureStore path. Native
-  // first plants the shared access token from KeyManager, then validates the
-  // stored session ids with the bearer already in memory.
-  const restoreStoredSession = useCallback(async (): Promise<boolean> => {
-    if (!storage) {
-      return false;
-    }
-
-    const storedSessionIdsJson = await storage.getItem(storageKeys.sessionIds);
-    const storedSessionIdsFromStorage: string[] = storedSessionIdsJson ? JSON.parse(storedSessionIdsJson) : [];
-    let storedActiveSessionId = await storage.getItem(storageKeys.activeSessionId);
-    const storedActiveAuthuser = isWebBrowser() ? readActiveAuthuser() : null;
-
-    if (isWebBrowser() && !oxyServices.getAccessToken() && (storedActiveSessionId === null || storedActiveAuthuser === null)) {
-      return false;
-    }
-
-    const nativeSharedSession = !isWebBrowser()
-      ? await KeyManager.getSharedSession().catch(() => null)
-      : null;
-    if (nativeSharedSession?.accessToken) {
-      oxyServices.setTokens(nativeSharedSession.accessToken);
-      storedActiveSessionId = storedActiveSessionId ?? nativeSharedSession.sessionId;
-    }
-
-    const storedSessionIds = Array.from(new Set([
-      ...storedSessionIdsFromStorage,
-      ...(nativeSharedSession?.sessionId ? [nativeSharedSession.sessionId] : []),
-    ]));
-
-    let validSessions: ClientSession[] = [];
-    let unvalidatedSessionIds: string[] = [];
-
-    if (storedSessionIds.length > 0) {
-      // Validate all sessions in parallel (with a per-session timeout) to avoid
-      // sequential blocking that freezes the app on startup
-      const results = await Promise.allSettled(
-        storedSessionIds.map(async (sessionId) => {
-          const timeoutPromise = new Promise<typeof VALIDATION_TIMEOUT_RESULT>((resolve) =>
-            setTimeout(() => resolve(VALIDATION_TIMEOUT_RESULT), VALIDATION_TIMEOUT),
-          );
-          const validationPromise = oxyServices
-            .validateSession(sessionId, { useHeaderValidation: true })
-            .catch((validationError: unknown) => {
-              if (!isInvalidSessionError(validationError) && !isTimeoutOrNetworkError(validationError)) {
-                logger('Session validation failed during init', validationError);
-              } else if (__DEV__ && isTimeoutOrNetworkError(validationError)) {
-                loggerUtil.debug('Session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreStoredSession' }, validationError as unknown);
-              }
-              return null;
-            });
-
-          return Promise.race([validationPromise, timeoutPromise]).then((validation) => {
-            if (validation === VALIDATION_TIMEOUT_RESULT) {
-              return { sessionId, timedOut: true as const };
-            }
-            if (validation?.valid && validation.user) {
-              const now = new Date();
-              const clientSession: ClientSession = {
-                sessionId,
-                deviceId: '',
-                expiresAt: new Date(now.getTime() + DEFAULT_SESSION_VALIDITY_MS).toISOString(),
-                lastActive: now.toISOString(),
-                userId: validation.user.id?.toString() ?? '',
-                isCurrent: sessionId === storedActiveSessionId,
-              };
-              if (isWebBrowser() && sessionId === storedActiveSessionId && storedActiveAuthuser !== null) {
-                clientSession.authuser = storedActiveAuthuser;
-              }
-              return { session: clientSession, timedOut: false as const };
-            }
-            return { session: null, timedOut: false as const };
+      // Persist the durable blob when the zero-cookie device credential is present.
+      if (input.deviceId && input.deviceSecret) {
+        try {
+          const prior = await authStore.load();
+          const next: PersistedAuthState = {
+            sessionId: input.sessionId || prior?.sessionId || '',
+            userId: input.userId || prior?.userId || '',
+            deviceId: input.deviceId,
+            deviceSecret: input.deviceSecret,
+            ...(input.accessToken ? { accessToken: input.accessToken } : {}),
+            ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+          };
+          await authStore.save(next);
+          sessionClientHost.setDeviceCredential({
+            deviceId: input.deviceId,
+            deviceSecret: input.deviceSecret,
           });
-        }),
+        } catch (persistError) {
+          logger('Failed to persist auth state on commit', persistError);
+        }
+      }
+
+      // Fast local mirror so the UI updates before the server round-trip; the
+      // SessionClient projection below overwrites it with server truth.
+      if (input.userId) {
+        const now = new Date();
+        updateSessions(
+          [
+            {
+              sessionId: input.sessionId,
+              deviceId: input.deviceId ?? '',
+              expiresAt: input.expiresAt || new Date(now.getTime() + DEFAULT_SESSION_VALIDITY_MS).toISOString(),
+              lastActive: now.toISOString(),
+              userId: input.userId,
+              isCurrent: true,
+            },
+          ],
+          { merge: true },
+        );
+        setActiveSessionId(input.sessionId);
+      }
+
+      // Register into the device set, hydrate the full user, and flip the
+      // auth-resolution gate. A deliberate sign-in ACTIVATES the account and
+      // BLOCKS on the reconcile (register + socket + sessions projection) before
+      // resolving — unchanged ordering. The cold boot resolves auth from the
+      // profile fetch FIRST and reconciles the device set in the background, so
+      // first paint is not held behind those extra round-trips. Reconcile is
+      // best-effort — a failure never fails the sign-in (cold boot re-registers
+      // on the next load).
+      await commitDeviceSetAndResolve({
+        activate: options.activate,
+        userId: input.userId,
+        fallbackUser: (input.user as unknown as User) ?? null,
+        registerAndActivate: (userId) => sessionClient.registerAndActivate(userId),
+        addCurrentAccount: () => sessionClient.addCurrentAccount(),
+        startSocket: () => sessionClient.start(),
+        syncFromClient,
+        getCurrentUser: () => oxyServices.getCurrentUser(),
+        loginSuccess,
+        onAuthStateChange: onAuthStateChangeRef.current,
+        markAuthResolved: markAuthResolvedRef.current,
+      });
+    },
+    [oxyServices, authStore, updateSessions, setActiveSessionId, sessionClient, sessionClientHost, syncFromClient, loginSuccess, logger],
+  );
+  const commitSessionRef = useRef(commitSession);
+  commitSessionRef.current = commitSession;
+
+  // Public `handleWebSession`: commit a session from the QR device flow. It is a
+  // deliberate sign-in on THIS device, so it activates the account.
+  const handleWebSession = useCallback(
+    async (session: SessionLoginResponse): Promise<void> => {
+      if (!session?.user || !session?.sessionId || !session.accessToken) {
+        throw new Error('Session response did not include a usable session');
+      }
+      await commitSession(
+        {
+          sessionId: session.sessionId,
+          accessToken: session.accessToken,
+          deviceSecret: session.deviceSecret,
+          deviceId: session.deviceId,
+          expiresAt: session.expiresAt,
+          userId: session.user.id,
+          user: session.user,
+        },
+        { activate: true },
       );
+    },
+    [commitSession],
+  );
 
-      for (const result of results) {
-        if (result.status !== 'fulfilled') continue;
-        const value: StoredSessionValidationResult = result.value;
-        if (value.timedOut) {
-          unvalidatedSessionIds.push(value.sessionId);
-        } else if (value.session) {
-          validSessions.push(value.session);
-        }
+  // Commit a minted graph-SWITCH session through the same funnel as
+  // `handleWebSession`. Nothing extra to do IN-PLACE: the switch already
+  // propagates across tabs/apps via the server's `session_state` socket
+  // broadcast.
+  const commitSwitchedSession = useCallback(
+    async (session: SessionLoginResponse): Promise<void> => {
+      if (!session?.user || !session?.sessionId || !session.accessToken) {
+        throw new Error('Session response did not include a usable session');
       }
+      await commitSession(
+        {
+          sessionId: session.sessionId,
+          accessToken: session.accessToken,
+          deviceSecret: session.deviceSecret,
+          deviceId: session.deviceId,
+          expiresAt: session.expiresAt,
+          userId: session.user.id,
+          user: session.user,
+        },
+        { activate: true },
+      );
+    },
+    [commitSession],
+  );
 
-      // Persist validated sessions while preserving soft-timed-out IDs. This
-      // still clears sessions that were explicitly rejected as invalid, but
-      // avoids logging out valid secondary accounts solely because the API was
-      // slow during startup.
-      updateSessionsRef.current(validSessions, {
-        merge: false,
-        preserveSessionIds: unvalidatedSessionIds,
-      });
+  // ── Web third-party OAuth sign-in ──────────────────────────────────────────
+  // The shared operation `OxySignInButton` (and any RP-owned button) delegates
+  // to, so no consumer ever writes popup listeners or a token exchange. The
+  // transport picks popup vs redirect from `webAuthMode`; both lanes land on the
+  // SAME completion path (`completeOAuthCode`) and the same commit funnel here.
+  const startWebOAuthSignInForContext = useCallback(
+    (options: StartWebOAuthSignInOptions): Promise<WebOAuthSignInResult> =>
+      startWebOAuthSignIn(
+        {
+          mode: webAuthMode,
+          oxyServices,
+          clientId,
+          authorizeBaseUrl,
+          identityBound: isIdentityBound,
+          commitSession: (input) => commitSessionRef.current(input, { activate: true }),
+        },
+        options,
+      ),
+    [webAuthMode, oxyServices, clientId, authorizeBaseUrl, isIdentityBound],
+  );
+
+  // ── Unified account dialog ─────────────────────────────────────────────────
+  // The single account-chooser + sign-in surface. Built ONCE per provider mount
+  // and bound to the live `oxyServices` + `sessionClient` + this provider's
+  // commit funnels. Both funnels are threaded through refs so the controller
+  // keeps STABLE commit callbacks (rebuilding the controller on every
+  // commit-identity change would drop its subscription + state).
+  const handleWebSessionRef = useRef(handleWebSession);
+  handleWebSessionRef.current = handleWebSession;
+  const commitSwitchedSessionRef = useRef(commitSwitchedSession);
+  commitSwitchedSessionRef.current = commitSwitchedSession;
+
+  // The live AccountDialog surface (a stacked Bloom surface), while open — the
+  // SINGLE source of truth for "is the account dialog open". Held so
+  // `openAccountDialog` can no-op when already open and `closeAccountDialog` /
+  // `onSignedIn` can dismiss it. Its present→settle lifecycle is what drives the
+  // reactive `accountDialogOpen` mirror below: presenting flips it true, the
+  // surface settling (`result.finally`) flips it false — no other write site.
+  const accountDialogSurfaceRef = useRef<SurfaceInstance<'AccountDialog'> | null>(null);
+
+  // When the account dialog is shown by MORPHING an already-open route surface
+  // (e.g. ManageAccount → the account switcher) it is pushed as a frame ONTO that
+  // surface rather than presented as its own. This holds that host surface so the
+  // close path can pop the AccountDialog frame back to it. `null` when the dialog
+  // is its OWN detached surface (opened cold, with no surface underneath).
+  const accountDialogHostRef = useRef<TrackedSurface | null>(null);
+
+  // The single teardown for the account dialog wherever it lives: pop the morphed
+  // frame back to its host surface (reshaping Manage ← switcher), or dismiss the
+  // detached surface (whose settle then flips `accountDialogOpen`). Reads only
+  // stable refs + `setAccountDialogOpen`, so its identity never changes.
+  const dismissAccountDialogSurface = useCallback((): void => {
+    const host = accountDialogHostRef.current;
+    if (host) {
+      accountDialogHostRef.current = null;
+      setAccountDialogOpen(false);
+      host.goBack();
+      return;
     }
+    accountDialogSurfaceRef.current?.dismiss();
+  }, []);
 
-    if (storedActiveSessionId) {
-      try {
-        await switchSessionRef.current(storedActiveSessionId);
-        // The stored session is committed (this is native's ONLY restore path
-        // and the common web reload winner). Unblock the auth-resolution gate
-        // immediately so the loading screen clears without waiting for the
-        // remaining cold-boot steps to be evaluated/short-circuited (idempotent).
-        markAuthResolvedRef.current();
-        // Backfill the returning-user hint. A reload winner already had the hint
-        // set at original sign-in, but pre-existing installs (signed in before
-        // this hint shipped) get it set here so their NEXT lapse-and-return still
-        // earns one `/sso` establish bounce. `storage` is non-null (guarded at
-        // the top of this callback); best-effort, never blocks restore.
-        await storage.setItem(storageKeys.priorSession, '1');
-        return true;
-      } catch (switchError) {
-        // Silently handle expected errors (invalid sessions, timeouts, network issues)
-        if (isInvalidSessionError(switchError)) {
-          await storage.removeItem(storageKeys.activeSessionId);
-          updateSessionsRef.current(
-            validSessions.filter((session) => session.sessionId !== storedActiveSessionId),
-            { merge: false, preserveSessionIds: unvalidatedSessionIds },
-          );
-          // Don't log expected session errors during restoration
-        } else if (isTimeoutOrNetworkError(switchError)) {
-          // Timeout/network error - non-critical, don't block
-          if (__DEV__) {
-            loggerUtil.debug('Active session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreStoredSession' }, switchError as unknown);
-          }
-        } else {
-          // Only log unexpected errors
-          logger('Active session validation error', switchError);
-        }
-      }
-    }
-
-    return false;
-  }, [
-    logger,
-    oxyServices,
-    storage,
-    storageKeys.activeSessionId,
-    storageKeys.sessionIds,
-    storageKeys.priorSession,
-  ]);
-
-  // Shared in-flight `runSsoReturn` promise — see the CONCURRENCY note on
-  // `runSsoReturn` below. Lets the eager interception effect and the cold-boot
-  // `sso-return` step share one `consumeSsoReturn` invocation race-free.
-  const inFlightSsoReturnRef = useRef<Promise<boolean> | null>(null);
-
-  // Central cross-domain SSO return handler (web). A THIN wrapper over core's
-  // `consumeSsoReturn`, which performs the entire security-critical kernel —
-  // parse the IdP redirect fragment, validate the CSRF `state`, strip the
-  // fragment FIRST, exchange the opaque single-use code, restore the user's
-  // pre-bounce destination (same-origin only), and set the per-origin
-  // NO_SESSION loop breaker on every non-ok outcome — and RETURNS the exchanged
-  // session (or `null`) WITHOUT committing. We preserve services' contract by
-  // committing the returned session here via `handleWebSSOSession`. Shared by
-  // the `sso-return` cold-boot step AND the bfcache `pageshow` re-evaluation, so
-  // the same kernel runs exactly once per delivered fragment regardless of how
-  // the page was (re)shown.
-  //
-  // Returns `true` when a session was committed (caller short-circuits), `false`
-  // otherwise. Off-browser `consumeSsoReturn` is a no-op returning `null`, so
-  // this returns `false` (native never reaches it).
-  //
-  // CONCURRENCY: the eager SSO-callback interception effect and the cold-boot
-  // `sso-return` step can both invoke this in the same tick when we land on the
-  // callback path. `consumeSsoReturn` strips the fragment FIRST, so a naive
-  // second invocation would parse an already-stripped URL and return `null` —
-  // leaving the losing caller with no session (and on an `ok` outcome could let
-  // the terminal bounce fire spuriously). The FIRST call's promise is memoised in
-  // `inFlightSsoReturnRef` and SHARED with every concurrent caller, so the single
-  // `consumeSsoReturn` invocation — and its single commit via `handleWebSSOSession`
-  // — is delivered identically to both paths. Cleared once it settles so a later,
-  // genuinely-separate return (e.g. a bfcache restore) runs a fresh pass.
-  const runSsoReturn = useCallback((): Promise<boolean> => {
-    if (inFlightSsoReturnRef.current) {
-      return inFlightSsoReturnRef.current;
-    }
-    const inFlight = consumeSsoReturn(oxyServices, {
-      isWeb: isWebBrowser,
-      onExchangeError: (error) => {
-        if (__DEV__) {
-          loggerUtil.debug(
-            'SSO code exchange failed (treating as no session)',
-            { component: 'OxyContext', method: 'runSsoReturn' },
-            error,
-          );
-        }
+  // Never built while identity-bound: the dialog exists to CHOOSE an account,
+  // and an identity-bound client has exactly one — the owner of the local
+  // identity key. Leaving it `null` (the same shape consumers see with no
+  // provider mounted) keeps its QR/polling machinery off entirely instead of
+  // relying on UI-level filtering to hide it.
+  const accountDialogControllerRef = useRef<AccountDialogController | null>(null);
+  if (!isIdentityBound && !accountDialogControllerRef.current) {
+    accountDialogControllerRef.current = createAccountDialogController({
+      oxyServices,
+      sessionClient,
+      clientId,
+      locale: currentLanguage,
+      // Same statically-injected `io` as the SessionClient: gives the QR flow an
+      // instant `/auth-session` `auth_update` wake instead of a slow poll.
+      socketFactory: io,
+      commitSession: (session) => handleWebSessionRef.current(session),
+      commitSwitchedSession: (session) => commitSwitchedSessionRef.current(session),
+      onSignedIn: () => {
+        // Close the dialog: pop the morphed frame back to its host surface, or
+        // dismiss the detached surface (whose settle flips `accountDialogOpen`).
+        dismissAccountDialogSurface();
       },
-    })
-      .then(async (session): Promise<boolean> => {
-        if (!session) {
-          return false;
+      openUrl: (url) => {
+        if (isWebBrowser()) {
+          redirectToAuthorize(url);
+          return;
         }
-        const commitWebSession = handleWebSSOSessionRef.current;
-        if (!commitWebSession) {
-          return false;
-        }
-        await commitWebSession(session);
-        return true;
-      })
-      .finally(() => {
-        inFlightSsoReturnRef.current = null;
-      });
-    inFlightSsoReturnRef.current = inFlight;
-    return inFlight;
-  }, [oxyServices]);
+        void Linking.openURL(url);
+      },
+      // Native-only probe so the controller can detect an installed Commons and
+      // deep-link straight into its approve screen (keeping the QR/polling live
+      // as fallback). `undefined` on web mirrors the `openUrl` split — the
+      // controller short-circuits, so `redirectToAuthorize` never runs for the
+      // `oxycommons://` payload.
+      canOpenApp: isWebBrowser() ? undefined : (url) => Linking.canOpenURL(url),
+      // Web-only: lets `startPasskeyHubSignIn` open the auth.oxy.so passkey hub
+      // popup (b2) for a non-Oxy origin. `undefined` on native — there is no
+      // popup concept there, and off-origin passkey sign-in isn't reachable
+      // (Commons owns the native flow).
+      openPopup: isWebBrowser() ? openPasskeyHubPopup : undefined,
+      // Which surface a sign-in starts from — a FACT only this consumer can
+      // supply (headless core never touches a platform global). It decides
+      // whether automatic delivery may take the same-device Commons deep link;
+      // without it the controller stays `'unknown'` and that route never fires.
+      platform: resolveDeliveryPlatform(),
+    });
+  }
+  const accountDialogController = accountDialogControllerRef.current;
 
-  // Cold boot — the single, ordered, short-circuit session-recovery sequence,
-  // consuming the SAME `runColdBoot` core primitive as `WebOxyProvider`. The
-  // FIRST step that yields a session wins; every later step is skipped. Each
-  // web-only step is gated by `isWebBrowser()`, so on native ONLY
-  // `stored-session` runs.
-  //
-  // Order (web): SSO return → stored session → FedCM silent
-  // (central) → silent iframe (per-apex, the durable reload path) → cookie
-  // restore → SSO bounce (terminal).
-  //
-  // LATENCY (FIX A): `stored-session` runs BEFORE the slow no-redirect probes
-  // (`fedcm-silent`, `silent-iframe`, `cookie-restore`). On a normal reload the
-  // local bearer validates in one round-trip and wins, so `runColdBoot`
-  // short-circuits and never sits through those probes' timeouts (the prior
-  // serial sum was a ~20-30s stall). `sso-return` MUST stay first — it consumes
-  // the URL fragment before anything can strip it. On a
-  // first visit with no local session, `stored-session` skips and the
-  // cross-domain fallback chain (fedcm → iframe → cookie → sso-bounce) runs
-  // exactly as before; the per-apex silent iframe still restores a durable
-  // cross-domain session on reload WITHOUT a top-level bounce, so when it wins
-  // `sso-bounce` never fires (no flash, no loop).
-  // Order (native): stored session only (every web-only step is disabled
-  // off-browser).
-  const restoreSessionsFromStorage = useCallback(async (): Promise<void> => {
-    if (!storage) {
+  const openAccountDialog = useCallback((view?: AccountDialogView): void => {
+    if (isIdentityBound) {
+      // No controller was built, and there is nothing to choose: this app's user
+      // is fixed to the owner of the local identity key.
+      if (__DEV__) {
+        loggerUtil.warn(
+          'openAccountDialog ignored: the session is identity-bound (sessionMode: "identity")',
+          { component: 'OxyContext', method: 'openAccountDialog' },
+        );
+      }
+      return;
+    }
+    const nextView = view ?? 'accounts';
+    accountDialogControllerRef.current?.setView(nextView);
+
+    // Its own detached surface is already open → just re-point the view above.
+    if (accountDialogSurfaceRef.current) {
+      setAccountDialogOpen(true);
       return;
     }
 
-    setTokenReady(false);
-
-    const commitWebSession = handleWebSSOSessionRef.current;
-    const silentKey = silentColdBootKey(oxyServices);
-    const fedcmSupported = isWebBrowser() && oxyServices.isFedCMSupported?.() === true;
-
-    // FIX-B precondition flag: set true the instant the (now-earlier)
-    // `stored-session` step recovers a local bearer session. The slow web-only
-    // probes (`fedcm-silent`, `silent-iframe`) AND `enabled` on `!storedSessionRestored`
-    // so they are explicitly skipped once a local session won. `runColdBoot`
-    // already short-circuits on the first `{kind:'session'}`, so on a winning
-    // reload those `enabled` bodies are never even reached — this flag makes the
-    // intent explicit and is redundant-safe. On a first-visit-no-local-session,
-    // `stored-session` skips, this stays false, and the probes run as before.
-    let storedSessionRestored = false;
-
-    // FIX-B smart-gate input: has this device/app EVER had a signed-in Oxy
-    // session (the durable `priorSession` hint, set on every commit, cleared
-    // only on explicit full sign-out)? Read ONCE here — synchronously usable by
-    // the terminal `sso-bounce` `enabled` gate below — so a RETURNING visitor
-    // whose local session has lapsed still earns one `/sso` establish bounce,
-    // while a truly first-time anonymous visitor is never force-redirected.
-    // `storage` is non-null (guarded above); a read failure is treated as "no
-    // prior session" (fail safe toward anonymous-browse).
-    let hadPriorSession = false;
-    try {
-      hadPriorSession = (await storage.getItem(storageKeys.priorSession)) === '1';
-    } catch (priorSessionReadError) {
-      if (__DEV__) {
-        loggerUtil.debug(
-          'Failed to read prior-session hint (treating as first-time visitor)',
-          { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
-          priorSessionReadError as unknown,
-        );
-      }
-    }
-
-    try {
-      const outcome = await runColdBoot<true>({
-        steps: [
-          {
-            // 0) Central SSO return: we are landing back from an `auth.oxy.so/sso`
-            // bounce with the result in the URL fragment. Parse it, validate the
-            // CSRF state, exchange the opaque code, and commit. On any non-ok
-            // outcome `runSsoReturn` sets the per-origin NO_SESSION flag so the
-            // terminal `sso-bounce` step is disabled — the loop breaker.
-            id: 'sso-return',
-            enabled: () => isWebBrowser(),
-            run: async () => {
-              const committed = await runSsoReturn();
-              return committed ? { kind: 'session', session: true } : { kind: 'skip' };
-            },
-          },
-          {
-            // 2) Stored-session bearer restore. NO `enabled` gate — runs on ALL
-            // platforms. This is native's ONLY restore path (every web-only step
-            // is disabled off-browser, so native reaches exactly this) AND the
-            // common WEB reload winner.
-            //
-            // ORDERING (FIX A): this step now runs BEFORE the slow web-only
-            // probes (`fedcm-silent`, `silent-iframe`, `cookie-restore`). On a
-            // normal reload the local bearer validates in one round-trip and
-            // wins; `runColdBoot` then short-circuits and never even evaluates
-            // the slow no-redirect probes that would otherwise time out (the
-            // ~20-30s serial stall). The `sso-return` step stays AHEAD of this
-            // one — it must consume the URL fragment before any
-            // later step (or anything else) strips it. On a first visit with no
-            // local session this step skips and the cross-domain fallback chain
-            // (fedcm → iframe → cookie → sso-bounce) runs exactly as before.
-            id: 'stored-session',
-            run: async () => {
-              const restored = await restoreStoredSession();
-              if (restored) {
-                // FIX-B: record the win so the slow probes below explicitly skip
-                // (belt-and-suspenders; `runColdBoot` already short-circuits).
-                storedSessionRestored = true;
-                return { kind: 'session', session: true };
-              }
-              return { kind: 'skip' };
-            },
-          },
-          {
-            // 2.5) Shared-key SSO (NATIVE ONLY) — same-device, no interaction.
-            //
-            // When a sibling Oxy app (the Commons identity vault) has written
-            // the cross-app shared identity into the `group.so.oxy.shared`
-            // keychain, this mints THIS app's session from it silently:
-            // `signInWithSharedIdentity()` proves control of the shared key
-            // (challenge → sign → verify, which plants the tokens server-side)
-            // and returns a `SessionLoginResponse`, which we commit through the
-            // SAME path the web SSO steps use (`handleWebSSOSession`), so state,
-            // durable persistence, profile fetch, and `markAuthResolved` all run
-            // identically. Returns `null` when no shared identity is present, so
-            // a device without Commons simply falls through.
-            //
-            // ORDERING: runs immediately AFTER `stored-session` (an already
-            // restored local bearer always wins first — `storedSessionRestored`
-            // gates this off) and BEFORE the web-only probes (which are gated
-            // off on native anyway). Native-only: `enabled` requires
-            // `!isWebBrowser()`, and the core method also returns `null` on web,
-            // so `WebOxyProvider` / the web path are entirely unaffected.
-            // Bounded by `SHARED_KEY_SIGNIN_TIMEOUT` so a slow/offline network
-            // cannot stall cold boot.
-            id: 'shared-key-signin',
-            enabled: () => !isWebBrowser() && !storedSessionRestored,
-            run: async () => {
-              if (!commitWebSession) {
-                return { kind: 'skip' };
-              }
-              let timeoutId: ReturnType<typeof setTimeout> | undefined;
-              const session = await Promise.race<SessionLoginResponse | null>([
-                oxyServices.signInWithSharedIdentity?.() ?? Promise.resolve(null),
-                new Promise<null>((resolve) => {
-                  timeoutId = setTimeout(() => resolve(null), SHARED_KEY_SIGNIN_TIMEOUT);
-                }),
-              ]).finally(() => {
-                if (timeoutId !== undefined) {
-                  clearTimeout(timeoutId);
-                }
-              });
-              if (!session) {
-                return { kind: 'skip' };
-              }
-              await commitWebSession(session);
-              // Record the win so the (web-only) probes below explicitly skip —
-              // belt-and-suspenders; `runColdBoot` already short-circuits on the
-              // first `{kind:'session'}`, and those probes are off on native.
-              storedSessionRestored = true;
-              return { kind: 'session', session: true };
-            },
-          },
-          {
-            // 3) FedCM silent reauthn (Chrome) against the CENTRAL IdP
-            // (auth.oxy.so). `silentSignInWithFedCM` plants the access token
-            // internally; we commit the returned session via
-            // `handleWebSSOSession`. Guarded so it fires at most once per page
-            // load across remounts. This is an enhancement layered above the
-            // opaque-code bounce: when it succeeds the bounce never fires.
-            //
-            // FIX-B: additionally skipped when the earlier `stored-session` step
-            // already recovered a local session — the probe cannot improve on a
-            // valid local bearer, and skipping it avoids the silent round-trip.
-            id: 'fedcm-silent',
-            enabled: () =>
-              !storedSessionRestored && fedcmSupported && !servicesSilentAttempted.has(silentKey),
-            run: async () => {
-              servicesSilentAttempted.add(silentKey);
-              const session = await oxyServices.silentSignInWithFedCM?.();
-              if (!session || !commitWebSession) {
-                return { kind: 'skip' };
-              }
-              await commitWebSession(session);
-              return { kind: 'session', session: true };
-            },
-          },
-          {
-            // 4) First-party silent iframe at the PER-APEX IdP — the DURABLE
-            // cross-domain reload-restore path. The durable session lives as a
-            // first-party `fedcm_session` cookie on `auth.<rp-apex>` (e.g.
-            // `auth.mention.earth`), established during the `/sso` bounce's
-            // `/sso/establish` hop. That host is SAME-SITE to the RP page, so
-            // the cookie is first-party under Safari ITP / Firefox TCP — and
-            // an iframe read is NOT a top-level navigation, so it restores on
-            // reload with NO flash and works in a backgrounded tab. This is the
-            // step that prevents the re-bounce loop: when it finds a session,
-            // the terminal `sso-bounce` never fires.
-            //
-            // The per-apex iframe mint itself lives in
-            // `mintSessionViaPerApexIframe` (shared verbatim with the in-session
-            // refresh handler so the two paths can never drift): it points the
-            // iframe at `autoDetectAuthWebUrl()` and skips when there is no
-            // per-apex IdP (localhost/IP/single-label/off-browser). Web only; on
-            // native `isWebBrowser()` gates it off, so native never runs an
-            // iframe.
-            //
-            // FIX-B: additionally skipped when `stored-session` already won.
-            // FIX-D: bounded by `SILENT_IFRAME_TIMEOUT` (plus `iframe.onerror`
-            // fail-fast in core) so a no-message iframe cannot stall cold boot.
-            id: 'silent-iframe',
-            enabled: () => !storedSessionRestored && isWebBrowser(),
-            run: async () => {
-              if (!commitWebSession) {
-                return { kind: 'skip' };
-              }
-              // Shared with the in-session refresh handler: the ONE
-              // implementation of "mint a first-party per-apex token without a
-              // reload" lives in `silentSessionRestore` so cold boot and refresh
-              // never drift.
-              const session = await mintSessionViaPerApexIframe(oxyServices, SILENT_IFRAME_TIMEOUT);
-              if (!session) {
-                return { kind: 'skip' };
-              }
-              await commitWebSession(session);
-              return { kind: 'session', session: true };
-            },
-          },
-          {
-            // 5) Refresh-cookie restore (first-party only). On `*.oxy.so` the
-            // httpOnly `oxy_rt_${n}` cookies ride along and resurrect every
-            // device-local slot. On a cross-domain RP (mention.earth, …) the
-            // cookie is `Domain=oxy.so` so it never reaches `api.<apex>` —
-            // `refreshAllSessions` returns `{accounts:[]}` and this skips. That
-            // is correct; cross-domain restore is handled by the SSO bounce.
-            // FIX-D: `restoreViaRefreshCookie` bounds the request with
-            // `COOKIE_RESTORE_TIMEOUT` so a cross-domain stall cannot hang here.
-            id: 'cookie-restore',
-            enabled: () => isWebBrowser(),
-            run: async () => {
-              const restored = await restoreViaRefreshCookie();
-              return restored ? { kind: 'session', session: true } : { kind: 'skip' };
-            },
-          },
-          {
-            // 6) SSO bounce (TERMINAL, web only, at most once). No local session
-            // was found by any step above. Top-level navigate to the central
-            // `auth.oxy.so/sso?prompt=none` so the IdP can either mint a session
-            // (returning an opaque code we exchange on the callback) or report
-            // `none`. This step tears the document down on success — its `skip`
-            // result is only observed if `assign` no-ops. Disabled on the IdP
-            // itself, once the NO_SESSION flag is set, or while a bounce guard is
-            // still active (loop + self-heal protection).
-            id: 'sso-bounce',
-            enabled: () => {
-              // Smart gate (SDK-owned, shared with `WebOxyProvider` via core's
-              // `allowSsoBounce`). The terminal `/sso` establish-bounce is the
-              // ONLY cold-boot step that can recover a session living SOLELY at
-              // the central IdP (a cross-apex RP whose local session expired),
-              // and it is what plants the per-apex `fedcm_session` cookie the
-              // earlier silent-iframe step relies on. So it is allowed iff a
-              // prior-signed-in hint exists OR a local session was recovered this
-              // boot (`storedSessionRestored`, always false here — an earlier step
-              // would have won — but passed for spec fidelity): a RETURNING user
-              // still gets ONE bounce, while a truly first-time anonymous visitor
-              // does NOT (anonymous browse). The per-tab loop guards below
-              // (`ssoNoSessionKey`, `ssoAttemptedKey`, `guardActive`) still cap an
-              // allowed bounce at one per cold boot.
-              if (!allowSsoBounce({
-                hasPriorSession: hadPriorSession,
-                hasLocalSession: storedSessionRestored,
-              })) {
-                return false;
-              }
-              if (!isWebBrowser() || window.top !== window.self) {
-                return false;
-              }
-              const origin = window.location.origin;
-              if (isCentralIdPOrigin(origin)) {
-                return false;
-              }
-              if (window.sessionStorage.getItem(ssoNoSessionKey(origin)) === '1') {
-                return false;
-              }
-              if (window.sessionStorage.getItem(ssoAttemptedKey(origin)) === '1') {
-                return false;
-              }
-              if (guardActive(window.sessionStorage, origin, Date.now())) {
-                return false;
-              }
-              return true;
-            },
-            run: async () => {
-              const origin = window.location.origin;
-              const state = oxyServices.generateSsoState();
-              window.sessionStorage.setItem(ssoStateKey(origin), state);
-              window.sessionStorage.setItem(ssoGuardKey(origin), String(Date.now()));
-              window.sessionStorage.setItem(ssoDestKey(origin), window.location.href);
-              // OUTCOME-INDEPENDENT once-guard: mark the probe attempted the instant we
-              // commit to the bounce, so even if the callback never lands cleanly no
-              // second bounce can ever fire this tab (the definitive loop breaker).
-              window.sessionStorage.setItem(ssoAttemptedKey(origin), '1');
-
-              const url = buildSsoBounceUrl(origin, state, oxyServices.config?.authWebUrl);
-
-              // TERMINAL: the document is torn down by this navigation. The
-              // `skip` below is only reached if `assign` is a no-op (e.g. the
-              // navigation is blocked); in that case we fall through
-              // unauthenticated, which is correct.
-              ssoNavigate(url);
-              return { kind: 'skip' };
-            },
-          },
-        ],
-        onStepError: (id, error) => {
-          if (__DEV__) {
-            loggerUtil.debug(
-              `Cold-boot step "${id}" errored (non-fatal, falling through)`,
-              { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
-              error,
-            );
-          }
-        },
-        // Defense-in-depth: a single step whose promise never settles (the
-        // production FedCM-silent hang) can no longer block the chain forever.
-        // On expiry the runner keeps iterating to the terminal `sso-bounce`
-        // step so a genuine no-local-session visit still reaches the
-        // cross-domain `/sso` fallback; the `finally` backstop flips
-        // `authResolved` regardless. See `COLD_BOOT_OVERALL_DEADLINE`.
-        overallDeadlineMs: COLD_BOOT_OVERALL_DEADLINE,
-        onStepDeadline: (id) => {
-          if (__DEV__) {
-            loggerUtil.debug(
-              `Cold-boot step "${id}" exceeded the overall deadline (abandoned, falling through)`,
-              { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
-            );
-          }
-        },
-      });
-
-      if (__DEV__ && outcome.kind === 'session') {
-        loggerUtil.debug(
-          `Cold boot recovered a session via "${outcome.via}"`,
-          { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
-        );
-      }
-    } catch (error) {
-      if (__DEV__) {
-        loggerUtil.error('Auth init error', error instanceof Error ? error : new Error(String(error)), { component: 'OxyContext', method: 'restoreSessionsFromStorage' });
-      }
-      await clearSessionStateRef.current();
-    } finally {
-      // Backstop: mark auth resolved on EVERY exit path — success, no-session,
-      // AND error→catch→finally — and on native (which only runs the
-      // `stored-session` step), so the gate can never hang `false`. Idempotent
-      // via `markAuthResolved`'s ref: when a commit site already flipped it
-      // mid-chain (the common reload case), this is a no-op. When no session was
-      // recovered (the unauthenticated/error path), this is where `tokenReady` +
-      // `authResolved` finally flip. Monotonic — never reverts on later restores.
-      markAuthResolved();
-    }
-  }, [
-    oxyServices,
-    storage,
-    storageKeys.priorSession,
-    restoreViaRefreshCookie,
-    restoreStoredSession,
-    runSsoReturn,
-    markAuthResolved,
-  ]);
-
-  useEffect(() => {
-    if (!storage || initialized) {
+    // When a route surface (e.g. ManageAccount) is already open, MORPH it in
+    // place: push the AccountDialog as a frame ONTO that surface, so the panel
+    // reshapes from that surface to the switcher and a back returns to it. With no
+    // surface open (opened cold from a sign-in button), present the dialog as its
+    // OWN detached surface — kept OUT of the `showBottomSheet` route-surface
+    // lineage so closing the bottom-sheet session never touches it and vice-versa.
+    // `navigate` is idempotent for the top frame (it replaces rather than
+    // duplicates), so calling this while already morphed in just re-points the
+    // view, and calling it after a back re-pushes the frame — no stale guard.
+    const host = topRouteSurface();
+    if (host) {
+      accountDialogHostRef.current = host;
+      host.navigate('AccountDialog', { initialView: nextView });
+      setAccountDialogOpen(true);
       return;
     }
 
-    setInitialized(true);
-    restoreSessionsFromStorage().catch((error) => {
-      if (__DEV__) {
-        logger('Failed to restore sessions from storage', error);
+    const instance = presentDetached(
+      'AccountDialog',
+      { initialView: nextView },
+      { placement: { base: 'bottom', md: 'center' }, dismissOnBackdrop: false, maxWidth: 420 },
+    );
+    accountDialogSurfaceRef.current = instance;
+    // The surface settling is the ONE place `accountDialogOpen` flips false for
+    // the detached path — covering every dismiss (close button, `onSignedIn`,
+    // programmatic `closeAccountDialog`, host unmount). The morphed path clears
+    // its own state in `dismissAccountDialogSurface`.
+    instance.result.finally(() => {
+      if (accountDialogSurfaceRef.current === instance) {
+        accountDialogSurfaceRef.current = null;
+        setAccountDialogOpen(false);
       }
     });
-  }, [restoreSessionsFromStorage, storage, initialized, logger]);
+    setAccountDialogOpen(true);
+  }, [isIdentityBound]);
 
-  // bfcache re-evaluation (web only, registered once). When a page is restored
-  // from the back/forward cache (`e.persisted`) NO cold boot re-runs — React
-  // state is resurrected as-is — yet the page may have been frozen mid-bounce
-  // and resurrected ON the SSO callback with a fresh fragment in the URL. Re-run
-  // the `sso-return` parse so the opaque code is still exchanged (and the
-  // fragment stripped + NO_SESSION flag maintained) on a bfcache restore. Routed
-  // through a ref so the listener registers exactly once and never churns with
-  // `runSsoReturn`'s identity.
-  const runSsoReturnRef = useRef(runSsoReturn);
-  runSsoReturnRef.current = runSsoReturn;
+  const closeAccountDialog = useCallback((): void => {
+    accountDialogControllerRef.current?.cancelSignIn();
+    dismissAccountDialogSurface();
+  }, [dismissAccountDialogSurface]);
+
+  // Start driving the dialog on mount; tear it down on unmount.
+  useEffect(() => {
+    const controller = accountDialogControllerRef.current;
+    controller?.start();
+    return () => controller?.destroy();
+  }, []);
+
+  // Expose the live open/close controls to the imperative manager so
+  // Imperative `openAccountDialog('signin')` (and app-level sign-in handlers) works.
+  useEffect(
+    () => registerAccountDialogControls({ open: openAccountDialog, close: closeAccountDialog }),
+    [openAccountDialog, closeAccountDialog],
+  );
+
+  // Broadcast visibility so `OxySignInButton`'s "Signing in…" affordance stays
+  // accurate regardless of what opened or dismissed the dialog.
+  useEffect(() => {
+    notifyAccountDialogVisibility(accountDialogOpen);
+  }, [accountDialogOpen]);
+
+  // ── Passkey (WebAuthn) ─────────────────────────────────────────────────────
+  // Web-only sign-in / registration via the browser WebAuthn ceremony. The fixed
+  // `options → ceremony → verify → commit` ordering lives in the pure
+  // `passkeyFlow` helpers (deps-injected, unit-tested); these wrappers supply the
+  // real deps (core `webauthn*` methods, the platform ceremony client, and the
+  // `commitSession` funnel). All three GATE on `isPasskeySupported()` so a native
+  // / unsupported surface throws loudly instead of stalling in a ceremony.
+
+  // Passkey sign-in. No `username` → usernameless (discoverable) flow. With a
+  // `username` → username-first: the server scopes `allowCredentials` to that
+  // user's passkeys so a non-discoverable hardware key (U2F/security key) can
+  // be selected.
+  const signInWithPasskey = useCallback(
+    async (opts?: { username?: string; deviceName?: string; deviceFingerprint?: string }): Promise<void> => {
+      const persisted = await authStore.load();
+      await runPasskeyLogin({
+        isSupported: isPasskeySupported,
+        getLoginOptions: (username) => oxyServices.webauthnLoginOptions(username),
+        runCeremony: runAuthenticationCeremony,
+        loginVerify: (response, envelope) => oxyServices.webauthnLoginVerify(response, envelope),
+        commit: (input) => commitSession(input, { activate: true }),
+        username: opts?.username,
+        deviceId: persisted?.deviceId,
+        deviceName: opts?.deviceName,
+        deviceFingerprint: opts?.deviceFingerprint,
+      });
+    },
+    [oxyServices, authStore, commitSession],
+  );
+
+  // Create a brand-new account whose first auth method is a passkey.
+  const registerWithPasskey = useCallback(
+    async (params: { username: string; deviceName?: string }): Promise<void> => {
+      await runPasskeyRegister({
+        isSupported: isPasskeySupported,
+        getRegisterOptions: (username) => oxyServices.webauthnRegisterOptions(username),
+        runCeremony: runRegistrationCeremony,
+        registerVerify: (response, envelope) => oxyServices.webauthnRegisterVerify(response, envelope),
+        commit: (input) => commitSession(input, { activate: true }),
+        username: params.username,
+        deviceName: params.deviceName,
+      });
+    },
+    [oxyServices, commitSession],
+  );
+
+  // Add a passkey to the already-signed-in account (bearer present). No new
+  // session is committed — just refresh the linked auth-methods list.
+  const addPasskey = useCallback(
+    async (params?: { deviceName?: string }): Promise<void> => {
+      await runPasskeyAdd({
+        isSupported: isPasskeySupported,
+        getRegisterOptions: () => oxyServices.webauthnRegisterOptions(),
+        runCeremony: runRegistrationCeremony,
+        registerVerify: (response, envelope) => oxyServices.webauthnRegisterVerify(response, envelope),
+        onLinked: () => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.authMethods.all });
+        },
+        deviceName: params?.deviceName,
+      });
+    },
+    [oxyServices, queryClient],
+  );
+
+  // Remove a passkey from the already-signed-in account by credential id. Not a
+  // ceremony — a plain unlink — so it needs no `isPasskeySupported` gate; it just
+  // refreshes the linked auth-methods list on success.
+  const removePasskey = useCallback(
+    async (credentialId: string): Promise<void> => {
+      await oxyServices.removePasskey(credentialId);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.authMethods.all });
+    },
+    [oxyServices, queryClient],
+  );
+
+  // ── Cold boot ────────────────────────────────────────────────────────────
+  // Device-first session restore via `runProviderColdBoot` (see boot/runProviderColdBoot.ts).
+  const runColdBoot = useCallback(async (): Promise<void> => {
+    // Resolve the pin BEFORE any boot lane runs: `getPinnedAccountId()` is a
+    // SYNCHRONOUS read on `SessionClient`'s apply path, and a stale `null` there
+    // would let a pinned client behave like an account-mode one for the first
+    // state it applies (including re-electing the device's active account).
+    if (identity) {
+      await identity.ensurePinnedAccountId();
+    }
+    await runProviderColdBoot({
+      oxyServices,
+      authStore,
+      clientId: clientIdProp,
+      authRedirectUri,
+      sessionMode,
+      identity: identity?.binding,
+      sessionClient,
+      syncDeviceCredentialToHost,
+      commitSession: (input, options) => commitSessionRef.current(input, options),
+      markAuthResolved: () => markAuthResolvedRef.current(),
+      setTokenReady,
+    });
+    // The boot may have (re-)established the identity session or cleared a pin
+    // whose key no longer exists, so re-resolve rather than trusting the memo
+    // taken before it ran.
+    if (identity) {
+      await identity.refreshPinnedAccountId();
+    }
+  }, [
+    oxyServices,
+    authStore,
+    clientIdProp,
+    authRedirectUri,
+    sessionMode,
+    identity,
+    syncDeviceCredentialToHost,
+    sessionClient,
+  ]);
 
   useEffect(() => {
-    if (!isWebBrowser()) {
+    if (initialized) {
       return;
     }
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (!event.persisted) {
+    if (!storage) {
+      return;
+    }
+    setInitialized(true);
+    runColdBoot().catch((error) => {
+      if (__DEV__) {
+        logger('Cold boot failed', error);
+      }
+    });
+  }, [runColdBoot, storage, initialized, logger]);
+
+  // Reconcile device state when the tab returns to foreground (background tabs may
+  // miss socket pushes or have stale bearer tokens).
+  useEffect(() => {
+    if (!isWebBrowser()) return;
+    const onVisibility = (): void => {
+      if (document.visibilityState !== 'visible') return;
+      const reconcile = async (): Promise<void> => {
+        if (!oxyServices.getAccessToken() && sessionClientHost.getDeviceCredential()) {
+          // Route through the ONE shared single-flight the scheduler/preflight/401
+          // use — never a private mint lane — so a tab-focus reconcile can't
+          // double-rotate the device secret against them.
+          await oxyServices.httpService.refreshAccessToken('preflight');
+        }
+        if (!oxyServices.getAccessToken() && !sessionClientHost.getDeviceCredential()) {
+          return;
+        }
+        await sessionClient.bootstrap();
+        await syncFromClient();
+      };
+      void reconcile().catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [oxyServices, sessionClient, sessionClientHost, syncFromClient]);
+
+  // Reconnect heal: when connectivity transitions offline→online while there is
+  // no live access token but a persisted device credential exists, re-mint ONCE
+  // through the SAME shared single-flight lane the scheduler / tab-focus
+  // reconcile / 401 path use — never a private mint lane, so this can't
+  // double-rotate the device secret against them. A device that cold-booted
+  // OFFLINE skipped the network mint step, so its session is otherwise only
+  // recovered by the next scheduled re-mint; healing on the reconnect edge makes
+  // recovery immediate. `onlineManager` is fed by OxyProvider's existing NetInfo
+  // (native) / `navigator.onLine` (web) listener, so this reuses the one
+  // connectivity signal instead of opening a second NetInfo subscription. Works
+  // on native and web alike.
+  useEffect(() => {
+    // Seed from the current verdict so the first callback heals only on a
+    // genuine offline→online edge, never an initial subscribe fan-out.
+    let previousOnline = onlineManager.isOnline();
+    return onlineManager.subscribe((online: boolean) => {
+      const wasOffline = previousOnline === false;
+      previousOnline = online;
+      if (!online || !wasOffline) {
         return;
       }
-      runSsoReturnRef.current().catch((error) => {
-        if (__DEV__) {
-          loggerUtil.debug(
-            'bfcache SSO return re-evaluation failed (non-fatal)',
-            { component: 'OxyContext', method: 'onPageShow' },
-            error,
-          );
+      void (async () => {
+        if (oxyServices.getAccessToken() || !sessionClientHost.getDeviceCredential()) {
+          return;
         }
-      });
-    };
-    window.addEventListener('pageshow', onPageShow);
-    return () => window.removeEventListener('pageshow', onPageShow);
-  }, []);
-
-  // EAGER, universal SSO-callback interception (web only, once on mount).
-  //
-  // When the central IdP redirects the RP back to the internal callback path
-  // ({@link SSO_CALLBACK_PATH}), the app's own router would otherwise mount on
-  // `/__oxy/sso-callback` — a route NO app declares — and briefly flash its
-  // +not-found screen before the storage-gated cold-boot `sso-return` step gets
-  // a chance to strip the fragment and restore the real destination.
-  //
-  // This effect fires the SAME `runSsoReturn` kernel the instant we hydrate ON
-  // the callback path, BEFORE the cold boot (which awaits storage init). The
-  // first render intentionally matches the app/router's static HTML; the
-  // browser layout effect then hides the internal route and consumes the
-  // callback before the first visible paint. That keeps SSR/SSG hydration stable
-  // while still ensuring no app needs a `/__oxy/sso-callback` route.
-  //
-  // It is purely ADDITIVE. The later cold-boot `sso-return` step stays as
-  // defense-in-depth for the non-callback-path case; `consumeSsoReturn` strips
-  // the fragment first, so once this eager pass has run the cold-boot step is a
-  // harmless idempotent no-op (a second parse of the now-fragment-less URL
-  // returns `null`). The path guard scopes this strictly to the callback path,
-  // so a normal page load is untouched. Routed through `runSsoReturnRef` (the
-  // SAME ref the bfcache handler uses) so deps stay `[]` and it registers once.
-  //
-  // Timing: `handleWebSSOSessionRef.current` is assigned SYNCHRONOUSLY during
-  // render (see below, around the `handleWebSSOSession` declaration), and effects
-  // run only after the render commits, so on an `ok` outcome the commit path is
-  // already wired when this fires at eager-mount time. If for any reason it were
-  // not yet set, the later cold-boot `sso-return` step would commit it — but the
-  // ref IS set during render, so the eager `ok` commit works.
-  useBrowserLayoutEffect(() => {
-    if (!isOnSsoCallbackPath()) {
-      setSsoCallbackIntercepting(false);
-      return;
-    }
-    let mounted = true;
-    setSsoCallbackIntercepting(true);
-    runSsoReturnRef.current().catch((error) => {
-      if (__DEV__) {
-        loggerUtil.debug(
-          'Eager SSO callback interception failed (non-fatal)',
-          { component: 'OxyContext', method: 'eagerSsoCallbackIntercept' },
-          error,
-        );
-      }
-    }).finally(() => {
-      if (mounted) {
-        setSsoCallbackIntercepting(false);
-      }
+        await oxyServices.httpService.refreshAccessToken('preflight');
+        if (!oxyServices.getAccessToken()) {
+          return;
+        }
+        await sessionClient.bootstrap();
+        await syncFromClient();
+      })().catch(() => undefined);
     });
+  }, [oxyServices, sessionClient, sessionClientHost, syncFromClient]);
 
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  // Exposed `refreshSessions`: re-bootstrap the server-authoritative device
+  // state and reproject — the manual counterpart to the realtime socket.
+  const refreshSessionsForContext = useCallback(async (): Promise<void> => {
+    await sessionClient.bootstrap();
+    await syncFromClient();
+  }, [sessionClient, syncFromClient]);
 
-  // Web SSO: automatically check for cross-domain session on web platforms.
-  // Updates all state and persists session metadata.
-  const handleWebSSOSession = useCallback(async (session: SessionLoginResponse) => {
-    if (!session?.user || !session?.sessionId) {
-      if (__DEV__) {
-        loggerUtil.warn('handleWebSSOSession: Invalid session', { component: 'OxyContext' });
-      }
-      return;
-    }
-
-    if (!session.accessToken) {
-      throw new Error('Session response did not include an access token');
-    }
-    oxyServices.httpService.setTokens(session.accessToken);
-
-    const clientSession = {
-      sessionId: session.sessionId,
-      deviceId: session.deviceId || '',
-      expiresAt: session.expiresAt || new Date(Date.now() + DEFAULT_SESSION_VALIDITY_MS).toISOString(),
-      lastActive: new Date().toISOString(),
-      userId: session.user.id?.toString() ?? '',
-      isCurrent: true,
-    };
-
-    updateSessions([clientSession], { merge: true });
-    setActiveSessionId(session.sessionId);
-
-    // Persist to storage BEFORE fetching the profile and BEFORE notifying the
-    // auth-state-change callback. The token is planted and the in-memory store
-    // is updated above; durably committing the session id here — ahead of
-    // `getCurrentUser()` / `loginSuccess` / `onAuthStateChange` — is critical
-    // because `onAuthStateChange` triggers a route navigation that can
-    // interrupt/supersede a still-pending async write. Persisting first
-    // guarantees the durable record lands; that is exactly what was missing
-    // when `oxy_session_session_ids` came back empty after a successful FedCM
-    // sign-in (the user appeared logged in until reload, then had no session to
-    // restore). `persistSessionDurably` awaits the READY storage instance rather
-    // than reading the possibly-null `storage` state, so a sign-in fired the
-    // instant the screen mounts (before storage-init populates state) is not
-    // silently dropped.
-    await persistSessionDurably(session.sessionId);
-
-    // Fetch the full user profile now that we have a valid access token and the
-    // session is durably persisted. The session only carries MinimalUserData;
-    // the store and callbacks expect a full User. The navigation kicked off by
-    // `onAuthStateChange` now happens only after the durable write is committed.
-    let fullUser: User;
-    try {
-      fullUser = await oxyServices.getCurrentUser();
-    } catch (profileError) {
-      if (__DEV__) {
-        loggerUtil.debug('Failed to fetch full user after web session; using session user fallback', { component: 'OxyContext', method: 'handleWebSSOSession' }, profileError as unknown);
-      }
-      // If the profile fetch fails, fall back to the minimal data from the session
-      // so the user is still logged in (the store accepts User, but the shapes overlap at runtime).
-      fullUser = session.user as unknown as User;
-    }
-    loginSuccess(fullUser);
-    // A session is now committed (FedCM silent / per-apex iframe /
-    // SSO-return all funnel through here) — unblock the auth-resolution
-    // gate immediately, ahead of the cold-boot chain returning (idempotent).
-    markAuthResolvedRef.current();
-    onAuthStateChange?.(fullUser);
-  }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, persistSessionDurably]);
-
-  // Expose `handleWebSSOSession` to the cold-boot FedCM/iframe/SSO steps,
-  // which reference it through a ref because they are declared above this
-  // callback. Assigned synchronously on every render so the ref is populated
-  // before the cold-boot effect (gated on `storage`/`initialized`) can fire.
-  handleWebSSOSessionRef.current = handleWebSSOSession;
-
-  // Keyless native sign-in: username/email + password. The slimmed Accounts app
-  // (which no longer holds a local identity key) uses this; it commits a
-  // successful session through the SAME `handleWebSSOSession` path FedCM / SSO
-  // use, so state, durable persistence, profile fetch, and `markAuthResolved`
-  // all run identically. The API returns either a full session OR a two-factor
-  // handoff (`{ twoFactorRequired, loginToken }`) — we surface the latter as a
-  // discriminated result so the caller can run the 2FA challenge without any
-  // session being committed.
-  const signInWithPassword = useCallback(
-    async (
-      identifier: string,
-      password: string,
-      opts?: { deviceName?: string; deviceFingerprint?: string },
-    ): Promise<PasswordSignInResult> => {
-      // On a cross-apex web RP a direct password sign-in mints a bearer against
-      // the Oxy API but establishes no `fedcm_session`, so the session would be
-      // lost on reload. Refuse it and direct the app to the durable IdP popup
-      // ("Continue with Oxy"). Native and same-apex `*.oxy.so` are unaffected.
-      if (isCrossApexWeb()) {
-        throw new CrossApexDirectSignInError();
-      }
-      const response = await oxyServices.signIn(
-        identifier,
-        password,
-        opts?.deviceName,
-        opts?.deviceFingerprint,
-      );
-      // Core types `signIn` as `SessionLoginResponse`, but the API may instead
-      // return a 2FA challenge handoff. Widen with optional fields (no `any`) to
-      // read them — the added members are optional, so the base type is
-      // assignable to this intersection.
-      const maybeTwoFactor: SessionLoginResponse & {
-        twoFactorRequired?: boolean;
-        loginToken?: string;
-      } = response;
-      if (maybeTwoFactor.twoFactorRequired && maybeTwoFactor.loginToken) {
-        return { status: '2fa_required', loginToken: maybeTwoFactor.loginToken };
-      }
-      // Full session — commit it through the shared web-session path.
-      await handleWebSSOSession(response);
-      return { status: 'ok' };
-    },
-    [oxyServices, handleWebSSOSession],
-  );
-
-  // Cross-domain silent SSO is now owned by the `fedcm-silent` / `silent-iframe`
-  // cold-boot steps above (the ordered `runColdBoot` sequence). `useWebSSO`
-  // remains mounted for its module-level run-once guard and its interactive
-  // FedCM helpers, and as a bounded post-boot safety net: it can fire at most
-  // once per page load (its own module guard), and only AFTER cold boot has
-  // finished (`tokenReady`) with no user recovered. We deliberately keep
-  // `shouldTryWebSSO` as `tokenReady && !user && initialized` — it is NOT
-  // loosened; cold boot runs while `tokenReady` is false, so this never races
-  // the cold-boot silent step.
-  const shouldTryWebSSO = isWebBrowser() && tokenReady && !user && initialized;
-
-  useWebSSO({
-    oxyServices,
-    onSessionFound: handleWebSSOSession,
-    onError: (error) => {
-      if (__DEV__) {
-        loggerUtil.debug('Web SSO check failed (non-critical)', { component: 'OxyContext' }, error);
-      }
-    },
-    enabled: shouldTryWebSSO,
-  });
-
-  // IdP session validation via lightweight iframe check
-  // When user returns to tab, verify auth.oxy.so still has their session
-  // If session is gone (cleared/logged out), clear local session too
-  const lastIdPCheckRef = useRef<number>(0);
-  const pendingIdPCleanupRef = useRef<(() => void) | null>(null);
-
-  // Use the RESOLVED IdP origin (the auto-detected `auth.<rp-apex>` planted on
-  // the instance config), not the raw `authWebUrl` prop — on a cross-domain RP
-  // the prop is undefined but the instance was constructed with the detected
-  // value, so the check must target the same first-party IdP the cold-boot
-  // iframe used.
-  const resolvedAuthWebUrl = oxyServices.config?.authWebUrl;
-
-  useEffect(() => {
-    if (!isWebBrowser() || !user || !initialized) return;
-
-    const idpOrigin = resolvedAuthWebUrl || 'https://auth.oxy.so';
-
-    const checkIdPSession = () => {
-      // Debounce: check at most once per cooldown window
-      const now = Date.now();
-      if (now - lastIdPCheckRef.current < IDP_SESSION_CHECK_COOLDOWN) return;
-      lastIdPCheckRef.current = now;
-
-      // Clean up any in-flight check before starting a new one
-      pendingIdPCleanupRef.current?.();
-
-      // Load hidden iframe to check IdP session via postMessage
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'display:none;width:0;height:0;border:0';
-      iframe.src = `${idpOrigin}/auth/session-check?client_id=${encodeURIComponent(window.location.origin)}`;
-
-      let cleaned = false;
-      const cleanup = () => {
-        if (cleaned) return;
-        cleaned = true;
-        window.removeEventListener('message', handleMessage);
-        iframe.remove();
-      };
-
-      const handleMessage = async (event: MessageEvent) => {
-        if (event.origin !== idpOrigin) return;
-        if (event.data?.type !== 'oxy-session-check') return;
-        cleanup();
-
-        if (!event.data.hasSession) {
-          // Only a SAME-SITE, first-party IdP answer is authoritative enough to
-          // force a local sign-out. On a cross-site / undetermined IdP the
-          // "no session" answer must never clear local state (a third-party
-          // can't be trusted to end this app's session). Surface the toast in
-          // both cases, but gate the destructive `clearSessionState()`.
-          if (isSameSiteIdP(idpOrigin)) {
-            toast.info('Your session has ended. Please sign in again.');
-            await clearSessionState();
-          }
-        }
-      };
-
-      window.addEventListener('message', handleMessage);
-      document.body.appendChild(iframe);
-      setTimeout(cleanup, IDP_SESSION_CHECK_TIMEOUT);
-      pendingIdPCleanupRef.current = cleanup;
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        checkIdPSession();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      pendingIdPCleanupRef.current?.();
-      pendingIdPCleanupRef.current = null;
-    };
-  }, [user, initialized, clearSessionState, resolvedAuthWebUrl]);
-
-  const activeSession = activeSessionId
-    ? sessions.find((session) => session.sessionId === activeSessionId)
-    : undefined;
-  const currentDeviceId = activeSession?.deviceId ?? null;
-
-  const userId = user?.id;
-
-  const refreshSessionsWithUser = useCallback(
-    () => refreshSessions(userId),
-    [refreshSessions, userId],
-  );
-
-  const handleSessionRemoved = useCallback(
-    (sessionId: string) => {
-      trackRemovedSession(sessionId);
-    },
-    [trackRemovedSession],
-  );
-
-  const handleRemoteSignOut = useCallback(() => {
-    toast.info('You have been signed out remotely.');
-    logout().catch((remoteError) => logger('Failed to process remote sign out', remoteError));
-  }, [logger, logout]);
-
-  useSessionSocket({
-    userId,
-    activeSessionId,
-    currentDeviceId,
-    refreshSessions: refreshSessionsWithUser,
-    clearSessionState,
-    baseURL: oxyServices.getBaseURL(),
-    getAccessToken: () => oxyServices.getAccessToken(),
-    onRemoteSignOut: handleRemoteSignOut,
-    onSessionRemoved: handleSessionRemoved,
-  });
-
+  // Exposed `switchSession`: route through the server-authoritative
+  // `SessionClient`. Resolve the target account from the current device state,
+  // ask the server to switch, reproject, and return the now-active user.
+  //
+  // Identity-bound providers reject: this is the session-keyed twin of
+  // `switchToAccount`, so leaving it live would be a bypass around the same rule.
   const switchSessionForContext = useCallback(
     async (sessionId: string): Promise<User> => {
-      // Propagate the activated user so callers (the device-flow sign-in,
-      // `useSwitchSession`'s cache write, account chooser) receive it. The
-      // underlying session-management `switchSession` already resolves the
-      // `User`; the previous `Promise<void>` wrapper discarded it.
-      return switchSession(sessionId);
+      if (isIdentityBound) {
+        throw new IdentityBoundSessionError('switchSession');
+      }
+      const targetAccountId = sessionClient
+        .getState()
+        ?.accounts.find((account) => account.sessionId === sessionId)?.accountId;
+      if (!targetAccountId) {
+        throw new Error(`No device account found for session "${sessionId}"`);
+      }
+      await sessionClient.switchAccount(targetAccountId);
+      await syncFromClient();
+      const activeUser = useAuthStore.getState().user;
+      if (!activeUser) {
+        throw new Error('Active account profile could not be resolved after switch');
+      }
+      return activeUser;
     },
-    [switchSession],
+    [isIdentityBound, sessionClient, syncFromClient],
   );
 
-  // Identity management wrappers (delegate to KeyManager)
-  const hasIdentity = useCallback(async (): Promise<boolean> => {
-    return KeyManager.hasIdentity();
-  }, []);
+  // Thin passthroughs to the platform-agnostic KeyManager. NOTE: both now THROW
+  // `IdentityUnavailableError` (from `@oxyhq/core`) when identity storage is
+  // locked/unreadable, instead of flattening that into `false`/`null`. We keep
+  // the signatures and deliberately let the typed error PROPAGATE to the caller
+  // — a locked keychain must never be misreported as "no identity". `hasIdentity`
+  // still resolves `false` and `getPublicKey` still resolves `null` for a genuine
+  // absence.
+  const hasIdentity = useCallback(async (): Promise<boolean> => KeyManager.hasIdentity(), []);
+  const getPublicKey = useCallback(async (): Promise<string | null> => KeyManager.getPublicKey(), []);
 
-  const getPublicKey = useCallback(async (): Promise<string | null> => {
-    return KeyManager.getPublicKey();
-  }, []);
-
-  // Create showBottomSheet function that uses the global function
   const showBottomSheetForContext = useCallback(
     (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => {
       globalShowBottomSheet(screenOrConfig);
@@ -1992,216 +1173,166 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [],
   );
 
-  // Avatar picker extracted into dedicated hook
   const { openAvatarPicker } = useAvatarPicker({
     oxyServices,
     currentLanguage,
     activeSessionId,
     queryClient,
-    showBottomSheet: showBottomSheetForContext,
   });
 
-  // --- Account graph state ---
-  const [accounts, setAccounts] = useState<AccountNode[]>([]);
-
-  // Load the unified account graph when authenticated
-  const refreshAccounts = useCallback(async (): Promise<void> => {
-    if (!isAuthenticated || !tokenReady || !oxyServices.getAccessToken()) {
-      setAccounts([]);
-      return;
-    }
-
-    try {
-      const list = await oxyServices.listAccounts();
-      setAccounts(list);
-    } catch (err) {
-      if (isUnauthorizedStatus(err)) {
-        setAccounts([]);
-        await clearSessionStateRef.current();
-        return;
-      }
-      if (__DEV__) {
-        loggerUtil.debug('Failed to load accounts', { component: 'OxyContext' }, err as unknown);
-      }
-    }
-  }, [isAuthenticated, oxyServices, tokenReady]);
-
-  useEffect(() => {
-    if (isAuthenticated && initialized && tokenReady) {
-      refreshAccounts();
-    }
-  }, [isAuthenticated, initialized, tokenReady, refreshAccounts]);
-
-  // Switch the active session INTO an account from the unified graph. In the
-  // REAL-SESSION model this is identical to switching device sign-ins: mint a
-  // real session for the target and make the whole app that account. The removed
-  // `X-Acting-As` delegation header is gone — `oxyServices.switchToAccount`
-  // plants the minted access token (the refresh token is the server-set httpOnly
-  // `oxy_rt_<authuser>` cookie, so the session joins the device multi-account set
-  // and survives reload / `refresh-all`). We then commit the session into context
-  // state the SAME way sign-in / `switchSession` do, refresh the account graph,
-  // and invalidate every query so all data reloads as the new account.
-  const switchToAccount = useCallback(async (accountId: string): Promise<void> => {
-    const result = await oxyServices.switchToAccount(accountId);
-    if (!result?.user || !result?.sessionId) {
-      throw new Error('Account switch did not return a valid session');
-    }
-
-    // `oxyServices.switchToAccount` already planted `result.accessToken` as the
-    // active token; mirror the minted session into the multi-account store and
-    // mark it current, recording the device `authuser` slot so web silent-switch
-    // and the device account chooser can address it.
-    const now = new Date();
-    const clientSession: ClientSession = {
-      sessionId: result.sessionId,
-      deviceId: result.deviceId || '',
-      expiresAt: result.expiresAt || new Date(now.getTime() + DEFAULT_SESSION_VALIDITY_MS).toISOString(),
-      lastActive: now.toISOString(),
-      userId: result.user.id?.toString() ?? '',
-      isCurrent: true,
-      ...(typeof result.authuser === 'number' ? { authuser: result.authuser } : null),
-    };
-    updateSessions([clientSession], { merge: true });
-    setActiveSessionId(result.sessionId);
-    if (isWebBrowser() && typeof result.authuser === 'number') {
-      writeActiveAuthuser(result.authuser);
-    }
-    await persistSessionDurably(result.sessionId);
-
-    // Fetch the canonical User for the new account (the switch result carries
-    // only MinimalUserData); fall back to that minimal shape if the profile
-    // fetch fails so the app still reflects the switched identity.
-    let fullUser: User;
-    try {
-      fullUser = await oxyServices.getCurrentUser();
-    } catch (profileError) {
-      if (__DEV__) {
-        loggerUtil.debug('Failed to fetch full user after account switch; using switch result user', { component: 'OxyContext', method: 'switchToAccount' }, profileError as unknown);
-      }
-      fullUser = result.user as unknown as User;
-    }
-    loginSuccess(fullUser);
-    onAuthStateChange?.(fullUser);
-
-    // Reload the switchable account graph (the new active account's relationships
-    // differ) and invalidate every query so all data refetches as the new
-    // account — the deviceAccounts probe re-enumerates the multi-account set so
-    // the switched account now appears as a device session.
-    await refreshAccounts();
-    queryClient.invalidateQueries();
-  }, [oxyServices, updateSessions, setActiveSessionId, persistSessionDurably, loginSuccess, onAuthStateChange, refreshAccounts, queryClient]);
-
-  const createAccountFn = useCallback(async (data: CreateAccountInput): Promise<AccountNode> => {
-    const account = await oxyServices.createAccount(data);
-    await refreshAccounts();
-    return account;
-  }, [oxyServices, refreshAccounts]);
+  const { accounts, refreshAccounts, switchToAccount, createAccount: createAccountFn } = useOxyAccountGraph({
+    isAuthenticated,
+    tokenReady,
+    initialized,
+    identityBound: isIdentityBound,
+    oxyServices,
+    sessionClient,
+    syncFromClient,
+    commitSession,
+    queryClient,
+    accountDialogControllerRef,
+    clearSessionStateRef,
+  });
 
   const canUsePrivateApi = authResolved && isAuthenticated && tokenReady && hasAccessToken;
   const isPrivateApiPending = !authResolved || (isAuthenticated && (!tokenReady || !hasAccessToken));
 
-  const contextValue: OxyContextState = useMemo(() => ({
-    user,
-    sessions,
-    activeSessionId,
-    isAuthenticated,
-    isLoading,
-    isTokenReady: tokenReady,
-    hasAccessToken,
-    canUsePrivateApi,
-    isPrivateApiPending,
-    isAuthResolved: authResolved,
-    isStorageReady: storage !== null,
-    error,
-    currentLanguage,
-    currentLanguageMetadata,
-    currentLanguageName,
-    currentNativeLanguageName,
-    hasIdentity,
-    getPublicKey,
-    signIn,
-    signInWithPassword,
-    handleWebSession: handleWebSSOSession,
-    logout,
-    logoutAll,
-    switchSession: switchSessionForContext,
-    removeSession: logout,
-    refreshSessions: refreshSessionsWithUser,
-    setLanguage,
-    getDeviceSessions,
-    logoutAllDeviceSessions,
-    updateDeviceName,
-    clearSessionState,
-    clearAllAccountData,
-    storageKeyPrefix,
-    clientId,
+  // Keep the native background credential in step with this session, so native
+  // background code (a widget worker) can authenticate with no JS runtime. Inert
+  // unless the app opted in. Placed AFTER `canUsePrivateApi` because provisioning
+  // needs a bearer, and keyed on the signed-in account so a sign-out or an
+  // account switch revokes the credential before anything else happens.
+  useBackgroundSessionSync({
+    enabled: backgroundSession,
     oxyServices,
-    useFollow: useFollowHook,
-    showBottomSheet: showBottomSheetForContext,
-    openAvatarPicker,
-    accounts,
-    switchToAccount,
-    refreshAccounts,
-    createAccount: createAccountFn,
-  }), [
-    activeSessionId,
-    signIn,
-    signInWithPassword,
-    handleWebSSOSession,
-    currentLanguage,
-    currentLanguageMetadata,
-    currentLanguageName,
-    currentNativeLanguageName,
-    error,
-    getDeviceSessions,
-    hasAccessToken,
+    userId: user?.id ?? null,
     canUsePrivateApi,
-    isPrivateApiPending,
-    getPublicKey,
-    hasIdentity,
-    isAuthenticated,
-    isLoading,
-    logout,
-    logoutAll,
-    logoutAllDeviceSessions,
-    oxyServices,
-    storageKeyPrefix,
-    clientId,
-    refreshSessionsWithUser,
-    sessions,
-    setLanguage,
-    storage,
-    switchSessionForContext,
-    tokenReady,
-    hasAccessToken,
-    canUsePrivateApi,
-    isPrivateApiPending,
-    authResolved,
-    updateDeviceName,
-    clearAllAccountData,
-    useFollowHook,
-    user,
-    showBottomSheetForContext,
-    openAvatarPicker,
-    accounts,
-    switchToAccount,
-    refreshAccounts,
-    createAccountFn,
-  ]);
+  });
 
-  return (
-    <OxyContext.Provider value={contextValue}>
-      {ssoCallbackIntercepting ? null : children}
-    </OxyContext.Provider>
+  const contextValue: OxyContextState = useMemo(
+    () => ({
+      user,
+      sessions,
+      activeSessionId,
+      isAuthenticated,
+      isLoading,
+      isTokenReady: tokenReady,
+      hasAccessToken,
+      canUsePrivateApi,
+      isPrivateApiPending,
+      isAuthResolved: authResolved,
+      isStorageReady: storage !== null,
+      sessionMode: isIdentityBound ? 'identity' : 'account',
+      webAuthMode,
+      error,
+      currentLanguage,
+      currentLanguages,
+      currentLanguageMetadata,
+      currentLanguageName,
+      currentNativeLanguageName,
+      hasIdentity,
+      getPublicKey,
+      signIn,
+      signInWithPasskey,
+      registerWithPasskey,
+      addPasskey,
+      removePasskey,
+      revokeSuspiciousSignIn,
+      handleWebSession,
+      startWebOAuthSignIn: startWebOAuthSignInForContext,
+      logout,
+      logoutAll,
+      switchSession: switchSessionForContext,
+      removeSession: logout,
+      refreshSessions: refreshSessionsForContext,
+      setLanguage,
+      getDeviceSessions,
+      logoutAllDeviceSessions,
+      updateDeviceName,
+      clearSessionState,
+      clearAllAccountData,
+      storageKeyPrefix,
+      clientId,
+      oxyServices,
+      sessionClient,
+      useFollow: useFollowHook,
+      showBottomSheet: showBottomSheetForContext,
+      openAvatarPicker,
+      accountDialogController,
+      isAccountDialogOpen: accountDialogOpen,
+      openAccountDialog,
+      closeAccountDialog,
+      accounts,
+      switchToAccount,
+      refreshAccounts,
+      createAccount: createAccountFn,
+    }),
+    [
+      user,
+      sessions,
+      activeSessionId,
+      isAuthenticated,
+      isLoading,
+      tokenReady,
+      hasAccessToken,
+      canUsePrivateApi,
+      isPrivateApiPending,
+      authResolved,
+      storage,
+      isIdentityBound,
+      webAuthMode,
+      error,
+      currentLanguage,
+      currentLanguages,
+      currentLanguageMetadata,
+      currentLanguageName,
+      currentNativeLanguageName,
+      hasIdentity,
+      getPublicKey,
+      signIn,
+      signInWithPasskey,
+      registerWithPasskey,
+      addPasskey,
+      removePasskey,
+      revokeSuspiciousSignIn,
+      handleWebSession,
+      startWebOAuthSignInForContext,
+      logout,
+      logoutAll,
+      switchSessionForContext,
+      refreshSessionsForContext,
+      setLanguage,
+      getDeviceSessions,
+      logoutAllDeviceSessions,
+      updateDeviceName,
+      clearSessionState,
+      clearAllAccountData,
+      storageKeyPrefix,
+      clientId,
+      oxyServices,
+      sessionClient,
+      useFollowHook,
+      showBottomSheetForContext,
+      openAvatarPicker,
+      accountDialogController,
+      accountDialogOpen,
+      openAccountDialog,
+      closeAccountDialog,
+      accounts,
+      switchToAccount,
+      refreshAccounts,
+      createAccountFn,
+    ],
   );
+
+  return <OxyContext.Provider value={contextValue}>{children}</OxyContext.Provider>;
 };
 
 export const OxyContextProvider = OxyProvider;
 
 /**
  * Loading-state stub used when `useOxy()` is called outside an OxyProvider.
- * All async methods reject with a clear error so misuse is caught early
- * instead of silently no-oping and leaving the UI in a bad state.
+ * All async methods reject with a clear error so misuse is caught early.
  */
 const PROVIDER_MISSING_ERROR_MESSAGE =
   'OxyProvider is not mounted. Wrap your app in <OxyProvider> before calling useOxy() methods.';
@@ -2209,12 +1340,7 @@ const PROVIDER_MISSING_ERROR_MESSAGE =
 const rejectMissingProvider = <T,>(): Promise<T> =>
   Promise.reject(new Error(PROVIDER_MISSING_ERROR_MESSAGE));
 
-// A stub OxyServices instance so the public type contract is preserved.
-// Calling network methods on it before a provider mounts will fail with
-// a descriptive baseURL — preferable to a null-pointer crash at the call site.
-const LOADING_STATE_OXY_SERVICES = new OxyServices({
-  baseURL: 'about:blank',
-});
+const LOADING_STATE_OXY_SERVICES = new OxyServices({ baseURL: 'about:blank' });
 
 const LOADING_STATE: OxyContextState = {
   user: null,
@@ -2228,16 +1354,24 @@ const LOADING_STATE: OxyContextState = {
   isPrivateApiPending: true,
   isAuthResolved: false,
   isStorageReady: false,
+  sessionMode: 'account',
+  webAuthMode: 'popup',
   error: null,
-  currentLanguage: 'en',
+  currentLanguage: 'en-US',
+  currentLanguages: [],
   currentLanguageMetadata: null,
-  currentLanguageName: 'English',
-  currentNativeLanguageName: 'English',
+  currentLanguageName: 'English (United States)',
+  currentNativeLanguageName: 'English (United States)',
   hasIdentity: () => Promise.resolve(false),
   getPublicKey: () => Promise.resolve(null),
   signIn: () => rejectMissingProvider<User>(),
-  signInWithPassword: () => rejectMissingProvider<PasswordSignInResult>(),
+  signInWithPasskey: () => rejectMissingProvider<void>(),
+  registerWithPasskey: () => rejectMissingProvider<void>(),
+  addPasskey: () => rejectMissingProvider<void>(),
+  removePasskey: () => rejectMissingProvider<void>(),
+  revokeSuspiciousSignIn: () => rejectMissingProvider<void>(),
   handleWebSession: () => rejectMissingProvider<void>(),
+  startWebOAuthSignIn: () => rejectMissingProvider<WebOAuthSignInResult>(),
   logout: () => rejectMissingProvider<void>(),
   logoutAll: () => rejectMissingProvider<void>(),
   switchSession: () => rejectMissingProvider<User>(),
@@ -2252,11 +1386,16 @@ const LOADING_STATE: OxyContextState = {
   storageKeyPrefix: 'oxy_session',
   clientId: null,
   oxyServices: LOADING_STATE_OXY_SERVICES,
+  sessionClient: null,
   openAvatarPicker: () => {},
+  accountDialogController: null,
+  isAccountDialogOpen: false,
+  openAccountDialog: () => {},
+  closeAccountDialog: () => {},
   accounts: [],
   switchToAccount: () => rejectMissingProvider<void>(),
   refreshAccounts: () => rejectMissingProvider<void>(),
-  createAccount: () => rejectMissingProvider<AccountNode>(),
+  createAccount: () => rejectMissingProvider<import('@oxyhq/core').AccountNode>(),
 };
 
 export const useOxy = (): OxyContextState => {
@@ -2266,5 +1405,3 @@ export const useOxy = (): OxyContextState => {
   }
   return context;
 };
-
-export default OxyContext;

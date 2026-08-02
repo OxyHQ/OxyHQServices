@@ -1,6 +1,9 @@
 import crypto from 'crypto';
-import { Request } from 'express';
-import Session from '../models/Session';
+import type { Request } from 'express';
+import { and, asc, desc, eq, gt, ne } from 'drizzle-orm';
+import { getDb } from '../config/postgres';
+import { sessions } from '../db/schema/sessions';
+import { users } from '../db/schema/users';
 import { logger } from './logger';
 import { formatUserResponse } from './userTransform';
 import sessionCache from './sessionCache';
@@ -15,7 +18,6 @@ export interface DeviceFingerprint {
     height: number;
     colorDepth: number;
   };
-  ipAddress: string;
 }
 
 export type DeviceFingerprintInput = DeviceFingerprint | string;
@@ -29,9 +31,7 @@ export interface DeviceInfo {
   platform: string;
   browser?: string;
   os?: string;
-  ipAddress?: string;
   userAgent?: string;
-  location?: string;
   fingerprint?: string;
   /**
    * How `deviceId` was sourced. Diagnostic only — never persisted on the
@@ -40,9 +40,14 @@ export interface DeviceInfo {
   deviceIdSource?: 'provided' | 'fingerprint-derived' | 'random';
 }
 
-const UNRESOLVABLE_IPS: ReadonlySet<string> = new Set(['unknown', '127.0.0.1', '::1']);
-
 const PRE_AUTH_USER_SCOPE = 'pre-auth';
+
+/**
+ * The bucket both User-Agent parsers fall back to when nothing matches. Callers
+ * that must not display a guess (see {@link deriveCoarseClientLabel}) compare
+ * against this instead of the bare string.
+ */
+const UNKNOWN_USER_AGENT_BUCKET = 'Unknown';
 
 /**
  * Resolve the server-side device-id salt at call time.
@@ -64,42 +69,44 @@ function getDeviceIdSalt(): string | null {
 }
 
 /**
- * Derive a stable, non-PII deviceId from a request's User-Agent + IP +
+ * Derive a stable, non-PII deviceId from a request's User-Agent +
  * Accept-Language, scoped by a server-side salt and (optionally) the
  * authenticated `userId`. The output is the first 32 hex chars of
- * `sha256("${salt}|${userScope}|${ua}|${ip}|${lang}")`, which gives roughly
+ * `sha256("${salt}|${userScope}|${ua}|${lang}")`, which gives roughly
  * 128 bits of entropy in the digest space.
  *
- * **Why salt + userId?** Without them, two distinct users behind the same
- * NAT/proxy/office using the same Chrome version + Accept-Language would
- * derive the SAME deviceId — leaking the existence of one user's sessions
- * to the other via `getDeviceActiveSessions`, and enabling cross-tenant
- * session termination via `logoutAllDeviceSessions`. Scoping by `userId`
- * makes the device-grouping per-user (the multi-account browser-switcher
- * is driven separately by indexed refresh cookies, not by this id).
+ * **IP is deliberately NOT an input.** The platform stores no user IP addresses
+ * at rest (privacy invariant — see
+ * docs/superpowers/specs/2026-07-14-no-ip-storage-design.md). Beyond the privacy
+ * requirement, a salted hash over the tiny IPv4 space is brute-forceable by
+ * anyone with server access, and IP churn (mobile networks, NAT re-lease) made
+ * IP-seeded ids unstable — a single physical device kept minting fresh session
+ * rows as its IP rotated. Dropping IP fixes both.
+ *
+ * **Why salt + userId?** Without them, two distinct users on the same browser
+ * (same Chrome version + Accept-Language) would derive the SAME deviceId —
+ * leaking the existence of one user's sessions to the other via
+ * `getDeviceActiveSessions`, and enabling cross-tenant session termination via
+ * `logoutAllDeviceSessions`. Scoping by `userId` makes the device-grouping
+ * per-user. The accepted trade-off is that the same user + same UA + same
+ * language on two physical devices dedupe to one deviceId — acceptable because
+ * device-first auth uses the client-persisted deviceId as the authority.
  *
  * Pre-auth callers (e.g. signup, before the user record exists) MAY pass
  * `userId = null`; the resulting id is stable for the pre-auth phase but
  * deterministically distinct from any post-auth id derived from the same
- * UA/IP/lang.
+ * UA/lang.
  *
  * Falls back to `null` when:
  *   - the server-side salt is unset (caller should fall back to a random id);
- *   - the User-Agent is missing or the literal string `'unknown'`;
- *   - the IP is missing or one of the unresolvable sentinels
- *     (`'unknown'`, `'127.0.0.1'`, `'::1'`) — those would deterministically
- *     collide across totally unrelated requests.
+ *   - the User-Agent is missing or the literal string `'unknown'`.
  */
 export function deriveStableDeviceId(
   userAgent: string,
-  ip: string | undefined,
   acceptLanguage: string,
   userId?: string | null
 ): string | null {
   if (!userAgent || userAgent === 'unknown') {
-    return null;
-  }
-  if (!ip || UNRESOLVABLE_IPS.has(ip)) {
     return null;
   }
   const salt = getDeviceIdSalt();
@@ -109,28 +116,28 @@ export function deriveStableDeviceId(
   const userScope = userId && userId.length > 0 ? userId : PRE_AUTH_USER_SCOPE;
   return crypto
     .createHash('sha256')
-    .update(`${salt}|${userScope}|${userAgent}|${ip}|${acceptLanguage}`)
+    .update(`${salt}|${userScope}|${userAgent}|${acceptLanguage}`)
     .digest('hex')
     .slice(0, 32);
 }
 
 /**
- * Derive a stable, non-PII deviceId for an IdP/FedCM-issued session, keyed by
+ * Derive a stable, non-PII deviceId for a session minted server-to-server on
+ * behalf of a caller with no stable client identity of its own, keyed by
  * `(userId, key)` instead of the request's UA/IP. The output is the first 32
- * hex chars of `sha256("${salt}|${userId}|fedcm|${key}")`.
+ * hex chars of `sha256("${salt}|${userId}|idp|${key}")`. The `idp` hash
+ * segment is FIXED cryptographic derivation material for server-minted sessions.
  *
- * **Why a separate helper?** FedCM token exchange runs server-to-server from
- * the IdP Cloudflare Worker, so the request's User-Agent is `'unknown'` and
- * the egress IP varies per call. Feeding that into `deriveStableDeviceId`
- * yields a fresh random id every exchange → a brand-new "FedCM Sign-In"
- * session row on every silent-auth / SSO bounce. Keying off the RP origin
- * (`key`) instead makes one `(user, RP)` reuse a single session that simply
- * refreshes its tokens/expiry.
+ * **Why a separate helper?** A server-to-server mint has no meaningful
+ * User-Agent (`'unknown'`), so `deriveStableDeviceId` returns null for it → the
+ * caller would fall back to a fresh random id every call → a brand-new session
+ * row each time. Keying off a stable per-caller key (`key`) instead makes one
+ * `(user, RP)` reuse a single session that simply refreshes its tokens/expiry.
  *
- * **Why the `'fedcm'` namespace segment?** It guarantees the output can never
- * collide with an IP/UA-derived id from `deriveStableDeviceId` (whose hash
- * input never contains the literal `fedcm` in that position), so the two
- * device-id spaces stay disjoint.
+ * **Why the `'idp'` namespace segment?** It guarantees the output can never
+ * collide with a UA-derived id from `deriveStableDeviceId` (whose hash input
+ * never contains the literal `idp` in that position), so the two device-id
+ * spaces stay disjoint.
  *
  * **Per-user scoping is MANDATORY (security review H1):** `userId` is mixed
  * into the hash so two users with the same RP `key` can never derive the same
@@ -144,7 +151,7 @@ export function deriveStableDeviceId(
  * weak/unsalted id.
  *
  * @param userId - Authenticated user id. Required for per-user scoping.
- * @param key - Stable per-RP key (the FedCM `clientOrigin` / token aud).
+ * @param key - Stable per-RP key (e.g. the RP client origin / token audience).
  * @throws Error when `DEVICE_ID_SALT` is unset (fail-closed).
  */
 export function deriveServiceDeviceId(userId: string, key: string): string {
@@ -157,7 +164,7 @@ export function deriveServiceDeviceId(userId: string, key: string): string {
   }
   return crypto
     .createHash('sha256')
-    .update(`${salt}|${userId}|fedcm|${key}`)
+    .update(`${salt}|${userId}|idp|${key}`)
     .digest('hex')
     .slice(0, 32);
 }
@@ -191,13 +198,13 @@ export const generateDeviceFingerprint = (fingerprint: DeviceFingerprintInput): 
 /**
  * Extract device information from request.
  *
- * @param req - Express request to read headers/IP from.
+ * @param req - Express request to read headers from.
  * @param providedDeviceId - Optional explicit deviceId supplied by the client.
  * @param deviceName - Optional explicit device name supplied by the client.
  * @param userId - Optional authenticated user id. When set, the derived
- *   deviceId is scoped to this user so two distinct users behind the same
- *   NAT/proxy on the same browser do NOT collide on the same id. Pre-auth
- *   callers (signup, pre-credential FedCM) should pass `null` / omit.
+ *   deviceId is scoped to this user so two distinct users on the same browser
+ *   do NOT collide on the same id. Pre-auth callers (signup, device bootstrap
+ *   before a session exists) should pass `null` / omit.
  */
 export const extractDeviceInfo = (
   req: Request,
@@ -214,18 +221,17 @@ export const extractDeviceInfo = (
   const os = parseUserAgentOS(userAgent);
   const deviceType = parseDeviceType(userAgent);
 
-  const ipAddress = req.ip || req.connection.remoteAddress;
   const acceptLanguageHeader = req.headers['accept-language'];
   const acceptLanguage = typeof acceptLanguageHeader === 'string' ? acceptLanguageHeader : '';
 
   // Stable deviceId fallback. The derived id is salted + user-scoped (see
   // `deriveStableDeviceId`) so device-grouping is per-user; the multi-account
   // browser switcher is driven by indexed refresh cookies, not by this id.
-  // We fall back to a random id when ANY of the inputs is unresolvable.
+  // We fall back to a random id when the UA is unresolvable or the salt is unset.
   let resolvedDeviceId = providedDeviceId;
   let deviceIdSource: DeviceInfo['deviceIdSource'] = providedDeviceId ? 'provided' : 'random';
   if (!resolvedDeviceId) {
-    const derived = deriveStableDeviceId(userAgent, ipAddress, acceptLanguage, userId);
+    const derived = deriveStableDeviceId(userAgent, acceptLanguage, userId);
     if (derived) {
       resolvedDeviceId = derived;
       deviceIdSource = 'fingerprint-derived';
@@ -242,9 +248,7 @@ export const extractDeviceInfo = (
     platform,
     browser,
     os,
-    ipAddress,
     userAgent,
-    location: req.headers['cf-ipcountry'] as string || undefined, // Cloudflare country header
     deviceIdSource,
   };
 };
@@ -266,6 +270,43 @@ export const generateDefaultDeviceName = (browser?: string, os?: string): string
 };
 
 /**
+ * Derive a COARSE, display-only client label (`"Chrome on Windows"`) from a
+ * request User-Agent, for approval surfaces that must tell the approver WHERE a
+ * request came from without trusting anything the requester can assert.
+ *
+ * **Privacy invariant (owner-mandated).** The output is one of the small closed
+ * set of labels composable from the buckets {@link parseUserAgentBrowser} and
+ * {@link parseUserAgentOS} recognise. The raw User-Agent is NEVER returned and
+ * never persisted, and no IP address, geolocation, or country ever enters this
+ * path (see `docs/superpowers/specs/2026-07-14-no-ip-storage-design.md`). It is
+ * deliberately too coarse to fingerprint with — do NOT widen it with versions,
+ * device models, screen data, or locale.
+ *
+ * Returns `null` — never a guessed or half-filled label — whenever no browser
+ * can be identified. Native callers (whose User-Agent is an HTTP client string,
+ * not a browser) and absent/garbage User-Agents both land there, and the UI
+ * simply omits the line.
+ */
+export function deriveCoarseClientLabel(userAgent: string | undefined | null): string | null {
+  if (typeof userAgent !== 'string') {
+    return null;
+  }
+  const ua = userAgent.trim();
+  if (!ua || ua === 'unknown') {
+    return null;
+  }
+  const browser = parseUserAgentBrowser(ua);
+  // No recognisable browser → native client or junk UA. Never invent a label.
+  if (browser === UNKNOWN_USER_AGENT_BUCKET) {
+    return null;
+  }
+  const os = parseUserAgentOS(ua);
+  // A known browser on an unrecognised platform is still useful ("Firefox"),
+  // and is strictly less specific than the two-part label — never "X on Unknown".
+  return os === UNKNOWN_USER_AGENT_BUCKET ? browser : generateDefaultDeviceName(browser, os);
+}
+
+/**
  * Find existing device ID for a device fingerprint
  * This helps reuse device IDs for the same physical device
  */
@@ -273,24 +314,24 @@ export const findExistingDeviceId = async (fingerprint: string, userId?: string)
   if (!fingerprint) return null;
 
   try {
-    const query: Record<string, unknown> = {
-      'deviceInfo.fingerprint': fingerprint,
-      isActive: true,
-      expiresAt: { $gt: new Date() }
-    };
-    
-    if (userId) {
-      query.userId = userId;
-    }
-    
-    const session = await Session.findOne(query)
-      .sort({ 'deviceInfo.lastActive': -1 })
-      .select('deviceId')
-      .lean()
-      .limit(1)
-      .exec();
-    
-    return session?.deviceId || null;
+    // `is_active` + `expires_at > now()` are filtered HERE, not left to the
+    // expiry sweep: the sweep lags one interval, and reusing a dead session's
+    // device id would silently regroup a new sign-in onto it.
+    const [session] = await getDb()
+      .select({ deviceId: sessions.deviceId })
+      .from(sessions)
+      .where(
+        and(
+          eq(sessions.deviceFingerprint, fingerprint),
+          eq(sessions.isActive, true),
+          gt(sessions.expiresAt, new Date()),
+          ...(userId ? [eq(sessions.userId, userId)] : [])
+        )
+      )
+      .orderBy(desc(sessions.lastActiveAt))
+      .limit(1);
+
+    return session?.deviceId ?? null;
   } catch (error) {
     logger.error('[DeviceUtils] Error finding existing device ID', error instanceof Error ? error : new Error(String(error)));
     return null;
@@ -327,6 +368,17 @@ export const registerDevice = async (
   }
 };
 
+/** One deduplicated device session row returned by {@link getDeviceActiveSessions}. */
+interface DeviceSessionEntry {
+  sessionId: string;
+  user: ReturnType<typeof formatUserResponse>;
+  lastActive: string | Date;
+  createdAt: Date;
+  deviceId: string;
+  expiresAt: Date;
+  isCurrent: boolean;
+}
+
 /**
  * Get all active sessions for a specific device
  * Deduplicates by userId - returns only one session per user (most recent)
@@ -335,54 +387,78 @@ export const registerDevice = async (
 export const getDeviceActiveSessions = async (deviceId: string, currentSessionId?: string) => {
   try {
     const now = new Date();
-    // Use lean() for better performance - returns plain JS objects instead of Mongoose documents
-    // Query optimized to use compound index: { deviceId: 1, isActive: 1, expiresAt: 1 }
-    const sessions = await Session.find({
-      deviceId,
-      isActive: true,
-      expiresAt: { $gt: now }
-    })
-    .populate('userId', 'username email avatar name color')
-    .lean()
-    .sort({ 
-      'deviceInfo.lastActive': -1, // Most recent first
-      'sessionId': 1 // Secondary sort by sessionId for stability
-    })
-    .limit(50) // Limit results to prevent excessive data transfer
-    .exec();
+    // Mongo's `.populate('userId', …)` becomes a real join. Columns are named
+    // explicitly rather than `select()`-ing whole tables: `sessions` carries two
+    // live bearer tokens and `users` carries the contact-discovery hashes, none
+    // of which this DTO may see (`db/schema/protectedColumns.ts`).
+    // Serves the `(device_id, is_active, expires_at)` index.
+    const rows = await getDb()
+      .select({
+        sessionId: sessions.sessionId,
+        deviceId: sessions.deviceId,
+        lastActiveAt: sessions.lastActiveAt,
+        createdAt: sessions.createdAt,
+        expiresAt: sessions.expiresAt,
+        userId: users.id,
+        username: users.username,
+        email: users.email,
+        avatar: users.avatar,
+        nameFirst: users.nameFirst,
+        nameLast: users.nameLast,
+        color: users.color,
+        publicKey: users.publicKey,
+      })
+      .from(sessions)
+      .innerJoin(users, eq(sessions.userId, users.id))
+      .where(
+        and(
+          eq(sessions.deviceId, deviceId),
+          eq(sessions.isActive, true),
+          gt(sessions.expiresAt, now)
+        )
+      )
+      // Most recent first; `session_id` breaks a tie so the page is stable.
+      .orderBy(desc(sessions.lastActiveAt), asc(sessions.sessionId))
+      .limit(50);
 
-    // Map sessions and deduplicate by userId - keep only most recent session per user
-    const userSessionMap = new Map<string, any>();
-    
-    for (const session of sessions) {
-      const user = session.userId as any;
-      if (!user || typeof user !== 'object') continue;
+    // Deduplicate by user — keep only the most recent session per user.
+    const userSessionMap = new Map<string, DeviceSessionEntry>();
 
-      const formattedUser = formatUserResponse(user);
+    for (const row of rows) {
+      // `formatUserResponse` reads the flat Drizzle row directly (`id` +
+      // `nameFirst`/`nameLast`); it is the ONE serializer that owns
+      // `name.displayName`, so nothing is recomposed here.
+      const formattedUser = formatUserResponse({
+        id: row.userId,
+        username: row.username,
+        email: row.email,
+        avatar: row.avatar,
+        nameFirst: row.nameFirst,
+        nameLast: row.nameLast,
+        color: row.color,
+        publicKey: row.publicKey,
+      });
       if (!formattedUser?.id) continue;
 
       const userId = formattedUser.id;
 
-      // If we already have a session for this user, keep the one with more recent lastActive
       const existing = userSessionMap.get(userId);
       if (existing) {
         const existingTime = new Date(existing.lastActive || existing.createdAt || 0).getTime();
-        const currentTime = new Date(session.deviceInfo?.lastActive || session.createdAt || 0).getTime();
+        const currentTime = new Date(row.lastActiveAt || row.createdAt || 0).getTime();
         if (currentTime <= existingTime) {
           continue; // Keep existing (more recent)
         }
       }
-      
-      const userData = formattedUser;
 
       userSessionMap.set(userId, {
-        sessionId: session.sessionId,
-        user: userData,
-        lastActive: session.deviceInfo?.lastActive || session.createdAt || new Date().toISOString(),
-        createdAt: session.createdAt,
-        deviceId: session.deviceId,
-        expiresAt: session.expiresAt,
-        isCurrent: currentSessionId ? session.sessionId === currentSessionId : false
+        sessionId: row.sessionId,
+        user: formattedUser,
+        lastActive: row.lastActiveAt || row.createdAt || new Date().toISOString(),
+        createdAt: row.createdAt,
+        deviceId: row.deviceId,
+        expiresAt: row.expiresAt,
+        isCurrent: currentSessionId ? row.sessionId === currentSessionId : false
       });
     }
 
@@ -398,33 +474,32 @@ export const getDeviceActiveSessions = async (deviceId: string, currentSessionId
  */
 export const logoutAllDeviceSessions = async (deviceId: string, excludeSessionId?: string) => {
   try {
-    const query: any = {
-      deviceId,
-      isActive: true
-    };
-    
-    if (excludeSessionId) {
-      query.sessionId = { $ne: excludeSessionId };
+    const match = and(
+      eq(sessions.deviceId, deviceId),
+      eq(sessions.isActive, true),
+      ...(excludeSessionId ? [ne(sessions.sessionId, excludeSessionId)] : [])
+    );
+
+    // One statement instead of Mongo's read-then-updateMany: `returning` gives
+    // back exactly the rows this update deactivated, so the cache invalidation
+    // below can no longer act on a row a concurrent writer changed in between.
+    //
+    // The Mongo version also wrote `loggedOutAt` here. That field is on NO
+    // schema — Mongoose strict mode silently dropped it on every call, so it has
+    // never been persisted or read. There is deliberately no `logged_out_at`
+    // column; the write is dropped rather than reproduced.
+    const deactivated = await getDb()
+      .update(sessions)
+      .set({ isActive: false })
+      .where(match)
+      .returning({ sessionId: sessions.sessionId });
+
+    for (const row of deactivated) {
+      sessionCache.invalidate(row.sessionId);
     }
-    
-    // Get sessionIds before updating for cache invalidation
-    const sessions = await Session.find(query).select('sessionId').lean().exec();
-    const sessionIds = sessions.map(s => s.sessionId);
-    
-    const result = await Session.updateMany(query, {
-      $set: {
-        isActive: false,
-        loggedOutAt: new Date()
-      }
-    });
-    
-    // Invalidate session cache for all affected sessions
-    for (const sessionId of sessionIds) {
-      sessionCache.invalidate(sessionId);
-    }
-    
-    logger.info(`[DeviceUtils] Logged out ${result.modifiedCount} sessions for device: ${deviceId}`);
-    return result.modifiedCount;
+
+    logger.info(`[DeviceUtils] Logged out ${deactivated.length} sessions for device: ${deviceId}`);
+    return deactivated.length;
   } catch (error) {
     logger.error('[DeviceUtils] Error logging out device sessions:', error);
     return 0;
@@ -433,21 +508,42 @@ export const logoutAllDeviceSessions = async (deviceId: string, excludeSessionId
 
 // Helper functions for parsing user agent
 function parseUserAgentBrowser(userAgent: string): string {
-  if (userAgent.includes('Chrome')) return 'Chrome';
+  // ORDER IS SIGNIFICANT — same rationale as `parseUserAgentOS` below.
+  // Chromium Edge advertises `Edg/`, not `Edge`; Opera uses `OPR/`. All three
+  // also contain `Chrome`, so the generic Chrome bucket must come last.
+  if (userAgent.includes('Edg/')) return 'Edge';
+  if (userAgent.includes('OPR/') || userAgent.includes('Opera')) return 'Opera';
+  if (userAgent.includes('CriOS/')) return 'Chrome';
+  if (userAgent.includes('FxiOS/')) return 'Firefox';
   if (userAgent.includes('Firefox')) return 'Firefox';
-  if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) return 'Safari';
-  if (userAgent.includes('Edge')) return 'Edge';
-  if (userAgent.includes('Opera')) return 'Opera';
-  return 'Unknown';
+  if (userAgent.includes('Chrome')) return 'Chrome';
+  if (userAgent.includes('Safari')) return 'Safari';
+  return UNKNOWN_USER_AGENT_BUCKET;
 }
 
+/**
+ * ORDER IS SIGNIFICANT. Mobile platforms are checked BEFORE the desktop
+ * platform whose token their User-Agent also contains, because both nest:
+ * every iPhone/iPad UA carries `like Mac OS X`, and every Android UA carries
+ * `Linux`. Checking desktop first reported an iPhone as macOS and an Android
+ * phone as Linux — a wrong label, not merely a coarse one, on surfaces (device
+ * lists, the sign-in approval screen) where the user is being asked to
+ * recognise their own device.
+ */
 function parseUserAgentOS(userAgent: string): string {
   if (userAgent.includes('Windows')) return 'Windows';
+  if (
+    userAgent.includes('iPhone') ||
+    userAgent.includes('iPad') ||
+    userAgent.includes('iPod') ||
+    userAgent.includes('iOS')
+  ) {
+    return 'iOS';
+  }
+  if (userAgent.includes('Android')) return 'Android';
   if (userAgent.includes('Mac OS')) return 'macOS';
   if (userAgent.includes('Linux')) return 'Linux';
-  if (userAgent.includes('Android')) return 'Android';
-  if (userAgent.includes('iOS')) return 'iOS';
-  return 'Unknown';
+  return UNKNOWN_USER_AGENT_BUCKET;
 }
 
 function parseDeviceType(userAgent: string): string {

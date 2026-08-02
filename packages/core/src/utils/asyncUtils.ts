@@ -2,7 +2,7 @@
  * Async utilities for common asynchronous patterns and error handling
  */
 
-import { logger } from './loggerUtils';
+import { logger } from '../logger';
 
 /**
  * Wrapper for async operations with automatic error handling

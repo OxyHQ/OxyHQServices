@@ -44,16 +44,12 @@ const it: LocaleDict = {
   },
 
   tabs: {
-    home: 'Home',
     inbox: 'Posta',
     search: 'Cerca',
     settings: 'Impostazioni',
-    forYou: 'Per te',
   },
 
   drawer: {
-    home: 'Home',
-    forYou: 'Per te',
     starred: 'Speciali',
     snoozed: 'Posticipati',
     subscriptions: 'Iscrizioni',
@@ -123,6 +119,11 @@ const it: LocaleDict = {
       analyzing: 'Alia sta analizzando la posta…',
       unavailable: 'Impossibile generare il riepilogo in questo momento.',
       empty: 'Ancora nessuna email da riepilogare.',
+      writing: 'Scrittura del riepilogo…',
+      preparing: 'Preparazione del riepilogo…',
+      failed: 'Impossibile scrivere il riepilogo di oggi.',
+      nothingNew: 'Niente di nuovo oggi.',
+      tapRetry: 'Tocca per riprovare.',
     },
     feedEmpty: {
       title: 'Tutto in pari',
@@ -134,25 +135,6 @@ const it: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'Per te',
-    starred: 'Speciali',
-    unread: 'Non lette',
-    attachments: 'Allegati',
-    empty: {
-      title: 'Tutto in pari',
-      subtitle: 'Al momento non c\'è nulla in evidenza per te.',
-    },
-    summary: {
-      fromOne: 'Da {{a}}',
-      fromTwo: 'Da {{a}} e {{b}}',
-      fromManyOne: 'Da {{a}}, {{b}} e {{count}} altro',
-      fromManyOther: 'Da {{a}}, {{b}} e altri {{count}}',
-      aboutOne: ' — su {{topic}}',
-      aboutTwo: ' — su {{a}}, {{b}}',
-      aboutMore: ' e altro',
-    },
-  },
 
   inbox: {
     title: 'Posta',
@@ -385,6 +367,7 @@ const it: LocaleDict = {
     keyPoints: 'Punti chiave',
     actionItems: 'Azioni da fare',
     due: 'Scadenza: {{date}}',
+    unavailable: 'Impossibile riassumere questa conversazione ora.',
   },
 
   staleThread: {

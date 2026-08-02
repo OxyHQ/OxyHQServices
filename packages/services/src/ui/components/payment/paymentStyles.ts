@@ -1,4 +1,4 @@
-import { StyleSheet, Platform } from 'react-native';
+import { StyleSheet } from 'react-native';
 import type { PaymentColors } from './types';
 
 export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create({
@@ -61,7 +61,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     summaryCardSubtitle: {
         fontSize: 16,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 24,
         width: '100%',
@@ -82,7 +82,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     summaryCardAmountLabel: {
         fontSize: 16,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 8,
     },
@@ -95,7 +95,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     summaryCardAmountDescription: {
         fontSize: 14,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         textAlign: 'center',
         lineHeight: 20,
     },
@@ -117,7 +117,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     summaryCardTotalLabel: {
         fontSize: 16,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         fontWeight: '500',
     },
     summaryCardTotalValue: {
@@ -151,7 +151,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     cardPaymentSubtitle: {
         fontSize: 16,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 24,
         width: '100%',
@@ -162,7 +162,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     cardPaymentWaiting: {
         fontSize: 14,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 8,
     },
@@ -176,7 +176,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     cardRowText: {
         fontSize: 15,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
     },
     cardFieldContainer: {
         marginBottom: 16,
@@ -219,7 +219,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     oxyPaySubtitle: {
         fontSize: 16,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 8,
     },
@@ -235,7 +235,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     oxyPayWaiting: {
         fontSize: 14,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 8,
     },
@@ -316,7 +316,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         textAlign: 'center',
     },
     faircoinAddress: {
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         fontSize: 13,
         textAlign: 'center',
         marginTop: 6,
@@ -340,13 +340,13 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     faircoinWaiting: {
         fontSize: 14,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 8,
     },
     faircoinPlaceholder: {
         fontSize: 13,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         textAlign: 'center',
     },
     // Success styles
@@ -382,7 +382,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     successMessage: {
         fontSize: 14,
-        color: colors.secondaryText,
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: 8,
     },

@@ -18,6 +18,7 @@ import { toast } from '@oxyhq/bloom';
 import { useOxy } from '@oxyhq/services';
 
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import { useTranslation } from '@/lib/i18n';
 import type { Mailbox, Message, Pagination } from '@/services/emailApi';
 
@@ -144,7 +145,7 @@ function updateMailboxUnread(
   mailboxId: string,
   unread: number,
 ) {
-  queryClient.setQueryData<Mailbox[] | undefined>(['mailboxes', userId], (old) => {
+  queryClient.setQueryData<Mailbox[] | undefined>(emailKeys.mailboxes.list(userId), (old) => {
     if (!old) return old;
     let mutated = false;
     const next = old.map((mb) => {
@@ -251,7 +252,7 @@ export function useInboxSocket({ baseURL }: UseInboxSocketOptions) {
           // 2. Bump the unread badge optimistically by 1; the authoritative
           //    `email:unread_count` event (emitted alongside by the server)
           //    will reconcile the exact number.
-          queryClientRef.current.setQueryData<Mailbox[] | undefined>(['mailboxes', userId], (old) => {
+          queryClientRef.current.setQueryData<Mailbox[] | undefined>(emailKeys.mailboxes.list(userId), (old) => {
             if (!old) return old;
             let mutated = false;
             const next = old.map((mb) => {
@@ -315,18 +316,19 @@ export function useInboxSocket({ baseURL }: UseInboxSocketOptions) {
       // Strict whitelist diagnostic: unknown events MUST NOT trigger side
       // effects. Dev-only warning, otherwise silent. Mirrors the
       // `useSessionSocket` pattern documented in CLAUDE.md.
-      if (__DEV__ && eventName !== 'email:new' && eventName !== 'email:unread_count') {
-        // Skip socket.io internals (connect, disconnect, reconnect_*…).
-        const isSocketIoInternal =
-          eventName.startsWith('connect') ||
-          eventName.startsWith('disconnect') ||
-          eventName.startsWith('reconnect') ||
-          eventName === 'ping' ||
-          eventName === 'pong' ||
-          eventName === 'error';
-        if (!isSocketIoInternal) {
-          console.warn('[useInboxSocket] Unknown event:', eventName);
-        }
+      //
+      // Scoped to the `email:` namespace on purpose. The `user:<id>` room is
+      // shared with every other domain that pushes to this user — session,
+      // civic, socket.io's own lifecycle events — and none of those are this
+      // hook's business. Warning about them turns a real diagnostic ("a new
+      // email event exists that we don't handle") into noise.
+      if (
+        __DEV__ &&
+        eventName.startsWith('email:') &&
+        eventName !== 'email:new' &&
+        eventName !== 'email:unread_count'
+      ) {
+        console.warn('[useInboxSocket] Unhandled email event:', eventName);
       }
     };
 

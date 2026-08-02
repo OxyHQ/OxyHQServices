@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { EmailSettings } from '@/services/emailApi';
 
 export function useSettings() {
@@ -9,7 +10,7 @@ export function useSettings() {
   const userId = user?.id ?? null;
 
   return useQuery<EmailSettings>({
-    queryKey: ['settings', userId],
+    queryKey: emailKeys.settings(userId),
     queryFn: async () => {
       if (!api) throw new Error('Email API not initialized');
       return api.getSettings();
@@ -30,7 +31,7 @@ export function useUpdateSettings() {
       await api.updateSettings(settings);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings', userId] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.settings(userId) });
     },
   });
 }

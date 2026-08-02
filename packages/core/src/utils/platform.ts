@@ -9,6 +9,24 @@
 export type PlatformOS = 'ios' | 'android' | 'web' | 'windows' | 'macos' | 'unknown';
 
 /**
+ * Shape of the RN-platform marker that the React Native entry point registers
+ * on `globalThis` via {@link setPlatformOS}. Declared locally (rather than as a
+ * global type augmentation) so core stays self-contained and does not leak an
+ * ambient global into every consumer's type space.
+ */
+interface RNPlatformGlobal {
+  __REACT_NATIVE_PLATFORM__?: PlatformOS;
+}
+
+/**
+ * Typed view over `globalThis` for the RN-platform marker, avoiding an `any`
+ * cast at each access site.
+ */
+function rnPlatformGlobal(): RNPlatformGlobal {
+  return globalThis as unknown as RNPlatformGlobal;
+}
+
+/**
  * Detect the current platform without importing react-native
  *
  * Detection order:
@@ -20,9 +38,9 @@ export type PlatformOS = 'ios' | 'android' | 'web' | 'windows' | 'macos' | 'unkn
 function detectPlatform(): PlatformOS {
   // Check if React Native Platform is available globally (set by RN runtime)
   // This avoids static imports while still detecting RN environment
-  const rnPlatform = (globalThis as any).__REACT_NATIVE_PLATFORM__;
+  const rnPlatform = rnPlatformGlobal().__REACT_NATIVE_PLATFORM__;
   if (rnPlatform) {
-    return rnPlatform as PlatformOS;
+    return rnPlatform;
   }
 
   // Check navigator.product for React Native
@@ -89,26 +107,33 @@ export function isAndroid(): boolean {
 }
 
 /**
- * Check if running in React Native
- */
-export function isReactNative(): boolean {
-  return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
-}
-
-/**
- * Check if running in Node.js
- */
-export function isNodeJS(): boolean {
-  return typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
-}
-
-/**
  * Set the platform OS explicitly
  * Called by React Native entry point to register the platform
  * This allows lazy detection in environments where react-native is available
  */
 export function setPlatformOS(os: PlatformOS): void {
   cachedPlatform = os;
-  (globalThis as any).__REACT_NATIVE_PLATFORM__ = os;
+  rnPlatformGlobal().__REACT_NATIVE_PLATFORM__ = os;
+}
+
+/**
+ * True only in a real web browser (a DOM is present), false on React Native
+ * and Node/SSR.
+ *
+ * Native defines a global `window` but no `document`, so the DOM probe — not a
+ * bare `window` check — is the reliable discriminator. This is the single
+ * source of truth consumed by `@oxyhq/services` (which dropped
+ * their local copies), so every consumer shares the exact same predicate.
+ *
+ * NOTE: this is a live runtime probe (not the cached `getPlatformOS()` verdict)
+ * because it must reflect the actual DOM availability at call time in the
+ * consumer's bundle.
+ */
+export function isWebBrowser(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined' &&
+    typeof document.documentElement !== 'undefined'
+  );
 }
 

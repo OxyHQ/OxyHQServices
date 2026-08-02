@@ -11,7 +11,7 @@ const options: swaggerJsdoc.Options = {
     },
     servers: [
       {
-        url: 'http://localhost:3001',
+        url: 'http://localhost:4100',
         description: 'Development server',
       },
       {
@@ -26,12 +26,6 @@ const options: swaggerJsdoc.Options = {
           scheme: 'bearer',
           bearerFormat: 'JWT',
           description: 'JWT access token obtained from /auth/login or /auth/verify',
-        },
-        internalSecretAuth: {
-          type: 'apiKey',
-          in: 'header',
-          name: 'X-Oxy-Internal',
-          description: 'Internal shared secret for IdP/API server-to-server calls.',
         },
       },
       schemas: {

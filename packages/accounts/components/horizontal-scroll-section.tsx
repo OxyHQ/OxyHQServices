@@ -11,7 +11,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useColors } from '@/hooks/useColors';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 
@@ -66,20 +66,6 @@ export function HorizontalScrollSection({
       }
     });
   }, []);
-
-  const scrollLeft = useCallback(() => {
-    scrollViewRef.current?.scrollTo({ x: 0, animated: true });
-    handlePressIn();
-    onPressIn?.();
-  }, [handlePressIn, onPressIn]);
-
-  const scrollRight = useCallback(() => {
-    scrollViewRef.current?.measure(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    });
-    handlePressIn();
-    onPressIn?.();
-  }, [handlePressIn, onPressIn]);
 
   const scrollBy = useCallback((direction: 'left' | 'right', distance: number = 200) => {
     const newX = direction === 'right' 

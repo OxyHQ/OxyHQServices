@@ -89,7 +89,7 @@ export class RequestQueue {
    * @param maxConcurrent Maximum number of concurrent requests (default: 10)
    * @param maxQueueSize Maximum queue size (default: 100)
    */
-  constructor(maxConcurrent: number = 10, maxQueueSize: number = 100) {
+  constructor(maxConcurrent = 10, maxQueueSize = 100) {
     this.maxConcurrent = maxConcurrent;
     this.maxQueueSize = maxQueueSize;
   }
@@ -169,7 +169,7 @@ export type LogLevel = 'none' | 'error' | 'warn' | 'info' | 'debug';
  * Simple logger with level support
  *
  * Lightweight logger for HTTP clients and utilities.
- * For more advanced logging, use loggerUtils.ts
+ * For structured, namespaced, level-gated logging, use `@oxyhq/core/logger`.
  *
  * @example
  * ```typescript
@@ -191,9 +191,9 @@ export class SimpleLogger {
    * @param prefix Prefix for log messages (default: '')
    */
   constructor(
-    enabled: boolean = false,
+    enabled = false,
     level: LogLevel = 'error',
-    prefix: string = ''
+    prefix = ''
   ) {
     this.enabled = enabled;
     this.level = level;

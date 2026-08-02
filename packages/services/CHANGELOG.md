@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+## [25.0.0] - 2026-07-30
+
+### Changed
+- **BREAKING**: Raised the `@oxyhq/core` peer dependency to `^16.0.0`. Consumers
+  must bump core to 16.x when upgrading services — the services API surface is
+  unchanged, but the declared peer range was stale after core 16 shipped.
+
+### Removed
+- **BREAKING**: Dropped the bundled Inter font family and the font-loading API.
+  - Deleted the 7 static Inter TTFs (`src/assets/fonts/Inter/`, 2.41 MB) that shipped
+    inside every consumer APK/AAB. No component in this package ever referenced the
+    `Inter-*` families they registered.
+  - Removed the `FontLoader` component and `setupFonts()` function from all entry
+    points (`@oxyhq/services`, `/ui`, `/ui/client`, `/ui/server`), and the implicit
+    `setupFonts()` call in `OxyProvider`.
+  - Dropped the now-unused `expo-font` peer dependency.
+  - Typography is owned by `@oxyhq/bloom`: `BloomThemeProvider` already ships a
+    variable Inter (plus BlomusModernus and Geist Mono) and loads it on both native
+    and web. Apps that mount `BloomThemeProvider` need no changes.
+
 ## [10.2.3] - 2026-06-18
 
 ### Fixed
@@ -16,8 +38,6 @@
 
 ### Fixed
 - The consent page no longer shows the literal platform string **"web"** for web consumers that did not pass a name. It now derives a correct brand name from the `storageKeyPrefix` or `document.title`, and only falls back to the platform when an app supplies none of those. (Mention #143)
-
-## [Unreleased]
 
 ### Fixed
 - **Fixed react-native imports in core modules** - Critical packaging bug fix

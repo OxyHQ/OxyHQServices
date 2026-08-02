@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Subscription, Pagination } from '@/services/emailApi';
 
 interface SubscriptionsPage {
@@ -26,15 +27,13 @@ export function useUnsubscribe() {
       return await api.unsubscribe(senderAddress, method);
     },
     onMutate: async ({ senderAddress }) => {
-      await queryClient.cancelQueries({ queryKey: ['subscriptions'] });
+      await queryClient.cancelQueries({ queryKey: emailKeys.subscriptions });
 
-      const prev = queryClient.getQueryData<SubscriptionsInfinite>([
-        'subscriptions',
-      ]);
+      const prev = queryClient.getQueryData<SubscriptionsInfinite>(emailKeys.subscriptions);
 
       // Optimistically remove the subscription row
       queryClient.setQueryData<SubscriptionsInfinite>(
-        ['subscriptions'],
+        emailKeys.subscriptions,
         (old) => {
           if (!old) return old;
           return {
@@ -60,13 +59,13 @@ export function useUnsubscribe() {
     },
     onError: (_err, _vars, context) => {
       if (context?.prev) {
-        queryClient.setQueryData(['subscriptions'], context.prev);
+        queryClient.setQueryData(emailKeys.subscriptions, context.prev);
       }
       toast.error('Failed to unsubscribe');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: emailKeys.subscriptions });
+      queryClient.invalidateQueries({ queryKey: emailKeys.messages.root });
     },
   });
 }

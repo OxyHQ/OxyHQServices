@@ -15,14 +15,20 @@ import type {
   UserProfileUpdate,
   RecommendationRequest,
   RecommendationItem,
+  ThemePreference,
 } from '@oxyhq/contracts';
 import { recommendationRequestSchema } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
+import {
+  buildQueryParams,
+  buildPaginationParams,
+  type PaginationParams,
+  type FollowGraphParams,
+} from '../utils/apiUtils';
 import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
 import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
-import { logger } from '../utils/loggerUtils';
+import { logger } from '../logger';
 import { extractErrorStatus } from '../utils/errorUtils';
 
 /**
@@ -30,6 +36,33 @@ import { extractErrorStatus } from '../utils/errorUtils';
  * server-side batch cap; larger inputs are split into multiple chunked calls.
  */
 const USERS_BY_IDS_CHUNK_SIZE = 100;
+
+/**
+ * Maximum number of ids sent per `POST /users/follow-status/bulk` request.
+ * Matches the server-side `MAX_BULK_FOLLOW` cap; larger inputs are split into
+ * multiple chunked calls whose result maps are merged.
+ */
+const FOLLOW_STATUS_CHUNK_SIZE = 200;
+
+/**
+ * Response of the single follow/unfollow toggle route
+ * (`POST /users/:id/follow` and `DELETE /users/:id/follow`). The route reports a
+ * status message, which side of the toggle was applied, and the post-write
+ * follower/following counts for the affected users.
+ */
+export interface FollowMutationResult {
+  /** Human-readable status message. */
+  message: string;
+  /** Which side of the toggle was applied, when reported by the route. */
+  action?: 'follow' | 'unfollow';
+  /** Post-write counts, when reported by the route. */
+  counts?: {
+    /** The target user's follower count after the write. */
+    followers: number;
+    /** The viewer's following count after the write. */
+    following: number;
+  };
+}
 
 /** Per-user outcome returned by `POST /users/follow/bulk`. */
 export interface BulkFollowEntry {
@@ -47,6 +80,25 @@ export interface BulkFollowResult {
   results: BulkFollowEntry[];
   /** Number of users newly followed by this request. */
   followedCount: number;
+}
+
+/**
+ * The authenticated viewer's OWN social graph, ids-only — the response of
+ * `GET /users/me/graph`. Consolidates the accounts the viewer follows, the
+ * subset who follow back (mutuals), and the accounts the viewer has blocked
+ * into one payload so a consumer can fetch its whole viewer graph in a single
+ * round trip instead of three. Each list is server-bounded; bare ids only (no
+ * hydrated DTOs) because the consumer hydrates/ranks itself.
+ */
+export interface ViewerGraph {
+  /** Accounts the viewer follows (most-recent first, bounded). */
+  followingIds: string[];
+  /** Accounts the viewer follows that ALSO follow the viewer back (bounded). */
+  mutualIds: string[];
+  /** Accounts the viewer has blocked (bounded). */
+  blockedIds: string[];
+  /** Accounts the viewer has restricted (bounded). */
+  restrictedIds: string[];
 }
 
 /** Per-user outcome returned by `POST /users/unfollow/bulk`. */
@@ -89,12 +141,35 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     ) => Promise<R>;
 
     /**
-     * Get profile by username
+     * Raw service credentials stored by `configureServiceAuth()` on the auth
+     * mixin (earlier in the pipeline). Surfaced here via `declare` — for the
+     * same typing reason as `makeServiceRequest` above — so `getUsersByIds` can
+     * detect whether this instance is service-configured (a backend) and pick
+     * the bearer-service path, or fall back to the user-session path (a browser/
+     * RN client). Both are `null` until `configureServiceAuth(apiKey, apiSecret)`
+     * is called.
      */
-    async getProfileByUsername(username: string): Promise<User> {
+    declare _serviceApiKey: string | null;
+    declare _serviceApiSecret: string | null;
+
+    /**
+     * Get profile by username.
+     *
+     * @param username - The profile's username.
+     * @param options.cache - Defaults to `true` (5-minute TTL), matching prior
+     *   behavior. Pass `{ cache: false }` to force a registry-fresh read: the
+     *   request bypasses BOTH the cache lookup and the post-fetch cache write
+     *   (see {@link HttpService.request}'s `cache` handling), so it neither
+     *   serves nor overwrites any entry already cached for this key — a
+     *   previously cached response (if one exists) is left in place until its
+     *   own TTL expires or is explicitly invalidated elsewhere. Use this when a
+     *   caller must observe a just-written change (e.g. a privacy/consent flag)
+     *   that would otherwise be masked by the TTL window.
+     */
+    async getProfileByUsername(username: string, options?: { cache?: boolean }): Promise<User> {
       try {
-        const user = await this.makeRequest<User>('GET', `/profiles/username/${username}`, undefined, {
-          cache: true,
+        const user = await this.makeRequest<User>('GET', `/profiles/username/${encodeURIComponent(username)}`, undefined, {
+          cache: options?.cache ?? true,
           cacheTTL: 5 * 60 * 1000, // 5 minutes cache for profiles
         });
         return normalizeUserIdentity(user);
@@ -118,6 +193,8 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       return await this.makeRequest('GET', `/auth/lookup/${encodeURIComponent(username)}`, undefined, {
         cache: true,
         cacheTTL: 60 * 1000, // 1 minute cache
+        // Public login-flow lookup (pre-session) — skip the bearer preflight.
+        skipAuth: true,
       });
     }
 
@@ -126,14 +203,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async searchProfiles(query: string, pagination?: PaginationParams): Promise<SearchProfilesResponse> {
       try {
-        const params = { query, ...pagination };
-        const searchParams = buildSearchParams(params);
-        const paramsObj = Object.fromEntries(searchParams.entries());
-
         const response = await this.makeRequest<SearchProfilesResponse>(
           'GET',
           '/profiles/search',
-          paramsObj,
+          buildQueryParams({ query, ...pagination }),
           {
             cache: true,
             cacheTTL: 2 * 60 * 1000, // 2 minutes cache
@@ -176,7 +249,15 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           handle,
         }, {
           cache: true,
-          cacheTTL: 24 * 60 * 60 * 1000, // 24h cache — matches server-side staleness window
+          // 5 min — matches the sibling profile fetches (getUserById /
+          // getProfileByUsername). /profiles/resolve now carries the viewer-relative
+          // `relationship` (isFollowing / followsYou); `followsYou` is target→viewer,
+          // so the viewer can't self-refresh it via a follow action. The GET cache is
+          // identity-scoped (keyed by the caller's access-token identity tag → no
+          // cross-viewer poison), so a short TTL keeps "Follows you" reasonably fresh
+          // without a per-call bypass. The identity fields alone tolerate a longer
+          // window, but a 24h stale relationship is not acceptable.
+          cacheTTL: 5 * 60 * 1000,
         });
         return normalizeUserIdentityOrNull(result);
       } catch (error: unknown) {
@@ -312,9 +393,13 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     /**
      * Get profiles similar to a given user, based on co-follower overlap.
      */
-    async getSimilarProfiles(userId: string, limit?: number): Promise<User[]> {
-      const params: Record<string, string> = {};
-      if (limit) params.limit = String(limit);
+    async getSimilarProfiles(
+      userId: string,
+      limitOrParams?: number | { limit?: number; offset?: number },
+    ): Promise<User[]> {
+      const pagination =
+        typeof limitOrParams === 'number' ? { limit: limitOrParams } : limitOrParams ?? {};
+      const params = buildQueryParams(pagination);
       const users = await this.makeRequest<User[]>('GET', `/profiles/${userId}/similar`, params, {
         cache: true,
         cacheTTL: 5 * 60 * 1000, // 5 min cache
@@ -323,12 +408,23 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Get user by ID
+     * Get user by ID.
+     *
+     * @param userId - The target user's id.
+     * @param options.cache - Defaults to `true` (5-minute TTL), matching prior
+     *   behavior. Pass `{ cache: false }` to force a registry-fresh read: the
+     *   request bypasses BOTH the cache lookup and the post-fetch cache write
+     *   (see {@link HttpService.request}'s `cache` handling), so it neither
+     *   serves nor overwrites any entry already cached for this key — a
+     *   previously cached response (if one exists) is left in place until its
+     *   own TTL expires or is explicitly invalidated elsewhere. Use this when a
+     *   caller must observe a just-written change (e.g. a privacy/consent flag)
+     *   that would otherwise be masked by the TTL window.
      */
-    async getUserById(userId: string): Promise<User> {
+    async getUserById(userId: string, options?: { cache?: boolean }): Promise<User> {
       try {
         const user = await this.makeRequest<User>('GET', `/users/${userId}`, undefined, {
-          cache: true,
+          cache: options?.cache ?? true,
           cacheTTL: 5 * 60 * 1000, // 5 minutes cache
         });
         return normalizeUserIdentity(user);
@@ -349,16 +445,28 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      * by `id`); each is run through `normalizeUserIdentity`, matching
      * `getUserById`.
      *
-     * **Service-token auth (required).** `/users/by-ids` is a server-to-server
-     * bulk fetch of PUBLIC user data and is called via `makeServiceRequest`,
-     * which attaches `Authorization: Bearer <serviceToken>`. oxy-api's CSRF
-     * middleware skips bearer-authenticated requests, so the calling client
-     * MUST be service-configured (`configureServiceAuth(apiKey, apiSecret)`)
-     * before invoking this method; otherwise `getServiceToken()` throws because
-     * no credentials are available. (A plain user-session request fails here:
-     * server-to-server there is no cookie jar, so the auto-attached
-     * `X-CSRF-Token` has no matching cookie and oxy-api rejects the POST with
-     * 403 "CSRF token missing".)
+     * **Dual-mode auth.** `/users/by-ids` is `optionalUserOrServiceAuth` on
+     * oxy-api: it accepts a service token, a user session, or an anonymous
+     * caller, and returns the SAME public `{ data: PublicUserProfile[] }`
+     * payload (canonical `name.displayName` + `_count`) in every case — no
+     * viewer-specific fields. This method picks the path automatically:
+     * - **Service-configured host (backend):** when `configureServiceAuth(apiKey,
+     *   apiSecret)` has been called, the chunk is fetched via `makeServiceRequest`
+     *   (attaches `Authorization: Bearer <serviceToken>`). This is the
+     *   server-to-server feed/notification hydration path (e.g. Mention's
+     *   `PostHydrationService`) and is unchanged.
+     * - **Plain client (browser / React Native with a user session):** when no
+     *   service credentials are configured, the chunk is fetched via
+     *   `makeRequest`, which attaches the configured user bearer. oxy-api's CSRF
+     *   middleware skips bearer-authenticated writes, and `makeRequest` only
+     *   fetches a CSRF token for cookie-only (no-bearer) state-changing requests,
+     *   so the user-bearer POST is sent without CSRF and succeeds. Previously
+     *   this method always used the service path, so every client-side caller
+     *   silently received `[]` because `getServiceToken()` had no credentials.
+     *
+     * Both paths run results through `normalizeUserIdentity` and unwrap the
+     * API's `{ data }` envelope identically (`makeServiceRequest` is literally
+     * `makeRequest` plus a bearer service header).
      *
      * Resilience: chunks are independent. A failed chunk is logged and skipped
      * — the method returns every user that resolved successfully rather than
@@ -381,15 +489,23 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         chunks.push(uniqueIds.slice(i, i + USERS_BY_IDS_CHUNK_SIZE));
       }
 
+      // A backend that called configureServiceAuth() uses the bearer-service
+      // path; any other caller (browser / RN with a user session) uses the
+      // user-bearer path. See the method doc for why the user path is CSRF-safe.
+      const useServiceAuth = Boolean(this._serviceApiKey && this._serviceApiSecret);
+
       // Run chunks concurrently; a single chunk failure must not sink the rest.
       const settled = await Promise.all(
         chunks.map(async (chunk): Promise<User[]> => {
           try {
-            const users = await this.makeServiceRequest<User[]>('POST', '/users/by-ids', { ids: chunk });
+            const users = useServiceAuth
+              ? await this.makeServiceRequest<User[]>('POST', '/users/by-ids', { ids: chunk })
+              : await this.makeRequest<User[]>('POST', '/users/by-ids', { ids: chunk }, { cache: false });
             return Array.isArray(users) ? users.map((user) => normalizeUserIdentity(user)) : [];
           } catch (error: unknown) {
             logger.warn('getUsersByIds: chunk failed, continuing with remaining chunks', {
               method: 'getUsersByIds',
+              mode: useServiceAuth ? 'service' : 'user',
               chunkSize: chunk.length,
               status: extractErrorStatus(error),
               error: error instanceof Error ? error.message : String(error),
@@ -499,6 +615,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         const result = await this.makeRequest<PrivacySettings>('PATCH', `/privacy/${id}/privacy`, settings, {
           cache: false,
         });
+        this.clearCacheByPrefix('GET:/session/user/');
+        this.clearCacheByPrefix('GET:/users/me');
+        this.clearCacheByPrefix('GET:/profiles/username/');
+        this.clearCacheEntry(`GET:/users/${id}`);
         this.clearCacheEntry(`GET:/privacy/${id}/privacy`);
         return result;
       } catch (error) {
@@ -528,6 +648,20 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       preferences: Partial<UserPreferences>
     ): Promise<User> {
       return this.updateProfile({ userPreferences: preferences });
+    }
+
+    /**
+     * Update the authenticated user's portable theme preference (light/dark/
+     * system + Bloom color-preset key). Persisted on the User document via the
+     * SAME `PUT /users/me` settings path as the other preferences — same cache
+     * invalidation — so the next cold boot serves it on the self/session payload
+     * with no extra network call. The full object is written (both `mode` and
+     * `colorPreset` are required by the API).
+     */
+    async updateThemePreference(
+      themePreference: ThemePreference
+    ): Promise<User> {
+      return this.updateProfile({ themePreference });
     }
 
     /**
@@ -599,6 +733,42 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
 
 
     /**
+     * Invalidate every cached read a follow/unfollow write invalidates.
+     *
+     * Shared by the four mutation entry points (`followUser`, `unfollowUser`,
+     * `followUsers`, `unfollowUsers`) so they can never drift on which caches a
+     * write busts.
+     *
+     * The follower/following/mutuals LISTS are cleared by PREFIX rather than by
+     * exact key. Those reads are paginated and ordered, so one logical list is
+     * spread across many content-addressed keys
+     * (`GET:/users/<id>/followers:{"limit":"20","offset":"40","sort":"oldest"}`);
+     * an exact-key clear would only bust whichever page/sort variant happened to
+     * be read last and would leave every other page stale. `clearCacheByPrefix`
+     * deletes all of them, and all identity-scoped variants of each.
+     */
+    invalidateFollowGraphCaches(targetUserIds: string[]): void {
+      for (const id of targetUserIds) {
+        this.clearCacheEntry(`GET:/users/${id}/follow-status`);
+        // Profile fetches embed viewer-relative `relationship` — bust so a
+        // remount doesn't serve a stale isFollowing for up to 5 minutes.
+        this.clearCacheEntry(`GET:/users/${id}`);
+        // The target gained/lost a follower, and the viewer's presence in the
+        // target's "followers you know" set changed with it.
+        this.clearCacheByPrefix(`GET:/users/${id}/followers`);
+        this.clearCacheByPrefix(`GET:/users/${id}/mutuals`);
+      }
+      this.clearCacheByPrefix('GET:/profiles/username/');
+      this.clearCacheByPrefix('GET:/profiles/resolve');
+      // The write changed the viewer's OWN following list and graph.
+      const viewerId = this.getCurrentUserId();
+      if (viewerId) {
+        this.clearCacheByPrefix(`GET:/users/${viewerId}/following`);
+      }
+      this.clearCacheEntry('GET:/users/me/graph');
+    }
+
+    /**
      * Follow a user.
      *
      * Invalidates the cached `GET /users/<id>/follow-status` response after
@@ -608,10 +778,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      * UI (the "follow resets after navigating away and back" bug).
      * `clearCacheEntry` deletes every identity-scoped variant of the key.
      */
-    async followUser(userId: string): Promise<{ success: boolean; message: string }> {
+    async followUser(userId: string): Promise<FollowMutationResult> {
       try {
-        const result = await this.makeRequest<{ success: boolean; message: string }>('POST', `/users/${userId}/follow`, undefined, { cache: false });
-        this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
+        const result = await this.makeRequest<FollowMutationResult>('POST', `/users/${userId}/follow`, undefined, { cache: false });
+        this.invalidateFollowGraphCaches([userId]);
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -632,10 +802,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       }
       try {
         const result = await this.makeRequest<BulkFollowResult>('POST', '/users/follow/bulk', { userIds }, { cache: false });
-        // Bust each affected user's cached follow-status (see `followUser`).
-        for (const id of userIds) {
-          this.clearCacheEntry(`GET:/users/${id}/follow-status`);
-        }
+        this.invalidateFollowGraphCaches(userIds);
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -656,10 +823,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       }
       try {
         const result = await this.makeRequest<BulkUnfollowResult>('POST', '/users/unfollow/bulk', { userIds }, { cache: false });
-        // Bust each affected user's cached follow-status (see `followUser`).
-        for (const id of userIds) {
-          this.clearCacheEntry(`GET:/users/${id}/follow-status`);
-        }
+        this.invalidateFollowGraphCaches(userIds);
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -669,11 +833,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     /**
      * Unfollow a user
      */
-    async unfollowUser(userId: string): Promise<{ success: boolean; message: string }> {
+    async unfollowUser(userId: string): Promise<FollowMutationResult> {
       try {
-        const result = await this.makeRequest<{ success: boolean; message: string }>('DELETE', `/users/${userId}/follow`, undefined, { cache: false });
-        // Bust the cached follow-status so a remount reads fresh truth (see `followUser`).
-        this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
+        const result = await this.makeRequest<FollowMutationResult>('DELETE', `/users/${userId}/follow`, undefined, { cache: false });
+        this.invalidateFollowGraphCaches([userId]);
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -695,14 +858,70 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Get user followers
+     * Resolve the viewer's follow status for MANY users in one round-trip per
+     * chunk. Built for list UIs (a page of `FollowButton`s) that would otherwise
+     * fire one `getFollowStatus` per button (the classic N+1).
+     *
+     * Ids are deduplicated and validated (empty/blank ids dropped), split into
+     * chunks of {@link FOLLOW_STATUS_CHUNK_SIZE} (the server's bulk cap), and
+     * POSTed to `/users/follow-status/bulk` as `{ userIds }`. The per-chunk
+     * `{ statuses }` maps are merged into one `Record<string, boolean>` covering
+     * every requested id — ids the viewer does not follow come back `false`.
+     *
+     * Uncached (`{ cache: false }`): the UI store owns follow-status freshness
+     * and writes optimistically on every mutation, so an SDK cache here would
+     * serve a stale status right after a follow/unfollow. An empty/whitespace-
+     * only input resolves immediately with `{}` and performs no network call.
+     */
+    async getFollowStatuses(userIds: string[]): Promise<Record<string, boolean>> {
+      const uniqueIds = Array.from(
+        new Set(userIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)),
+      );
+      if (uniqueIds.length === 0) {
+        return {};
+      }
+
+      const chunks: string[][] = [];
+      for (let i = 0; i < uniqueIds.length; i += FOLLOW_STATUS_CHUNK_SIZE) {
+        chunks.push(uniqueIds.slice(i, i + FOLLOW_STATUS_CHUNK_SIZE));
+      }
+
+      try {
+        const responses = await Promise.all(
+          chunks.map((chunk) =>
+            this.makeRequest<{ statuses: Record<string, boolean> }>(
+              'POST',
+              '/users/follow-status/bulk',
+              { userIds: chunk },
+              { cache: false },
+            ),
+          ),
+        );
+
+        const merged: Record<string, boolean> = {};
+        for (const response of responses) {
+          Object.assign(merged, response?.statuses ?? {});
+        }
+        return merged;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Get user followers.
+     *
+     * `sort` orders the underlying follow edges — `recent` (newest first, the
+     * server default) or `oldest`. Because the response is cached and the cache
+     * key is content-addressed on the query params, each `limit`/`offset`/`sort`
+     * combination is its own entry.
      */
     async getUserFollowers(
       userId: string,
-      pagination?: PaginationParams
+      pagination?: FollowGraphParams
     ): Promise<{ followers: User[]; total: number; hasMore: boolean }> {
       try {
-        const params = buildPaginationParams(pagination || {});
+        const params = buildQueryParams(pagination || {});
         const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/users/${userId}/followers`, params, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
@@ -718,14 +937,14 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Get user following
+     * Get user following. `sort` behaves as in {@link getUserFollowers}.
      */
     async getUserFollowing(
       userId: string,
-      pagination?: PaginationParams
+      pagination?: FollowGraphParams
     ): Promise<{ following: User[]; total: number; hasMore: boolean }> {
       try {
-        const params = buildPaginationParams(pagination || {});
+        const params = buildQueryParams(pagination || {});
         const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/users/${userId}/following`, params, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
@@ -746,10 +965,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getUserMutuals(
       userId: string,
-      pagination?: PaginationParams
+      pagination?: FollowGraphParams
     ): Promise<{ mutuals: User[]; total: number; hasMore: boolean }> {
       try {
-        const params = buildPaginationParams(pagination || {});
+        const params = buildQueryParams(pagination || {});
         const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/users/${userId}/mutuals`, params, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
@@ -758,6 +977,91 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           mutuals: response.data || [],
           total: response.pagination.total,
           hasMore: response.pagination.hasMore,
+        };
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Get the authenticated VIEWER's OWN mutual-follow user ids — the accounts the
+     * viewer follows that ALSO follow the viewer back (a bidirectional follow
+     * edge). The viewer is derived server-side from the SDK's auth token (never a
+     * param), so there is no target id to pass.
+     *
+     * Returns a bounded, lean list of ids meant to SEED a "Mutuals" feed (the
+     * consumer hydrates/ranks the posts itself) — distinct from
+     * {@link getUserMutuals}, which returns hydrated "followers you know" DTOs
+     * about ANOTHER profile. An anonymous caller resolves to an empty array.
+     */
+    async getMutualUserIds(
+      params?: { limit?: number }
+    ): Promise<string[]> {
+      try {
+        const query = buildPaginationParams(params || {});
+        const response = await this.makeRequest<{ data: string[] }>('GET', '/users/mutual-ids', query, {
+          cache: true,
+          cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+        });
+        return response.data || [];
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Get the authenticated VIEWER's bounded "follows-of-follows" user ids — the
+     * union of the accounts followed by the accounts the viewer follows (a
+     * two-hop walk of the follow graph), MINUS the viewer's own follows and the
+     * viewer themselves. The viewer is derived server-side from the SDK's auth
+     * token (never a param), so there is no target id to pass.
+     *
+     * Returns a bounded, lean list of ids meant to SEED a friends-of-friends
+     * feed (the consumer hydrates/ranks the posts itself), ordered by frequency
+     * (accounts followed by more of the viewer's follows first), then recency.
+     * An anonymous caller resolves to an empty array. Mirrors
+     * {@link getMutualUserIds}'s caching posture.
+     */
+    async getFollowsOfFollowsIds(
+      params?: { limit?: number }
+    ): Promise<string[]> {
+      try {
+        const query = buildPaginationParams(params || {});
+        const response = await this.makeRequest<{ data: string[] }>('GET', '/users/follows-of-follows-ids', query, {
+          cache: true,
+          cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+        });
+        return response.data || [];
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Get the authenticated VIEWER's OWN social graph — the accounts they follow,
+     * the subset who follow back (mutuals), and the accounts they have blocked —
+     * as ONE ids-only payload. The viewer is derived server-side from the SDK's
+     * auth token (never a param).
+     *
+     * Consolidates what were three separate round trips (`getUserFollowing` /
+     * `getMutualUserIds` / `getBlockedUsers`) into a single request so a consumer
+     * can prime its whole viewer graph at once. Mirrors {@link getMutualUserIds}'s
+     * caching posture (2-minute identity-scoped cache); the follow/unfollow/block/
+     * unblock write methods bust this entry so a local mutation is reflected
+     * immediately. An anonymous caller resolves to empty lists.
+     */
+    async getViewerGraph(): Promise<ViewerGraph> {
+      try {
+        const response = await this.makeRequest<{ data: ViewerGraph }>('GET', '/users/me/graph', undefined, {
+          cache: true,
+          cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+        });
+        const graph = response.data;
+        return {
+          followingIds: graph?.followingIds || [],
+          mutualIds: graph?.mutualIds || [],
+          blockedIds: graph?.blockedIds || [],
+          restrictedIds: graph?.restrictedIds || [],
         };
       } catch (error) {
         throw this.handleError(error);

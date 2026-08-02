@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, type Document } from 'mongoose';
 import crypto from 'crypto';
 
 export interface IRateLimitConfig {
@@ -105,15 +105,13 @@ DeveloperApiKeySchema.methods.validateKey = function (key: string): boolean {
   return hash === this.keyHash;
 };
 
-DeveloperApiKeySchema.statics.generateKey = function (): string {
+DeveloperApiKeySchema.statics.generateKey = (): string => {
   const randomBytes = crypto.randomBytes(32);
   const key = randomBytes.toString('base64url');
   return `oxy_dk_${key}`;
 };
 
-DeveloperApiKeySchema.statics.hashKey = function (key: string): string {
-  return crypto.createHash('sha256').update(key).digest('hex');
-};
+DeveloperApiKeySchema.statics.hashKey = (key: string): string => crypto.createHash('sha256').update(key).digest('hex');
 
 const DeveloperApiKey = mongoose.model<IDeveloperApiKey>('DeveloperApiKey', DeveloperApiKeySchema);
 

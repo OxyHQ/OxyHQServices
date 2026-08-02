@@ -5,18 +5,17 @@ import {
     Platform,
     Dimensions,
     Clipboard,
-    ScrollView,
     ActivityIndicator,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { packageInfo } from '@oxyhq/core';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import OxyServicesLogo from '../../assets/icons/OxyServices';
 import { SettingsIcon } from '../components/SettingsIcon';
-import Header from '../components/Header';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 
 interface SystemInfo {
@@ -37,6 +36,8 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     // Use useOxy() hook for OxyContext values
     const { user, sessions, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('appInfo.title') });
     const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
     const [isRunningSystemCheck, setIsRunningSystemCheck] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'unknown'>('unknown');
@@ -148,16 +149,9 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     };
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('appInfo.title')}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
+        <>
 
-            <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-                <View className="px-screen-margin py-space-16 pb-space-24">
+            <View className="px-screen-margin py-space-16 pb-space-24">
                     {/* Package Information */}
                     <SettingsListGroup title={t('appInfo.sections.package')}>
                         <SettingsListItem
@@ -353,8 +347,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         />
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

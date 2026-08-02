@@ -121,7 +121,7 @@ export function deduplicateSessionsByUserId(
 export function normalizeAndSortSessions(
   sessions: ClientSession[],
   activeSessionId?: string | null,
-  deduplicateByUserId: boolean = true
+  deduplicateByUserId = true
 ): ClientSession[] {
   if (!sessions.length) return [];
   
@@ -153,7 +153,7 @@ export function mergeSessions(
   existing: ClientSession[],
   incoming: ClientSession[],
   activeSessionId?: string | null,
-  deduplicateByUserId: boolean = true
+  deduplicateByUserId = true
 ): ClientSession[] {
   if (!existing.length && !incoming.length) return [];
   if (!existing.length) return normalizeAndSortSessions(incoming, activeSessionId, deduplicateByUserId);

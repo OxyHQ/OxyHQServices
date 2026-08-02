@@ -2,6 +2,13 @@
   "signin": {
     "title": "Sign In",
     "subtitle": "Sign in to continue your journey",
+    "chooser": {
+      "title": "Choose an account",
+      "subtitle": "Continue as an account below, or use another.",
+      "signedIn": "Signed in",
+      "useAnother": "Use another account",
+      "continueAs": "Continue as {{name}}"
+    },
     "addAccountTitle": "Add Another Account",
     "addAccountSubtitle": "Sign in with another account",
     "username": {
@@ -43,11 +50,31 @@
     "currentAccount": "Current",
     "or": "or",
     "viewAllAccounts": "View {{count}} more",
+    "createAccountLink": "New to Oxy? Create one",
     "status": {
-      "accountSwitched": "Now using {{name}}"
+      "accountSwitched": "Now using {{name}}",
+      "signingIn": "Signing in…"
     }
   },
   "signup": {
+    "title": "Create your account",
+    "subtitle": "One identity for the whole ecosystem.",
+    "commonsHeadline": "Create your identity in Commons",
+    "commonsExplainer": "Commons is your full self-custody Oxy identity — one app, works everywhere.",
+    "createInCommons": "Create your identity in Commons",
+    "passkeyAlternative": "No Commons? Create a passkey on this device instead",
+    "createAccount": "Create account",
+    "creating": "Creating…",
+    "usernamePlaceholder": "Choose a username",
+    "usernameChecking": "Checking…",
+    "usernameAvailable": "Available",
+    "usernameTaken": "This username is taken",
+    "backToSignInLink": "Already have an account? Sign in",
+    "hubExplainer": "Create your Oxy ID in a secure window, then come right back.",
+    "continueInWindow": "Continue in a new window",
+    "toasts": {
+      "passkeyCreateFailed": "We couldn't create your account. Please try again."
+    },
     "welcome": {
       "title": "Welcome to Oxy!",
       "subtitle": "Let's create your account in just a few steps",
@@ -103,6 +130,7 @@
     }
   },
   "welcomeNew": {
+    "navTitle": "Welcome",
     "welcome": {
       "titleWithName": "Welcome, {{username}} 👋",
       "title": "Welcome 👋",
@@ -162,14 +190,18 @@
   },
   "language": {
     "title": "Language",
-    "subtitle": "Choose your preferred language",
+    "subtitle": "Choose the languages you use. The first is your primary interface language.",
     "current": "Current Language",
+    "selected": "Your languages",
     "available": "Available Languages",
+    "primary": "Primary",
+    "remove": "Remove",
     "changed": "Language changed to {{lang}}",
     "saveFailed": "Failed to save language preference",
     "search": "Search languages"
   },
   "profile": {
+    "title": "Profile",
     "edit": "Edit Profile",
     "noBio": "This user has no bio yet.",
     "joinedOn": "Joined {{date}}",
@@ -347,6 +379,8 @@
     "toasts": {
       "switchSuccess": "Account switched successfully!",
       "switchFailed": "There was a problem switching accounts. Please try again.",
+      "signInFailed": "Sign-in failed. Please try again.",
+      "passkeySignInFailed": "Passkey sign-in failed. Please try again.",
       "removeSuccess": "Account removed successfully!",
       "removeFailed": "There was a problem removing the account. Please try again.",
       "signOutAllSuccess": "All accounts signed out successfully!",
@@ -377,7 +411,29 @@
       "subtitle": "Add another account to switch between them quickly"
     },
     "label": "Account switcher",
-    "searchPlaceholder": "Search accounts"
+    "searchPlaceholder": "Search accounts",
+    "scanQr": "Scan QR code",
+    "qrHeadline": "Sign in with your Oxy identity",
+    "signInWithOxy": "Sign in with Oxy",
+    "useIdentityOnDevice": "No Commons? Use a passkey on this device instead",
+    "passkeySigningIn": "Signing in…",
+    "getCommons": "Get Commons",
+    "commonsNotInstalled": "Don't have Commons? Get the app to sign in with your Oxy ID.",
+    "showQrAnyway": "I have Commons on another device",
+    "switchWhileSignedInAs": "Switch account, signed in as {{name}}",
+    "manageOnDevice": "Manage accounts on this device",
+    "continueWithOxy": "Continue with Oxy",
+    "havingTrouble": "Having trouble?",
+    "progress": {
+      "preparing": "Preparing request",
+      "awaitingApproval": "Waiting for approval",
+      "scanWithCommons": "Scan with Commons on your phone",
+      "continueInCommons": "Continue in Commons",
+      "checkCommons": "Check Commons on your phone",
+      "openedInCommons": "Opened in Commons",
+      "confirming": "Confirming identity",
+      "confirmed": "Identity confirmed"
+    }
   },
   "reputation": {
     "faq": {
@@ -602,6 +658,7 @@
   "editProfile": {
     "title": "Edit Profile",
     "subtitle": "Manage your profile and preferences",
+    "notSet": "Not set",
     "sections": {
       "profilePicture": "Profile Picture",
       "basicInfo": "Basic Information",
@@ -610,6 +667,9 @@
       "security": "Security"
     },
     "items": {
+      "avatar": {
+        "subtitle": "Update your profile photo"
+      },
       "displayName": {
         "title": "Display Name",
         "subtitle": "This is how your name will appear to others",
@@ -617,7 +677,8 @@
         "firstName": "First Name",
         "firstNamePlaceholder": "Enter first name",
         "lastName": "Last Name",
-        "lastNamePlaceholder": "Enter last name (optional)"
+        "lastNamePlaceholder": "Enter last name (optional)",
+        "invalidChars": "Use letters, spaces, apostrophes, and name separators only"
       },
       "username": {
         "title": "Username",
@@ -705,6 +766,8 @@
       "saving": "Saving…",
       "helper": "The cropped circle is what will appear on your profile. Pinch to zoom, drag to position.",
       "zoom": "{{value}}×",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
       "a11yImage": "Crop preview. Pinch to zoom and drag to reposition the image.",
       "a11yReset": "Reset crop to default position",
       "a11yResetAnnouncement": "Crop reset"
@@ -724,6 +787,47 @@
       "cropFailed": "Failed to crop image"
     },
     "changeAvatar": "Change avatar"
+  },
+  "changeAvatar": {
+    "title": "Change profile picture",
+    "sources": {
+      "upload": {
+        "title": "Upload from device",
+        "description": "Choose a photo from your gallery"
+      },
+      "camera": {
+        "title": "Take a picture",
+        "description": "Use your camera"
+      },
+      "files": {
+        "title": "My Oxy files",
+        "description": "Pick an image you already uploaded"
+      },
+      "remove": {
+        "title": "Remove current photo",
+        "description": "Go back to your initials"
+      }
+    },
+    "remove": {
+      "confirmTitle": "Remove profile picture?",
+      "confirmMessage": "Your profile will show your initials instead. You can add a new photo at any time.",
+      "confirmLabel": "Remove"
+    },
+    "permission": {
+      "libraryDenied": "Oxy needs access to your photos to upload a picture.",
+      "cameraDenied": "Oxy needs access to your camera to take a picture.",
+      "openSettings": "Open settings"
+    },
+    "errors": {
+      "pickerUnavailable": "Photo picking is not available on this device.",
+      "cameraUnavailable": "The camera is not available on this device.",
+      "pickFailed": "Could not open the photo picker.",
+      "cameraFailed": "Could not open the camera.",
+      "loadImageFailed": "Could not load the selected image."
+    },
+    "a11y": {
+      "currentPhoto": "Your current profile picture"
+    }
   },
   "accountOverview": {
     "title": "Account",
@@ -1111,7 +1215,8 @@
       "resetPassword": "Reset Password",
       "signedOut": "Signed out",
       "close": "Close",
-      "delete": "Delete"
+      "delete": "Delete",
+      "tryAgain": "Try again"
     },
     "cancel": "Cancel",
     "revoke": "Revoke",
@@ -1267,6 +1372,7 @@
     "footer": "Need more help? Visit our Help Center for additional information."
   },
   "payment": {
+    "title": "Payment",
     "summary": {
       "title": "Payment Summary",
       "orderSummary": "Order Summary",
@@ -1289,6 +1395,8 @@
       "creditCard": "Credit Card",
       "enterCardSecurely": "Enter your card details securely",
       "acceptedCards": "We accept Visa, Mastercard, and more",
+      "cardNumber": "Card number",
+      "expiry": "Expiry",
       "readyToProcess": "Ready to process payment...",
       "payWithWallet": "Pay with your in-app wallet",
       "balance": "Balance: {{balance}}",
@@ -1390,12 +1498,24 @@
     "uploadPhotos": "Upload Photos",
     "uploadFiles": "Upload Files",
     "clearSearch": "Clear Search",
+    "retry": "Try again",
+    "loadError": {
+      "title": "Couldn't load your files",
+      "description": "Something went wrong. Check your connection and try again."
+    },
     "choosePhoto": "Choose Photo",
     "done": "Done",
     "doneWithCount": "Done ({{count}})",
     "photoPicker": {
       "emptyTitle": "No photos yet",
       "emptySubtitle": "Upload from your device to get started"
+    },
+    "details": {
+      "title": "File Details",
+      "download": "Download",
+      "type": "Type",
+      "uploaded": "Uploaded",
+      "description": "Description"
     },
     "a11y": {
       "viewAll": "Show all files",
@@ -1441,6 +1561,7 @@
       "fileEmpty": "File \"{{name}}\" is empty",
       "fileTooLarge": "\"{{name}}\" is too large. Maximum file size is {{maxSize}}",
       "noValidFiles": "No valid files to upload",
+      "imagesOnlyRequired": "Only image files can be selected",
       "waitForSelection": "Please wait for the current file selection to complete",
       "noFilesSelected": "No files were selected",
       "loadSomeFailed": "Failed to load some files:\n{{errors}}",
@@ -1541,6 +1662,7 @@
       "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
     },
     "item": {
+      "granted": "Granted {{relative}}",
       "lastUsed": "Last used {{relative}}"
     },
     "confirm": {
@@ -1554,14 +1676,32 @@
   },
   "accountMenu": {
     "label": "Account menu",
-    "manage": "Manage your Oxy Account",
+    "manage": "Manage your Oxy account",
+    "greeting": "Hi, {{name}}!",
+    "switchAccount": "Switch account",
+    "viewProfile": "View profile",
     "addAnother": "Add another account",
     "signOutAll": "Sign out of all accounts",
     "open": "Account menu",
     "openHint": "Opens the account menu",
     "openWithUser": "Account menu for {{name}}",
     "switching": "Switching account…",
-    "signOutAccount": "Sign out {{name}}"
+    "signOutAccount": "Sign out {{name}}",
+    "storage": {
+      "title": "Oxy storage",
+      "usage": "{{used}} of {{total}} used",
+      "used": "Used",
+      "free": "Free",
+      "unavailable": "Usage details unavailable",
+      "upgrade": "Upgrade plan",
+      "manage": "Manage storage"
+    },
+    "data": "Your data in Oxy",
+    "settings": "Oxy settings",
+    "help": "Help & feedback",
+    "signOut": "Sign out",
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service"
   },
   "accounts": {
     "activeAccount": {
@@ -1602,11 +1742,18 @@
         "description": "A programmatic account with service credentials"
       }
     },
+    "organizationCategory": {
+      "agency": "Real estate agency",
+      "cooperative": "Housing cooperative",
+      "landlord": "Landlord / property manager",
+      "other": "Other organization"
+    },
     "create": {
       "title": "Create account",
       "subtitle": "Create an account you control. It will have its own profile, members, and apps.",
       "displayName": {
-        "label": "Display name"
+        "label": "Display name",
+        "invalidChars": "Use letters, spaces, apostrophes, and name separators only"
       },
       "bio": {
         "label": "Bio (optional)"
@@ -1619,10 +1766,15 @@
         "invalidChars": "Only letters, numbers, hyphens, and underscores",
         "checkFailed": "Could not check availability"
       },
+      "organizationCategory": {
+        "label": "Organization type"
+      },
       "toasts": {
         "success": "Account created",
         "failed": "Failed to create account"
-      }
+      },
+      "typeSection": "Account type",
+      "detailsSection": "Details"
     },
     "manage": {
       "create": {
@@ -1678,7 +1830,8 @@
       "subtitle": "Manage this account’s profile, members, and access.",
       "save": "Save changes",
       "displayName": {
-        "label": "Display name"
+        "label": "Display name",
+        "invalidChars": "Use letters, spaces, apostrophes, and name separators only"
       },
       "bio": {
         "label": "Bio (optional)"
@@ -1892,5 +2045,44 @@
       "earlyAdopter": "Early Adopter",
       "earlyAdopterDesc": "Been part of the community from the start"
     }
+  },
+  "consent": {
+    "title": "Continue to {{app}}",
+    "subtitle": "Use your Oxy account to sign in to {{app}}. Review what this connection means before you continue.",
+    "provenance": {
+      "title": "Who is requesting access",
+      "official": "Official Oxy application",
+      "developer": "Published by {{developer}}",
+      "thirdParty": "Third-party application"
+    },
+    "permissions": {
+      "title": "Permissions requested",
+      "basic": "Sign you in and read your basic profile"
+    },
+    "scopes": {
+      "openid": "Confirm your identity",
+      "profile": "Read your basic profile",
+      "email": "Read your email address",
+      "offlineAccess": "Keep you signed in when you're away",
+      "userRead": "Read your basic profile",
+      "filesRead": "Read your files",
+      "filesWrite": "Upload and modify your files",
+      "filesDelete": "Delete your files",
+      "webhooksReceive": "Receive webhooks",
+      "chatCompletions": "Use AI chat on your behalf",
+      "modelsRead": "List available AI models",
+      "federationWrite": "Act across federated services"
+    },
+    "account": {
+      "title": "Signing in as"
+    },
+    "links": {
+      "website": "Website",
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Service"
+    },
+    "allow": "Continue to {{app}}",
+    "deny": "Cancel",
+    "disclaimer": "By continuing, {{app}} will be able to sign in with your Oxy account. You can manage connected apps anytime in your Oxy account settings."
   }
 }

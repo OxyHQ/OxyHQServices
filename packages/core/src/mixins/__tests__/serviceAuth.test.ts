@@ -30,6 +30,7 @@ interface ServiceTokenClaims {
   scopes?: string[];
   aud?: string | string[];
   iss?: string;
+  environment?: string;
   exp?: number;
   iat?: number;
   [key: string]: unknown;
@@ -49,6 +50,7 @@ const signServiceToken = (claims: ServiceTokenClaims, secret: string): string =>
     aud: 'oxy-api',
     iss: 'oxy-auth',
     credentialId: 'cred-1',
+    environment: 'production',
     ...claims,
   };
   const headerB64 = b64url(JSON.stringify(header));
@@ -183,6 +185,7 @@ describe('C3: service-token acting-as enforcement', () => {
       appName: 'trusted-service',
       credentialId: 'cred-1',
       scopes: ['user:read'],
+      environment: 'production',
     });
   });
 
@@ -760,5 +763,67 @@ describe('requireScope() middleware', () => {
   it('throws if scope argument is missing/empty (programmer error)', () => {
     expect(() => oxy.requireScope('')).toThrow('requireScope');
     expect(() => oxy.requireScope(undefined as unknown as string)).toThrow('requireScope');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// service-token environment claim (F2.0 task 1b) — test/live isolation.
+// ---------------------------------------------------------------------------
+
+describe('service-token environment claim (F2.0 task 1b)', () => {
+  let oxy: OxyServices;
+
+  beforeEach(() => {
+    oxy = new OxyServices({ baseURL: 'http://test.invalid' });
+  });
+
+  it('populates req.serviceApp.environment from the token claim', async () => {
+    const token = signServiceToken(
+      { appId: 'app-1', appName: 'svc', environment: 'development' },
+      SERVICE_SECRET,
+    );
+    const req = makeReq({ headers: { authorization: `Bearer ${token}` } });
+    const res = makeRes();
+    const next = jest.fn();
+
+    const mw = oxy.auth({ jwtSecret: SERVICE_SECRET });
+    await mw(req as unknown as never, res as unknown as never, next as unknown as never);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.serviceApp).toMatchObject({ appId: 'app-1', environment: 'development' });
+  });
+
+  it('rejects a service token missing the environment claim (401)', async () => {
+    const token = signServiceToken(
+      { appId: 'app-1', appName: 'svc', environment: undefined },
+      SERVICE_SECRET,
+    );
+    const req = makeReq({ headers: { authorization: `Bearer ${token}` } });
+    const res = makeRes();
+    const next = jest.fn();
+
+    const mw = oxy.auth({ jwtSecret: SERVICE_SECRET });
+    await mw(req as unknown as never, res as unknown as never, next as unknown as never);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ code: 'INVALID_SERVICE_TOKEN' });
+  });
+
+  it('rejects a service token with an environment value outside the known set (401)', async () => {
+    const token = signServiceToken(
+      { appId: 'app-1', appName: 'svc', environment: 'bogus' },
+      SERVICE_SECRET,
+    );
+    const req = makeReq({ headers: { authorization: `Bearer ${token}` } });
+    const res = makeRes();
+    const next = jest.fn();
+
+    const mw = oxy.auth({ jwtSecret: SERVICE_SECRET });
+    await mw(req as unknown as never, res as unknown as never, next as unknown as never);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ code: 'INVALID_SERVICE_TOKEN' });
   });
 });

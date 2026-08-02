@@ -1,201 +1,103 @@
 /**
- * Tests for the OAuth consent decision + connected-apps (grants) endpoints:
- *  - GET    /auth/oauth/consent          → trusted / granted / scope_changed / new
- *  - GET    /auth/grants                 → list connected apps
- *  - DELETE /auth/grants/:applicationId  → revoke (AppGrant + matching FedCMGrant)
+ * OAuth consent and the "Connected apps" surface, against a REAL Postgres.
  *
- * Mounts the real authRouter and stubs only the data sources. `normaliseOrigin`
- * (utils/origin) is the REAL helper so the FedCM-origin derivation on revoke is
- * exercised end-to-end.
+ * Covers `GET /auth/oauth/consent` (the server-authoritative decision),
+ * `GET /auth/grants` (the revocable grant list), `DELETE /auth/grants/:id`, and
+ * the `app_grants` upsert that `POST /auth/oauth/authorize` performs — the
+ * replacement for Mongo's `$addToSet` + `$setOnInsert`, whose UNION and
+ * first-granted-at semantics are the whole reason a returning user can skip the
+ * consent screen safely.
+ *
+ * The previous version mocked `models/AppGrant` and asserted on the
+ * `findOneAndUpdate` payload shape. That proves the update was BUILT with
+ * `$addToSet`; it can never show that the stored scope set is the union. Every
+ * assertion here reads `app_grants` back out of Postgres.
  */
 
 import express from 'express';
 import http from 'http';
-import { AddressInfo } from 'net';
+import type { AddressInfo } from 'net';
+import { randomUUID } from 'node:crypto';
 
-const mockAuthMiddleware = jest.fn();
-const mockApplicationCredentialFindOne = jest.fn();
-const mockApplicationFindOne = jest.fn();
-const mockApplicationFindById = jest.fn();
-const mockApplicationFind = jest.fn();
-const mockAppGrantFindOne = jest.fn();
-const mockAppGrantFind = jest.fn();
-const mockAppGrantFindOneAndUpdate = jest.fn();
-const mockAppGrantDeleteOne = jest.fn();
-const mockFedCMGrantDeleteMany = jest.fn();
+const mockIssueAuthCode = jest.fn();
+
+let authenticatedUser: { _id: string; username?: string } | null = null;
 
 jest.mock('../../middleware/auth', () => ({
-  authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
+  authMiddleware: (
+    req: { user?: unknown },
+    res: { status: (code: number) => { json: (body: unknown) => void } },
+    next: () => void,
+  ) => {
+    if (!authenticatedUser) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+    req.user = authenticatedUser;
+    next();
+  },
   serviceAuthMiddleware: jest.fn(),
   rejectQueryToken: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
-
 jest.mock('../../middleware/rateLimiter', () => ({
   rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
-
-jest.mock('../../middleware/validate', () => ({
-  validate: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+jest.mock('../../middleware/authUtils', () => ({
+  extractTokenFromRequest: () => null,
+  decodeToken: () => null,
 }));
-
-jest.mock('../../utils/validation', () => ({
-  isValidObjectId: (id: string) => /^[a-f0-9]{24}$/i.test(id),
-}));
-
-jest.mock('../../models/AuthSession', () => ({
-  __esModule: true,
-  default: { findOne: jest.fn() },
-  AuthSession: { findOne: jest.fn() },
-}));
-
-jest.mock('../../models/Session', () => ({
-  __esModule: true,
-  default: { findOne: jest.fn() },
-}));
-
-jest.mock('../../services/authSession.service', () => ({
-  claimAuthSession: jest.fn(),
-  authorizeSessionWithSignedChallenge: jest.fn(),
-}));
-
-jest.mock('../../models/AuthCode', () => ({
-  __esModule: true,
-  AuthCode: { create: jest.fn() },
-  default: { create: jest.fn() },
-}));
-
-jest.mock('../../models/ApplicationCredential', () => ({
-  __esModule: true,
-  ApplicationCredential: { findOne: mockApplicationCredentialFindOne },
-  default: { findOne: mockApplicationCredentialFindOne },
-}));
-
-jest.mock('../../models/Application', () => ({
-  __esModule: true,
-  Application: {
-    findOne: mockApplicationFindOne,
-    findById: mockApplicationFindById,
-    find: mockApplicationFind,
-  },
-  default: {
-    findOne: mockApplicationFindOne,
-    findById: mockApplicationFindById,
-    find: mockApplicationFind,
-  },
-}));
-
-jest.mock('../../models/AppGrant', () => ({
-  __esModule: true,
-  AppGrant: {
-    findOne: mockAppGrantFindOne,
-    find: mockAppGrantFind,
-    findOneAndUpdate: mockAppGrantFindOneAndUpdate,
-    deleteOne: mockAppGrantDeleteOne,
-  },
-  default: {
-    findOne: mockAppGrantFindOne,
-    find: mockAppGrantFind,
-    findOneAndUpdate: mockAppGrantFindOneAndUpdate,
-    deleteOne: mockAppGrantDeleteOne,
-  },
-}));
-
-jest.mock('../../models/FedCMGrant', () => ({
-  __esModule: true,
-  FedCMGrant: { deleteMany: mockFedCMGrantDeleteMany },
-  default: { deleteMany: mockFedCMGrantDeleteMany },
-}));
-
-jest.mock('../../models/User', () => ({
-  __esModule: true,
-  User: { findOne: jest.fn(), findById: jest.fn() },
-  default: { findOne: jest.fn(), findById: jest.fn() },
-}));
-
-jest.mock('../../models/RefreshToken', () => ({
-  __esModule: true,
-  default: { findOne: jest.fn(), findOneAndUpdate: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
-  RefreshToken: { findOne: jest.fn(), findOneAndUpdate: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
-}));
-
-jest.mock('../../utils/userTransform', () => ({
-  formatUserResponse: jest.fn(),
-}));
-
-jest.mock('../../utils/authSessionSocket', () => ({
-  emitAuthSessionUpdate: jest.fn(),
-}));
-
+jest.mock('../../services/oauthCode.service', () => {
+  const actual = jest.requireActual<typeof import('../../services/oauthCode.service')>(
+    '../../services/oauthCode.service',
+  );
+  return {
+    ...actual,
+    issueAuthCode: (...args: unknown[]) => mockIssueAuthCode(...args),
+    exchangeAuthCode: jest.fn(),
+  };
+});
 jest.mock('../../services/session.service', () => ({
   __esModule: true,
-  default: { createSession: jest.fn() },
+  default: { createSession: jest.fn(), getAccessToken: jest.fn() },
 }));
-
-jest.mock('../../services/oauthCode.service', () => ({
-  issueAuthCode: jest.fn(),
-  exchangeAuthCode: jest.fn(),
-  AUTH_CODE_TTL_MS: 60_000,
+jest.mock('../../utils/authSessionSocket', () => ({
+  emitAuthSessionUpdate: jest.fn(),
+  emitAuthSessionProgress: jest.fn(),
 }));
-
-jest.mock('../../services/signature.service', () => ({
-  __esModule: true,
-  default: {
-    isValidPublicKey: jest.fn(),
-    verifyChallengeResponse: jest.fn(),
-    verifyRegistrationSignature: jest.fn(),
-    verifySignature: jest.fn(),
-    generateChallenge: jest.fn(),
-    shortenPublicKey: jest.fn(),
-  },
-}));
-
+jest.mock('../../utils/socket', () => ({ broadcastSessionAccountsChanged: jest.fn() }));
 jest.mock('../../controllers/session.controller', () => ({
   SessionController: {
     register: jest.fn(),
-    signUp: jest.fn(),
-    signIn: jest.fn(),
     requestChallenge: jest.fn(),
     verifyChallenge: jest.fn(),
-    requestPasswordReset: jest.fn(),
-    verifyRecoveryCode: jest.fn(),
-    resetPassword: jest.fn(),
     getUserByPublicKey: jest.fn(),
   },
 }));
-
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-jest.mock('../socialAuth', () => ({
-  __esModule: true,
-  default: express.Router(),
-}));
-
-import authRouter from '../auth';
+import { and, eq } from 'drizzle-orm';
+import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
+import { appGrants } from '../../db/schema/appGrants';
+import { applicationCredentials } from '../../db/schema/applicationCredentials';
+import { applications } from '../../db/schema/applications';
+import { users } from '../../db/schema/users';
 import { errorHandler } from '../../middleware/errorHandler';
+import authRouter from '../auth';
 
 interface JsonResponse {
   status: number;
-  body: {
-    data?: {
-      consentRequired?: boolean;
-      reason?: string;
-      revoked?: boolean;
-      [k: string]: unknown;
-    } & Array<unknown>;
-    error?: string;
-    message?: string;
-  };
+  body: Record<string, unknown>;
 }
 
-async function requestJson(
-  server: http.Server,
-  method: string,
-  path: string,
-  headers: Record<string, string> = {}
-): Promise<JsonResponse> {
+const REDIRECT = 'https://app.example.com/callback';
+
+let server: http.Server;
+
+function send(method: 'GET' | 'POST' | 'DELETE', path: string, body?: unknown): Promise<JsonResponse> {
   const address = server.address() as AddressInfo;
+  const payload = body === undefined ? undefined : JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -203,255 +105,355 @@ async function requestJson(
         host: '127.0.0.1',
         port: address.port,
         path,
-        headers: { 'content-type': 'application/json', ...headers },
+        headers: payload
+          ? {
+              'content-type': 'application/json',
+              'content-length': Buffer.byteLength(payload),
+            }
+          : {},
       },
       (res) => {
         let raw = '';
-        res.on('data', (chunk) => { raw += chunk; });
-        res.on('end', () => {
-          try {
-            resolve({ status: res.statusCode ?? 0, body: raw.length > 0 ? JSON.parse(raw) : {} });
-          } catch (err) {
-            reject(err);
-          }
+        res.on('data', (chunk) => {
+          raw += chunk;
         });
-      }
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, body: raw.length ? JSON.parse(raw) : {} }),
+        );
+      },
     );
     req.on('error', reject);
+    if (payload) req.write(payload);
     req.end();
   });
 }
 
-/** ApplicationCredential.findOne returns a flat doc (no chaining). */
-function credential(applicationId: string) {
-  return { _id: { toString: () => 'cred-1' }, applicationId, status: 'active' };
+async function client(
+  appFields: Partial<typeof applications.$inferInsert> = {},
+): Promise<{ clientId: string; applicationId: string }> {
+  const [owner] = await getDb().insert(users).values({}).returning({ id: users.id });
+  const [app] = await getDb()
+    .insert(applications)
+    .values({
+      name: `App ${randomUUID()}`,
+      type: 'third_party',
+      scopes: ['user:read', 'files:read'],
+      redirectUris: [REDIRECT],
+      ...appFields,
+      ownerAccountId: owner.id,
+    })
+    .returning({ id: applications.id });
+  const clientId = `oxy_dk_${randomUUID().replace(/-/g, '')}`;
+  await getDb().insert(applicationCredentials).values({
+    applicationId: app.id,
+    name: 'client',
+    publicKey: clientId,
+    type: 'public',
+    environment: 'production',
+  });
+  return { clientId, applicationId: app.id };
 }
 
-let server: http.Server;
+async function storedGrant(userId: string, applicationId: string) {
+  const [row] = await getDb()
+    .select()
+    .from(appGrants)
+    .where(and(eq(appGrants.userId, userId), eq(appGrants.applicationId, applicationId)))
+    .limit(1);
+  return row;
+}
 
-beforeAll((done) => {
+function consentUrl(clientId: string, scope?: string): string {
+  const params = new URLSearchParams({ clientId, redirectUri: REDIRECT });
+  if (scope) params.set('scope', scope);
+  return `/auth/oauth/consent?${params.toString()}`;
+}
+
+beforeAll(async () => {
+  await connectPostgres();
   const app = express();
   app.use(express.json());
   app.use('/auth', authRouter);
   app.use(errorHandler);
-  server = app.listen(0, '127.0.0.1', done);
+  await new Promise<void>((resolve) => {
+    server = app.listen(0, '127.0.0.1', resolve);
+  });
 });
 
-afterAll((done) => {
-  server.close(done);
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  await closePostgres();
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   jest.clearAllMocks();
-  mockAuthMiddleware.mockImplementation(
-    (req: { user?: unknown }, _res: unknown, next: () => void) => {
-      req.user = { _id: { toString: () => '507f1f77bcf86cd799439011' } };
-      next();
-    }
-  );
+  mockIssueAuthCode.mockResolvedValue({ code: 'raw-code', expiresAt: new Date() });
+  const [user] = await getDb().insert(users).values({}).returning({ id: users.id });
+  authenticatedUser = { _id: user.id, username: 'nate' };
 });
 
 describe('GET /auth/oauth/consent', () => {
-  const REDIRECT = 'https://app.example.com/callback';
+  it('auto-approves a TRUSTED app regardless of scopes', async () => {
+    const { clientId } = await client({ isOfficial: true });
 
-  function consentUrl(scope?: string) {
-    const params = new URLSearchParams({ clientId: 'oxy_dk_client', redirectUri: REDIRECT });
-    if (scope) params.set('scope', scope);
-    return `/auth/oauth/consent?${params.toString()}`;
-  }
-
-  it('auto-approves a TRUSTED app (reason: trusted) regardless of scopes', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(credential('app-1'));
-    mockApplicationFindOne.mockResolvedValue({
-      _id: { toString: () => 'app-1' },
-      status: 'active',
-      isOfficial: true,
-      redirectUris: [REDIRECT],
-    });
-
-    const res = await requestJson(server, 'GET', consentUrl('a b c'), { Authorization: 'Bearer t' });
+    const res = await send('GET', consentUrl(clientId, 'user:read files:read'));
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ consentRequired: false, reason: 'trusted' });
-    // A trusted app must never hit the grant store.
-    expect(mockAppGrantFindOne).not.toHaveBeenCalled();
   });
 
-  it('skips consent when a prior grant covers the requested scopes (reason: granted)', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(credential('app-1'));
-    mockApplicationFindOne.mockResolvedValue({
-      _id: { toString: () => 'app-1' },
-      status: 'active',
-      type: 'third_party',
-      redirectUris: [REDIRECT],
-    });
-    mockAppGrantFindOne.mockReturnValue({
-      select: () => ({ lean: () => Promise.resolve({ scopes: ['profile:read', 'email:read'] }) }),
-    });
+  it('requires consent for a third-party app with no prior grant', async () => {
+    const { clientId } = await client();
 
-    const res = await requestJson(server, 'GET', consentUrl('profile:read'), { Authorization: 'Bearer t' });
+    const res = await send('GET', consentUrl(clientId, 'user:read'));
 
-    expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({ consentRequired: false, reason: 'granted' });
-  });
-
-  it('requires consent when a new scope is requested (reason: scope_changed)', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(credential('app-1'));
-    mockApplicationFindOne.mockResolvedValue({
-      _id: { toString: () => 'app-1' },
-      status: 'active',
-      type: 'third_party',
-      redirectUris: [REDIRECT],
-    });
-    mockAppGrantFindOne.mockReturnValue({
-      select: () => ({ lean: () => Promise.resolve({ scopes: ['profile:read'] }) }),
-    });
-
-    const res = await requestJson(
-      server,
-      'GET',
-      consentUrl('profile:read email:read'),
-      { Authorization: 'Bearer t' }
-    );
-
-    expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({ consentRequired: true, reason: 'scope_changed' });
-  });
-
-  it('requires consent for a third-party app with no prior grant (reason: new)', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(credential('app-1'));
-    mockApplicationFindOne.mockResolvedValue({
-      _id: { toString: () => 'app-1' },
-      status: 'active',
-      type: 'third_party',
-      redirectUris: [REDIRECT],
-    });
-    mockAppGrantFindOne.mockReturnValue({
-      select: () => ({ lean: () => Promise.resolve(null) }),
-    });
-
-    const res = await requestJson(server, 'GET', consentUrl('profile:read'), { Authorization: 'Bearer t' });
-
-    expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ consentRequired: true, reason: 'new' });
   });
 
-  it('rejects an unregistered redirect_uri with 403 (exact match)', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(credential('app-1'));
-    mockApplicationFindOne.mockResolvedValue({
-      _id: { toString: () => 'app-1' },
-      status: 'active',
-      type: 'third_party',
-      redirectUris: ['https://app.example.com/other'],
+  it('skips consent when a prior grant COVERS the requested scopes', async () => {
+    const { clientId, applicationId } = await client();
+    await getDb().insert(appGrants).values({
+      userId: authenticatedUser?._id ?? '',
+      applicationId,
+      scopes: ['user:read', 'files:read'],
     });
 
-    const res = await requestJson(server, 'GET', consentUrl(), { Authorization: 'Bearer t' });
+    const res = await send('GET', consentUrl(clientId, 'user:read'));
+
+    expect(res.body.data).toEqual({ consentRequired: false, reason: 'granted' });
+  });
+
+  it('requires consent again when a NEW scope is requested', async () => {
+    const { clientId, applicationId } = await client();
+    await getDb().insert(appGrants).values({
+      userId: authenticatedUser?._id ?? '',
+      applicationId,
+      scopes: ['user:read'],
+    });
+
+    const res = await send('GET', consentUrl(clientId, 'user:read files:read'));
+
+    expect(res.body.data).toEqual({ consentRequired: true, reason: 'scope_changed' });
+  });
+
+  it('reads only THIS user grant — another user consent never counts', async () => {
+    const { clientId, applicationId } = await client();
+    const [other] = await getDb().insert(users).values({}).returning({ id: users.id });
+    await getDb().insert(appGrants).values({
+      userId: other.id,
+      applicationId,
+      scopes: ['user:read'],
+    });
+
+    const res = await send('GET', consentUrl(clientId, 'user:read'));
+
+    expect(res.body.data).toEqual({ consentRequired: true, reason: 'new' });
+  });
+
+  it('rejects an unregistered redirect_uri with 403', async () => {
+    const { clientId } = await client();
+    const params = new URLSearchParams({
+      clientId,
+      redirectUri: 'https://evil.example/callback',
+    });
+
+    const res = await send('GET', `/auth/oauth/consent?${params.toString()}`);
 
     expect(res.status).toBe(403);
   });
 
   it('rejects an unknown client with 400', async () => {
-    mockApplicationCredentialFindOne.mockResolvedValue(null);
-
-    const res = await requestJson(server, 'GET', consentUrl(), { Authorization: 'Bearer t' });
-
+    const res = await send('GET', consentUrl('oxy_dk_unknown'));
     expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /auth/oauth/authorize — the recorded grant', () => {
+  it('records a grant for a THIRD-PARTY app with the requested scopes', async () => {
+    const { clientId, applicationId } = await client();
+
+    const res = await send('POST', '/auth/oauth/authorize', {
+      clientId,
+      redirectUri: REDIRECT,
+      scope: 'user:read',
+    });
+
+    expect(res.status).toBe(200);
+    const grant = await storedGrant(authenticatedUser?._id ?? '', applicationId);
+    expect(grant.scopes).toEqual(['user:read']);
+    expect(grant.firstGrantedAt).toBeInstanceOf(Date);
+    expect(grant.lastUsedAt).toBeInstanceOf(Date);
+  });
+
+  it('records NO grant for a TRUSTED app — those are auto-approved, not revocable', async () => {
+    const { clientId, applicationId } = await client({ isOfficial: true });
+
+    await send('POST', '/auth/oauth/authorize', {
+      clientId,
+      redirectUri: REDIRECT,
+      scope: 'user:read',
+    });
+
+    expect(await storedGrant(authenticatedUser?._id ?? '', applicationId)).toBeUndefined();
+  });
+
+  it('UNIONS scopes across authorizations instead of replacing them', async () => {
+    const { clientId, applicationId } = await client();
+
+    await send('POST', '/auth/oauth/authorize', {
+      clientId,
+      redirectUri: REDIRECT,
+      scope: 'user:read',
+    });
+    await send('POST', '/auth/oauth/authorize', {
+      clientId,
+      redirectUri: REDIRECT,
+      scope: 'files:read',
+    });
+
+    const grant = await storedGrant(authenticatedUser?._id ?? '', applicationId);
+    expect([...grant.scopes].sort()).toEqual(['files:read', 'user:read']);
+  });
+
+  it('never duplicates a scope already granted', async () => {
+    const { clientId, applicationId } = await client();
+
+    await send('POST', '/auth/oauth/authorize', {
+      clientId,
+      redirectUri: REDIRECT,
+      scope: 'user:read',
+    });
+    await send('POST', '/auth/oauth/authorize', {
+      clientId,
+      redirectUri: REDIRECT,
+      scope: 'user:read user:read',
+    });
+
+    const grant = await storedGrant(authenticatedUser?._id ?? '', applicationId);
+    expect(grant.scopes).toEqual(['user:read']);
+  });
+
+  it('preserves firstGrantedAt while refreshing lastUsedAt', async () => {
+    const { clientId, applicationId } = await client();
+    await send('POST', '/auth/oauth/authorize', {
+      clientId,
+      redirectUri: REDIRECT,
+      scope: 'user:read',
+    });
+    const original = await storedGrant(authenticatedUser?._id ?? '', applicationId);
+
+    // Push `first_granted_at` into the past so a re-stamp would be visible.
+    const past = new Date(Date.now() - 60 * 60 * 1000);
+    await getDb()
+      .update(appGrants)
+      .set({ firstGrantedAt: past, lastUsedAt: past })
+      .where(eq(appGrants.id, original.id));
+
+    await send('POST', '/auth/oauth/authorize', {
+      clientId,
+      redirectUri: REDIRECT,
+      scope: 'user:read',
+    });
+
+    const updated = await storedGrant(authenticatedUser?._id ?? '', applicationId);
+    // `$setOnInsert` semantics: when the user FIRST consented is history.
+    expect(updated.firstGrantedAt.getTime()).toBe(past.getTime());
+    expect(updated.lastUsedAt.getTime()).toBeGreaterThan(past.getTime());
+    // One row per (user, application) — the upsert never inserts a duplicate.
+    expect(updated.id).toBe(original.id);
   });
 });
 
 describe('GET /auth/grants', () => {
-  it('lists the user grants joined with application name + logo', async () => {
-    mockAppGrantFind.mockReturnValue({
-      select: () => ({
-        sort: () => ({
-          lean: () =>
-            Promise.resolve([
-              {
-                applicationId: { toString: () => 'app-1' },
-                scopes: ['profile:read'],
-                firstGrantedAt: new Date('2026-01-01T00:00:00.000Z'),
-                lastUsedAt: new Date('2026-02-01T00:00:00.000Z'),
-              },
-              {
-                applicationId: { toString: () => 'missing-app' },
-                scopes: ['email:read'],
-                firstGrantedAt: new Date('2026-01-01T00:00:00.000Z'),
-                lastUsedAt: new Date('2026-01-15T00:00:00.000Z'),
-              },
-            ]),
-        }),
-      }),
-    });
-    mockApplicationFind.mockReturnValue({
-      select: () => ({
-        lean: () =>
-          Promise.resolve([
-            { _id: { toString: () => 'app-1' }, name: 'Third Party App', icon: 'file-123' },
-          ]),
-      }),
-    });
+  it('lists the user grants joined with the application name + logo, newest use first', async () => {
+    const userId = authenticatedUser?._id ?? '';
+    const first = await client({ name: 'Older App', icon: 'icon-older' });
+    const second = await client({ name: 'Newer App', icon: 'icon-newer' });
+    const older = new Date(Date.now() - 60 * 60 * 1000);
+    await getDb().insert(appGrants).values([
+      {
+        userId,
+        applicationId: first.applicationId,
+        scopes: ['user:read'],
+        firstGrantedAt: older,
+        lastUsedAt: older,
+      },
+      { userId, applicationId: second.applicationId, scopes: ['files:read'] },
+    ]);
 
-    const res = await requestJson(server, 'GET', '/auth/grants', { Authorization: 'Bearer t' });
+    const res = await send('GET', '/auth/grants');
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toEqual([
-      {
-        applicationId: 'app-1',
-        name: 'Third Party App',
-        logoUrl: 'file-123',
-        scopes: ['profile:read'],
-        firstGrantedAt: '2026-01-01T00:00:00.000Z',
-        lastUsedAt: '2026-02-01T00:00:00.000Z',
-      },
+    const data = res.body.data as Array<Record<string, unknown>>;
+    expect(data.map((entry) => entry.applicationId)).toEqual([
+      second.applicationId,
+      first.applicationId,
     ]);
-    // The grant whose application no longer exists is dropped.
-    expect((res.body.data ?? []).length).toBe(1);
+    expect(data[0]).toMatchObject({ name: 'Newer App', logoUrl: 'icon-newer', scopes: ['files:read'] });
+    expect(typeof data[0].firstGrantedAt).toBe('string');
+    expect(typeof data[0].lastUsedAt).toBe('string');
+  });
+
+  it('returns an empty list for a user with no grants', async () => {
+    const res = await send('GET', '/auth/grants');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+  });
+
+  it('never lists ANOTHER user grants', async () => {
+    const { applicationId } = await client();
+    const [other] = await getDb().insert(users).values({}).returning({ id: users.id });
+    await getDb().insert(appGrants).values({ userId: other.id, applicationId, scopes: [] });
+
+    const res = await send('GET', '/auth/grants');
+
+    expect(res.body.data).toEqual([]);
   });
 });
 
 describe('DELETE /auth/grants/:applicationId', () => {
-  const APP_ID = '507f1f77bcf86cd799439abc';
+  it('revokes the grant so the next authorize prompts for consent again', async () => {
+    const userId = authenticatedUser?._id ?? '';
+    const { clientId, applicationId } = await client();
+    await getDb().insert(appGrants).values({ userId, applicationId, scopes: ['user:read'] });
 
-  it('revokes the AppGrant and matching FedCMGrant origins', async () => {
-    mockAppGrantDeleteOne.mockResolvedValue({ deletedCount: 1 });
-    mockApplicationFindById.mockReturnValue({
-      select: () => ({
-        lean: () =>
-          Promise.resolve({ redirectUris: ['https://app.example.com/cb', 'https://app.example.com/cb2'] }),
-      }),
-    });
-    mockFedCMGrantDeleteMany.mockResolvedValue({ deletedCount: 2 });
-
-    const res = await requestJson(server, 'DELETE', `/auth/grants/${APP_ID}`, { Authorization: 'Bearer t' });
+    const res = await send('DELETE', `/auth/grants/${applicationId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ revoked: true });
-    expect(mockAppGrantDeleteOne).toHaveBeenCalledWith(
-      expect.objectContaining({ applicationId: APP_ID })
-    );
-    // Only ONE deduped origin is derived from the two redirectUris.
-    expect(mockFedCMGrantDeleteMany).toHaveBeenCalledWith(
-      expect.objectContaining({ clientOrigin: { $in: ['https://app.example.com'] } })
-    );
+    expect(await storedGrant(userId, applicationId)).toBeUndefined();
+    const consent = await send('GET', consentUrl(clientId, 'user:read'));
+    expect(consent.body.data).toEqual({ consentRequired: true, reason: 'new' });
   });
 
-  it('is idempotent when no grant exists and the app has no redirect origins', async () => {
-    mockAppGrantDeleteOne.mockResolvedValue({ deletedCount: 0 });
-    mockApplicationFindById.mockReturnValue({
-      select: () => ({ lean: () => Promise.resolve(null) }),
-    });
+  it('never revokes ANOTHER user grant for the same application', async () => {
+    const { applicationId } = await client();
+    const [other] = await getDb().insert(users).values({}).returning({ id: users.id });
+    await getDb()
+      .insert(appGrants)
+      .values({ userId: other.id, applicationId, scopes: ['user:read'] });
 
-    const res = await requestJson(server, 'DELETE', `/auth/grants/${APP_ID}`, { Authorization: 'Bearer t' });
+    const res = await send('DELETE', `/auth/grants/${applicationId}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({ revoked: true });
-    expect(mockFedCMGrantDeleteMany).not.toHaveBeenCalled();
+    expect(await storedGrant(other.id, applicationId)).toBeDefined();
   });
 
-  it('rejects an invalid applicationId with 400', async () => {
-    const res = await requestJson(server, 'DELETE', '/auth/grants/not-an-objectid', { Authorization: 'Bearer t' });
+  it('is idempotent when no grant exists', async () => {
+    const { applicationId } = await client();
+    const res = await send('DELETE', `/auth/grants/${applicationId}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ revoked: true });
+  });
 
-    expect(res.status).toBe(400);
-    expect(mockAppGrantDeleteOne).not.toHaveBeenCalled();
+  it('answers the same way for an applicationId that names nothing', async () => {
+    // The `isValidObjectId` guard is deleted — revoke is idempotent and total,
+    // so a malformed id is indistinguishable from an id with no grant. Keeping
+    // the guard would have 400'd every uuid v7 application id after the cutover.
+    const res = await send('DELETE', '/auth/grants/not-an-id-at-all');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ revoked: true });
   });
 });

@@ -1,13 +1,13 @@
 import React, { useCallback, useMemo } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { NotificationPreferences } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
 import { useUpdateNotificationPreferences } from '../hooks/mutations/useAccountMutations';
@@ -38,6 +38,8 @@ const DEFAULT_VALUES: NotificationToggleValues = {
 const NotificationsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     const bloomTheme = useTheme();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('notifications.title') || 'Notifications' });
     const { isAuthenticated } = useOxy();
     const { data: user } = useCurrentUser({ enabled: isAuthenticated });
     const updateMutation = useUpdateNotificationPreferences();
@@ -69,15 +71,8 @@ const NotificationsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
     const isSaving = savingKeys.size > 0;
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('notifications.title') || 'Notifications'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+        <>
+            <View className="px-screen-margin pb-space-24">
                     <SettingsListGroup
                         title={t('notifications.sections.channels') || 'Channels'}
                     >
@@ -159,7 +154,7 @@ const NotificationsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                         <SettingsListItem
                             icon={
                                 <SettingsIcon
-                                    name="megaphone"
+                                    name="bullhorn"
                                     color={bloomTheme.colors.secondary}
                                 />
                             }
@@ -182,8 +177,7 @@ const NotificationsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => 
                         />
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

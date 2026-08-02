@@ -33,3 +33,14 @@ export interface TopicData {
   createdAt: string;
   updatedAt: string;
 }
+
+/**
+ * Paginated result of {@link OxyServices.listTopics}. Mirrors the `GET /topics`
+ * envelope so callers keep access to `total`/`offset` for pagination.
+ */
+export interface TopicListResult {
+  topics: TopicData[];
+  total: number;
+  limit: number;
+  offset: number;
+}

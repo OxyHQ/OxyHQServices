@@ -27,6 +27,15 @@ function htmlResponse(html: string, finalUrl: string, status = 200): unknown {
   };
 }
 
+function jsonResponse(body: unknown, finalUrl: string, status = 200): unknown {
+  return {
+    response: Readable.from([Buffer.from(JSON.stringify(body))]),
+    status,
+    headers: { 'content-type': 'application/json' },
+    finalUrl,
+  };
+}
+
 beforeEach(() => mockSafeFetch.mockReset());
 
 describe('isBlockedInterstitialUrl', () => {
@@ -71,17 +80,70 @@ describe('resolveLinkMetadata (generic scrape)', () => {
     expect(result.imageUrl).toBe('https://example.com/img/cover.jpg');
   });
 
-  it('prefers the <title> tag over og:title (faithful port behavior)', async () => {
+  it('prefers og:title / og:description over the document <title> and meta description', async () => {
     const html = `<html><head>
-      <title>Document Title</title>
+      <title>Document Title – Example Site</title>
+      <meta name="description" content="Document description">
       <meta property="og:title" content="OG Title">
+      <meta property="og:description" content="OG description">
+      <meta name="twitter:title" content="Twitter Title">
       <meta property="og:image" content="https://example.com/c.jpg">
     </head></html>`;
     mockSafeFetch.mockResolvedValueOnce(htmlResponse(html, 'https://example.com/article'));
 
     const result = await resolveLinkMetadata('https://example.com/article');
-    expect(result.title).toBe('Document Title');
+    expect(result.title).toBe('OG Title');
+    expect(result.description).toBe('OG description');
     expect(result.imageUrl).toBe('https://example.com/c.jpg');
+  });
+
+  it('falls back to twitter:*, then the document tags, when og:* is absent', async () => {
+    const html = `<html><head>
+      <title>Document Title</title>
+      <meta name="description" content="Document description">
+      <meta name="twitter:title" content="Twitter Title">
+    </head></html>`;
+    mockSafeFetch.mockResolvedValueOnce(htmlResponse(html, 'https://example.com/article'));
+
+    const result = await resolveLinkMetadata('https://example.com/article');
+    expect(result.title).toBe('Twitter Title');
+    expect(result.description).toBe('Document description');
+  });
+
+  it('collapses whitespace in a multi-line, indented <title>', async () => {
+    const html = `<html><head>
+      <title>
+      Your &#8216;App&#8217; Could Have Been a Webpage (so I fixed it for you&#8230;) &#8211; Dan Q
+    </title>
+    </head></html>`;
+    mockSafeFetch.mockResolvedValueOnce(htmlResponse(html, 'https://danq.me/a'));
+
+    const result = await resolveLinkMetadata('https://danq.me/a');
+    expect(result.title).toBe(
+      'Your ‘App’ Could Have Been a Webpage (so I fixed it for you…) – Dan Q',
+    );
+  });
+
+  it('collapses whitespace in og:title / og:description / og:site_name', async () => {
+    const html = `<html><head>
+      <meta property="og:title" content="  Spaced\n   Title  ">
+      <meta property="og:description" content="Line one\n\n  line two ">
+      <meta property="og:site_name" content="\n  Example\tSite\n">
+    </head></html>`;
+    mockSafeFetch.mockResolvedValueOnce(htmlResponse(html, 'https://example.com/article'));
+
+    const result = await resolveLinkMetadata('https://example.com/article');
+    expect(result.title).toBe('Spaced Title');
+    expect(result.description).toBe('Line one line two');
+    expect(result.siteName).toBe('Example Site');
+  });
+
+  it('drops a whitespace-only title instead of storing it', async () => {
+    const html = `<html><head><title>\n   \n</title></head></html>`;
+    mockSafeFetch.mockResolvedValueOnce(htmlResponse(html, 'https://example.com/article'));
+
+    const result = await resolveLinkMetadata('https://example.com/article');
+    expect(result.title).toBeUndefined();
   });
 
   it('throws (without fetching) when the input URL is an interstitial wall', async () => {
@@ -94,5 +156,46 @@ describe('resolveLinkMetadata (generic scrape)', () => {
       htmlResponse('<html></html>', 'https://www.google.com/sorry/index'),
     );
     await expect(resolveLinkMetadata('https://news.example/x')).rejects.toThrow();
+  });
+});
+
+describe('resolveLinkMetadata (provider path)', () => {
+  it('collapses whitespace in an oEmbed title and description', async () => {
+    mockSafeFetch.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          title: '\n  A Clip\n  With a Wrapped Title\n',
+          description: '  Clip\n\ndescription  ',
+          thumbnail_url: 'https://i.vimeocdn.com/x.jpg',
+        },
+        'https://vimeo.com/api/oembed.json',
+      ),
+    );
+
+    const result = await resolveLinkMetadata('https://vimeo.com/123');
+    expect(result.title).toBe('A Clip With a Wrapped Title');
+    expect(result.description).toBe('Clip description');
+    expect(result.imageUrl).toBe('https://i.vimeocdn.com/x.jpg');
+  });
+
+  it('collapses whitespace in the description backfilled by the og enrichment scrape', async () => {
+    mockSafeFetch
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { title: 'Rick Astley', thumbnail_url: 'https://i.ytimg.com/vi/x/hq.jpg' },
+          'https://www.youtube.com/oembed',
+        ),
+      )
+      .mockResolvedValueOnce(
+        htmlResponse(
+          `<html><head><meta property="og:description" content="Official
+             video  "></head></html>`,
+          'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        ),
+      );
+
+    const result = await resolveLinkMetadata('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    expect(result.title).toBe('Rick Astley');
+    expect(result.description).toBe('Official video');
   });
 });

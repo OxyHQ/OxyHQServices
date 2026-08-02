@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { View, Image, StyleSheet, ActivityIndicator } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 import { useAttachmentUrl } from '@/hooks/queries/useAttachmentUrl';
 import { useColors } from '@/constants/theme';

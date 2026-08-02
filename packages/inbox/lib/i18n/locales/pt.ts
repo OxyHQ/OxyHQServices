@@ -44,16 +44,12 @@ const pt: LocaleDict = {
   },
 
   tabs: {
-    home: 'Início',
     inbox: 'Caixa de entrada',
     search: 'Pesquisar',
     settings: 'Definições',
-    forYou: 'Para ti',
   },
 
   drawer: {
-    home: 'Início',
-    forYou: 'Para ti',
     starred: 'Com estrela',
     snoozed: 'Adiados',
     subscriptions: 'Subscrições',
@@ -123,6 +119,11 @@ const pt: LocaleDict = {
       analyzing: 'A Alia está a analisar a tua caixa…',
       unavailable: 'Não foi possível gerar o resumo agora.',
       empty: 'Ainda não há emails para resumir.',
+      writing: 'A escrever o teu resumo…',
+      preparing: 'A preparar o teu resumo…',
+      failed: 'Não foi possível escrever o resumo de hoje.',
+      nothingNew: 'Nada de novo hoje.',
+      tapRetry: 'Toca para tentar novamente.',
     },
     feedEmpty: {
       title: 'Tudo em dia',
@@ -134,25 +135,6 @@ const pt: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'Para ti',
-    starred: 'Com estrela',
-    unread: 'Por ler',
-    attachments: 'Anexos',
-    empty: {
-      title: 'Tudo em dia',
-      subtitle: 'De momento, nada em destaque para ti.',
-    },
-    summary: {
-      fromOne: 'De {{a}}',
-      fromTwo: 'De {{a}} e {{b}}',
-      fromManyOne: 'De {{a}}, {{b}} e mais {{count}}',
-      fromManyOther: 'De {{a}}, {{b}} e mais {{count}}',
-      aboutOne: ' — sobre {{topic}}',
-      aboutTwo: ' — sobre {{a}}, {{b}}',
-      aboutMore: ' e mais',
-    },
-  },
 
   inbox: {
     title: 'Caixa de entrada',
@@ -385,6 +367,7 @@ const pt: LocaleDict = {
     keyPoints: 'Pontos-chave',
     actionItems: 'Ações pendentes',
     due: 'Prazo: {{date}}',
+    unavailable: 'Não foi possível resumir esta conversa agora.',
   },
 
   staleThread: {

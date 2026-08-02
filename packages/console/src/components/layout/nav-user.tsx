@@ -1,12 +1,15 @@
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Logout03Icon,
-  Setting06Icon,
-  Money01Icon,
   ArrowUp01Icon,
+  Logout03Icon,
+  Money01Icon,
   Notification01Icon,
+  Setting06Icon,
   UserCircleIcon,
 } from '@hugeicons/core-free-icons';
+import { getNormalizedUserHandle } from '@oxyhq/core';
+import { useAuth } from '@oxyhq/services';
+import { Link } from '@tanstack/react-router';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -23,8 +26,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { useAuth } from '@oxyhq/auth';
-import { Link } from '@tanstack/react-router';
 import config from '@/lib/config';
 
 export function NavUser() {
@@ -37,12 +38,23 @@ export function NavUser() {
   };
 
   const getUserInitials = () => {
-    if (!user?.name) return user?.username?.[0]?.toUpperCase() || 'U';
-    const name = user.name as { first?: string; last?: string };
-    if (name.first && name.last) {
-      return `${name.first[0]}${name.last[0]}`.toUpperCase();
+    if (!user) return 'U';
+
+    const displayName = user.name?.displayName?.trim();
+    if (displayName) {
+      const parts = displayName.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+      }
+      return displayName.slice(0, 2).toUpperCase();
     }
-    return (name.first?.[0] || user?.username?.[0] || 'U').toUpperCase();
+
+    const handle = getNormalizedUserHandle(user);
+    if (handle) {
+      return handle.slice(0, 2).toUpperCase();
+    }
+
+    return 'U';
   };
 
   const getAvatarUrl = () => {
@@ -54,7 +66,7 @@ export function NavUser() {
   // The API resolves the canonical display string as `name.displayName`; render
   // it directly rather than recomposing from `name.first` / `name.last` /
   // `username`.
-  const displayName = user?.name.displayName ?? 'User';
+  const displayName = user?.name?.displayName ?? getNormalizedUserHandle(user) ?? 'User';
 
   if (!user) {
     return null;

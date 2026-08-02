@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { privacySettingsSchema } from './privacy.schemas';
 
 // Shared params for routes with :userId
 export const userIdParams = z.object({
@@ -53,5 +54,5 @@ export const paginationQuerySchema = z.object({
 
 // PUT /users/:userId/privacy
 export const updatePrivacyBodySchema = z.object({
-  privacySettings: z.record(z.unknown()),
+  privacySettings: privacySettingsSchema,
 });

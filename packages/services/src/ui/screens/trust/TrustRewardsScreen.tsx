@@ -1,9 +1,9 @@
 import type React from 'react';
 import { useMemo, useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
-import Header from '../../components/Header';
-import { Ionicons } from '@expo/vector-icons';
+import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H1, H4, H5, Text } from '@oxyhq/bloom/typography';
 import { useI18n } from '../../hooks/useI18n';
@@ -75,11 +75,16 @@ const RARITY_DARKEN = 0.4;
 const ACCENT_LIGHTEN = 0.1;
 const LOCKED_OPACITY = 0.5;
 
-const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
+const TrustRewardsScreen: React.FC<BaseScreenProps> = () => {
     const { t } = useI18n();
     // Reputation/trust is the ACTIVE account's standing (the org/project/bot
     // when switched, else the personal user).
     const { user, oxyServices, isAuthenticated } = useOxy();
+
+    useSurfaceHeader({
+        title: t('trust.rewards.title') || 'Trust Rewards',
+        subtitle: t('trust.rewards.subtitle') || 'Unlock special features and recognition',
+    });
     const [reputationTotal, setReputationTotal] = useState<number>(0);
     const [, setIsLoading] = useState(true);
 
@@ -92,7 +97,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
             return;
         }
         setIsLoading(true);
-        oxyServices.getReputationBalance(user.id)
+        oxyServices.getMyReputationBalance()
             .then((balance) => {
                 setReputationTotal(balance.total || 0);
             })
@@ -360,19 +365,11 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
 
     if (!isAuthenticated) {
         return (
-            <View className="flex-1 bg-bg">
-                <Header
-                    title={t('trust.rewards.title') || 'Trust Rewards'}
-                    subtitle={t('trust.rewards.subtitle') || 'Unlock special features and recognition'}
-                    onBack={goBack}
-                    elevation="subtle"
-                />
-                <View className="flex-1 items-center justify-center px-screen-margin">
+                <View className="items-center justify-center px-screen-margin py-space-40">
                     <Text className="text-text text-base text-center">
                         {t('common.status.notSignedIn') || 'Not signed in'}
                     </Text>
                 </View>
-            </View>
         );
     }
 
@@ -381,18 +378,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
         : 0;
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('trust.rewards.title') || 'Trust Rewards'}
-                subtitle={t('trust.rewards.subtitle') || 'Unlock special features and recognition'}
-                onBack={goBack}
-                elevation="subtle"
-            />
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pt-space-20 pb-space-40"
-                showsVerticalScrollIndicator={false}
-            >
+            <View className="px-screen-margin pt-space-20 pb-space-40">
                 {/* Stats Header */}
                 <View className="bg-fill rounded-radius-20 p-space-20 mb-space-24">
                     <View className="flex-row justify-between items-center mb-space-16">
@@ -458,8 +444,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                         </View>
                     </>
                 )}
-            </ScrollView>
-        </View>
+            </View>
     );
 };
 

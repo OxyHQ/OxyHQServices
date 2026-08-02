@@ -1,55 +1,22 @@
 import type React from 'react';
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Platform, Animated } from 'react-native';
-import AnimatedReanimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import type { BaseScreenProps } from '../types/navigation';
-import Avatar from '../components/Avatar';
-import { Ionicons } from '@expo/vector-icons';
-import { toast } from '@oxyhq/bloom';
-import { useAuthStore } from '../stores/authStore';
+import { Avatar } from '@oxyhq/bloom/avatar';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { toast } from '@oxyhq/bloom/toast';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { H1, Text } from '@oxyhq/bloom/typography';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
-import { updateAvatarVisibility, getAccountDisplayName } from '@oxyhq/core';
+import { getNormalizedUserHandle, type User } from '@oxyhq/core';
 
 const GAP = 12;
 const INNER_GAP = 8;
-
-// Individual animated progress dot
-const AnimatedProgressDot: React.FC<{
-    isActive: boolean;
-    colors: any;
-    styles: any;
-}> = ({ isActive, colors, styles }) => {
-    const width = useSharedValue(isActive ? 12 : 6);
-    const backgroundColor = useSharedValue(isActive ? colors.primary : colors.border);
-
-    useEffect(() => {
-        width.value = withTiming(isActive ? 12 : 6, { duration: 300 });
-        backgroundColor.value = withTiming(
-            isActive ? colors.primary : colors.border,
-            { duration: 300 }
-        );
-    }, [isActive, colors.primary, colors.border, width, backgroundColor]);
-
-    const animatedStyle = useAnimatedStyle(() => ({
-        width: width.value,
-        backgroundColor: backgroundColor.value,
-    }));
-
-    return (
-        <AnimatedReanimated.View
-            style={[
-                styles.progressDot,
-                animatedStyle,
-            ]}
-        />
-    );
-};
 
 /**
  * Post-signup welcome & onboarding screen.
@@ -57,8 +24,7 @@ const AnimatedProgressDot: React.FC<{
  * - Lets them immediately set / change their avatar using existing FileManagement picker
  * - Only when the user presses "Continue" do we invoke onAuthenticated to finish flow & close sheet
  */
-const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
-    navigate,
+const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: User }> = ({
     onAuthenticated,
     theme,
     newUser,
@@ -67,7 +33,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     // the ACTIVE account (the personal user during onboarding, but read through
     // `user` so this stays correct everywhere), with the freshly
     // registered `newUser` as the pre-store-hydration fallback.
-    const { user, oxyServices } = useOxy();
+    const { user, oxyServices, openAvatarPicker: openChangeAvatarSurface } = useOxy();
     const { t, locale } = useI18n();
     const updateProfileMutation = useUpdateProfile();
     const currentUser = user || newUser; // fallback
@@ -77,35 +43,30 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
         border: bloomTheme.colors.border,
         text: bloomTheme.colors.text,
     };
-    const styles = useMemo(() => createStyles(bloomTheme.colors), [bloomTheme.colors]);
+    const styles = useMemo(() => createStyles(), []);
 
     // Animation state
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const slideAnim = useRef(new Animated.Value(0)).current;
     const [currentStep, setCurrentStep] = useState(0);
-    // Track avatar separately to ensure it updates immediately after selection
-    const [selectedAvatarId, setSelectedAvatarId] = useState<string | undefined>(currentUser?.avatar);
     // Name form state for the conditional "set your name" step. Lazy initializers
     // seed from the current user once; no useEffect prop→state sync.
     const [firstName, setFirstName] = useState(() => (currentUser?.name?.first ?? '').trim());
     const [lastName, setLastName] = useState(() => (currentUser?.name?.last ?? '').trim());
     const [savingName, setSavingName] = useState(false);
 
-    // Update selectedAvatarId when the active account's avatar changes
-    useEffect(() => {
-        if (user?.avatar) {
-            setSelectedAvatarId(user.avatar);
-        } else if (newUser?.avatar) {
-            setSelectedAvatarId(newUser.avatar);
-        }
-    }, [user?.avatar, newUser?.avatar]);
+    // Derived, not mirrored: `openAvatarPicker` writes through the shared avatar
+    // path, which updates the active account — including CLEARING it when the
+    // user removes their photo, which a "last non-empty value" mirror could not
+    // represent.
+    const avatarUri = currentUser?.avatar
+        ? oxyServices.getFileDownloadUrl(currentUser.avatar, 'thumb')
+        : undefined;
 
-    const avatarUri = selectedAvatarId ? oxyServices.getFileDownloadUrl(selectedAvatarId, 'thumb') : undefined;
-
-    // Steps content. Use the canonical helper so partially-onboarded accounts
-    // (publicKey only) still get a friendly greeting instead of a blank one.
-    const welcomeName = getAccountDisplayName(currentUser ?? null, locale);
-    const welcomeTitle = currentUser
+    // API DTO contract: explicit displayName, else the normalized handle.
+    const welcomeName =
+        currentUser?.name?.displayName ?? getNormalizedUserHandle(currentUser) ?? '';
+    const welcomeTitle = currentUser && welcomeName
         ? (t('welcomeNew.welcome.titleWithName', { username: welcomeName }) || `Welcome, ${welcomeName} 👋`)
         : (t('welcomeNew.welcome.title') || 'Welcome 👋');
     // Only ask the user for their name during onboarding when they don't have a
@@ -186,43 +147,35 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
             setSavingName(false);
         }
     }, [firstName, lastName, updateProfileMutation, animateToStepCallback, currentStep, t]);
+    /**
+     * Onboarding uses the SAME avatar flow as everywhere else — the ChangeAvatar
+     * surface (source list → crop → upload). It used to run its own
+     * pick-a-file-and-set-it path, which bypassed the cropper entirely.
+     */
     const openAvatarPicker = useCallback(() => {
-        // Ensure we're on the avatar step before opening picker
+        // Ensure we're on the avatar step, so the wizard shows the new photo
+        // when the surface closes.
         if (avatarStepIndex >= 0 && currentStep !== avatarStepIndex) {
             animateToStepCallback(avatarStepIndex);
         }
+        openChangeAvatarSurface();
+    }, [openChangeAvatarSurface, currentStep, avatarStepIndex, animateToStepCallback]);
 
-        navigate?.('FileManagement', {
-            selectMode: true,
-            multiSelect: false,
-            disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
-            afterSelect: 'none', // Don't navigate away - stay on current screen
-            onSelect: async (file: any) => {
-                if (!file.contentType.startsWith('image/')) {
-                    toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
-                    return;
-                }
-                try {
-                    // Update file visibility to public for avatar
-                    await updateAvatarVisibility(file.id, oxyServices, 'WelcomeNewUser');
-
-                    // Update the avatar immediately in local state
-                    setSelectedAvatarId(file.id);
-
-                    // Update user using TanStack Query mutation
-                    await updateProfileMutation.mutateAsync({ avatar: file.id });
-                    toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
-
-                    // Ensure we stay on the avatar step
-                    if (avatarStepIndex >= 0 && currentStep !== avatarStepIndex) {
-                        animateToStepCallback(avatarStepIndex);
-                    }
-                } catch (e: unknown) {
-                    toast.error((e instanceof Error ? e.message : null) || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
-                }
-            }
-        });
-    }, [navigate, updateProfileMutation, oxyServices, currentStep, avatarStepIndex, animateToStepCallback, t]);
+    // Shared Dialog nav header: a stable "Welcome" title, the wizard `progress`
+    // bar (replacing the old in-content dots), and a back affordance that steps the
+    // wizard back once past the intro (the step CTAs keep their own
+    // Back/Skip/Next/Enter buttons as content; the header's close dismisses,
+    // matching the pre-existing backdrop-dismiss).
+    const progress = useMemo(
+        () => ({ step: currentStep + 1, total: totalSteps }),
+        [currentStep, totalSteps],
+    );
+    useSurfaceHeader({
+        title: t('welcomeNew.navTitle'),
+        largeTitle: false,
+        onBack: currentStep > 0 ? prevStep : undefined,
+        progress,
+    });
 
     const step = steps[currentStep];
     const renderActionButtons = useCallback(() => {
@@ -290,28 +243,19 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 
     return (
         <View style={styles.container}>
-            <View style={styles.progressContainer}>
-                {steps.map((s, i) => (
-                    <AnimatedProgressDot
-                        key={s.key}
-                        isActive={i === currentStep}
-                        colors={colors}
-                        styles={styles}
-                    />
-                ))}
-            </View>
+            {/* Step progress now lives in the shared Dialog header (`progress`). */}
             <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
                 <View style={[styles.scrollInner, styles.contentContainer]}>
                     <View style={[styles.header, styles.sectionSpacing]}>
-                        <H1 style={styles.title} className="text-foreground">{step.title}</H1>
-                        {step.body && <Text style={styles.body} className="text-muted-foreground">{step.body}</Text>}
+                        <H1 style={styles.title} className="text-text">{step.title}</H1>
+                        {step.body && <Text style={styles.body} className="text-text-secondary">{step.body}</Text>}
                     </View>
                     {Array.isArray(step.bullets) && step.bullets.length > 0 && (
                         <View style={[styles.bulletContainer, styles.sectionSpacing]}>
                             {step.bullets.map(b => (
                                 <View key={b} style={styles.bulletRow}>
                                     <Ionicons name="ellipse" size={8} color={colors.primary} style={{ marginTop: 6 }} />
-                                    <Text style={styles.bulletText} className="text-muted-foreground">{b}</Text>
+                                    <Text style={styles.bulletText} className="text-text-secondary">{b}</Text>
                                 </View>
                             ))}
                         </View>
@@ -348,9 +292,8 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                             <Avatar
                                 size={120}
                                 name={welcomeName}
-                                uri={avatarUri}
-
-                                backgroundColor={`${colors.primary}20`}
+                                source={avatarUri}
+                                placeholderColor={`${colors.primary}20`}
                                 style={styles.avatar}
                             />
                             <Button variant="primary" size="small" onPress={openAvatarPicker}>
@@ -368,7 +311,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 
 };
 
-const createStyles = (colors: ReturnType<typeof useTheme>['colors']) => {
+const createStyles = () => {
     return StyleSheet.create({
         container: {
             width: '100%',
@@ -430,20 +373,6 @@ const createStyles = (colors: ReturnType<typeof useTheme>['colors']) => {
         },
         avatar: {
             marginBottom: INNER_GAP,
-        },
-        progressContainer: {
-            flexDirection: 'row',
-            width: '100%',
-            justifyContent: 'center',
-            marginTop: 24, // Space for bottom sheet handle (~20px) + small buffer
-            marginBottom: 24, // Equal spacing below dots
-        },
-        progressDot: {
-            height: 6,
-            width: 6,
-            borderRadius: 3,
-            marginHorizontal: 3,
-            backgroundColor: colors.border,
         },
     });
 };

@@ -1,12 +1,10 @@
 # @oxyhq/services
 
-A comprehensive TypeScript UI library for the Oxy API providing authentication, user management, and UI components for React Native and Expo applications.
+A comprehensive TypeScript UI library for the Oxy API providing authentication, user management, and UI components for React Native, Expo, and web (React Native Web) applications.
 
-**Current published version: 6.10.6**
-
-> **For web apps (Vite, Next.js, CRA):** Use [`@oxyhq/auth`](../auth) for authentication and [`@oxyhq/core`](../core) for types and services.
+> **For web apps (Vite + React Native Web):** Use this same package — `OxyProvider` is universal. See the [Platform Guide](./PLATFORM_GUIDE.md).
 >
-> **For backend / Node.js:** Use [`@oxyhq/core`](../core) only.
+> **For backend / Node.js:** Use [`@oxyhq/core`](../core) only (`@oxyhq/core/server` for auth middleware).
 >
 > **For the full platform guide:** See [PLATFORM_GUIDE.md](./PLATFORM_GUIDE.md).
 
@@ -28,8 +26,8 @@ A comprehensive TypeScript UI library for the Oxy API providing authentication, 
 ## Features
 
 - **Zero-Config Authentication**: Automatic token management and refresh
-- **Cross-Domain SSO**: Sign in once, authenticated everywhere (FedCM, popup, redirect)
-- **Universal Provider**: Single `OxyProvider` works on iOS, Android, and Expo Web
+- **Device-First Sessions**: Sign in once per device; every Oxy app on the device restores silently and syncs account changes live over Socket.IO
+- **Universal Provider**: Single `OxyProvider` works on iOS, Android, Expo Web, and React Native Web
 - **UI Components**: Pre-built components for auth, profiles, and more
 - **Inter Font Included**: Default Oxy ecosystem font with automatic loading
 - **Cross-Platform**: Works in Expo and React Native (iOS, Android, Web)
@@ -44,11 +42,11 @@ The OxyHQ SDK is split into three packages:
 
 | Package | Use Case | Dependencies |
 |---------|----------|--------------|
-| `@oxyhq/services` | Expo / React Native apps | Full (RN, Expo) |
-| `@oxyhq/auth` | Web apps (Vite, Next.js) | React only |
-| `@oxyhq/core` | All platforms (types, API client, crypto) | None |
+| `@oxyhq/services` | Expo / React Native / Web (React Native Web) | Full (RN, Expo) |
+| `@oxyhq/core` | All platforms (types, API client, crypto, server middleware) | None |
+| `@oxyhq/contracts` | Shared API schemas (Zod) | zod only |
 
-This package (`@oxyhq/services`) is for **Expo and React Native** applications. It provides `OxyProvider`, UI components, screens, bottom sheet routing, fonts, and hooks.
+This package (`@oxyhq/services`) is the **single UI SDK** for every React surface. It provides `OxyProvider`, the unified account dialog, UI components, screens, bottom sheet routing, fonts, and hooks.
 
 See [PLATFORM_GUIDE.md](./PLATFORM_GUIDE.md) for the complete architecture guide.
 
@@ -95,7 +93,10 @@ import { OxyProvider, useAuth } from '@oxyhq/services';
 
 function App() {
   return (
-    <OxyProvider baseURL="https://api.oxy.so">
+    <OxyProvider
+      baseURL="https://api.oxy.so"
+      clientId={process.env.EXPO_PUBLIC_OXY_CLIENT_ID}
+    >
       <YourApp />
     </OxyProvider>
   );
@@ -119,50 +120,31 @@ function UserProfile() {
 
 `OxyProvider` handles iOS, Android, and Expo web. Always use `OxyProvider` in Expo apps.
 
-## Typography - Inter Font
+## Typography
 
-**Inter is the default font for all Oxy ecosystem apps.** This package includes the Inter font family and provides automatic font loading for both web and native platforms.
-
-### Automatic Loading
-
-**If you are using `OxyProvider`, fonts are loaded automatically.** No additional setup needed:
+Typography is owned entirely by `@oxyhq/bloom`. `BloomThemeProvider` ships the
+Inter, BlomusModernus and Geist Mono families — variable `.ttf` files loaded via
+`expo-font` on native, `@font-face` rules injected as data URLs on web — and
+applies the default family to every `<Text>`. This package bundles no fonts and
+loads none, so it adds no font weight to consumer app binaries.
 
 ```typescript
+import { BloomThemeProvider } from '@oxyhq/bloom/theme';
 import { OxyProvider } from '@oxyhq/services';
 
 function App() {
   return (
-    <OxyProvider baseURL="https://api.oxy.so">
-      <YourAppContent />
-    </OxyProvider>
+    <BloomThemeProvider>
+      <OxyProvider baseURL="https://api.oxy.so">
+        <YourAppContent />
+      </OxyProvider>
+    </BloomThemeProvider>
   );
 }
 ```
 
-### Using Font Constants
-
-```typescript
-import { fontFamilies, fontStyles } from '@oxyhq/services';
-
-const styles = StyleSheet.create({
-  title: {
-    ...fontStyles.titleLarge,  // Pre-defined style (54px, Bold)
-    color: '#000000',
-  },
-  customText: {
-    fontFamily: fontFamilies.interSemiBold,  // Cross-platform font family
-    fontSize: 18,
-  },
-});
-```
-
-### Available Exports
-
-- **`setupFonts()`** - Function to manually load fonts (called automatically by OxyProvider)
-- **`fontFamilies`** - Object with all Inter weight variants (inter, interLight, interMedium, interSemiBold, interBold, interExtraBold, interBlack)
-- **`fontStyles`** - Pre-defined text styles (titleLarge, titleMedium, titleSmall, buttonText)
-
-See [FONTS.md](./FONTS.md) for the complete typography guide, including detailed usage examples, all available font weights, platform-specific handling, best practices, and migration guide.
+Style text with Bloom's NativeWind font classes (`font-sans`, `font-mono`, …)
+rather than raw `fontFamily` strings.
 
 ## Usage Patterns
 
@@ -246,7 +228,7 @@ import { OxyProvider } from '@oxyhq/services';
 
 function App() {
   return (
-    <OxyProvider baseURL="https://cloud.oxy.so">
+    <OxyProvider baseURL="https://api.oxy.so">
       <YourApp />
     </OxyProvider>
   );
@@ -384,22 +366,24 @@ const {
   user,
   isAuthenticated,
   isLoading,
+  canUsePrivateApi,   // Gate private API calls on this
+  isPrivateApiPending,
   error,
 
-  // Identity management (Public Key Authentication)
-  createIdentity,     // Create new identity with recovery phrase
-  importIdentity,     // Import identity from recovery phrase
+  // Identity (public-key auth; identities are created in Commons by Oxy)
   signIn,             // Sign in with stored identity
   hasIdentity,        // Check if identity exists on device
   getPublicKey,       // Get stored public key
 
-  // Session management
-  logout,
+  // Account dialog (switcher + sign-in)
+  openAccountDialog,
+  closeAccountDialog,
 
   // Session management
+  logout,
   sessions,
   activeSessionId,
-  switchSession,
+  switchToAccount,    // Switch active account (device session + account graph)
   removeSession
 } = useOxy();
 ```
@@ -410,7 +394,8 @@ const {
 
 ```typescript
 <OxyProvider
-  baseURL="https://api.oxy.so"           // API base URL
+  baseURL="https://api.oxy.so"            // API base URL
+  clientId="oxy_dk_..."                   // Registered Application credential (Oxy Console)
   storageKeyPrefix="oxy_session"          // Storage key prefix
   onAuthStateChange={(user) => {}}        // Auth state callback
   onError={(error) => {}}                 // Error callback
@@ -424,6 +409,7 @@ const {
 ```bash
 # .env
 EXPO_PUBLIC_API_URL=https://api.oxy.so
+EXPO_PUBLIC_OXY_CLIENT_ID=oxy_dk_...
 ```
 
 ### Custom Configuration
@@ -432,59 +418,35 @@ EXPO_PUBLIC_API_URL=https://api.oxy.so
 import { OxyServices } from '@oxyhq/core';
 
 const oxy = new OxyServices({
-  baseURL: process.env.OXY_API_URL || 'https://cloud.oxy.so'
+  baseURL: process.env.OXY_API_URL || 'https://api.oxy.so'
 });
 ```
 
 ## Authentication
 
-Oxy supports **public/private key cryptography** (ECDSA secp256k1) as the primary identity system, with optional password-based accounts for the web gateway. Users manage their cryptographic identity in the **Oxy Accounts** app, and other apps can integrate "Sign in with Oxy" for seamless authentication.
+Oxy supports **public/private key cryptography** (ECDSA secp256k1) as the primary identity system, with optional password-based accounts. Users create and manage their cryptographic identity in the **Commons by Oxy** app (the native identity vault); every app integrates the same **"Sign in with Oxy"** surface.
 
-### Public Key Authentication
+### How it works (device-first)
 
-```typescript
-import { useOxy } from '@oxyhq/services';
+- **Cold boot is silent.** On mount, `OxyProvider` restores the ambient device session — the server-side `DeviceSession` records which accounts are signed in on this device and which one is active. No redirects, no browser identity APIs, no UI. See [device sessions](../../docs/auth/device-session.md).
+- **Interactive sign-in is a dialog.** `useAuth().signIn()` or `useOxy().openAccountDialog('signin')` opens the unified account dialog (Bloom Dialog — bottom sheet on phones, centered on desktop): existing device accounts above ONE primary "Continue with Oxy" action (issue #691, Phase 5) — Oxy automatically picks how the request reaches your Commons identity (same-device deep link → known-install push → QR); there is no password option in this dialog. Scan-QR, passkey-on-this-device, and "Get Commons" sit behind a collapsed "Having trouble?" disclosure.
+- **Cross-app sync.** Adding, switching, or signing out an account bumps the device-session revision and is pushed over the `session_state` socket event to every Oxy app on the device.
 
-function AuthScreen() {
-  const { createIdentity, importIdentity, signIn, hasIdentity } = useOxy();
+```tsx
+import { useAuth } from '@oxyhq/services';
 
-  // Create new identity (in Oxy Accounts app)
-  const handleCreate = async () => {
-    const { user, recoveryPhrase } = await createIdentity('username', 'email');
-    // Show recoveryPhrase to user - they must save it!
-  };
-
-  // Import existing identity
-  const handleImport = async (phrase: string) => {
-    const user = await importIdentity(phrase, 'username', 'email');
-  };
-
-  // Sign in with stored identity
-  const handleSignIn = async () => {
-    const user = await signIn();
-  };
-
-  // Check if identity exists
-  const hasStoredIdentity = await hasIdentity();
+function SignInCTA() {
+  const { isAuthenticated, signIn } = useAuth();
+  if (isAuthenticated) return null;
+  return <Button title="Sign in" onPress={() => signIn()} />; // opens the dialog
 }
-```
-
-### Password Authentication (Web Gateway)
-
-For web gateway flows, Oxy also supports password sign-in (email/username + password). Use the auth gateway (`/login`, `/signup`, `/recover`) for browser-based flows, or call the API directly:
-
-```typescript
-import { oxyClient } from '@oxyhq/core';
-
-const session = await oxyClient.signUp('username', 'email@example.com', 'password');
-const session2 = await oxyClient.signIn('username-or-email', 'password');
 ```
 
 ### Cross-App Authentication (Sign in with Oxy)
 
-For third-party apps that want to allow users to sign in with their Oxy identity:
+`OxySignInButton` resolves your registered Application (`GET /auth/oauth/client/:clientId`) and picks the right flow:
 
-```typescript
+```tsx
 import { OxySignInButton } from '@oxyhq/services';
 
 function LoginScreen() {
@@ -492,11 +454,10 @@ function LoginScreen() {
 }
 ```
 
-This displays:
-- A QR code that users can scan with Oxy Accounts
-- A button to open Oxy Accounts directly via deep link
+- **Official Oxy apps** (`isOfficial` / first-party types): opens the in-app account dialog.
+- **Third-party apps** (`type: 'third_party'`): starts the standard OAuth 2.0 Authorization Code + PKCE flow against `auth.oxy.so` (the SDK generates `state` + PKCE via `@oxyhq/core`). On web the transport is `OxyProvider` prop `webAuthMode: 'popup' | 'redirect'` (default `'popup'`; issue #691 Phases 2/7b) — `'popup'` opens a small window and relays the result via `postMessage` without navigating your app's tab, falling back to a redirect if the browser blocks it. Pass `oauthRedirectUri`; on native handle `onOAuthResult` to complete the token exchange.
 
-Web fallback: send users to the auth gateway at `https://accounts.oxy.so/authorize?token=...` to approve the session.
+See the [integration guide](../../docs/auth/integration-guide.md) for Console registration, OAuth endpoints, and backend verification, and [AUTHENTICATION.md](../../docs/AUTHENTICATION.md) for the full model.
 
 ### Documentation
 
@@ -533,9 +494,30 @@ const styles = StyleSheet.create({
 });
 ```
 
+### Account Dialog (auth + switcher)
+
+Sign-in and account switching do **not** use the bottom sheet — they live in the unified account dialog:
+
+```typescript
+import { useOxy } from '@oxyhq/services';
+
+function MyComponent() {
+  const { openAccountDialog } = useOxy();
+
+  return (
+    <Button
+      onPress={() => openAccountDialog('signin')}
+      title="Sign in with Oxy"
+    />
+  );
+}
+```
+
+Views: `'accounts'` (switcher, default), `'signin'`, `'qr'`, `'add'`. The exported `ProfileButton` component opens it for you.
+
 ### Bottom Sheet Routing System
 
-The bottom sheet routing system provides a clean, professional way to display authentication screens, account management, and other UI flows within a modal bottom sheet.
+The bottom sheet routing system provides a clean, professional way to display account management and other non-auth UI flows within a modal bottom sheet.
 
 **Quick Example:**
 
@@ -547,8 +529,8 @@ function MyComponent() {
 
   return (
     <Button
-      onPress={() => showBottomSheet('OxyAuth')}
-      title="Sign in with Oxy"
+      onPress={() => showBottomSheet('ManageAccount')}
+      title="Manage account"
     />
   );
 }
@@ -563,41 +545,10 @@ function MyComponent() {
 - 25+ pre-built screens available
 
 **Available Screens:**
-- `OxyAuth` (Sign in with Oxy - for third-party apps)
-- `ManageAccount`, `CreateManagedAccount`
-- `Profile`, `SessionManagement`, `PaymentGateway`, `TrustCenter`
-- And many more...
-
-**Documentation:**
-For complete documentation, see [Bottom Sheet Routing Guide](./docs/BOTTOM_SHEET_ROUTING.md).
-
-### Using OxyRouter Standalone
-
-If you need to embed the router in your own modal or container instead of using `showBottomSheet()`:
-
-```typescript
-import { Modal } from 'react-native';
-import { useOxy, OxyRouter } from '@oxyhq/services';
-
-function AuthModal({ visible, onRequestClose }: { visible: boolean; onRequestClose: () => void }) {
-  const { oxyServices } = useOxy();
-
-  if (!visible || !oxyServices) return null;
-
-  return (
-    <Modal visible onRequestClose={onRequestClose} animationType="slide">
-      <OxyRouter
-        oxyServices={oxyServices}
-        initialScreen="OxyAuth"
-        onClose={onRequestClose}
-        onAuthenticated={onRequestClose}
-        theme="light"
-        containerWidth={360}
-      />
-    </Modal>
-  );
-}
-```
+- `ManageAccount`, `AccountSettings`, `AccountMembers`, `CreateAccount`
+- `Profile`, `EditProfile`, `PaymentGateway`, `TrustCenter`, `ConnectedApps`
+- `FileManagement`, `LanguageSelector`, `PrivacySettings`, `Preferences`
+- And many more (see `RouteName` in `src/ui/navigation/routes.ts`)
 
 ## Internationalization (i18n)
 
@@ -676,7 +627,7 @@ import { OxyProvider } from '@oxyhq/services';
 
 function App() {
   return (
-    <OxyProvider baseURL="https://cloud.oxy.so">
+    <OxyProvider baseURL="https://api.oxy.so">
       <YourApp />
     </OxyProvider>
   );
@@ -743,11 +694,7 @@ Typed returns are defined in `ui/hooks/queries/paymentTypes.ts` (`Subscription`,
 
 ## Sign-In Token Planting
 
-`@oxyhq/core` `OxyServices.verifyChallenge()` plants `setTokens(accessToken, refreshToken ?? '')` internally before returning. `useAuthOperations.performSignIn` no longer needs to hand-plant the token or call a session-token fallback — just await `verifyChallenge` and proceed.
-
-## Silent SSO Run-Once Guard
-
-The cross-page-load deduplication guard lives in the consumer hooks, NOT in `@oxyhq/core`. A core module-level singleton was tried and reverted because it re-evaluates in the Metro web bundle and the guard did not hold. `useWebSSO` in this package owns a module-level `silentSSOAttempted` Set + `ssoSignature(origin|baseURL)` key for cross-mount deduplication, plus a per-instance `hasCheckedRef` fast-path. Do NOT move this guard into a core module-level singleton.
+`@oxyhq/core` `OxyServices.verifyChallenge()` plants `setTokens(accessToken)` internally before returning. `useAuthOperations.performSignIn` no longer needs to hand-plant the token or call a session-token fallback — just await `verifyChallenge` and proceed.
 
 ## Requirements
 
@@ -775,7 +722,7 @@ import { OxyProvider } from '@oxyhq/services';
 
 function App() {
   return (
-    <OxyProvider baseURL="https://cloud.oxy.so">
+    <OxyProvider baseURL="https://api.oxy.so">
       <UserDashboard />
     </OxyProvider>
   );
@@ -830,10 +777,12 @@ Comprehensive documentation is available in the `/docs` directory:
 
 - **[Getting Started](./GET_STARTED.md)** - Quick start guide for new developers
 - **[Platform Guide](./PLATFORM_GUIDE.md)** - Platform-specific setup guide
-- **[CROSS_DOMAIN_AUTH.md](../../docs/CROSS_DOMAIN_AUTH.md)** - SSO deep dive
+- **[AUTHENTICATION.md](../../docs/AUTHENTICATION.md)** - Authentication model (device-first sessions)
+- **[Device sessions](../../docs/auth/device-session.md)** - DeviceSession API, socket events, multi-account
+- **[Integration guide](../../docs/auth/integration-guide.md)** - Sign in with Oxy for third-party apps
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only), (c) The Oxy Foundation, Inc. See the [LICENSE](LICENSE) file for details.

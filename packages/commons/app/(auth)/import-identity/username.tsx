@@ -1,49 +1,88 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, useUpdateProfile } from '@oxyhq/services';
 import { useColors } from '@/hooks/useColors';
 import { UsernameStep } from '@/components/auth/UsernameStep';
 import { useNetworkStatus } from '@/hooks/auth/useNetworkStatus';
 import { generateSuggestedUsername } from '@/utils/auth/usernameUtils';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
+import { checkIfOffline } from '@/utils/auth/networkUtils';
+import { extractAuthErrorMessage, isNetworkOrTimeoutError } from '@/utils/auth/errorUtils';
 
 /**
  * Import Identity - Username Screen
- * 
- * Allows user to choose a username (skippable if offline)
+ *
+ * Allows user to choose a username (skippable only when offline).
+ * Mirrors create-identity/username: persists via useUpdateProfile so the
+ * onboarding guard never sees a stale username-less cache.
  */
 export default function ImportIdentityUsernameScreen() {
   const router = useRouter();
   const colors = useColors();
-  const { oxyServices } = useOxy();
-  const { isOffline, checkNetworkStatus } = useNetworkStatus();
-  const { usernameRef } = useAuthFlowContext();
+  const { oxyServices, user } = useOxy();
+  const { isOffline } = useNetworkStatus();
+  const { usernameRef, error: authFlowError, setAuthError } = useAuthFlowContext();
+  const updateProfile = useUpdateProfile();
 
   const backgroundColor = colors.background;
   const textColor = colors.text;
 
-  // Lazy initialiser keeps the suggestion stable across re-renders.
-  const [username, setUsername] = useState<string>(() => generateSuggestedUsername());
+  const [username, setUsername] = useState<string>(
+    () => user?.username || usernameRef.current || generateSuggestedUsername(),
+  );
+  const [updateError, setUpdateError] = useState<string | null>(() => authFlowError);
 
-  // Update username ref whenever username changes
+  useEffect(() => {
+    if (authFlowError) {
+      setUpdateError(authFlowError);
+      setAuthError(null);
+    }
+  }, [authFlowError, setAuthError]);
+
   useEffect(() => {
     usernameRef.current = username;
   }, [username, usernameRef]);
 
-  // Check network state on mount
-  useEffect(() => {
-    checkNetworkStatus();
-  }, [checkNetworkStatus]);
+  const isUpdatingProfile = updateProfile.isPending;
 
-  const handleContinue = useCallback(() => {
-    // Save username to ref for later use after sign-in
-    usernameRef.current = username;
-    // Navigate to notifications step
-    router.replace('/(auth)/import-identity/notifications');
-  }, [username, usernameRef, router]);
+  const handleContinue = useCallback(async () => {
+    if (!oxyServices || !username.trim()) {
+      return;
+    }
+
+    setUpdateError(null);
+
+    if (!oxyServices.getAccessToken()) {
+      const offline = await checkIfOffline();
+      setUpdateError(
+        offline
+          ? 'You are offline. Reconnect and tap continue to save your username.'
+          : 'Finishing setting up your account — tap continue again in a moment.',
+      );
+      return;
+    }
+
+    try {
+      await updateProfile.mutateAsync({ username: username.trim() });
+      usernameRef.current = username.trim();
+      router.replace('/(auth)/import-identity/notifications');
+    } catch (err: unknown) {
+      const errorMessage = extractAuthErrorMessage(err, 'Failed to update username. Please try again.');
+      const offline = await checkIfOffline();
+      const isNetwork = isNetworkOrTimeoutError(err);
+      usernameRef.current = username.trim();
+
+      if (offline && isNetwork) {
+        setUpdateError(
+          'You are offline. Reconnect and tap continue to save your username.',
+        );
+      } else {
+        setUpdateError(errorMessage);
+      }
+    }
+  }, [username, oxyServices, router, usernameRef, updateProfile]);
 
   const handleSkip = useCallback(() => {
-    // Skip username step - user can set it later
     usernameRef.current = '';
     router.replace('/(auth)/import-identity/notifications');
   }, [usernameRef, router]);
@@ -53,12 +92,13 @@ export default function ImportIdentityUsernameScreen() {
       username={username}
       onUsernameChange={setUsername}
       onContinue={handleContinue}
-      onSkip={handleSkip}
+      onSkip={isOffline ? handleSkip : undefined}
       isOffline={isOffline}
       oxyServices={oxyServices}
       backgroundColor={backgroundColor}
       textColor={textColor}
+      isUpdating={isUpdatingProfile}
+      updateError={updateError}
     />
   );
 }
-

@@ -15,25 +15,44 @@ jobs:
       console: ${{ steps.filter.outputs.console }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
             accounts:
               - 'packages/accounts/**'
+              - 'packages/app-preset/**'
+              - 'packages/bloom/**'
+              - 'packages/expo-splash/**'
               - 'packages/core/**'
+              - 'packages/protocol/**'
               - 'packages/services/**'
+              - 'packages/contracts/**'
             auth:
               - 'packages/auth/**'
+              - 'packages/app-preset/**'
+              - 'packages/bloom/**'
               - 'packages/core/**'
+              - 'packages/protocol/**'
+              - 'packages/services/**'
+              - 'packages/contracts/**'
             inbox:
               - 'packages/inbox/**'
+              - 'packages/app-preset/**'
+              - 'packages/bloom/**'
+              - 'packages/expo-splash/**'
               - 'packages/core/**'
+              - 'packages/protocol/**'
               - 'packages/services/**'
+              - 'packages/contracts/**'
             console:
               - 'packages/console/**'
+              - 'packages/app-preset/**'
+              - 'packages/bloom/**'
               - 'packages/core/**'
-              - 'packages/auth-sdk/**'
+              - 'packages/protocol/**'
+              - 'packages/services/**'
+              - 'packages/contracts/**'
 
   deploy-auth:
     needs: detect-changes
@@ -46,32 +65,43 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20.x'
-      - run: bun install --frozen-lockfile
-      # Builds the Vite SPA AND the FedCM IdP Cloudflare Pages Function
-      # (dist/_worker.js) — see packages/auth `build` -> `build:worker`.
+          node-version: '22.x'
+      # bun 1.3.14 `--frozen-lockfile` false-positives on a perfectly-synced
+      # lock (non-deterministic configVersion churn), failing deploys. Lockfile
+      # sync is already gated pre-push (test-build) and in PR CI, so the deploy
+      # installs without the buggy frozen flag.
+      - run: bun install
+      # Build the Vite SPA into packages/auth/dist. Post-2c the IdP is a
+      # PURE-STATIC SPA: the former `/api/device-accounts` Pages Function was
+      # deleted when the IdP moved to the device-first SDK (zero-cookie chooser
+      # via useSwitchableAccounts), so there is no `functions/` directory left
+      # to compile or deploy.
       - run: bun x turbo run build --filter=auth
-      # Safety net: regenerate the Pages Function directly (bypasses any stale
-      # turbo cache) and fail fast if the advanced-mode worker is missing, so we
-      # never deploy a static-only build that 404s/HTMLs the /fedcm/* endpoints.
-      - name: Ensure FedCM Pages Function is built
+        env:
+          # Auth IdP's OWN registered Oxy client id. `packages/auth/lib/oxy-client.ts`
+          # falls back to a committed id when this is unset. A repo VARIABLE rather
+          # than a secret — the id ships inside the bundle. Named per APP because
+          # auth and console share `VITE_OXY_CLIENT_ID`.
+          VITE_OXY_CLIENT_ID: ${{ vars.AUTH_OXY_CLIENT_ID }}
+      # Deploy the static `dist`. Invoke `bunx wrangler` DIRECTLY rather than
+      # cloudflare/wrangler-action: that action's `npx --no-install wrangler`
+      # path runs npm's Arborist from packages/auth, which rejects the repo-root
+      # `overrides["@oxyhq/bloom"]` against this package's newer direct bloom dep
+      # (`npm error code EOVERRIDE`). The whole monorepo installs with bun, and
+      # bun's resolver does not perform that npm-only override validation.
+      - name: Deploy to Cloudflare Pages
         working-directory: packages/auth
-        run: |
-          bun run build:worker
-          test -f dist/_worker.js || { echo "::error::dist/_worker.js missing — FedCM IdP server would not deploy"; exit 1; }
-          echo "dist/_worker.js present ($(wc -c < dist/_worker.js) bytes)"
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy packages/auth/dist --project-name=oxy-auth --branch=main
-      # Post-deploy smoke gate: hit the LIVE IdP and assert the critical FedCM
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx wrangler@4 pages deploy dist --project-name=oxy-auth --branch=main
+      # Post-deploy smoke gate: hit the LIVE host and assert the device-first IdP
       # contract on PUBLIC, unauthenticated endpoints only (no secrets). A broken
-      # IdP deploy (blank SPA, missing _worker.js / static-only, crashed /sso
-      # error page, or pinned multi-domain issuer) turns this job RED immediately.
-      # Retries briefly to let the Cloudflare Pages deploy propagate to the edge.
+      # deploy (blank SPA, or a re-added FedCM manifest / oxy_device cookie lane)
+      # turns this job RED immediately. Retries briefly to let the Pages deploy
+      # propagate.
       - name: Post-deploy IdP smoke gate
         working-directory: packages/auth
         env:
@@ -103,16 +133,26 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20.x'
-      - run: bun install --frozen-lockfile
+          node-version: '22.x'
+      # bun 1.3.14 `--frozen-lockfile` false-positives on a perfectly-synced
+      # lock (non-deterministic configVersion churn), failing deploys. Lockfile
+      # sync is already gated pre-push (test-build) and in PR CI, so the deploy
+      # installs without the buggy frozen flag.
+      - run: bun install
       - run: bun x turbo run build --filter=accounts
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy packages/accounts/dist --project-name=oxy-accounts
+        env:
+          # Accounts' PRODUCTION Oxy client id. `packages/accounts/constants/oxy.ts`
+          # falls back to a committed id when this is unset. A repo VARIABLE rather
+          # than a secret — the id ships inside the bundle. Named per APP because
+          # accounts, commons, and inbox share `EXPO_PUBLIC_OXY_CLIENT_ID`.
+          EXPO_PUBLIC_OXY_CLIENT_ID: ${{ vars.ACCOUNTS_OXY_CLIENT_ID }}
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx wrangler@4 pages deploy packages/accounts/dist --project-name=oxy-accounts --branch=main
 
   deploy-inbox:
     needs: detect-changes
@@ -125,16 +165,32 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20.x'
-      - run: bun install --frozen-lockfile
+          node-version: '22.x'
+      # bun 1.3.14 `--frozen-lockfile` false-positives on a perfectly-synced
+      # lock (non-deterministic configVersion churn), failing deploys. Lockfile
+      # sync is already gated pre-push (test-build) and in PR CI, so the deploy
+      # installs without the buggy frozen flag.
+      - run: bun install
       - run: bun x turbo run build --filter=inbox
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy packages/inbox/dist --project-name=oxy-inbox
+        env:
+          # Inbox's PRODUCTION Oxy client id. `packages/inbox/constants/oxy.ts`
+          # falls back to a committed id when this is unset, so nothing errors —
+          # the deployed bundle just authenticates against the wrong Oxy
+          # application. A repo VARIABLE rather than a secret: the id travels
+          # inside the bundle, so it is public by construction, and a secret
+          # would only make it unreadable in the UI. The variable is named per
+          # APP because five apps in this monorepo share two env-var names —
+          # EXPO_PUBLIC_OXY_CLIENT_ID (accounts, commons, inbox) and
+          # VITE_OXY_CLIENT_ID (console, auth) — so one variable per var name
+          # could not serve them.
+          EXPO_PUBLIC_OXY_CLIENT_ID: ${{ vars.INBOX_OXY_CLIENT_ID }}
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx wrangler@4 pages deploy packages/inbox/dist --project-name=oxy-inbox --branch=main
 
   deploy-console:
     needs: detect-changes
@@ -147,11 +203,21 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20.x'
-      - run: bun install --frozen-lockfile
+          node-version: '22.x'
+      # bun 1.3.14 `--frozen-lockfile` false-positives on a perfectly-synced
+      # lock (non-deterministic configVersion churn), failing deploys. Lockfile
+      # sync is already gated pre-push (test-build) and in PR CI, so the deploy
+      # installs without the buggy frozen flag.
+      - run: bun install
       - run: bun x turbo run build --filter=oxy-console
+        env:
+          # Console's PRODUCTION Oxy client id. `packages/console/src/lib/config.ts`
+          # falls back to a committed id when this is unset. A repo VARIABLE rather
+          # than a secret — the id ships inside the bundle. Named per APP because
+          # auth and console share `VITE_OXY_CLIENT_ID`.
+          VITE_OXY_CLIENT_ID: ${{ vars.CONSOLE_OXY_CLIENT_ID }}
       - name: Resolve build output directory
         run: |
           if [ -d packages/console/dist ]; then
@@ -161,8 +227,8 @@ jobs:
           else
             echo "No build output found" && exit 1
           fi
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy ${{ env.DEPLOY_DIR }} --project-name=oxy-console
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx wrangler@4 pages deploy ${{ env.DEPLOY_DIR }} --project-name=oxy-console --branch=main

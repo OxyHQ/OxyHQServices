@@ -11,12 +11,12 @@
  *
  * This package (`@oxyhq/contracts`) is the dedicated, zero-dependency home for
  * these contracts so the backend (`@oxyhq/api`) and the client SDKs
- * (`@oxyhq/core`, `@oxyhq/auth`, `@oxyhq/services`) can all depend on it without
+ * (`@oxyhq/core`, `@oxyhq/services`) can all depend on it without
  * the backend having to depend on a client SDK to obtain its schemas.
  *
  * Faithful to the producers:
  *  - `packages/api/src/utils/userTransform.ts` `formatUserResponse` — the
- *    canonical serialization used by `/auth/refresh-all`, device sessions, etc.
+ *    canonical serialization used by login/signup, device sessions, etc.
  *    Emits `id` (NOT `_id`), forwards `username` verbatim (may be absent), and
  *    emits `name` as the structured `{ first, last, full, displayName }`
  *    subdocument.
@@ -24,8 +24,6 @@
  *    `''`; `full` and `displayName` are Mongoose VIRTUALS. Formatted API
  *    responses compose both fields, while raw-document responses may omit the
  *    virtuals if the query did not materialise them.
- *  - The `/auth/refresh-all` handler in `packages/api/src/routes/auth.ts`, whose
- *    per-slot `authuser` is the numeric `oxy_rt_${authuser}` cookie slot.
  *
  * Platform-agnostic — zod only, no react/react-native/expo. ESM-safe (no
  * `require()`).
@@ -33,6 +31,7 @@
 
 import { z } from 'zod';
 import { verifiedDomainSchema } from './identity';
+import { organizationCategorySchema } from './accountGraph';
 
 /**
  * Structured human name subdocument. Mirrors `User.name` (`NameSchema`).
@@ -76,6 +75,45 @@ export const userNameSchema: z.ZodType<UserNameResponse> = z
     .passthrough();
 
 /**
+ * The authenticated viewer's relationship to a fetched profile.
+ *
+ * Rides the SINGLE-profile fetch (profile-by-username / profile-by-id) so
+ * consumers get follow state without a second round-trip. Present ONLY when the
+ * request is authenticated (the viewer id is known) — OMITTED entirely for
+ * anonymous requests, so a consumer can distinguish "unknown" (field absent)
+ * from "known, not following" (`isFollowing: false`).
+ */
+export interface UserRelationship {
+    /** The viewer follows this profile (viewer → target). */
+    isFollowing: boolean;
+    /** This profile follows the viewer (target → viewer). */
+    followsYou: boolean;
+}
+
+export const userRelationshipSchema: z.ZodType<UserRelationship> = z.object({
+    isFollowing: z.boolean(),
+    followsYou: z.boolean(),
+});
+
+/**
+ * Portable per-account theme preference, applied across every Oxy app.
+ *
+ * Persisted on the Oxy user document and projected onto the self/session
+ * payload the SDK already loads during cold boot, so Bloom can theme on first
+ * paint with ZERO extra network call. `colorPreset` is a Bloom preset KEY
+ * (e.g. `"blue"`) — never raw colors.
+ */
+export interface ThemePreference {
+    mode: 'light' | 'dark' | 'system';
+    colorPreset: string;
+}
+
+export const themePreferenceSchema: z.ZodType<ThemePreference> = z.object({
+    mode: z.enum(['light', 'dark', 'system']),
+    colorPreset: z.string(),
+});
+
+/**
  * The canonical user object emitted by `formatUserResponse`.
  *
  * `id` is present on formatted user DTOs. `name.displayName` is OPTIONAL on the
@@ -88,7 +126,7 @@ export const userNameSchema: z.ZodType<UserNameResponse> = z
  *
  * `.passthrough()` keeps the large tail of profile fields
  * (`privacySettings`, `locations`, `links`, `linksMetadata`, `bio`,
- * `description`, `language`, `verified`, timestamps, …) available to callers
+ * `description`, `languages`, `verified`, timestamps, …) available to callers
  * that need them without enumerating every nested shape here — the load-bearing
  * identity/display fields are the ones we pin precisely.
  */
@@ -110,7 +148,13 @@ export const userResponseSchema = z
         color: z.string().nullable().optional(),
         name: userNameSchema,
         verified: z.boolean().optional(),
-        language: z.string().optional(),
+        /**
+         * The account's languages as full BCP-47 locales (`language-REGION`,
+         * e.g. `es-ES`, `en-US`, `pt-BR`), ordered with the PRIMARY (UI) locale
+         * first. `languages[0]` is the primary locale — there is no singular
+         * `language` field.
+         */
+        languages: z.array(z.string()).optional(),
         /**
          * The account's self-sovereign identifier
          * (`did:web:<FEDERATION_DOMAIN>:u:<userId>`). Surfaced as a `User`
@@ -122,6 +166,24 @@ export const userResponseSchema = z
          * entry; present only when the account has verified at least one domain.
          */
         verifiedDomains: z.array(verifiedDomainSchema).optional(),
+        /**
+         * Real-estate / team taxonomy for `kind: 'organization'` accounts.
+         * Absent on personal, project, and bot accounts.
+         */
+        organizationCategory: organizationCategorySchema.optional(),
+        /**
+         * The authenticated viewer's relationship to this profile. Present ONLY
+         * on single-profile fetches (`GET /profiles/username/:username`,
+         * `GET /users/:userId`) when the request is authenticated; OMITTED for
+         * anonymous requests and for the bulk `POST /users/by-ids` fan-out.
+         */
+        relationship: userRelationshipSchema.optional(),
+        /**
+         * Portable theme preference. Rides the self/session payload (cold boot),
+         * so it is present on the current-user DTO (`GET /users/me`,
+         * `GET /session/user/:sessionId`) and absent until the user sets it.
+         */
+        themePreference: themePreferenceSchema.optional(),
     })
     .passthrough();
 
@@ -144,7 +206,6 @@ export const userProfileUpdateSchema = z
         phone: z.string().optional(),
         address: z.string().optional(),
         birthday: z.string().optional(),
-        location: z.string().optional(),
         locations: z.array(z.unknown()).optional(),
         links: z.array(z.string()).optional(),
         linksMetadata: z
@@ -158,11 +219,21 @@ export const userProfileUpdateSchema = z
                 }),
             )
             .optional(),
-        language: z.string().optional(),
+        /**
+         * Ordered account locales (`language-REGION`), primary first. Replaces
+         * the eliminated singular `language`; `languages[0]` is the primary UI
+         * locale.
+         */
+        languages: z.array(z.string()).optional(),
         accountExpiresAfterInactivityDays: z.number().nullable().optional(),
         notificationPreferences: z.record(z.unknown()).optional(),
         userPreferences: z.record(z.unknown()).optional(),
         privacySettings: z.record(z.unknown()).optional(),
+        /**
+         * Portable theme preference. Written through the same `PUT /users/me`
+         * settings-update path as `languages`/`userPreferences`.
+         */
+        themePreference: themePreferenceSchema.optional(),
     })
     .passthrough();
 
@@ -175,34 +246,6 @@ export type UserProfileUpdate = z.infer<typeof userProfileUpdateSchema>;
 export function resolveUserId(user: UserResponse): string | undefined {
     return user.id ?? user._id;
 }
-
-/**
- * One rotated account entry from `POST /auth/refresh-all`.
- *
- * `authuser` is the device-local slot index (`0..N-1`). `user` is the canonical
- * {@link userResponseSchema} shape (the handler projects a whitelist and runs it
- * through `formatUserResponse`).
- */
-export const refreshAllAccountSchema = z.object({
-    authuser: z.number().int().nonnegative(),
-    accessToken: z.string(),
-    expiresAt: z.string(),
-    sessionId: z.string(),
-    user: userResponseSchema,
-});
-
-export type RefreshAllAccountResponse = z.infer<typeof refreshAllAccountSchema>;
-
-/**
- * Wire shape of `POST /auth/refresh-all`: every valid device-local account,
- * sorted by `authuser` ascending. An empty `accounts` array means "no signed-in
- * accounts on this device" — the IdP must show the sign-in form.
- */
-export const refreshAllResponseSchema = z.object({
-    accounts: z.array(refreshAllAccountSchema),
-});
-
-export type RefreshAllResponseContract = z.infer<typeof refreshAllResponseSchema>;
 
 /**
  * Wire shape of `GET /users/me` — the API success envelope (`{ data: <user> }`)
@@ -222,18 +265,18 @@ export type CurrentUserResponseContract = z.infer<typeof currentUserResponseSche
  * session). Backs the multi-account chooser. The embedded user mirrors
  * `formatUserResponse`; it is nullable on slots that lost their user document.
  */
-export const deviceSessionAccountSchema = z.object({
+export const deviceLinkedSessionSchema = z.object({
     sessionId: z.string(),
     isCurrent: z.boolean().optional(),
     user: userResponseSchema.nullable().optional(),
 });
 
-export type DeviceSessionAccountResponse = z.infer<typeof deviceSessionAccountSchema>;
+export type DeviceLinkedSessionResponse = z.infer<typeof deviceLinkedSessionSchema>;
 
 /** Wire shape of `GET /session/device/sessions/:sessionId` (an array). */
-export const deviceSessionsResponseSchema = z.array(deviceSessionAccountSchema);
+export const deviceLinkedSessionsResponseSchema = z.array(deviceLinkedSessionSchema);
 
-export type DeviceSessionsResponseContract = z.infer<typeof deviceSessionsResponseSchema>;
+export type DeviceLinkedSessionsResponseContract = z.infer<typeof deviceLinkedSessionsResponseSchema>;
 
 /**
  * Safely parse a value against a contract schema. Returns the parsed (typed)

@@ -4,11 +4,12 @@ import { BlurView } from 'expo-blur';
 import { useRouter, usePathname, type Href } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import type { MaterialCommunityIconName } from '@/types/icons';
 import { useTranslation } from '@/lib/i18n';
+import { ProfileButton } from '@oxyhq/services';
 
 // Narrow to the string variant of Href so menu items can be used as React
 // keys and compared to `pathname` strings without casting.
@@ -56,6 +57,19 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 
     return (
         <>
+            <View style={styles.profileContainer}>
+                <ProfileButton
+                    placement="down"
+                    onNavigateManage={() => {
+                        router.push('/(tabs)');
+                        onNavigate?.();
+                    }}
+                    onAddAccount={() => {
+                        router.push('/(auth)');
+                        onNavigate?.();
+                    }}
+                />
+            </View>
             <View style={styles.menuContainer}>
                 {menuItems.map((item) => {
                     const isActive = pathname === item.path || (item.path === '/(tabs)' && (pathname === '/(tabs)' || pathname === '/(tabs)/'));
@@ -102,6 +116,10 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 }
 
 const styles = StyleSheet.create({
+    profileContainer: {
+        marginBottom: 12,
+        alignSelf: 'stretch',
+    },
     menuContainer: {
         gap: 4,
         alignItems: 'flex-start',

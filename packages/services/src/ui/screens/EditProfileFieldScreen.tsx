@@ -1,27 +1,27 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
     View,
-    Platform,
     Image,
     StyleSheet,
-    ScrollView,
     TouchableOpacity,
     type TextInputProps,
-    KeyboardAvoidingView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { H1, Text } from '@oxyhq/bloom/typography';
+import { Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { normalizeTheme } from '@oxyhq/core';
-import Header from '../components/Header';
+import type { User } from '@oxyhq/core';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
+import { SurfaceHeaderAction } from '../components/SurfaceHeaderAction';
 import { useOxy } from '../context/OxyContext';
 import { useProfileEditing } from '../hooks/useProfileEditing';
-import { toast } from '@oxyhq/bloom';
-import { EMAIL_REGEX } from '@oxyhq/core';
+import { toast } from '@oxyhq/bloom/toast';
+import { EMAIL_REGEX, DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName } from '@oxyhq/core';
+import { getLinkTitle, getLinkDescription, linksToListItems } from './linkFormat';
 
 /**
  * Field types supported by EditProfileFieldScreen
@@ -71,8 +71,82 @@ type EditableListItem = {
     coordinates?: { lat: number; lon: number };
 };
 
-const getLinkTitle = (url: string) => url.replace(/^https?:\/\//, '').replace(/\/$/, '');
-const getLinkDescription = (url: string) => `Link to ${url}`;
+
+/**
+ * Pure seeding function: derives the initial `fieldValues` / `listItems` for a
+ * given field type from the active account snapshot. Called ONCE per state via
+ * lazy `useState` initializers — never from an effect — so a background
+ * `refreshSessions()` / `useCurrentUser()` swap of the `user` reference can't
+ * wipe in-progress typing. Each editor mounts with a fixed `fieldType`, so the
+ * seed is stable for the lifetime of the mount.
+ */
+function buildInitialProfileState(
+    user: User | null,
+    fieldType: ProfileFieldType,
+): { fieldValues: Record<string, string>; listItems: EditableListItem[] } {
+    if (!user) {
+        return { fieldValues: {}, listItems: [] };
+    }
+    const userData = user;
+
+    if (fieldType === 'locations') {
+        const locations = Array.isArray(userData.locations) ? userData.locations : [];
+        return {
+            fieldValues: {},
+            listItems: locations.map((loc, i) => ({
+                id: String(loc.id || `location-${i}`),
+                name: String(loc.name || ''),
+                ...loc,
+            })),
+        };
+    }
+
+    if (fieldType === 'links') {
+        const linksMetadata = Array.isArray(userData.linksMetadata) ? userData.linksMetadata : [];
+        const links = Array.isArray(userData.links) ? userData.links : [];
+        // Prefer rich link metadata; fall back to the plain links array.
+        if (linksMetadata.length > 0) {
+            return {
+                fieldValues: {},
+                listItems: linksMetadata.map((link, i) => ({
+                    ...link,
+                    id: String(link.id || `link-${i}`),
+                    url: String(link.url || ''),
+                    title: String(link.title || getLinkTitle(String(link.url || ''))),
+                    description: String(link.description || getLinkDescription(String(link.url || ''))),
+                })),
+            };
+        }
+        return {
+            fieldValues: {},
+            listItems: linksToListItems(links),
+        };
+    }
+
+    // Scalar fields: seed only the keys this field type edits.
+    const fieldValues: Record<string, string> = {};
+    switch (fieldType) {
+        case 'displayName':
+            fieldValues.firstName = String(userData.name?.first || '');
+            fieldValues.lastName = String(userData.lastName || userData.name?.last || '');
+            break;
+        case 'birthday':
+            fieldValues.birthday = String(userData.birthday || userData.dateOfBirth || '');
+            break;
+        case 'address':
+            fieldValues.address = String(userData.address || '');
+            break;
+        case 'username':
+        case 'email':
+        case 'bio':
+        case 'phone':
+            fieldValues[fieldType] = String(userData[fieldType] || '');
+            break;
+        default:
+            break;
+    }
+    return { fieldValues, listItems: [] };
+}
 
 /**
  * EditProfileFieldScreen - A dedicated screen for editing profile fields
@@ -88,21 +162,28 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
     theme,
     fieldType = 'displayName',
 }) => {
-    // Editing "my" profile targets the ACTIVE account — writes already route to
-    // it via the X-Acting-As header, so the initial field values must mirror the
-    // active account (an org/project/bot when switched, else the personal user).
+    // Editing "my" profile targets the ACTIVE account — writes authenticate as
+    // the active session, which IS that account — so the initial field values
+    // must mirror the active account (an org/project/bot when switched, else the
+    // personal user).
     const { user } = useOxy();
     const { t } = useI18n();
     const { saveProfile, updateField, isSaving } = useProfileEditing();
     const bloomTheme = useTheme();
     const normalizedTheme = normalizeTheme(theme);
 
-    // State for field values
-    const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+    // State for field values — seeded ONCE from the active account snapshot at
+    // mount via lazy initializers. See buildInitialProfileState: no effect
+    // reseeds these, so a background user-ref swap never wipes typing.
+    const [fieldValues, setFieldValues] = useState<Record<string, string>>(
+        () => buildInitialProfileState(user, fieldType).fieldValues,
+    );
     const [fieldErrors, setFieldErrors] = useState<Record<string, string | undefined>>({});
 
-    // State for list fields (locations, links)
-    const [listItems, setListItems] = useState<EditableListItem[]>([]);
+    // State for list fields (locations, links) — same one-time mount seeding.
+    const [listItems, setListItems] = useState<EditableListItem[]>(
+        () => buildInitialProfileState(user, fieldType).listItems,
+    );
     const [newItemValue, setNewItemValue] = useState('');
 
     // Get field configuration based on fieldType
@@ -117,11 +198,21 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                             key: 'firstName',
                             label: t('editProfile.items.displayName.firstName') || 'First Name',
                             placeholder: t('editProfile.items.displayName.firstNamePlaceholder') || 'Enter first name',
+                            validation: (value) =>
+                                isValidDisplayName(value)
+                                    ? undefined
+                                    : (t('editProfile.items.displayName.invalidChars')
+                                        || DISPLAY_NAME_INVALID_MESSAGE),
                         },
                         {
                             key: 'lastName',
                             label: t('editProfile.items.displayName.lastName') || 'Last Name',
                             placeholder: t('editProfile.items.displayName.lastNamePlaceholder') || 'Enter last name (optional)',
+                            validation: (value) =>
+                                isValidDisplayName(value)
+                                    ? undefined
+                                    : (t('editProfile.items.displayName.invalidChars')
+                                        || DISPLAY_NAME_INVALID_MESSAGE),
                         },
                     ],
                 };
@@ -265,62 +356,6 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
         }
     }, [fieldType, t]);
 
-    // Initialize field values from the active account's data
-    useEffect(() => {
-        if (!user) return;
-
-        const userData = user;
-
-        if (fieldConfig.isList) {
-            if (fieldType === 'locations') {
-                const locations = Array.isArray(userData.locations) ? userData.locations : [];
-                setListItems(locations.map((loc, i) => ({
-                    id: String(loc.id || `location-${i}`),
-                    name: String(loc.name || ''),
-                    ...loc,
-                })));
-            } else if (fieldType === 'links') {
-                const linksMetadata = Array.isArray(userData.linksMetadata) ? userData.linksMetadata : [];
-                const links = Array.isArray(userData.links) ? userData.links : [];
-                // Use linksMetadata if available, otherwise convert links array
-                if (linksMetadata.length > 0) {
-                    setListItems(linksMetadata.map((link, i) => ({
-                        ...link,
-                        id: String(link.id || `link-${i}`),
-                        url: String(link.url || ''),
-                        title: String(link.title || getLinkTitle(String(link.url || ''))),
-                        description: String(link.description || getLinkDescription(String(link.url || ''))),
-                    })));
-                } else {
-                    setListItems(links.map((item, i) => {
-                        return {
-                            id: `link-${i}`,
-                            url: item,
-                            title: getLinkTitle(item),
-                            description: getLinkDescription(item),
-                        };
-                    }));
-                }
-            }
-        } else {
-            const initialValues: Record<string, string> = {};
-            fieldConfig.fields.forEach(field => {
-                if (field.key === 'firstName') {
-                    initialValues[field.key] = String(userData.name?.first || '');
-                } else if (field.key === 'lastName') {
-                    initialValues[field.key] = String(userData.lastName || userData.name?.last || '');
-                } else if (field.key === 'birthday') {
-                    initialValues[field.key] = String(userData.birthday || userData.dateOfBirth || '');
-                } else if (field.key === 'address') {
-                    initialValues[field.key] = String(userData.address || userData.location || '');
-                } else {
-                    initialValues[field.key] = String(userData[field.key] || '');
-                }
-            });
-            setFieldValues(initialValues);
-        }
-    }, [user, fieldConfig, fieldType]);
-
     // Field change handler
     const handleFieldChange = useCallback((key: string, value: string) => {
         setFieldValues(prev => ({ ...prev, [key]: value }));
@@ -334,7 +369,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
         const errors: Record<string, string | undefined> = {};
         let isValid = true;
 
-        fieldConfig.fields.forEach(field => {
+        for (const field of fieldConfig.fields) {
             if (field.validation) {
                 const error = field.validation(fieldValues[field.key] || '');
                 if (error) {
@@ -342,7 +377,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                     isValid = false;
                 }
             }
-        });
+        }
 
         setFieldErrors(errors);
         return isValid;
@@ -426,6 +461,26 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
             }
         }
     };
+
+    // Contribute the field title/subtitle + a Save action into the Dialog's own
+    // nav header (this screen renders no header of its own). `handleSave` closes
+    // over the live form values, so route it through a ref to keep the Save node
+    // stable across keystrokes (only re-created when the saving state flips).
+    const handleSaveRef = useRef(handleSave);
+    handleSaveRef.current = handleSave;
+    const onSavePress = useCallback(() => { void handleSaveRef.current(); }, []);
+    const saveAction = useMemo(
+        () => (
+            <SurfaceHeaderAction
+                label={isSaving ? (t('common.saving') || 'Saving…') : (t('common.save') || 'Save')}
+                onPress={onSavePress}
+                loading={isSaving}
+                disabled={isSaving}
+            />
+        ),
+        [isSaving, onSavePress, t],
+    );
+    useSurfaceHeader({ title: fieldConfig.title, subtitle: fieldConfig.subtitle, right: saveAction });
 
     // Render a single field input
     const renderField = (field: FieldConfig['fields'][0], index: number) => {
@@ -532,49 +587,12 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
     };
 
     return (
-        <KeyboardAvoidingView
-            className="flex-1 bg-bg"
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-            <Header
-                title=""
-                subtitle=""
-                theme={normalizedTheme}
-                onBack={onClose || goBack}
-                variant="minimal"
-                elevation="none"
-                rightAction={{
-                    text: isSaving ? (t('common.saving') || 'Saving...') : (t('common.save') || 'Save'),
-                    onPress: handleSave,
-                    disabled: isSaving,
-                    loading: isSaving,
-                }}
-            />
-
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pt-space-24 pb-space-32 gap-space-24"
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-            >
-                {/* Big Title */}
-                <View className="gap-space-8">
-                    <H1 className="text-headerBold font-headerBold text-text">
-                        {fieldConfig.title}
-                    </H1>
-                    {fieldConfig.subtitle && (
-                        <Text className="text-body font-body text-text-secondary">
-                            {fieldConfig.subtitle}
-                        </Text>
-                    )}
-                </View>
-
-                {/* Form Content */}
-                <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
-                    {fieldConfig.isList ? renderListContent() : fieldConfig.fields.map(renderField)}
-                </View>
-            </ScrollView>
-        </KeyboardAvoidingView>
+        <View className="px-screen-margin pt-space-16 pb-space-32 gap-space-24">
+            {/* Form Content */}
+            <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
+                {fieldConfig.isList ? renderListContent() : fieldConfig.fields.map(renderField)}
+            </View>
+        </View>
     );
 };
 

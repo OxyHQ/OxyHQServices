@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
-import LoadingState from '../components/LoadingState';
+import { Loading } from '@oxyhq/bloom/loading';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useSettingToggles } from '../hooks/useSettingToggle';
 import { useOxy } from '../context/OxyContext';
 import type { User } from '@oxyhq/core';
@@ -22,10 +22,12 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     goBack,
 }) => {
     // Search settings are persisted on the ACTIVE account's profile (the
-    // org/project/bot when switched, else the personal user); the read/write
-    // route to it via the X-Acting-As header.
+    // org/project/bot when switched, else the personal user); reads/writes
+    // authenticate as the active session, which IS that account.
     const { oxyServices, user } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('searchSettings.title') || 'Search Settings' });
     const bloomTheme = useTheme();
     const [isLoading, setIsLoading] = useState(true);
 
@@ -79,29 +81,16 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
 
     if (isLoading) {
         return (
-            <View className="flex-1 bg-bg">
-                <Header
-                    title={t('searchSettings.title') || 'Search Settings'}
-                    onBack={goBack || onClose}
-                    variant="minimal"
-                    elevation="subtle"
-                />
-                <LoadingState color={bloomTheme.colors.text} />
-            </View>
+            <>
+                <Loading size="large" color={bloomTheme.colors.text} />
+            </>
         );
     }
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('searchSettings.title') || 'Search Settings'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
+        <>
 
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+            <View className="px-screen-margin pb-space-24">
                     {/* SafeSearch */}
                     <SettingsListGroup title={t('searchSettings.safeSearch.title') || 'SafeSearch'}>
                         <SettingsListItem
@@ -146,8 +135,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
                         />
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

@@ -1,24 +1,24 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
-import type { BundledLanguage } from 'shiki';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { SourceCodeIcon } from '@hugeicons/core-free-icons';
+import type { BundledLanguage } from 'shiki';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   CodeBlock,
-  CodeBlockHeader,
-  CodeBlockTitle,
-  CodeBlockFilename,
   CodeBlockActions,
   CodeBlockCopyButton,
+  CodeBlockFilename,
+  CodeBlockHeader,
+  CodeBlockTitle,
 } from '@/components/ui/code-block';
 import {
   Agent,
-  AgentHeader,
   AgentContent,
+  AgentHeader,
   AgentInstructions,
-  AgentTools,
   AgentTool,
+  AgentTools,
 } from '@/components/ui/agent';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -154,7 +154,7 @@ console.log(completion.choices[0].message.tool_calls);`,
 
 type ExampleKey = keyof typeof examples;
 
-const tabs: { value: ExampleKey; label: string }[] = [
+const tabs: Array<{ value: ExampleKey; label: string }> = [
   { value: 'javascript', label: 'JavaScript' },
   { value: 'python', label: 'Python' },
   { value: 'nodejs', label: 'Node.js' },

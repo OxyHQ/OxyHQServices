@@ -1,12 +1,11 @@
 /**
  * Origin Guard Middleware (MED-1 CSRF hardening, Phase A)
  *
- * Browser-enforced CSRF defence for cookie-credentialed auth endpoints
- * (`/auth/refresh`, `/auth/session`, `/auth/logout`). Browsers attach the
- * `Origin` header automatically on cross-origin (and all non-GET) requests
- * and it cannot be forged from a page, so requiring an allowlisted Origin
- * blocks cross-site requests even when the `oxy_rt` cookie would otherwise
- * ride along.
+ * Browser-enforced CSRF defence for state-changing auth endpoints
+ * (`/auth/recover/reset` and the bearer-gated `/session/device/*` routes).
+ * Browsers attach the `Origin` header automatically on cross-origin (and all
+ * non-GET) requests and it cannot be forged from a page, so requiring an
+ * allowlisted Origin blocks cross-site requests.
  *
  * Decision table for non-safe methods (POST/PUT/PATCH/DELETE):
  *  - `Origin` present + allowlisted                       → allow
@@ -21,7 +20,7 @@
  * blocking (24 h gradual deploy); default is `enforce`.
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { isAllowedOrigin } from '../config/allowedOrigins';
 import { logger } from '../utils/logger';
 

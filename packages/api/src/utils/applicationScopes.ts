@@ -23,6 +23,19 @@
  * - `notifications:write` permits trusted services to create realtime
  *   notifications for arbitrary recipients. PRIVILEGED — only Oxy platform staff
  *   may grant it.
+ * - `payments:read` / `payments:write` permit a service credential to read and
+ *   manage the Oxy Pay Gateway resources (merchants, payment intents, webhook
+ *   deliveries) belonging to ITS OWN Application. Non-privileged — same
+ *   pattern as `files:write`/`updates:publish`: authority is scoped to the
+ *   app's own tenant, never cross-tenant.
+ * - `reputation:moderation:apply` permits the participatory-moderation service to
+ *   submit a published DECISION for consequence derivation. It is deliberately
+ *   NARROWER than `reputation:write`, not additive to it — see
+ *   {@link PRIVILEGED_APPLICATION_SCOPES}.
+ * - `reputation:binding:register` permits an application to register the fact
+ *   that an Oxy user was present in it as a named local principal, PROVING it
+ *   with that user's own access token. PRIVILEGED — only Oxy platform staff may
+ *   grant it.
  */
 export const APPLICATION_SCOPES = [
   'files:read',
@@ -32,10 +45,15 @@ export const APPLICATION_SCOPES = [
   'webhooks:receive',
   'chat:completions',
   'models:read',
+  'updates:publish',
   'federation:write',
   'signals:write',
   'reputation:write',
+  'reputation:moderation:apply',
+  'reputation:binding:register',
   'notifications:write',
+  'payments:read',
+  'payments:write',
 ] as const;
 
 export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
@@ -62,6 +80,22 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
  *   notifications to arbitrary users and choose actor/entity metadata. A
  *   self-granting owner could otherwise spoof system or user activity to
  *   victims' connected clients.
+ * - `reputation:moderation:apply` lets the participatory-moderation service
+ *   submit a published decision for consequence derivation.
+ *
+ *   IT IS NOT A SUBSET OF `reputation:write`, AND IT IS NOT ADDITIVE TO IT.
+ *   `reputation:write` is the broad ledger-write authority every official app
+ *   already holds; it can mint arbitrary points for arbitrary users through
+ *   `POST /reputation/award`. This scope can do none of that: it can only submit
+ *   a DECISION, and the engine derives the figures itself from the versioned
+ *   policy. Deliberately separate so the moderation bridge does not inherit
+ *   ledger-write authority, and so the apps that hold ledger-write authority do
+ *   not inherit the ability to penalise conduct. Neither implies the other, and
+ *   holding both is a decision someone has to make explicitly.
+ * - `reputation:binding:register` lets an application assert that a named local
+ *   principal is a particular Oxy user. The assertion must be backed by that
+ *   user's own access token, but the scope is still privileged because a binding
+ *   is what makes a later conduct penalty possible at all.
  *
  * All non-privileged scopes in {@link APPLICATION_SCOPES} authorise an app only
  * over its OWN resources (files, models, webhooks, public user reads) and remain
@@ -71,6 +105,8 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
 export const PRIVILEGED_APPLICATION_SCOPES = [
   'federation:write',
   'reputation:write',
+  'reputation:moderation:apply',
+  'reputation:binding:register',
   'signals:write',
   'notifications:write',
 ] as const satisfies readonly ApplicationScope[];
@@ -92,6 +128,32 @@ export function isPrivilegedScope(scope: string): scope is ApplicationScope {
 }
 
 /**
+ * Oxy Pay Gateway scopes — the only scopes {@link APPLICATION_SCOPES} grants
+ * that authorise payments resources. Used by the `POST /applications/:appId/credentials`
+ * route (`applications.ts`) as the boundary of a narrow trust carve-out: a
+ * non-trusted (`third_party`) application may create a `type:'service'`
+ * credential ONLY when every requested scope is in this set, so external Oxy
+ * Pay merchants can self-serve the service credential the `@oxyhq/pay` SDK
+ * needs without gaining the ability to mint a trusted service token for any
+ * other, still staff-gated capability. Safe because both scopes are already
+ * non-privileged/self-grantable (see the doc comment on `APPLICATION_SCOPES`
+ * above) and scoped to the app's own tenant.
+ */
+export const PAYMENTS_APPLICATION_SCOPES = [
+  'payments:read',
+  'payments:write',
+] as const satisfies readonly ApplicationScope[];
+
+const PAYMENTS_APPLICATION_SCOPE_SET: ReadonlySet<ApplicationScope> = new Set<ApplicationScope>(
+  PAYMENTS_APPLICATION_SCOPES
+);
+
+/** True when `scope` is one of the Oxy Pay Gateway scopes. */
+export function isPaymentsScope(scope: string): scope is ApplicationScope {
+  return PAYMENTS_APPLICATION_SCOPE_SET.has(scope as ApplicationScope);
+}
+
+/**
  * Effective scopes for a credential = credential scopes ∩ application scopes,
  * preserving the credential's order and dropping unknown scopes. A credential
  * can never exceed the authority granted to its owning application: if the app
@@ -108,6 +170,37 @@ export function intersectScopes(
   const seen = new Set<string>();
   for (const scope of credentialScopes) {
     if (!granted.has(scope) || seen.has(scope)) continue;
+    if (!isValidApplicationScope(scope)) continue;
+    seen.add(scope);
+    result.push(scope);
+  }
+  return result;
+}
+
+/**
+ * Reconcile a canonical (declarative) scope set with the scopes already granted
+ * on a stored application ADDITIVELY: the result is the UNION of both, in a
+ * stable order (canonical first, then any additional already-granted scope),
+ * de-duplicated, with unknown/legacy scopes dropped.
+ *
+ * This is the single authority for any "rebuild an application's scopes from a
+ * canonical list" path (the official-app seed today; any future ensure/rebuild
+ * routine). A destructive replace of `application.scopes` with only the
+ * canonical list silently REVOKES a legitimately-granted, in-use scope that was
+ * added out-of-band — and because {@link intersectScopes} intersects credential
+ * scopes with app scopes at every service-token mint, the credential loses the
+ * scope too. Using a union makes it IMPOSSIBLE for a granted, valid scope to
+ * vanish on the next rebuild. Intentionally REMOVING a scope is therefore an
+ * explicit operation on the app record, never a side effect of a rebuild.
+ */
+export function unionValidScopes(
+  canonicalScopes: readonly string[],
+  existingScopes: readonly string[]
+): ApplicationScope[] {
+  const result: ApplicationScope[] = [];
+  const seen = new Set<string>();
+  for (const scope of [...canonicalScopes, ...existingScopes]) {
+    if (seen.has(scope)) continue;
     if (!isValidApplicationScope(scope)) continue;
     seen.add(scope);
     result.push(scope);

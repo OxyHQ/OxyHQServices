@@ -1,16 +1,18 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type FC, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FC, type ReactNode } from 'react';
 import { AppState, Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider, type OxyContextProviderProps } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
-import { BloomDialogProvider } from '@oxyhq/bloom';
+import { BloomDialogProvider } from '@oxyhq/bloom/dialog';
+import { SurfaceProvider } from '@oxyhq/bloom/surfaces';
 import { ToastOutlet } from '@oxyhq/bloom/toast';
 import { logger as loggerUtil } from '@oxyhq/core';
-import { setupFonts } from './FontLoader';
+import { RequireOxyAuth } from './RequireOxyAuth';
 import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
+import { isNetConnectivityOnline } from '../utils/netConnectivity';
 
 /**
  * Background color shown for the brief window between mount and the
@@ -38,9 +40,6 @@ const bootStyles = StyleSheet.create({
     },
 });
 
-// Initialize fonts automatically
-setupFonts();
-
 // Detect if running on web
 const isWeb = Platform.OS === 'web';
 
@@ -48,35 +47,14 @@ const isWeb = Platform.OS === 'web';
 // static analyzer cannot trace this into the web bundle. Native-only.
 const KEYBOARD_CONTROLLER_MODULE = 'react-native-keyboard-controller';
 
-// Lazy-load optional components (avoids require() for ESM compatibility).
-// The .then() extracts + casts the default export so that `lazy()` sees
-// `Promise<{ default: ComponentType }>` instead of the full module namespace.
-const LazyBottomSheetRouter = lazy((): Promise<{ default: ComponentType }> =>
-    import('./BottomSheetRouter').then(
-        (mod) => ({ default: mod.default as unknown as ComponentType }),
-        (error) => {
-            if (__DEV__) {
-                loggerUtil.error('Failed to load BottomSheetRouter', error instanceof Error ? error : new Error(String(error)), { component: 'OxyProvider' });
-            }
-            return { default: (() => null) as FC };
-        },
-    ),
-);
-
-const LazySignInModal = lazy((): Promise<{ default: ComponentType }> =>
-    import('./SignInModal').then(
-        (mod) => ({ default: mod.default as unknown as ComponentType }),
-        () => ({ default: (() => null) as FC }),
-    ),
-);
-
 /**
  * OxyProvider - Universal provider for Expo apps (native + web)
  *
  * Provides authentication, session management, query client, and UI overlays.
  * Wraps its own overlay stack in SafeAreaProvider and GestureHandlerRootView so
- * BottomSheetRouter and SignInModal can safely render even when a consuming app
- * has not mounted those providers yet.
+ * the shared Bloom SURFACE STACK (`<SurfaceProvider>` / `<SurfaceHost>`) — which
+ * hosts every SDK surface (the ~35 bottom-sheet routes + the AccountDialog) — can
+ * safely render even when a consuming app has not mounted those providers yet.
  *
  * Usage:
  * ```tsx
@@ -113,7 +91,12 @@ const OxyProvider: FC<OxyProviderProps> = ({
     baseURL,
     authWebUrl,
     authRedirectUri,
+    authorizeBaseUrl,
+    sessionMode = 'account',
+    webAuthMode = 'popup',
     queryClient: providedQueryClient,
+    requireAuth = 'off',
+    backgroundSession = false,
 }) => {
 
     // Dynamic KeyboardProvider for native. Uses variable indirection
@@ -248,10 +231,10 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     try {
                         const NetInfo = await import('@react-native-community/netinfo');
                         const state = await NetInfo.default.fetch();
-                        onlineManager.setOnline(state.isConnected ?? true);
+                        onlineManager.setOnline(isNetConnectivityOnline(state));
 
-                        const unsubscribe = NetInfo.default.addEventListener((state: { isConnected: boolean | null }) => {
-                            onlineManager.setOnline(state.isConnected ?? true);
+                        const unsubscribe = NetInfo.default.addEventListener((state: { isConnected: boolean | null; isInternetReachable?: boolean | null }) => {
+                            onlineManager.setOnline(isNetConnectivityOnline(state));
                         });
 
                         cleanup = () => unsubscribe();
@@ -306,15 +289,21 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     baseURL={baseURL}
                     authWebUrl={authWebUrl}
                     authRedirectUri={authRedirectUri}
+                    authorizeBaseUrl={authorizeBaseUrl}
                     storageKeyPrefix={storageKeyPrefix}
                     clientId={clientId}
+                    sessionMode={sessionMode}
+                    webAuthMode={webAuthMode}
+                    backgroundSession={backgroundSession}
                     onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
                 >
-                    {children}
-                    <Suspense fallback={null}>
-                        <LazyBottomSheetRouter />
-                        <LazySignInModal />
-                    </Suspense>
+                    <SurfaceProvider>
+                        {requireAuth === 'off' ? (
+                            children
+                        ) : (
+                            <RequireOxyAuth prompt={requireAuth}>{children}</RequireOxyAuth>
+                        )}
+                    </SurfaceProvider>
                     <ToastOutlet />
                 </OxyContextProvider>
             </BloomDialogProvider>

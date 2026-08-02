@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AccessibilityInfo, Platform, View, ScrollView } from 'react-native';
+import { AccessibilityInfo, Platform, View } from 'react-native';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { UserPreferences } from '@oxyhq/core';
+import { getNativeLanguageName } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
 import { useUpdateUserPreferences } from '../hooks/mutations/useAccountMutations';
@@ -43,6 +44,8 @@ const PreferencesScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const bloomTheme = useTheme();
     const { t, locale } = useI18n();
+
+    useSurfaceHeader({ title: t('preferences.title') || 'Preferences' });
     const { isAuthenticated } = useOxy();
     const { data: user } = useCurrentUser({ enabled: isAuthenticated });
     const updateMutation = useUpdateUserPreferences();
@@ -112,25 +115,15 @@ const PreferencesScreen: React.FC<BaseScreenProps> = ({
     const nextTheme: ThemePreference =
         THEME_ORDER[(THEME_ORDER.indexOf(themePref) + 1) % THEME_ORDER.length] ?? 'system';
 
-    const languageDescription = useMemo(() => {
-        if (prefs?.language) {
-            return prefs.language;
-        }
-        return locale;
-    }, [prefs?.language, locale]);
+    // The active UI locale is driven by the account's primary language when
+    // signed in (else the device locale) — surfaced here via the i18n `locale`.
+    const languageDescription = useMemo(() => getNativeLanguageName(locale), [locale]);
 
     const isSaving = updateMutation.isPending;
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('preferences.title') || 'Preferences'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin pb-space-24">
+        <>
+            <View className="px-screen-margin pb-space-24">
                     <SettingsListGroup
                         title={t('preferences.sections.appearance') || 'Appearance'}
                     >
@@ -235,8 +228,7 @@ const PreferencesScreen: React.FC<BaseScreenProps> = ({
                         </SettingsListGroup>
                     )}
                 </View>
-            </ScrollView>
-        </View>
+        </>
     );
 };
 

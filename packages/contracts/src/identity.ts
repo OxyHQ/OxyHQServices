@@ -45,25 +45,69 @@ import { z } from 'zod';
 /* -------------------------------------------------------------------------- */
 
 /**
- * A single DID verification method. Mirrors the secp256k1 key entries the API
- * derives from `User.publicKey` + each `authMethods[]` of type `identity`.
- * `id` is a fragment reference within the DID document (e.g.
- * `did:web:oxy.so:u:<id>#key-1`); `controller` is the controlling DID;
- * `publicKeyHex` is the uncompressed/compressed secp256k1 public key in hex.
+ * A `EcdsaSecp256k1VerificationKey2019` verification method — the canonical Oxy
+ * key form. Mirrors the secp256k1 key entries the API derives from
+ * `User.publicKey` + each `authMethods[]` of type `identity`. `id` is a fragment
+ * reference within the DID document (e.g. `did:web:oxy.so:u:<id>#key-1`);
+ * `controller` is the controlling DID; `publicKeyHex` is the (uncompressed)
+ * secp256k1 public key in hex.
  */
-export interface VerificationMethod {
+export interface Secp256k1VerificationMethod {
     id: string;
     type: 'EcdsaSecp256k1VerificationKey2019';
     controller: string;
     publicKeyHex: string;
 }
 
-export const verificationMethodSchema: z.ZodType<VerificationMethod> = z.object({
+/**
+ * A `Multikey` verification method — the AtProto/Bluesky key form. The SAME
+ * secp256k1 key as an account's {@link Secp256k1VerificationMethod}, re-encoded
+ * the way atproto expects: `publicKeyMultibase` is the `did:key`-style multibase
+ * (`base58btc`, leading `z`) of the multicodec-prefixed (`0xe7 0x01`, secp256k1)
+ * COMPRESSED public key. This is the verification method a foreign Bluesky
+ * AppView reads when it routes to the user's bridge PDS; it is additive and only
+ * present for atproto-bridged self-sovereign accounts.
+ */
+export interface MultikeyVerificationMethod {
+    id: string;
+    type: 'Multikey';
+    controller: string;
+    publicKeyMultibase: string;
+}
+
+/**
+ * A single DID verification method — either the canonical Oxy secp256k1 form
+ * ({@link Secp256k1VerificationMethod}) or the atproto `Multikey` form
+ * ({@link MultikeyVerificationMethod}). Discriminated on `type`, so an
+ * `EcdsaSecp256k1VerificationKey2019` entry keeps its exact `publicKeyHex` shape
+ * (every document already served verifies byte-identically) and the `Multikey`
+ * entry carries `publicKeyMultibase`.
+ */
+export type VerificationMethod = Secp256k1VerificationMethod | MultikeyVerificationMethod;
+
+// The option schemas are left UN-annotated so they keep their concrete
+// `ZodObject` type — `z.discriminatedUnion` requires object options and an
+// explicit `z.ZodType<>` annotation would erase the shape it discriminates on.
+// `z.object` already infers each option's type exactly (id/type/controller +
+// the key field), so the union is structurally `VerificationMethod`.
+const secp256k1VerificationMethodSchema = z.object({
     id: z.string(),
     type: z.literal('EcdsaSecp256k1VerificationKey2019'),
     controller: z.string(),
     publicKeyHex: z.string(),
 });
+
+const multikeyVerificationMethodSchema = z.object({
+    id: z.string(),
+    type: z.literal('Multikey'),
+    controller: z.string(),
+    publicKeyMultibase: z.string(),
+});
+
+export const verificationMethodSchema = z.discriminatedUnion('type', [
+    secp256k1VerificationMethodSchema,
+    multikeyVerificationMethodSchema,
+]);
 
 /**
  * A DID service entry (the `service[]` array). Oxy publishes its API root and
@@ -120,28 +164,23 @@ export const didDocumentSchema: z.ZodType<DidDocument> = z.object({
 /* -------------------------------------------------------------------------- */
 
 /**
- * The category of a signed record. v1 only ever carried `identity` / `profile`
- * (already in production); v2 widens the union with the civic record types
- * (reputation attestations, real-life / peer validations, personhood vouches,
- * verifiable credentials) and the user-node registration record. The signing
- * input includes `type`, so this union is part of the signed bytes.
- */
-export type SignedRecordType =
-    | 'identity'
-    | 'profile'
-    | 'reputation_attestation'
-    | 'real_life_attestation'
-    | 'validation_verdict'
-    | 'personhood_vouch'
-    | 'credential'
-    | 'node';
-
-/**
  * A signed record envelope. `record` is the arbitrary payload; the signing
  * input is the canonical-JSON of every envelope field EXCEPT `publicKey` and
  * `signature`. `subject` and `issuer` are DIDs (the subject the record is about
  * and the signer's DID — equal for self-issued records, `OXY_DID` for a
  * custodial provenance attestation). `issuedAt` is epoch milliseconds.
+ *
+ * ## `type` — open by design
+ *
+ * `type` is an OPEN, non-empty string: it is the application-defined category of
+ * the record (e.g. Oxy's `identity`/`profile`/civic types, or `app.mention.*`'s
+ * `app_record`). The base envelope is app-agnostic, so it cannot enumerate every
+ * app's record categories — each app re-narrows `type` to its own closed set on
+ * the way INTO its own store (Oxy via {@link OxySignedRecordType}; an app via
+ * its own constant). Widening `type` from a closed enum to a string is
+ * canonical-bytes-safe: {@link signedRecordSigningInput} serializes `type` as the
+ * same JSON string either way, so every record already signed in production
+ * verifies byte-for-byte.
  *
  * ## Versioning
  *
@@ -164,7 +203,8 @@ export type SignedRecordType =
  */
 export interface SignedRecordEnvelope {
     version: 1 | 2;
-    type: SignedRecordType;
+    /** App-defined record category (open string); each store re-narrows it. */
+    type: string;
     subject: string;
     issuer: string;
     record: Record<string, unknown>;
@@ -185,16 +225,9 @@ export interface SignedRecordEnvelope {
 export const signedRecordEnvelopeSchema: z.ZodType<SignedRecordEnvelope> = z
     .object({
         version: z.union([z.literal(1), z.literal(2)]),
-        type: z.enum([
-            'identity',
-            'profile',
-            'reputation_attestation',
-            'real_life_attestation',
-            'validation_verdict',
-            'personhood_vouch',
-            'credential',
-            'node',
-        ]),
+        // Open, app-defined category (see the `type` doc above). The Oxy STORE
+        // re-narrows to `oxySignedRecordTypeSchema`; an app to its own constant.
+        type: z.string().min(1),
         subject: z.string(),
         issuer: z.string(),
         record: z.record(z.unknown()),
@@ -332,20 +365,27 @@ export type DomainVerificationInstructions = z.infer<
 
 /**
  * One linked authentication method. Mirrors a `User.authMethods[]` entry.
- * `verificationMethodId` is present for `identity` methods (a key) and absent
- * for `password`/social methods, linking the auth method to its DID
- * verification-method fragment.
+ * `verificationMethodId` is present for `identity` methods (a key), linking the
+ * auth method to its DID verification-method fragment. For `webauthn` methods
+ * `credentialId` identifies the specific passkey (one entry per registered
+ * credential) and `name` is its user-facing label; a passkey is NOT a DID
+ * verification method, so it carries no `verificationMethodId` (a passkey-only
+ * account stays custodial).
  */
 export interface AuthMethodEntry {
-    type: 'identity' | 'password' | 'google' | 'apple' | 'github';
+    type: 'identity' | 'webauthn';
     linkedAt: string | Date;
     verificationMethodId?: string;
+    credentialId?: string;
+    name?: string;
 }
 
 export const authMethodEntrySchema: z.ZodType<AuthMethodEntry> = z.object({
-    type: z.enum(['identity', 'password', 'google', 'apple', 'github']),
+    type: z.enum(['identity', 'webauthn']),
     linkedAt: z.union([z.string(), z.date()]),
     verificationMethodId: z.string().optional(),
+    credentialId: z.string().optional(),
+    name: z.string().optional(),
 });
 
 /**

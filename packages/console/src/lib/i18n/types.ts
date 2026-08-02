@@ -15,7 +15,7 @@ export type Locale =
   | 'zh-CN'
   | 'ar-SA';
 
-export const SUPPORTED_LOCALES: readonly Locale[] = [
+export const SUPPORTED_LOCALES: ReadonlyArray<Locale> = [
   'en-US',
   'es-ES',
   'ca-ES',
@@ -47,7 +47,7 @@ export const LOCALE_LABELS: Record<Locale, string> = {
 };
 
 /** Recursive JSON-shaped value for the console dictionary. */
-export type LocaleNode = string | LocaleNode[] | { [key: string]: LocaleNode };
+export type LocaleNode = string | Array<LocaleNode> | { [key: string]: LocaleNode };
 export type LocaleDict = Record<string, LocaleNode>;
 
 /**

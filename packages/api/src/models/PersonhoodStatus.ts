@@ -1,4 +1,5 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { type Document, Schema } from 'mongoose';
+import type { PersonhoodBreakdown } from '../db/schema/personhoodStatuses';
 
 /**
  * PersonhoodStatus (civic / Commons — Fase 3)
@@ -13,21 +14,14 @@ import mongoose, { Document, Schema } from 'mongoose';
  * account to the `verified` tier.
  */
 
-/** The signal sub-scores behind the personhood score (audit / UI breakdown). */
-export interface PersonhoodBreakdown {
-  /** Saturated [0,1] vouch signal from the weighted vouch sum. */
-  vouchSignal: number;
-  /** Saturated [0,1] real-life-attestation signal. */
-  realLifeSignal: number;
-  /** 1 when the account is biometric-bound, else 0. */
-  biometricSignal: number;
-  /** Weighted blend of the three signals before the sybil penalty. */
-  evidence: number;
-  /** The [0,1] sybil penalty subtracted (multiplicatively) from the evidence. */
-  sybilPenalty: number;
-  /** True when the score came from the seed-verifier genesis short-circuit. */
-  seed: boolean;
-}
+/**
+ * The signal sub-scores behind the personhood score (audit / UI breakdown).
+ *
+ * Owned by `db/schema/personhoodStatuses.ts`, beside the `breakdown_*` columns
+ * that store it. Re-imported here so this legacy model still describes the same
+ * shape without being the source of it.
+ */
+export type { PersonhoodBreakdown };
 
 export interface IPersonhoodStatus extends Omit<Document, '_id'> {
   _id: mongoose.Types.ObjectId;

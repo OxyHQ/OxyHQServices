@@ -11,7 +11,7 @@ import {
   mapLegacyRuleCategory,
   inferTransactionCategory,
 } from '../reputationMigrationMapping';
-import type { ReputationCategory } from '../reputation.constants';
+import type { ReputationCategory } from '@oxyhq/contracts';
 
 describe('mapLegacyRuleCategory', () => {
   it('maps known legacy categories', () => {

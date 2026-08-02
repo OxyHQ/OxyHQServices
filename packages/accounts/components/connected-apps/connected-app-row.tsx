@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { Avatar } from '@oxyhq/services';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import type { ConnectedApp } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { useHapticPress } from '@/hooks/use-haptic-press';
@@ -58,7 +58,7 @@ export function ConnectedAppRow({
         isFirst && styles.firstRow,
       ]}
     >
-      <Avatar name={app.name} uri={logoUri} size={44} />
+      <Avatar name={app.name} source={logoUri} size={44} />
       <View style={styles.body}>
         <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
           {app.name}

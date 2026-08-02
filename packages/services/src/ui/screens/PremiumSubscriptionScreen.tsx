@@ -1,11 +1,14 @@
 import type React from 'react';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, ScrollView, ActivityIndicator } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { Chip } from '@oxyhq/bloom/chip';
+import { Badge } from '@oxyhq/bloom/badge';
+import { Card, CardBody } from '@oxyhq/bloom/card';
 import { H2, H4, H5, Text } from '@oxyhq/bloom/typography';
 import { BenefitList, BenefitRow } from '@oxyhq/bloom/benefit-list';
 import {
@@ -13,9 +16,9 @@ import {
     SegmentedControlItem,
     SegmentedControlItemText,
 } from '@oxyhq/bloom/segmented-control';
-import { Ionicons } from '@expo/vector-icons';
-import Header from '../components/Header';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -86,6 +89,20 @@ const FEATURE_CATEGORIES: IndividualFeature['category'][] = [
     'productivity',
 ];
 
+// Pure package-name → display-name mapping (module scope so the nav-header
+// subtitle can reference it before the component's render helpers).
+const getAppDisplayName = (packageName: string): string => {
+    const appNames: Record<string, string> = {
+        'mention': 'Mention',
+        'oxy-social': 'Oxy Social',
+        'oxy-workspace': 'Oxy Workspace',
+        'oxy-creator': 'Oxy Creator',
+        'oxy-analytics': 'Oxy Analytics',
+        'oxy-studio': 'Oxy Studio',
+    };
+    return appNames[packageName] || packageName;
+};
+
 const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     onClose,
     navigate,
@@ -103,15 +120,12 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const [billingInterval, setBillingInterval] = useState<BillingInterval>(BILLING_MONTH);
     const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_PLANS);
     const [currentAppPackage, setCurrentAppPackage] = useState<string>('mention'); // Default to mention for demo
-    const [pendingUnsubscribeFeatureId, setPendingUnsubscribeFeatureId] = useState<string | null>(null);
 
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('premium.title') || 'Oxy+ Subscriptions', subtitle: t('premium.forApp', { app: getAppDisplayName(currentAppPackage) }) || `for ${getAppDisplayName(currentAppPackage)}` });
     const bloomTheme = useTheme();
     const colors = bloomTheme.colors;
-
-    // Prompt controls
-    const cancelSubscriptionDialog = useDialogControl();
-    const unsubscribeFeatureDialog = useDialogControl();
 
     // Oxy+ subscription plans
     const mockPlans: SubscriptionPlan[] = [
@@ -329,7 +343,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         if (currentAppPackage) {
             loadSubscriptionData();
         }
-    }, [currentAppPackage, user?.isPremium]);
+    }, [currentAppPackage]);
 
     const detectCurrentApp = () => {
         const detectedApp = 'mention';
@@ -424,11 +438,15 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         }
     };
 
-    const confirmCancelSubscription = useCallback(() => {
-        cancelSubscriptionDialog.open();
-    }, [cancelSubscriptionDialog]);
-
     const handleCancelSubscription = useCallback(async () => {
+        const confirmed = await surfaces.confirm({
+            title: t('premium.confirms.cancelSubTitle') || 'Cancel Subscription',
+            message: t('premium.confirms.cancelSub') || 'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.',
+            confirmLabel: t('premium.actions.cancelSubBtn') || 'Cancel Subscription',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) return;
         try {
             setSubscription(prev => prev ? {
                 ...prev,
@@ -510,18 +528,22 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         }
     };
 
-    const confirmFeatureUnsubscribe = useCallback((featureId: string) => {
-        setPendingUnsubscribeFeatureId(featureId);
-        unsubscribeFeatureDialog.open();
-    }, [unsubscribeFeatureDialog]);
-
-    const handleFeatureUnsubscribe = useCallback(async () => {
-        if (!pendingUnsubscribeFeatureId) return;
-        const feature = individualFeatures.find(f => f.id === pendingUnsubscribeFeatureId);
+    const handleFeatureUnsubscribe = useCallback(async (featureId: string) => {
+        const feature = individualFeatures.find(f => f.id === featureId);
+        const confirmed = await surfaces.confirm({
+            title: t('premium.confirms.unsubscribeFeatureTitle') || 'Unsubscribe from Feature',
+            message: feature
+                ? (t('premium.confirms.unsubscribeFeature', { name: feature.name }) ?? `Are you sure you want to unsubscribe from ${feature.name}?`)
+                : '',
+            confirmLabel: t('premium.actions.unsubscribe') || 'Unsubscribe',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) return;
         try {
             setIndividualFeatures(prev =>
                 prev.map(f =>
-                    f.id === pendingUnsubscribeFeatureId
+                    f.id === featureId
                         ? { ...f, isSubscribed: false }
                         : f
                 )
@@ -529,27 +551,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             toast.success((t('premium.toasts.featureUnsubscribed', { name: feature?.name ?? '' }) ?? `Unsubscribed from ${feature?.name}`));
         } catch (error) {
             toast.error(t('premium.toasts.featureUnsubscribeFailed') || 'Failed to unsubscribe from feature');
-        } finally {
-            setPendingUnsubscribeFeatureId(null);
         }
-    }, [pendingUnsubscribeFeatureId, individualFeatures, t]);
-
-    const pendingUnsubscribeFeature = useMemo(
-        () => individualFeatures.find(f => f.id === pendingUnsubscribeFeatureId),
-        [individualFeatures, pendingUnsubscribeFeatureId]
-    );
-
-    const getAppDisplayName = (packageName: string) => {
-        const appNames: Record<string, string> = {
-            'mention': 'Mention',
-            'oxy-social': 'Oxy Social',
-            'oxy-workspace': 'Oxy Workspace',
-            'oxy-creator': 'Oxy Creator',
-            'oxy-analytics': 'Oxy Analytics',
-            'oxy-studio': 'Oxy Studio'
-        };
-        return appNames[packageName] || packageName;
-    };
+    }, [individualFeatures, t]);
 
     const renderCurrentSubscription = () => {
         if (!subscription) return null;
@@ -568,7 +571,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                     {t('premium.current.title') || 'Current Subscription'}
                 </H5>
 
-                <View className="bg-fill border border-border-image rounded-radius-20 p-space-20 shadow-s">
+                <Card variant="outlined">
+                  <CardBody style={{ padding: 20 }}>
                     <View className="flex-row justify-between items-start mb-space-12">
                         <View className="flex-1 pr-space-12">
                             <H4 className="text-text" numberOfLines={1}>{currentPlan.name}</H4>
@@ -576,9 +580,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 {`$${currentPlan.price}/month`}
                             </Text>
                         </View>
-                        <Chip variant="soft" color={statusChipColor} size="small">
-                            {subscription.status.toUpperCase()}
-                        </Chip>
+                        <Badge variant="subtle" color={statusChipColor} size="large" content={subscription.status.toUpperCase()} />
                     </View>
 
                     <Text className="text-text-secondary text-sm mb-space-16">
@@ -607,7 +609,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         ) : (
                             <Button
                                 variant="destructive"
-                                onPress={confirmCancelSubscription}
+                                onPress={handleCancelSubscription}
                                 className="flex-1"
                                 accessibilityLabel={t('premium.actions.cancelSubBtn') || 'Cancel Subscription'}
                             >
@@ -624,7 +626,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             {t('premium.actions.manageBilling') || 'Manage Billing'}
                         </Button>
                     </View>
-                </View>
+                  </CardBody>
+                </Card>
             </View>
         );
     };
@@ -689,31 +692,29 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         const availability = getAvailabilityStatus();
 
         return (
-            <View
+            <Card
                 key={plan.id}
-                className={`bg-fill border border-border-image rounded-radius-20 p-space-20 mb-space-16 shadow-s ${!availability.available ? 'opacity-60' : ''}`}
-                style={
-                    isSelected || plan.isPopular
-                        ? { borderColor: colors.primary, borderWidth: 2 }
-                        : undefined
-                }
+                variant="outlined"
+                style={[
+                    { marginBottom: 16 },
+                    !availability.available ? { opacity: 0.6 } : null,
+                    (isSelected || plan.isPopular) ? { borderColor: colors.primary, borderWidth: 2 } : null,
+                ]}
             >
+              <CardBody style={{ padding: 20 }}>
                 <View className="flex-row flex-wrap gap-space-8 mb-space-12">
                     {plan.isPopular && (
-                        <Chip variant="solid" color="primary" size="small">
-                            {t('premium.plan.badge.mostPopular') || 'Most Popular'}
-                        </Chip>
+                        <Badge variant="solid" color="primary" size="large" content={t('premium.plan.badge.mostPopular') || 'Most Popular'} />
                     )}
                     {isAppSpecific && (
-                        <Chip
-                            variant="soft"
+                        <Badge
+                            variant="subtle"
                             color={isAvailableForCurrentApp ? 'success' : 'warning'}
-                            size="small"
-                        >
-                            {isAvailableForCurrentApp
+                            size="large"
+                            content={isAvailableForCurrentApp
                                 ? (t('premium.plan.badge.appExclusive') || 'App Exclusive')
                                 : (t('premium.plan.badge.notAvailable') || 'Not Available')}
-                        </Chip>
+                        />
                     )}
                 </View>
 
@@ -740,9 +741,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 </View>
 
                 <BenefitList className="mb-space-24">
-                    {plan.features.map((feature, index) => (
+                    {plan.features.map((feature) => (
                         <BenefitRow
-                            key={index}
+                            key={feature}
                             icon={<Ionicons name="checkmark" size={18} color={colors.success} />}
                             label={feature}
                         />
@@ -780,7 +781,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         {t('premium.actions.subscribeTo', { name: plan.name }) || `Subscribe to ${plan.name}`}
                     </Button>
                 )}
-            </View>
+              </CardBody>
+            </Card>
         );
     };
 
@@ -842,17 +844,19 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         };
 
         return (
-            <View
+            <Card
                 key={feature.id}
-                className="bg-fill border border-border-image rounded-radius-12 p-space-16 mb-space-12 shadow-s"
-                style={
+                variant="outlined"
+                style={[
+                    { marginBottom: 12 },
                     isIncludedInCurrentPlan
                         ? { borderColor: colors.primary, borderWidth: 2 }
                         : isSubscribed
                             ? { borderColor: colors.success, borderWidth: 2 }
-                            : undefined
-                }
+                            : null,
+                ]}
             >
+              <CardBody style={{ padding: 16 }}>
                 <View className="flex-row items-start mb-space-12">
                     <View
                         className="bg-fill-secondary rounded-radius-max items-center justify-center mr-space-12"
@@ -868,9 +872,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         <View className="flex-row items-center justify-between mb-space-4">
                             <H5 className="text-text flex-1 pr-space-8" numberOfLines={1}>{feature.name}</H5>
                             {isIncludedInCurrentPlan && (
-                                <Chip variant="solid" color="primary" size="small">
-                                    {t('premium.feature.included') || 'Included'}
-                                </Chip>
+                                <Badge variant="solid" color="primary" size="large" content={t('premium.feature.included') || 'Included'} />
                             )}
                         </View>
                         <Text className="text-text-secondary text-sm">
@@ -914,7 +916,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </Button>
                         <Button
                             variant="outline"
-                            onPress={() => confirmFeatureUnsubscribe(feature.id)}
+                            onPress={() => handleFeatureUnsubscribe(feature.id)}
                             accessibilityLabel={t('premium.actions.unsubscribe') || 'Unsubscribe'}
                             className="flex-1"
                         >
@@ -942,7 +944,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         {t('premium.feature.plansOnly') || 'Only available in subscription plans'}
                     </Button>
                 )}
-            </View>
+              </CardBody>
+            </Card>
         );
     };
 
@@ -1004,41 +1007,21 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     if (loading) {
         return (
-            <View className="flex-1 bg-bg">
-                <Header
-                    title={t('premium.title') || 'Oxy+ Subscriptions'}
-                    subtitle={t('premium.forApp', { app: getAppDisplayName(currentAppPackage) }) || `for ${getAppDisplayName(currentAppPackage)}`}
-                    onBack={goBack || onClose}
-                    onClose={onClose}
-                    showCloseButton={!!onClose}
-                    elevation="subtle"
-                />
-                <View className="flex-1 items-center justify-center px-screen-margin">
+            <>
+                <View className="items-center justify-center px-screen-margin py-space-40">
                     <ActivityIndicator size="large" color={colors.primary} />
                     <Text className="text-text-secondary text-base text-center mt-space-16">
                         {t('premium.loading') || 'Loading subscription plans...'}
                     </Text>
                 </View>
-            </View>
+            </>
         );
     }
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('premium.title') || 'Oxy+ Subscriptions'}
-                subtitle={t('premium.forApp', { app: getAppDisplayName(currentAppPackage) }) || `for ${getAppDisplayName(currentAppPackage)}`}
-                onBack={goBack || onClose}
-                onClose={onClose}
-                showCloseButton={!!onClose}
-                elevation="subtle"
-            />
+        <>
 
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pb-space-32"
-                showsVerticalScrollIndicator={false}
-            >
+            <View className="px-screen-margin pb-space-32">
                 <View className="pt-space-20">
                     {renderAppSwitcher()}
 
@@ -1112,27 +1095,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </BenefitList>
                     </View>
                 </View>
-            </ScrollView>
-
-            <Dialog
-                control={cancelSubscriptionDialog}
-                title={t('premium.confirms.cancelSubTitle') || 'Cancel Subscription'}
-                description={t('premium.confirms.cancelSub') || 'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.'}
-                actions={[
-                    { label: t('premium.actions.cancelSubBtn') || 'Cancel Subscription', color: 'destructive', onPress: handleCancelSubscription },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={unsubscribeFeatureDialog}
-                title={t('premium.confirms.unsubscribeFeatureTitle') || 'Unsubscribe from Feature'}
-                description={pendingUnsubscribeFeature ? (t('premium.confirms.unsubscribeFeature', { name: pendingUnsubscribeFeature.name }) ?? `Are you sure you want to unsubscribe from ${pendingUnsubscribeFeature.name}?`) : ''}
-                actions={[
-                    { label: t('premium.actions.unsubscribe') || 'Unsubscribe', color: 'destructive', onPress: handleFeatureUnsubscribe },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-        </View>
+            </View>
+        </>
     );
 };
 

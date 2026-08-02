@@ -75,13 +75,6 @@ const en: LocaleDict = {
     },
   },
 
-  fedcm: {
-    status: {
-      signedInAs: 'Signed in as {{name}}',
-      signedOut: 'Signed out',
-    },
-  },
-
   authorize: {
     title: 'Continue to {{app}}',
     subtitle:
@@ -111,6 +104,13 @@ const en: LocaleDict = {
       'By continuing, {{app}} will be able to sign in with your Oxy account. You can manage connected apps anytime in your Oxy account settings.',
     expiresAt: 'Request expires at {{time}}.',
     signingIn: 'Signing you in…',
+    // Popup delivery reported a failure to the app that opened this window.
+    relayFailedTitle: 'Sign-in could not be completed',
+    // A request that asked to be completed without showing anything
+    // (`prompt=none`). Oxy never authorizes without asking, so it is refused.
+    silentUnsupportedTitle: 'Oxy always asks you first',
+    silentUnsupportedDesc:
+      'This app asked to sign you in without showing you anything. Oxy does not authorize access that way. Go back to the app and start sign-in again.',
     requestTitle: 'Authorization request',
     requestUnavailable: "We couldn't load the details of this request.",
     completeTitle: 'Authorization complete',
@@ -122,6 +122,25 @@ const en: LocaleDict = {
     noRequestDesc:
       'Open the app you want to sign in to and try again. The authorization request starts there.',
     goToSignIn: 'Go to sign in',
+    // The Commons lane: approving the authorization directly in Oxy, without
+    // signing in on this site first. Progress and headline copy come from
+    // `@oxyhq/core`'s shared `accountSwitcher.*` dictionary, so only the
+    // lane-specific strings live here.
+    commons: {
+      description:
+        'Approve this in Oxy on your phone. You do not need to sign in here first.',
+      openOnThisDevice: 'I have Oxy on this device',
+      signInHere: 'Sign in on this device instead',
+      errors: {
+        startFailed: "We couldn't start this request. Please try again.",
+        requestExpired: 'This request expired before it was approved.',
+        unreachable: "We lost contact with this request and couldn't tell whether it was approved.",
+        finalizeFailed:
+          "We couldn't complete this authorization. Start a new request to try again.",
+        redirectMismatch:
+          "This authorization couldn't be delivered safely. Go back to the app and start again.",
+      },
+    },
   },
 };
 

@@ -10,7 +10,7 @@
  * ```ts
  * import { OxyServices, oxyClient } from '@oxyhq/core';
  *
- * const user = await oxyClient.signIn(publicKey);
+ * const user = await oxyClient.getCurrentUser();
  * ```
  *
  * Every export below is NOMINAL — no `export *`, no barrels, no compat shims.
@@ -23,7 +23,7 @@ import './crypto/polyfill';
 // ---------------------------------------------------------------------------
 // API client
 // ---------------------------------------------------------------------------
-export { OxyServices, OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices';
+export { OxyServices, AssetUrlResolutionError, OxyAuthenticationError, OxyAuthenticationTimeoutError, ServiceAssetMetadataError } from './OxyServices';
 export { OXY_CLOUD_URL, oxyClient } from './OxyServices';
 export type { LinkedHttpClient } from './OxyServices.base';
 // Auth-refresh handler surface — consumed by `@oxyhq/services`'s OxyContext to
@@ -34,44 +34,61 @@ export type { AuthRefreshReason, AuthRefreshHandler } from './HttpService';
 // ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
-export { AuthManager, createAuthManager } from './AuthManager';
+export {
+  ServiceCredentialMismatchError,
+} from './mixins/OxyServices.auth';
+export {
+  getCommonsApprovalBlockingReason,
+  parseCommonsApprovalExpiresAt,
+} from './utils/commonsApproval';
+// Automatic "Sign in with Oxy" delivery selection — ONE pure decision that maps
+// the caller's facts onto exactly one primary route (open Commons / await push / QR).
+export { selectCommonsDelivery, pushTargetsFromDelivery, commonsDeliveryPlatform } from './utils/commonsDelivery';
 export type {
-    StorageAdapter,
-    AuthStateChangeCallback,
-    AuthMethod,
-    AuthManagerConfig,
-} from './AuthManager';
-export type {
-    AuthManagerAccount,
-    RestoreFromCookiesResult,
-    RestoreFromCookiesOptions,
-    SwitchAuthuserResult,
-} from './AuthManagerTypes';
-
-export { CrossDomainAuth, createCrossDomainAuth } from './CrossDomainAuth';
-export type { CrossDomainAuthOptions } from './CrossDomainAuth';
-export type { FedCMAuthOptions, FedCMConfig, AuthorizedApp } from './mixins/OxyServices.fedcm';
-export type { SilentAuthOptions } from './mixins/OxyServices.silent';
-export type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
-export { ServiceCredentialMismatchError } from './mixins/OxyServices.auth';
-export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
+    CommonsDeliveryFacts,
+    CommonsDeliveryPlatform,
+    CommonsDeliveryRoute,
+} from './utils/commonsDelivery';
+export type { ServiceTokenResponse, OAuthUserInfoResponse } from './mixins/OxyServices.auth';
 // "Sign in with Oxy" — handoff (Workstream C)
 export type {
     CommonsSignInHandle,
     CommonsSignInStatus,
+    CommonsSignInPurpose,
+    CommonsOAuthContext,
     CommonsApprovalInfo,
+    CommonsApprovalSubjectAccount,
     CommonsSignInActionResult,
+    CommonsOAuthFinalizeResult,
+    CommonsDeliveryResult,
 } from './mixins/OxyServices.auth';
+// `denyCommonsSignIn`'s reason parameter is typed by `CommonsDenyReason`, which
+// is a WIRE contract shared with the API (the request schema of
+// `POST /auth/session/deny/:authorizeCode` and the persisted
+// `AuthSession.deniedReason` enum read the same declaration). It lives in
+// `@oxyhq/contracts` and is NOT re-exported here: consumers import API contract
+// types directly from `@oxyhq/contracts`, per the package boundary rule.
+// Push-token registration (Expo push tokens — never raw APNs/FCM device tokens).
+export type {
+    PushTokenPlatform,
+    RegisterPushTokenInput,
+} from './mixins/OxyServices.notifications';
 export type { ServiceApp, ServiceActingAsVerification } from './mixins/OxyServices.utility';
 export type {
     ContactDiscoveryMatch,
     ContactDiscoveryResponse,
 } from './mixins/OxyServices.contacts';
 export type {
+    InitDeviceTransferResult,
+    DeviceTransferOutcome,
+} from './mixins/OxyServices.deviceTransfer';
+export type {
     BulkFollowEntry,
     BulkFollowResult,
     BulkUnfollowEntry,
     BulkUnfollowResult,
+    FollowMutationResult,
+    ViewerGraph,
 } from './mixins/OxyServices.user';
 export { OxyAppDataIdentifierError } from './mixins/OxyServices.appData';
 
@@ -105,6 +122,7 @@ export type {
 // ---------------------------------------------------------------------------
 export type {
     AccountKind,
+    OrganizationCategory,
     AccountRelationship,
     AccountRole,
     AccountMemberStatus,
@@ -146,32 +164,15 @@ export type {
     ApplicationUsageStats,
 } from './mixins/OxyServices.accounts';
 
+export { ORGANIZATION_CATEGORIES } from './mixins/OxyServices.accounts';
+
 // ---------------------------------------------------------------------------
-// Reputation (Oxy Trust: ledger, balances, disputes, rules, influence)
+// Reputation (Oxy Trust: ledger, balances, disputes, rules, influence).
+// The whole type family — the closed value sets, the two balance views and the
+// `isFullReputationBalance` narrowing guard, the ledger/dispute/rule/leaderboard
+// shapes, and the write-endpoint inputs — is owned by `@oxyhq/contracts`, which
+// the API's serializers are validated against. Import them from there.
 // ---------------------------------------------------------------------------
-export type {
-    ReputationCategory,
-    TrustTier,
-    ReputationTransactionStatus,
-    ReputationTargetEntityType,
-    ReputationDisputeStatus,
-    ReputationInfluenceContext,
-    ReputationTransaction,
-    ReputationBalanceBreakdown,
-    ReputationInfluence,
-    ReputationReliability,
-    ReputationBalance,
-    ReputationDispute,
-    ReputationRule,
-    ReputationLeaderboardEntry,
-    ReputationInfluenceResult,
-    ReverseReputationTransactionResult,
-    AwardReputationInput,
-    CreateReputationDisputeInput,
-    ResolveReputationDisputeInput,
-    UpsertReputationRuleInput,
-    ReverseReputationTransactionInput,
-} from './mixins/OxyServices.reputation';
 
 // ---------------------------------------------------------------------------
 // Self-sovereign identity (DID, signed records, auth-method ↔ VM mapping,
@@ -188,6 +189,9 @@ export type {
     VerifyRecordResult,
     VerifyDomainResult,
     RemoveDomainResult,
+    RotateKeyProof,
+    RotateKeyOptions,
+    RotateKeyResult,
 } from './mixins/OxyServices.identity';
 
 // ---------------------------------------------------------------------------
@@ -246,29 +250,35 @@ export type {
 } from './models/session';
 
 // ---------------------------------------------------------------------------
-// Multi-account refresh-all (Google-style)
-// ---------------------------------------------------------------------------
-export type {
-    RefreshAllResponse,
-    RefreshAllAccount,
-    RefreshAllAccountUser,
-    RefreshCookieResponse,
-} from './models/interfaces';
-
-// ---------------------------------------------------------------------------
 // Crypto / identity
 // ---------------------------------------------------------------------------
 export {
     KeyManager,
     IdentityAlreadyExistsError,
     IdentityPersistError,
+    IdentityUnavailableError,
 } from './crypto/keyManager';
-export type { KeyPair } from './crypto/keyManager';
-export { SignatureService, signedRecordSigningInput, computeRecordId } from './crypto/signatureService';
-export type { SignedMessage, AuthChallenge, SignedRecordSigningFields } from './crypto/signatureService';
-export { canonicalize } from './crypto/canonicalJson';
+export type { KeyPair, IdentityStatus, IdentityRecoveryResult } from './crypto/keyManager';
+export {
+    readIdentityMarker,
+    updateIdentityMarker,
+} from './crypto/identityMarker';
+export type { IdentityMarker } from './crypto/identityMarker';
+export { SignatureService } from './crypto/signatureService';
+export type { SignedMessage, AuthChallenge } from './crypto/signatureService';
 export { RecoveryPhraseService } from './crypto/recoveryPhrase';
-export type { RecoveryPhraseResult } from './crypto/recoveryPhrase';
+export type { RecoveryPhraseResult, PendingIdentityResult, BackupMaterial } from './crypto/recoveryPhrase';
+
+// Low-level crypto primitives (b3 Phase 0 — encrypted backup + device transfer)
+export { hkdfSha256 } from './crypto/kdf';
+export {
+    encryptAead,
+    decryptAead,
+    AEAD_KEY_LENGTH,
+    AEAD_NONCE_LENGTH,
+} from './crypto/aead';
+export type { AeadResult } from './crypto/aead';
+export { deriveSharedSecret } from './crypto/ecdh';
 
 // ---------------------------------------------------------------------------
 // Devices
@@ -322,9 +332,13 @@ export type {
     AssetLinkRequest,
     AssetUnlinkRequest,
     AssetUrlResponse,
+    BatchFileAccessEntry,
+    BatchFileAccessResponse,
     AssetDeleteSummary,
     AssetUpdateVisibilityRequest,
     AssetUpdateVisibilityResponse,
+    ServiceAssetMetadata,
+    ServiceAssetMetadataBySha,
     AccountStorageCategoryUsage,
     AccountStorageUsageResponse,
     SecurityEventType,
@@ -332,29 +346,34 @@ export type {
     SecurityActivity,
     SecurityActivityResponse,
     AssetUploadProgress,
-    DeviceSession,
-    DeviceSessionsResponse,
-    DeviceSessionLogoutResponse,
+    DeviceLinkedSession,
+    DeviceLinkedSessionsResponse,
+    DeviceLinkedSessionLogoutResponse,
     UpdateDeviceNameResponse,
 } from './models/interfaces';
 export { SECURITY_EVENT_SEVERITY_MAP } from './models/interfaces';
 
 // Topic enums + type
 export { TopicType, TopicSource } from './models/Topic';
-export type { TopicData, TopicTranslation } from './models/Topic';
+export type { TopicData, TopicTranslation, TopicListResult } from './models/Topic';
 
 // ---------------------------------------------------------------------------
 // Languages
 // ---------------------------------------------------------------------------
 export {
     SUPPORTED_LANGUAGES,
+    FALLBACK_LOCALE,
+    getBaseLanguage,
+    normalizeLocale,
+    isSupportedLocale,
     getLanguageMetadata,
     getLanguageName,
     getNativeLanguageName,
-    normalizeLanguageCode,
     isRTLLocale,
+    getUserLanguages,
+    getPrimaryLanguage,
 } from './utils/languageUtils';
-export type { LanguageMetadata } from './utils/languageUtils';
+export type { SupportedLanguage } from './utils/languageUtils';
 
 // ---------------------------------------------------------------------------
 // Platform detection
@@ -366,6 +385,7 @@ export {
     isNative,
     isIOS,
     isAndroid,
+    isWebBrowser,
 } from './utils/platform';
 export type { PlatformOS } from './utils/platform';
 
@@ -420,14 +440,6 @@ export {
 } from './shared/utils/networkUtils';
 export type { CircuitBreakerState, CircuitBreakerConfig } from './shared/utils/networkUtils';
 
-export {
-    isDev,
-    debugLog,
-    debugWarn,
-    debugError,
-    createDebugLogger,
-} from './shared/utils/debugUtils';
-
 // ---------------------------------------------------------------------------
 // i18n
 // ---------------------------------------------------------------------------
@@ -437,6 +449,7 @@ export { translate } from './i18n';
 // API request / URL helpers
 // ---------------------------------------------------------------------------
 export {
+    buildQueryParams,
     buildSearchParams,
     buildUrl,
     buildPaginationParams,
@@ -444,6 +457,8 @@ export {
 } from './utils/apiUtils';
 export type {
     PaginationParams,
+    FollowGraphParams,
+    FollowGraphSort,
     ApiResponse,
     ErrorResponse,
 } from './utils/apiUtils';
@@ -464,9 +479,16 @@ export {
     EMAIL_REGEX,
     USERNAME_REGEX,
     PASSWORD_REGEX,
+    MAX_DISPLAY_NAME_LENGTH,
+    DISPLAY_NAME_INVALID_MESSAGE,
     isValidEmail,
     isValidUsername,
     isValidPassword,
+    isValidDisplayName,
+    DISPLAY_NAME_ALLOWED_SCRIPTS,
+    DISPLAY_NAME_DISALLOWED_SOURCE,
+    DISPLAY_NAME_ORPHANED_MARK_SOURCE,
+    DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE,
     isRequiredString,
     isRequiredNumber,
     isRequiredBoolean,
@@ -484,20 +506,34 @@ export {
 } from './utils/validationUtils';
 
 // ---------------------------------------------------------------------------
-// Logging
+// Text normalization
+// ---------------------------------------------------------------------------
+export {
+    normalizeInlineText,
+    normalizeMultilineText,
+} from './utils/textNormalization';
+
+// ---------------------------------------------------------------------------
+// Logging — the ecosystem-wide chokepoint (also at subpath `@oxyhq/core/logger`)
 // ---------------------------------------------------------------------------
 export {
     logger,
+    createLogger,
+    configureLogger,
+    getLoggerConfig,
+    resetLoggerConfig,
+    consoleSink,
+    isDev,
+} from './logger';
+export type {
+    Logger,
     LogLevel,
-    logAuth,
-    logApi,
-    logSession,
-    logUser,
-    logDevice,
-    logPayment,
-    logPerformance,
-} from './utils/loggerUtils';
-export type { LogContext } from './utils/loggerUtils';
+    EmittableLogLevel,
+    LogContext,
+    LogEntry,
+    LogSink,
+    LoggerConfig,
+} from './logger';
 
 // ---------------------------------------------------------------------------
 // Avatars
@@ -513,41 +549,25 @@ export {
     getAccountDisplayName,
     getAccountFallbackHandle,
     formatPublicKeyHandle,
-    mergeAccountsFromRefreshAll,
     getAccountColor,
 } from './utils/accountUtils';
 export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 
 // ---------------------------------------------------------------------------
-// Cross-domain SSO infrastructure
+// Registrable-domain + central-IdP-apex helpers.
+//
+// `registrableApex` (eTLD+1) is consumed via the `@oxyhq/core/server`
+// re-export by `packages/api/src/utils/sameSite.ts` for same-site origin
+// checks; `CENTRAL_IDP_APEX` by `server/cors.ts`'s `createOxyCors` (auto-allows
+// `*.oxy.so`).
 // ---------------------------------------------------------------------------
-export { autoDetectAuthWebUrl, registrableApex } from './utils/fapiAutoDetect';
+export { registrableApex } from './utils/registrableApex';
+export { CENTRAL_IDP_APEX } from './utils/authWebUrl';
 
-// Central cross-domain SSO (opaque single-use code bounce via auth.oxy.so)
-export { CENTRAL_AUTH_URL, CENTRAL_IDP_APEX, resolveCentralAuthUrl } from './utils/authWebUrl';
-export { parseSsoReturnFragment, consumeSsoReturn } from './utils/ssoReturn';
-export type { SsoReturnKind, SsoReturnResult, ConsumeSsoReturnDeps } from './utils/ssoReturn';
-export { generateSsoState } from './mixins/OxyServices.sso';
-
-// SSO bounce — per-origin sessionStorage keys, bounce URL builder, predicates
-export {
-    SSO_CALLBACK_PATH,
-    SSO_GUARD_TTL_MS,
-    ssoStateKey,
-    ssoGuardKey,
-    ssoDestKey,
-    ssoNoSessionKey,
-    ssoAttemptedKey,
-    ssoPriorSessionKey,
-    ssoCallbackBootstrapKey,
-    ssoNavigate,
-    getSsoCallbackBootstrapScript,
-    buildSsoBounceUrl,
-    isCentralIdPOrigin,
-    guardActive,
-    allowSsoBounce,
-} from './utils/ssoBounce';
-export type { SsoBounceGate } from './utils/ssoBounce';
+// WebAuthn relying-party origin guard (client side). Mirrors the server's
+// `isOxyApexOrigin` so consumers can decide whether to offer passkey UI on the
+// current page (first-party Oxy origin / loopback only).
+export { isOxyRpOrigin } from './utils/webauthnOrigin';
 
 export { runColdBoot } from './utils/coldBoot';
 export type {
@@ -558,6 +578,159 @@ export type {
     ColdBootOutcome,
     RunColdBootOptions,
 } from './utils/coldBoot';
+
+// ---------------------------------------------------------------------------
+// OAuth 2.0 Authorization Code + PKCE helpers ("Sign in with Oxy" third party).
+// Standard OAuth against auth.oxy.so/authorize — no FedCM/cookies/SSO bounce.
+// ---------------------------------------------------------------------------
+export {
+    buildOAuthAuthorizeUrl,
+    computeCodeChallenge,
+    generateOAuthState,
+    generatePkcePair,
+    DEFAULT_OAUTH_SCOPE,
+    OXY_AUTHORIZE_URL,
+    OXY_OAUTH_STATE_STORAGE_KEY,
+    OXY_OAUTH_CODE_VERIFIER_STORAGE_KEY,
+    OXY_OAUTH_REDIRECT_URI_STORAGE_KEY,
+    OXY_OAUTH_RETURN_PATH_STORAGE_KEY,
+    normalizeOAuthRedirectUri,
+    canonicalizeOAuthRedirectUri,
+    persistOAuthHandshake,
+    readOAuthHandshake,
+    clearOAuthHandshake,
+    persistOAuthReturnPath,
+    consumeOAuthReturnPath,
+} from './utils/oauthPkce';
+export type { PkcePair, BuildOAuthAuthorizeUrlParams } from './utils/oauthPkce';
+
+export {
+    isLoopbackOrigin,
+    isOfficialWebOrigin,
+    isAllowedDeviceJoinOrigin,
+} from './utils/officialOrigins';
+
+// ---------------------------------------------------------------------------
+// Session sync (device-scoped multi-account session client)
+// ---------------------------------------------------------------------------
+export { SessionClient } from './session/SessionClient';
+export type { TokenTransport, SessionClientHost, SessionClientOptions, DeviceCredential, SessionStateOrigin } from './session/SessionClient';
+// The injectable socket factory type: consumers that bundle socket.io-client
+// (services/auth-sdk) pass its `io` export as `socketFactory` so realtime sync
+// never relies on core's lazy dynamic import of a bare specifier.
+export type { SocketIOFactory, MinimalSocket } from './session/socketLoader';
+
+// Shared SessionClient integration layer: the host adapter, the pure
+// DeviceSessionState projection helpers, and the client factory are defined
+// ONCE here so every `@oxyhq/services` platform variant reuses them instead of
+// duplicating a local copy. Each consumer supplies its own `TokenTransport`
+// (native vs. web mint strategies differ) to `createSessionClient`.
+export { createSessionClientHost } from './session/sessionClientHost';
+export { createSessionClient } from './session/createSessionClient';
+export {
+    deviceStateToClientSessions,
+    activeSessionIdOf,
+    activeUserOf,
+    accountIdsOf,
+} from './session/projectSessionState';
+
+// Unified account-list projection (THE single source of truth for the account
+// chooser: device sign-ins ∪ account graph, deduped by accountId). Pure +
+// I/O-free — the caller hydrates profiles via `getUsersByIds`. Shared by
+// `@oxyhq/services` and auth.oxy.so so the list can't diverge.
+export {
+    projectSwitchableAccounts,
+    switchableAccountIds,
+} from './session/accountProjection';
+export type {
+    SwitchableAccount,
+    SwitchableAccountUser,
+    ProjectSwitchableAccountsInput,
+} from './session/accountProjection';
+
+// Headless controller for the unified account dialog. Framework-agnostic
+// state machine + subscribe/getSnapshot store (bind via `useSyncExternalStore`)
+// — sign-in is passkey (WebAuthn) or the Commons QR / shared-keychain handoff;
+// password, social login, and 2FA were removed ecosystem-wide. Reuses
+// `SessionClient.switchAccount` / `oxyServices.switchToAccount` for the uniform
+// switch and the existing device-flow methods for sign-in.
+export {
+    AccountDialogController,
+    createAccountDialogController,
+} from './session/accountDialogController';
+export type {
+    AccountDialogControllerOptions,
+    AccountDialogSnapshot,
+    AccountDialogView,
+    CommonsAvailability,
+    PopupWindowHandle,
+    SignInFlowPhase,
+    SignInFlowState,
+    SignInProgress,
+} from './session/accountDialogController';
+
+// ---------------------------------------------------------------------------
+// Device-first session machinery (zero-cookie transport).
+// Persisted auth-state store, the unified re-mint handler + scheduler, and the
+// cold-boot runner. Built ON the `runColdBoot` primitive + `SessionClient`. The
+// device credential is `deviceId` + `deviceSecret`; the access token is re-minted
+// via `POST /session/device/token`.
+// ---------------------------------------------------------------------------
+export {
+    createWebAuthStateStore,
+    createNativeAuthStateStore,
+    createMemoryAuthStateStore,
+    AUTH_STATE_STORAGE_KEY,
+} from './session/authStateStore';
+export type {
+    PersistedAuthState,
+    AuthStateStore,
+    NativeKeyValueStorage,
+} from './session/authStateStore';
+
+// Identity-bound sessions (the identity vault). The pin is the durable
+// `{publicKey, accountId}` binding between this device's PRIMARY identity key
+// and the account it authenticates as; it is what keeps such a client from
+// following the device's mutable `activeAccountId`.
+export {
+    createWebIdentityPinStore,
+    createNativeIdentityPinStore,
+    createMemoryIdentityPinStore,
+    identityPinMatches,
+    IDENTITY_PIN_STORAGE_KEY,
+} from './session/identityPin';
+export type { IdentityPin, IdentityPinStore } from './session/identityPin';
+export {
+    resolveIdentityPin,
+    establishIdentitySession,
+} from './session/identitySession';
+export type {
+    IdentityBinding,
+    IdentityRequestOptions,
+    EstablishedIdentitySession,
+} from './session/identitySession';
+// The typed `401 account_not_on_device` from a PINNED device-secret mint: the
+// pinned account left this device's session set, so the caller re-establishes
+// the identity session instead of dropping a healthy device credential.
+export { AccountNotOnDeviceError } from './mixins/OxyServices.deviceBoot';
+
+export {
+    refreshPersistedSession,
+    refreshDeviceSecretArm,
+    createAuthRefreshHandler,
+    installAuthRefreshHandler,
+    startTokenRefreshScheduler,
+    TOKEN_REFRESH_LEAD_MS,
+} from './session/refresh';
+export type { RefreshDeps, TokenRefreshSchedulerHandle, DeviceSecretMintOutcome } from './session/refresh';
+
+export { runSessionColdBoot } from './boot/sessionColdBoot';
+export type {
+    RunSessionColdBootOptions,
+    SessionMode,
+    SignedOutReason,
+    DeviceBootSession,
+} from './boot/sessionColdBoot';
 
 // API response contracts (request/response Zod schemas + inferred types) live in
 // `@oxyhq/contracts` — the single source of truth shared by the backend and every

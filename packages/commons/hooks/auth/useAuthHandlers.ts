@@ -2,11 +2,14 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import type { OxyServices, User } from '@oxyhq/core';
-import { KeyManager } from '@oxyhq/core';
-import { useAuthStore } from '@oxyhq/services';
+import { KeyManager, logger } from '@oxyhq/core';
+import { useAuthStore, useUpdateProfile } from '@oxyhq/services';
+import { requestNotificationPermission } from '@oxyhq/services/notifications';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { isNetworkOrTimeoutError, extractAuthErrorMessage, handleAuthError } from '@/utils/auth/errorUtils';
+import { registerVaultPushToken } from '@/lib/notifications/push-registration';
 import { STORE_UPDATE_DELAY_MS } from '@/constants/auth';
+import { useTranslation } from '@/lib/i18n';
 
 /**
  * Check if running in Expo Go
@@ -50,6 +53,8 @@ export function useAuthHandlers({
   isAuthenticated,
 }: UseAuthHandlersOptions) {
   const router = useRouter();
+  const { t } = useTranslation();
+  const updateProfile = useUpdateProfile();
   const [isRequestingNotifications, setIsRequestingNotifications] = useState(false);
   
   // Constants for retry logic
@@ -111,7 +116,7 @@ export function useAuthHandlers({
    * 
    * Updates the auth store and navigates to home screen on success
    */
-  const handleSignIn = useCallback(async () => {
+  const completeSignIn = useCallback(async (options?: { navigateOnSuccess?: boolean }): Promise<boolean> => {
     setSigningIn(true);
     setAuthError(null);
 
@@ -120,11 +125,22 @@ export function useAuthHandlers({
 
     // The session sign-in requires the device's public key as the identity
     // credential; resolve it from the local KeyManager before authenticating.
-    const publicKey = await KeyManager.getPublicKey();
-    if (!publicKey) {
-      setAuthError('No identity found on this device.');
+    // `getPublicKey()` now THROWS `IdentityUnavailableError` when storage is
+    // locked/unreadable (as opposed to returning `null` for a genuine absence) —
+    // catch it so a momentarily-locked keystore surfaces a retriable error
+    // rather than the misleading "No identity found on this device".
+    let publicKey: string | null;
+    try {
+      publicKey = await KeyManager.getPublicKey();
+    } catch (error: unknown) {
+      setAuthError(extractAuthErrorMessage(error, t('auth.errors.couldNotReadIdentity')));
       setSigningIn(false);
-      return;
+      return false;
+    }
+    if (!publicKey) {
+      setAuthError(t('auth.errors.noIdentityFound'));
+      setSigningIn(false);
+      return false;
     }
 
     // Retry logic for sign-in
@@ -150,11 +166,11 @@ export function useAuthHandlers({
       }
     }
 
-    // If sign-in failed after retries, show error
+    // If connecting the identity failed after retries, show error
     if (!signInSuccess) {
-      setAuthError(extractAuthErrorMessage(lastError, 'Failed to sign in. Please try again.'));
+      setAuthError(extractAuthErrorMessage(lastError, "Couldn't connect your identity. Please try again."));
       setSigningIn(false);
-      return;
+      return false;
     }
 
     // Wait for auth state to be confirmed
@@ -164,14 +180,9 @@ export function useAuthHandlers({
     const usernameToSave = usernameRef.current;
     if (usernameToSave && oxyServices) {
       try {
-        // Check if online before trying to save username
         const offline = await checkIfOffline();
         if (!offline) {
-          const updatedUser = await oxyServices.updateProfile({ username: usernameToSave });
-          // Update authStore so home screen shows username immediately
-          if (updatedUser) {
-            useAuthStore.getState().setUser(updatedUser);
-          }
+          await updateProfile.mutateAsync({ username: usernameToSave });
         }
       } catch (err: unknown) {
         // Log but don't block - username can be set later
@@ -191,46 +202,73 @@ export function useAuthHandlers({
     // Use requestAnimationFrame to ensure state updates are applied before navigation
     await new Promise(resolve => requestAnimationFrame(resolve));
 
-    // Navigate to the post-auth tab shell - use push as per Expo Router standard
-    router.push('/(tabs)/(id)');
-  }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState]);
+    if (options?.navigateOnSuccess !== false) {
+      // Navigate to the post-auth tab shell - use push as per Expo Router standard
+      router.push('/(tabs)/(id)');
+    }
+
+    return true;
+  }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState, updateProfile, t]);
+
+  const handleSignIn = useCallback(async () => {
+    await completeSignIn({ navigateOnSuccess: true });
+  }, [completeSignIn]);
 
   /**
-   * Handle notification permission request and complete onboarding
-   * User should already be authenticated at this point
+   * Handle the notification permission request and complete onboarding.
+   * The user is authenticated by this point (we sign in first if not).
+   *
+   * This is the ONE place Commons prompts for notifications, and it is also
+   * where a fresh grant is turned into a real push registration: without a
+   * registered Expo push token the platform cannot wake this vault, so
+   * "Continue with Oxy" on a desktop would have no way to reach the phone
+   * (issue #691, Phase 4). The root-level `usePushRegistration` re-checks on
+   * every later cold boot — it never prompts, so the user is never asked twice.
    */
   const handleRequestNotifications = useCallback(async () => {
     if (!isAuthenticated) {
-      setAuthError('Please sign in first');
-      return;
+      const signedIn = await completeSignIn({ navigateOnSuccess: false });
+      if (!signedIn || !useAuthStore.getState().isAuthenticated) {
+        return;
+      }
     }
 
+    // Push notifications don't exist in Expo Go (SDK 53+) — skip straight to
+    // the vault rather than prompting for a permission that buys nothing.
     if (isExpoGo()) {
       router.push('/(tabs)/(id)');
       return;
     }
 
+    setIsRequestingNotifications(true);
+    setAuthError(null);
     try {
-      setIsRequestingNotifications(true);
-      setAuthError(null);
-
-      const Notifications: typeof import('expo-notifications') = await import('expo-notifications');
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-
-      if (existingStatus === 'granted') {
-        router.push('/(tabs)/(id)');
-        return;
+      // The SDK adapter shows the system dialog AT MOST once per installation:
+      // an already-granted permission resolves true without a second dialog,
+      // and a denial the OS will no longer let us re-ask about (`canAskAgain:
+      // false`) resolves false without issuing a request the OS would ignore.
+      // Either way a resumed onboarding never re-prompts.
+      const granted = await requestNotificationPermission();
+      if (granted && oxyServices) {
+        // Fire-and-forget: a failed registration costs the user the push
+        // convenience, never their onboarding. The QR handoff still works.
+        void registerVaultPushToken(oxyServices, {
+          name: t('signInApproval.channel.name'),
+          description: t('signInApproval.channel.description'),
+        }).catch((error: unknown) => {
+          logger.warn(
+            '[commons] onboarding push token registration failed',
+            { component: 'useAuthHandlers' },
+            error,
+          );
+        });
       }
-
-      await Notifications.requestPermissionsAsync();
-      router.push('/(tabs)/(id)');
-    } catch (err: unknown) {
-      handleAuthError(err, 'requestNotifications');
-      router.push('/(tabs)/(id)');
     } finally {
       setIsRequestingNotifications(false);
     }
-  }, [isAuthenticated, router, setAuthError]);
+
+    router.push('/(tabs)/(id)');
+  }, [isAuthenticated, router, setAuthError, completeSignIn, oxyServices]);
 
   return {
     handleSignIn,

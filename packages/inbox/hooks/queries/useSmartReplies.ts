@@ -7,8 +7,13 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
+import type { OxyServices } from '@oxyhq/core';
 import { aliaChatCompletion } from '@/services/aliaApi';
+import { aiKeys } from '@/hooks/queries/queryKeys';
+import { parseLlmJson, SmartRepliesSchema } from '@/schemas/aiSchemas';
 import type { Message } from '@/services/emailApi';
+
+type HttpService = OxyServices['httpService'];
 
 interface SmartRepliesResult {
   replies: string[];
@@ -109,7 +114,7 @@ function shouldSkipSmartReplies(message: Message): boolean {
   return sensitivePatterns.some((pattern) => pattern.test(sensitiveText));
 }
 
-async function fetchSmartReplies(message: Message, token: string): Promise<string[]> {
+async function fetchSmartReplies(message: Message, http: HttpService): Promise<string[]> {
   if (shouldSkipSmartReplies(message)) {
     return [];
   }
@@ -117,7 +122,7 @@ async function fetchSmartReplies(message: Message, token: string): Promise<strin
   const prompt = buildPrompt(message);
 
   try {
-    const response = await aliaChatCompletion({
+    const response = await aliaChatCompletion(http, {
       model: 'alia-lite',
       messages: [
         { role: 'system', content: SMART_REPLY_SYSTEM_PROMPT },
@@ -125,27 +130,19 @@ async function fetchSmartReplies(message: Message, token: string): Promise<strin
       ],
       maxTokens: 150,
       temperature: 0.7,
-      token,
     });
 
-    // Parse JSON array from response
-    const trimmed = response.trim();
-    // Handle potential markdown code blocks
-    const jsonStr = trimmed.startsWith('```')
-      ? trimmed.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-      : trimmed;
-
-    const parsed = JSON.parse(jsonStr);
-
-    if (!Array.isArray(parsed) || parsed.length === 0) {
+    // Validate the model's JSON array; a malformed response yields no replies.
+    const parsed = parseLlmJson(response, SmartRepliesSchema);
+    if (!parsed || parsed.length === 0) {
       return [];
     }
 
-    // Filter and clean replies
+    // Clean replies: trim, drop empties, cap at 3 and 80 chars.
     return parsed
       .slice(0, 3)
-      .map((r: unknown) => (typeof r === 'string' ? r.trim() : ''))
-      .filter((r: string) => r.length > 0 && r.length <= 80);
+      .map((r) => r.trim())
+      .filter((r) => r.length > 0 && r.length <= 80);
   } catch {
     return [];
   }
@@ -153,11 +150,10 @@ async function fetchSmartReplies(message: Message, token: string): Promise<strin
 
 export function useSmartReplies(message: Message | null | undefined): SmartRepliesResult {
   const { oxyServices } = useOxy();
-  const token = oxyServices.httpService.getAccessToken() ?? '';
 
   const query = useQuery({
-    queryKey: ['smartReplies', message?._id],
-    queryFn: () => fetchSmartReplies(message!, token),
+    queryKey: aiKeys.smartReplies(message?._id),
+    queryFn: () => fetchSmartReplies(message!, oxyServices.httpService),
     enabled: false,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
     gcTime: 10 * 60 * 1000,

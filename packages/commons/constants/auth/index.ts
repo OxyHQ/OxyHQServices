@@ -46,17 +46,6 @@ export const USERNAME_FALLBACK_MIN = 1000;
 export const USERNAME_FALLBACK_MAX = 9999;
 
 /**
- * Progress messages for creating step
- */
-export const CREATING_PROGRESS_MESSAGES = [
-  'Generating cryptographic keys...',
-  'Creating your identity...',
-  'Setting up your account...',
-];
-
-export const CREATING_SUBTITLE = 'This may take a moment';
-
-/**
  * Recovery phrase constants
  */
 export const RECOVERY_PHRASE_LENGTH = 12;

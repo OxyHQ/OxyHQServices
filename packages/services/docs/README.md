@@ -54,7 +54,7 @@ Oxy services are distributed across specialized domains:
 | Domain | Purpose | Description |
 |--------|---------|-------------|
 | `https://api.oxy.so` | **API** | Main API endpoint for all data operations (users, sessions, social, etc.) |
-| `https://auth.oxy.so` | **Authentication** | Identity provider for SSO, FedCM, login/signup flows |
+| `https://auth.oxy.so` | **Authentication** | OAuth authorize/consent IdP for third-party "Sign in with Oxy"; login/signup/recovery flows |
 | `https://cloud.oxy.so` | **Media** | CDN for static assets, images, videos, and file storage |
 
 ### Usage Examples
@@ -74,9 +74,9 @@ const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
 const imageUrl = 'https://cloud.oxy.so/assets/abc123/stream';
 ```
 
-### Cross-Domain SSO
+### Device-first sessions
 
-Oxy uses FedCM (Federated Credential Management) for seamless cross-domain authentication. When a user signs in at `auth.oxy.so`, they're automatically signed in across all Oxy-powered apps (alia.onl, accounts.oxy.so, etc.) without additional login prompts.
+Sessions are device-first and zero-cookie: `OxyProvider` restores a device's session silently from a first-party `{deviceId, deviceSecret}` (no cookies, no FedCM). Each Oxy app is its own device-first origin — apps on the same device stay in sync in real time via the `session_state` socket event once each is individually signed in. See [device sessions](../../../docs/auth/device-session.md).
 
 ## 📖 Documentation Structure
 

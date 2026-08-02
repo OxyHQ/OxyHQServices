@@ -6,3 +6,4 @@
 # parser choking on Flow syntax.
 [test]
 preload = ["./lib/__tests__/preload.ts"]
+parallel = 1

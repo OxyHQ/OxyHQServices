@@ -17,16 +17,19 @@
  * }
  * ```
  *
- * Cross-domain SSO:
- * - Web: Automatic via FedCM (Chrome 108+, Safari 16.4+)
- * - Native: Automatic via shared Keychain/Account Manager
- * - Manual sign-in: signIn() redirects to the IdP (web) or opens the auth sheet (native)
+ * Session restore (zero cookies):
+ * - Web: this origin's own persisted `{deviceId, deviceSecret}` — a signed-out
+ *   origin stays signed out until the user presses "Continue with Oxy". There is
+ *   no cross-origin silent SSO: the SDK never navigates the tab on its own.
+ * - Native: shared Keychain / app-group identity (Commons)
+ * - Realtime sync: Socket.IO `session_state` on `device:<deviceId>` once authenticated
+ * - Manual sign-in: signIn() opens the in-app account dialog (web + native)
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { useOxy } from '../context/OxyContext';
 import type { User } from '@oxyhq/core';
-import { isWebBrowser } from './useWebSSO';
+import { isWebBrowser } from '../utils/isWebBrowser';
 
 export interface AuthState {
   /** Current authenticated user, null if not authenticated */
@@ -114,7 +117,8 @@ export interface UseAuthReturn extends AuthState, AuthActions {
  * Features:
  * - Zero config: Just wrap with OxyProvider and use
  * - Cross-platform: Same API on native and web
- * - Auto SSO: Web apps automatically check for cross-domain sessions
+ * - Auto session restore: Web apps silently restore via device-secret mint, then
+ *   silent OAuth against the IdP hub; native apps use the shared keychain
  * - Type-safe: Full TypeScript support
  */
 export function useAuth(): UseAuthReturn {
@@ -137,65 +141,33 @@ export function useAuth(): UseAuthReturn {
     getPublicKey,
     showBottomSheet,
     openAvatarPicker,
+    openAccountDialog,
   } = useOxy();
 
   const signIn = useCallback(async (publicKey?: string): Promise<User> => {
-    // Check if we're on the identity provider itself
-    // Only the IdP has local login forms - other apps are client apps
-    const authWebUrl = oxyServices.config?.authWebUrl;
-    let idpHostname = 'auth.oxy.so';
-    if (authWebUrl) {
-      try { idpHostname = new URL(authWebUrl).hostname; } catch { /* malformed URL, use default */ }
-    }
-    const isIdentityProvider = isWebBrowser() &&
-      window.location.hostname === idpHostname;
-
-    // Web (not on IdP): use the tokenless redirect SSO flow. FedCM / silent SSO
-    // already run on page load; an explicit click needs interactive auth.
-    if (isWebBrowser() && !publicKey && !isIdentityProvider) {
-      oxyServices.signInWithRedirect?.({
-        redirectUri: window.location.href,
-      });
-      return new Promise<User>(() => undefined);
-    }
-
-    // Native: Use cryptographic identity
-    // If public key provided, use it directly
+    // Native: sign in directly with the cryptographic identity when a public key
+    // is provided, or an existing keychain identity is found.
     if (publicKey) {
       return oxySignIn(publicKey);
     }
-
-    // Try to get existing identity
-    const hasExisting = await hasIdentity();
-
-    if (hasExisting) {
-      const existingKey = await getPublicKey();
-      if (existingKey) {
-        return oxySignIn(existingKey);
+    if (!isWebBrowser()) {
+      const hasExisting = await hasIdentity();
+      if (hasExisting) {
+        const existingKey = await getPublicKey();
+        if (existingKey) {
+          return oxySignIn(existingKey);
+        }
       }
     }
 
-    // No identity - show auth UI
-    if (showBottomSheet) {
-      showBottomSheet('OxyAuth');
-      // Return a promise that resolves when auth completes
-      return new Promise((_, reject) => {
-        reject(new Error('Please complete sign-in in the auth sheet'));
-      });
-    }
-
-    // Web fallback: navigate to login page on auth domain
-    if (isWebBrowser()) {
-      const authBase = authWebUrl || 'https://accounts.oxy.so';
-      const loginUrl = window.location.hostname.includes('oxy.so')
-        ? '/login'
-        : `${authBase}/login`;
-      window.location.href = loginUrl;
-      return new Promise(() => {}); // Never resolves, page will redirect
-    }
-
-    throw new Error('No authentication method available');
-  }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet, oxyServices]);
+    // Web, or native without a keychain identity: open the unified account dialog
+    // on its sign-in view (device flow / QR / password hand-off). There is NO
+    // automatic navigation to a login page — the device-first cold boot already
+    // restored a session if one existed. The caller reacts to `isAuthenticated`,
+    // so this promise intentionally never resolves.
+    openAccountDialog('signin');
+    return new Promise<User>(() => undefined);
+  }, [oxySignIn, hasIdentity, getPublicKey, openAccountDialog]);
 
   const signOut = useCallback(async (): Promise<void> => {
     await logout();

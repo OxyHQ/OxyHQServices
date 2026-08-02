@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleSheet } from 'react-native';
-import { showBottomSheet } from '@oxyhq/services';
+import { showBottomSheet, useOxy } from '@oxyhq/services';
 import { getNativeLanguageName } from '@oxyhq/core';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
@@ -19,17 +19,20 @@ import type { GroupedItem } from '@/components/sections/types';
  */
 export function LanguageSection() {
   const colors = useColors();
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
+  const { currentLanguage } = useOxy();
 
   const items = useMemo<GroupedItem[]>(() => [{
     id: 'app-language',
     icon: 'translate',
     iconColor: colors.sidebarIconData,
     title: t('security.language.label'),
-    subtitle: getNativeLanguageName(locale) || locale,
+    // Reflect the account's actual primary locale (its native endonym),
+    // which may be a region variant the app UI itself does not ship.
+    subtitle: getNativeLanguageName(currentLanguage),
     onPress: () => showBottomSheet('LanguageSelector'),
     showChevron: true,
-  }], [colors.sidebarIconData, t, locale]);
+  }], [colors.sidebarIconData, t, currentLanguage]);
 
   return (
     <Section title={t('security.sections.language')}>

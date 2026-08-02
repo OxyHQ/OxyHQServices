@@ -13,7 +13,11 @@
  *    references B's envelope as provenance.)
  *  - Replay is blocked by a single-use `CivicNonce` (the QR's nonce) + `exp`.
  *  - Sybil farming is blocked by the shared graph-exclusion test (B must not be
- *    A's puppet: no graph edge, no shared device/IP) + a per-pair cooldown.
+ *    A's puppet: no graph edge, no shared deviceId).
+ *  - Re-confirming the SAME person is IDEMPOTENT: the (attestor→subject) pair
+ *    earns the HIGH-weight award at most once. A repeat (with a fresh QR/nonce)
+ *    is a clean no-op that returns the original award, never a second +25 — so
+ *    `realLifeCount`/personhood counts DISTINCT counterparties, not re-scans.
  *  - B is recorded as the attestor (`createdByUserId`) so B can be SLASHED in
  *    Part B if A's attested action is later found fraudulent.
  *
@@ -22,25 +26,22 @@
  */
 
 import crypto from 'crypto';
+import { and, eq } from 'drizzle-orm';
+import { verifyEnvelopeSignature, type RejectionReason } from '@oxyhq/protocol';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { realLifeAttestationRecordSchema } from '@oxyhq/contracts';
-import { User } from '../../models/User';
-import { ReputationTransaction } from '../../models/ReputationTransaction';
-import CivicNonce from '../../models/CivicNonce';
-import { buildUserDid, parseUserDid } from '../did.service';
-import { isValidObjectId } from '../../utils/validation';
-import {
-  verifyEnvelopeSignature,
-  verifyAndStoreRecord,
-  type SignedRecordSubject,
-  type EnvelopeRejectionReason,
-} from '../signedRecord.service';
+import { getDb } from '../../config/postgres';
+import { isUniqueViolation } from '../../db/pgErrors';
+import { civicNonces } from '../../db/schema/civicNonces';
+import { reputationTransactions } from '../../db/schema/reputationTransactions';
+import { users } from '../../db/schema/users';
+import { isSelfIssuedByUser, parseUserDid } from '../did.service';
+import { verifyAndStoreRecord } from '../signedRecord.service';
 import { isSockPuppetRelation } from './graphExclusion';
 import { reputationService } from '../reputation.service';
 import { REAL_LIFE_ATTESTED_ACTION } from '../../utils/reputation.constants';
 import {
   REAL_LIFE_NONCE_MAX_AGE_MS,
-  REAL_LIFE_PAIR_COOLDOWN_MS,
   REAL_LIFE_EXCLUSION_HOPS,
 } from '../../utils/civic.constants';
 import { logger } from '../../utils/logger';
@@ -57,11 +58,9 @@ export type RealLifeRejectionReason =
   | 'subject_not_found'
   | 'expired'
   | 'nonce_used'
-  | 'pair_cooldown'
   | 'excluded_graph_neighbor'
   | 'excluded_shared_device'
-  | 'excluded_shared_ip'
-  | EnvelopeRejectionReason;
+  | RejectionReason;
 
 export type RealLifeResult =
   | { ok: true; recordId: string; subjectUserId: string; attestorUserId: string; points: number }
@@ -72,22 +71,16 @@ function hashNonce(nonce: string): string {
   return crypto.createHash('sha256').update(`${NONCE_PURPOSE}:${nonce}`).digest('hex');
 }
 
-/** True when an error is a MongoDB duplicate-key (E11000) error. */
-function isDuplicateKeyError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: number }).code === 11000
-  );
-}
+/** The unique index that makes the nonce single-use. */
+const NONCE_HASH_UNIQUE = 'civic_nonces_nonce_hash_key';
 
 /**
  * Atomically claim a single-use nonce. Returns false when it was already used
- * (the unique `nonceHash` index rejects the second insert) — the replay guard.
+ * (the unique `nonce_hash` index rejects the second insert) — the replay guard.
  */
 async function claimNonce(nonce: string, subjectUserId: string, exp: number): Promise<boolean> {
   try {
-    await CivicNonce.create({
+    await getDb().insert(civicNonces).values({
       nonceHash: hashNonce(nonce),
       purpose: NONCE_PURPOSE,
       subjectUserId,
@@ -95,7 +88,7 @@ async function claimNonce(nonce: string, subjectUserId: string, exp: number): Pr
     });
     return true;
   } catch (error) {
-    if (isDuplicateKeyError(error)) {
+    if (isUniqueViolation(error, NONCE_HASH_UNIQUE)) {
       return false;
     }
     throw error;
@@ -104,13 +97,11 @@ async function claimNonce(nonce: string, subjectUserId: string, exp: number): Pr
 
 /** Map a graph-exclusion reason to the matching rejection reason. */
 function exclusionReason(
-  reason: 'self' | 'graph_neighbor' | 'shared_device' | 'shared_ip',
+  reason: 'self' | 'graph_neighbor' | 'shared_device',
 ): RealLifeRejectionReason {
   switch (reason) {
     case 'shared_device':
       return 'excluded_shared_device';
-    case 'shared_ip':
-      return 'excluded_shared_ip';
     case 'self':
       return 'self_attestation';
     default:
@@ -132,8 +123,9 @@ export async function submitRealLifeAttestation(
   }
 
   // B's envelope must be SELF-ISSUED (B signs as the subject; `about` carries A).
-  const attestorDid = buildUserDid(attestorUserId);
-  if (envelope.subject !== attestorDid || envelope.issuer !== attestorDid) {
+  // Account-based: the SDK spells B's DID at the canonical identity apex, which
+  // may differ from the server's `DID_WEB_DOMAIN` anchor for the same account.
+  if (!isSelfIssuedByUser(envelope, attestorUserId)) {
     return { ok: false, reason: 'not_self_issued' };
   }
 
@@ -144,7 +136,7 @@ export async function submitRealLifeAttestation(
   const record = parsedRecord.data;
 
   const subjectUserId = parseUserDid(record.about);
-  if (!subjectUserId || !isValidObjectId(subjectUserId)) {
+  if (!subjectUserId) {
     return { ok: false, reason: 'invalid_subject' };
   }
   if (subjectUserId === attestorUserId) {
@@ -157,25 +149,24 @@ export async function submitRealLifeAttestation(
     return { ok: false, reason: 'expired' };
   }
 
-  const [subjectExists, attestor] = await Promise.all([
-    User.exists({ _id: subjectUserId }),
-    User.findById(attestorUserId).select('publicKey authMethods').lean(),
-  ]);
-  if (!subjectExists) {
+  const [subject] = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, subjectUserId))
+    .limit(1);
+  if (!subject) {
     return { ok: false, reason: 'subject_not_found' };
   }
-  const subject: SignedRecordSubject = {
-    publicKey: attestor?.publicKey,
-    authMethods: attestor?.authMethods,
-  };
 
   // Cheap forgery gate before any expensive graph work (authoritative
   // verification happens again inside verifyAndStoreRecord).
-  if (!verifyEnvelopeSignature(envelope)) {
+  if (!(await verifyEnvelopeSignature(envelope))) {
     return { ok: false, reason: 'bad_signature' };
   }
 
-  // Anti-sybil: B must not be A's puppet (no graph edge, no shared device/IP).
+  // Anti-sybil: B must not be A's puppet (no graph edge, no shared deviceId).
+  // IP is not a signal (no user IPs at rest); deviceId + social graph + the
+  // jury carry the anti-sybil weight for real-life attestation.
   const relation = await isSockPuppetRelation(subjectUserId, attestorUserId, {
     hops: REAL_LIFE_EXCLUSION_HOPS,
   });
@@ -183,16 +174,52 @@ export async function submitRealLifeAttestation(
     return { ok: false, reason: exclusionReason(relation.reason) };
   }
 
-  // Per-pair cooldown: B may attest A at most once per window.
-  const since = new Date(now - REAL_LIFE_PAIR_COOLDOWN_MS);
-  const recentPair = await ReputationTransaction.findOne({
-    userId: subjectUserId,
-    createdByUserId: attestorUserId,
-    actionType: REAL_LIFE_ATTESTED_ACTION,
-    createdAt: { $gt: since },
-  }).lean();
-  if (recentPair) {
-    return { ok: false, reason: 'pair_cooldown' };
+  // Idempotent re-affirmation: the (attestor→subject) pair earns the
+  // HIGH-weight award at most ONCE. If B has already attested A, a repeat is a
+  // clean no-op that returns the ORIGINAL award's points — never a second +25.
+  // Keyed on the pair with NO time window (the simplest guarantee against a
+  // double-award), which also keeps `realLifeCount`/personhood a count of
+  // DISTINCT counterparties. Short-circuiting BEFORE the nonce claim means a
+  // no-op repeat never burns the subject's fresh QR. A same-QR double-tap race
+  // is still serialised by the single-use nonce below (one caller wins the
+  // insert; the other gets `nonce_used`), so only one award is ever created.
+  const [existingPairAward] = await getDb()
+    .select({
+      points: reputationTransactions.points,
+      sourceActionId: reputationTransactions.sourceActionId,
+    })
+    .from(reputationTransactions)
+    .where(
+      and(
+        eq(reputationTransactions.userId, subjectUserId),
+        eq(reputationTransactions.createdByUserId, attestorUserId),
+        eq(reputationTransactions.actionType, REAL_LIFE_ATTESTED_ACTION),
+        eq(reputationTransactions.status, 'active'),
+      ),
+    )
+    .limit(1);
+  if (existingPairAward) {
+    // The award's `sourceActionId` IS the original attestation's content
+    // address — this service is the only writer of this action type and always
+    // sets it — so the repeat reports the SAME address the first scan did. The
+    // lookup deliberately does NOT filter on it being present: narrowing here
+    // would let a row without one fall through to a SECOND +25 award, which is
+    // the one outcome the pair idempotency exists to prevent.
+    const originalRecordId = existingPairAward.sourceActionId;
+    if (originalRecordId === null) {
+      logger.warn('Real-life award has no source record id; repeat scan reports none', {
+        component: 'civic.realLife',
+        subjectUserId,
+        attestorUserId,
+      });
+    }
+    return {
+      ok: true,
+      recordId: originalRecordId ?? '',
+      subjectUserId,
+      attestorUserId,
+      points: existingPairAward.points,
+    };
   }
 
   // Burn the single-use nonce (replay guard) only after the eligibility gates,
@@ -203,11 +230,14 @@ export async function submitRealLifeAttestation(
   }
 
   // Store B's signed attestation on B's chain (authoritative verify + append).
-  const stored = await verifyAndStoreRecord(envelope, subject, attestorUserId);
+  // A `real_life_attestation` must be a v2 (chained) envelope — `oxyStorePolicy`
+  // enforces that — so the returned content address always names a stored row,
+  // and the award below can carry it as durable provenance.
+  const stored = await verifyAndStoreRecord(envelope, attestorUserId);
   if (!stored.ok) {
     return { ok: false, reason: stored.reason };
   }
-  const recordId = stored.record.recordId ?? '';
+  const recordId = stored.record.recordId;
 
   // Award A the HIGH-weight points, recording B as the attestor + emitting the
   // Oxy provenance attestation that references B's envelope.
@@ -219,7 +249,7 @@ export async function submitRealLifeAttestation(
     reason: 'Real-life attestation by a counterparty',
     metadata: { attestorUserId, context: record.context, biometricOk: record.biometricOk ?? false },
     emitAttestation: true,
-    sourceEnvelopeIds: recordId ? [recordId] : [],
+    sourceEnvelopeIds: [recordId],
   });
 
   logger.info('Real-life attestation accepted', {

@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useAuth } from '@oxyhq/auth';
+import { useAuth } from '@oxyhq/services';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Add01Icon, Delete02Icon, Image01Icon } from '@hugeicons/core-free-icons';
+import { toast } from 'sonner';
+import type {Application, CallerAccess} from '@/hooks/use-applications';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { ImageUploadField } from '@/components/ui/image-upload-field';
 import {
   AlertDialog,
@@ -19,17 +22,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { toast } from 'sonner';
 import { getErrorMessage } from '@/lib/api-error';
+import { mergePaymentsScopes } from '@/lib/application-scopes';
 import { stripSensitiveImageUrlQueryParams } from '@/lib/image-upload';
 import {
-  useUpdateApplication,
   useDeleteApplication,
-  type Application,
-  type CallerAccess,
+  useUpdateApplication,
 } from '@/hooks/use-applications';
 
-function arraysEqual(a: string[], b: string[]): boolean {
+function arraysEqual(a: Array<string>, b: Array<string>): boolean {
   if (a.length !== b.length) {
     return false;
   }
@@ -52,17 +53,29 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
   const [name, setName] = useState(application.name);
   const [description, setDescription] = useState(application.description ?? '');
   const [websiteUrl, setWebsiteUrl] = useState(application.websiteUrl ?? '');
+  const [privacyPolicyUrl, setPrivacyPolicyUrl] = useState(application.privacyPolicyUrl ?? '');
+  const [termsUrl, setTermsUrl] = useState(application.termsUrl ?? '');
   const [icon, setIcon] = useState(application.icon ?? '');
-  const [redirectUris, setRedirectUris] = useState<string[]>(application.redirectUris);
+  const [redirectUris, setRedirectUris] = useState<Array<string>>(application.redirectUris);
   const [newRedirectUri, setNewRedirectUri] = useState('');
+  const [paymentsRead, setPaymentsRead] = useState(application.scopes.includes('payments:read'));
+  const [paymentsWrite, setPaymentsWrite] = useState(application.scopes.includes('payments:write'));
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const nextScopes = mergePaymentsScopes(application.scopes, {
+    read: paymentsRead,
+    write: paymentsWrite,
+  });
 
   const isDirty =
     name !== application.name ||
     description !== (application.description ?? '') ||
     websiteUrl !== (application.websiteUrl ?? '') ||
+    privacyPolicyUrl !== (application.privacyPolicyUrl ?? '') ||
+    termsUrl !== (application.termsUrl ?? '') ||
     icon !== (application.icon ?? '') ||
-    !arraysEqual(redirectUris, application.redirectUris);
+    !arraysEqual(redirectUris, application.redirectUris) ||
+    !arraysEqual(nextScopes, application.scopes);
 
   const handleAddRedirectUri = () => {
     const value = newRedirectUri.trim();
@@ -94,10 +107,14 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
           name: name.trim(),
           description: description.trim() || undefined,
           websiteUrl: websiteUrl.trim() || undefined,
+          // Empty string clears the stored legal URL server-side.
+          privacyPolicyUrl: privacyPolicyUrl.trim(),
+          termsUrl: termsUrl.trim(),
           // Empty string clears the logo. Strip credentials defensively before
           // saving because application metadata can be exposed publicly.
           icon: stripSensitiveImageUrlQueryParams(icon),
           redirectUris,
+          scopes: nextScopes,
         },
       });
       toast.success('Application updated');
@@ -164,6 +181,34 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
             value={websiteUrl}
             onChange={(e) => setWebsiteUrl(e.target.value)}
             placeholder="https://example.com"
+            disabled={!canEdit}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="app-privacy-policy" className="text-sm">
+            Privacy policy URL
+          </Label>
+          <Input
+            id="app-privacy-policy"
+            type="url"
+            value={privacyPolicyUrl}
+            onChange={(e) => setPrivacyPolicyUrl(e.target.value)}
+            placeholder="https://example.com/privacy"
+            disabled={!canEdit}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="app-terms" className="text-sm">
+            Terms of service URL
+          </Label>
+          <Input
+            id="app-terms"
+            type="url"
+            value={termsUrl}
+            onChange={(e) => setTermsUrl(e.target.value)}
+            placeholder="https://example.com/terms"
             disabled={!canEdit}
           />
         </div>
@@ -243,6 +288,41 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
             </Button>
           </div>
         )}
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Oxy Pay permissions</h2>
+          <p className="text-sm text-muted-foreground">
+            Grant payments scopes before creating a service credential for Oxy Pay integrations.
+          </p>
+        </div>
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">payments:read</p>
+              <p className="text-xs text-muted-foreground">
+                Read payment intents and webhook deliveries
+              </p>
+            </div>
+            <Switch
+              checked={paymentsRead}
+              onCheckedChange={setPaymentsRead}
+              disabled={!canEdit}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">payments:write</p>
+              <p className="text-xs text-muted-foreground">Create and manage payment intents</p>
+            </div>
+            <Switch
+              checked={paymentsWrite}
+              onCheckedChange={setPaymentsWrite}
+              disabled={!canEdit}
+            />
+          </div>
+        </div>
       </section>
 
       <section className="space-y-3">

@@ -16,7 +16,17 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 // Maximum age for signed requests (5 minutes)
 const MAX_SIGNATURE_AGE_MS = 5 * 60 * 1000;
 
+/** Allow client clocks slightly ahead of the server (device skew). */
+export const MAX_CLOCK_SKEW_MS = 60 * 1000;
+
 export class SignatureService {
+  /**
+   * True when `timestamp` is within `[now - maxAgeMs, now + MAX_CLOCK_SKEW_MS]`.
+   */
+  static isTimestampFresh(timestamp: number, maxAgeMs: number = MAX_SIGNATURE_AGE_MS): boolean {
+    const age = Date.now() - timestamp;
+    return age <= maxAgeMs && age >= -MAX_CLOCK_SKEW_MS;
+  }
   /**
    * Generate a random challenge string
    */
@@ -83,9 +93,7 @@ export class SignatureService {
     signature: string,
     timestamp: number
   ): boolean {
-    // Check timestamp is not too old
-    const now = Date.now();
-    if (now - timestamp > CHALLENGE_TTL_MS) {
+    if (!SignatureService.isTimestampFresh(timestamp, CHALLENGE_TTL_MS)) {
       return false;
     }
 
@@ -103,9 +111,7 @@ export class SignatureService {
     signature: string,
     timestamp: number
   ): boolean {
-    // Check timestamp freshness
-    const now = Date.now();
-    if (now - timestamp > MAX_SIGNATURE_AGE_MS) {
+    if (!SignatureService.isTimestampFresh(timestamp, MAX_SIGNATURE_AGE_MS)) {
       return false;
     }
 
@@ -123,9 +129,7 @@ export class SignatureService {
     signature: string,
     timestamp: number
   ): boolean {
-    // Check timestamp freshness
-    const now = Date.now();
-    if (now - timestamp > MAX_SIGNATURE_AGE_MS) {
+    if (!SignatureService.isTimestampFresh(timestamp, MAX_SIGNATURE_AGE_MS)) {
       return false;
     }
 
@@ -148,6 +152,22 @@ export class SignatureService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Canonicalize a secp256k1 public key to ONE form: uncompressed, lowercased
+   * hex. `isValidPublicKey` accepts the same point in compressed (`02/03…`),
+   * uncompressed (`04…`), or any-case encodings, but the `User.publicKey` unique
+   * index and the conflict/lookup queries are raw-string/case-sensitive. Storing
+   * and comparing the canonical form makes those checks encoding-independent, so
+   * two encodings of the same point can never coexist across accounts.
+   *
+   * @param publicKey - The public key in any valid hex encoding.
+   * @returns The uncompressed, lowercased hex encoding of the same point.
+   * @throws if `publicKey` is not a valid secp256k1 public key.
+   */
+  static canonicalizePublicKey(publicKey: string): string {
+    return ec.keyFromPublic(publicKey, 'hex').getPublic(false, 'hex').toLowerCase();
   }
 
   /**

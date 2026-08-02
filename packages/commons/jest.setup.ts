@@ -1,5 +1,5 @@
 /**
- * Global jest setup for the accounts package.
+ * Global jest setup for the commons package.
  *
  * Keeps test output clean by silencing intentional console.error calls in
  * paths that test error handling, and provides a `__DEV__` global that

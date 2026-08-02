@@ -1,0 +1,10 @@
+<manifest>
+  <!--
+    Intentionally empty. The signature-protected <permission> and the
+    <provider> that hosts the shared identity are declared per-app by the
+    Commons config plugin (`withSharedIdentityProvider.js`), NOT here — only
+    Commons (the identity vault) should host the provider, and its authority is
+    the app's own ${applicationId}.identity. Reader apps add only the matching
+    <uses-permission> via `withSharedIdentityReader.js`.
+  -->
+</manifest>

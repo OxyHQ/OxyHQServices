@@ -31,6 +31,23 @@ export const queryKeys = {
     list: (userIds: string[]) => [...queryKeys.users.lists(), userIds] as const,
     details: () => [...queryKeys.users.all, 'detail'] as const,
     detail: (userId: string) => [...queryKeys.users.details(), userId] as const,
+    /** Viewer-scoped single-profile fetch by user id (`relationship` is viewer-relative). */
+    detailForViewer: (userId: string, viewerId: string) =>
+      [...queryKeys.users.details(), userId, 'viewer', viewerId] as const,
+    /**
+     * Viewer-scoped single-profile fetch by username (`relationship` is
+     * viewer-relative). Username is normalized to `trim().toLowerCase()` here
+     * so the hook key and any external seeder (e.g. Mention's precache) agree
+     * by construction — normalize once, never at call sites.
+     */
+    byUsername: (username: string, viewerId: string) =>
+      [
+        ...queryKeys.users.details(),
+        'username',
+        username.trim().toLowerCase(),
+        'viewer',
+        viewerId,
+      ] as const,
     profile: (sessionId: string) => [...queryKeys.users.details(), sessionId, 'profile'] as const,
   },
 
@@ -71,13 +88,26 @@ export const queryKeys = {
       [...queryKeys.security.all, 'infinite', limit, eventType] as const,
   },
 
+  // Linked authentication methods (passwords, identity keys, passkeys, social)
+  authMethods: {
+    all: ['authMethods'] as const,
+    list: (userId?: string) => [...queryKeys.authMethods.all, 'list', userId || 'current'] as const,
+  },
+
   // Storage usage queries
   storage: {
     all: ['storage'] as const,
     usage: (accountScope?: string) => [...queryKeys.storage.all, 'usage', accountScope] as const,
   },
 
-  // Connected apps (FedCM grants the user has authorized)
+  // User file library (infinite-paginated; owner-scoped so switching the active
+  // account shows that account's files without a manual reset)
+  files: {
+    all: ['files'] as const,
+    list: (ownerId?: string) => [...queryKeys.files.all, 'list', ownerId || 'anonymous'] as const,
+  },
+
+  // Connected apps (OAuth grants the user has authorized)
   connectedApps: {
     all: ['connectedApps'] as const,
     list: () => [...queryKeys.connectedApps.all, 'list'] as const,
@@ -160,6 +190,14 @@ export const invalidateStorageQueries = (queryClient: QueryClient): void => {
 };
 
 /**
+ * Helper to invalidate the user's linked auth-methods list (call after linking
+ * or removing a passkey / password / identity key).
+ */
+export const invalidateAuthMethodsQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.authMethods.all });
+};
+
+/**
  * Helper to invalidate all payments / wallet / subscription queries
  */
 export const invalidatePaymentsQueries = (queryClient: QueryClient): void => {
@@ -171,5 +209,13 @@ export const invalidatePaymentsQueries = (queryClient: QueryClient): void => {
  */
 export const invalidateConnectedAppsQueries = (queryClient: QueryClient): void => {
   queryClient.invalidateQueries({ queryKey: queryKeys.connectedApps.all });
+};
+
+/**
+ * Helper to invalidate the user's file library (all owners). Pass an ownerId via
+ * `queryKeys.files.list(ownerId)` for a scoped invalidation instead.
+ */
+export const invalidateFileQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
 };
 

@@ -12,6 +12,7 @@ import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-tex
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
 import { Button } from '@/components/ui';
 import { useTranslation } from '@/lib/i18n';
+import { persistOnboardingFlow } from '@/hooks/identity/identityStore';
 
 const ROTATING_TEXT_KEYS = [
   'auth.welcome.rotating.humanId',
@@ -107,9 +108,15 @@ export default function WelcomeScreen() {
 
   const handleContinue = useCallback(() => {
     if (termsAccepted) {
+      void persistOnboardingFlow('create');
       router.replace('/(auth)/create-identity');
     }
   }, [termsAccepted, router]);
+
+  const handleRestore = useCallback(() => {
+    void persistOnboardingFlow('import');
+    router.replace('/(auth)/import-identity');
+  }, [router]);
 
   const handleDecline = useCallback(() => {
     router.back();
@@ -188,6 +195,18 @@ export default function WelcomeScreen() {
             {t('auth.welcome.accept')}
           </Button>
         </View>
+
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={handleRestore}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={t('auth.welcome.restore')}
+        >
+          <Text style={[styles.restoreText, { color: textColor }]}>
+            {t('auth.welcome.restore')}
+          </Text>
+        </TouchableOpacity>
       </Animated.View>
     </View>
   );
@@ -243,5 +262,15 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
+  },
+  restoreButton: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  restoreText: {
+    fontSize: 14,
+    fontWeight: '500',
+    opacity: 0.7,
+    textDecorationLine: 'underline',
   },
 });

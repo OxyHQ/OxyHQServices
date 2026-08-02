@@ -2,31 +2,31 @@ import type React from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import {
     View,
-    ScrollView,
     StyleSheet,
     ActivityIndicator,
-    TouchableOpacity,
-    RefreshControl,
     Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { toast } from '@oxyhq/bloom/toast';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { H4, Text } from '@oxyhq/bloom/typography';
+import { Text } from '@oxyhq/bloom/typography';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import {
     getAccountDisplayName,
     getAccountFallbackHandle,
+    getNormalizedUserHandle,
     logger as loggerUtil,
     packageInfo,
 } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
-import Avatar from '../components/Avatar';
+import ProfileSummaryCard from '../components/ProfileSummaryCard';
 import { SettingsIcon } from '../components/SettingsIcon';
-import DeleteAccountModal from '../components/modals/DeleteAccountModal';
+import { presentDeleteAccount } from '../components/modals/DeleteAccountModal';
+import { presentActionSheet } from '../components/surfaces/ActionSheetSurface';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
 import { useUserSubscription } from '../hooks/queries/usePaymentQueries';
 import { useDeviceSessions } from '../hooks/queries/useServicesQueries';
@@ -78,7 +78,7 @@ const formatRelative = (dateString?: string): string => {
  * Replaces AccountOverview + AccountSettings + the per-account half of
  * SessionManagement. Lists ONLY the active user's profile, sessions on this
  * device, and security/destructive actions for THIS account. Multi-account
- * surface lives in {@link AccountMenu} — keep these concerns separate.
+ * surface lives in the unified `OxyAccountDialogScreen` — keep these concerns separate.
  */
 const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -87,6 +87,8 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const bloomTheme = useTheme();
     const { t, locale } = useI18n();
+
+    useSurfaceHeader({ title: t('manageAccount.title') || 'Manage your Oxy Account' });
     const {
         user: contextUser,
         isAuthenticated,
@@ -95,6 +97,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         logout,
         openAvatarPicker,
         accounts,
+        openAccountDialog,
     } = useOxy();
 
     const { data: userFromQuery, isLoading: userLoading } = useCurrentUser({
@@ -112,21 +115,19 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         data: deviceSessions,
         isLoading: deviceSessionsLoading,
         refetch: refetchDeviceSessions,
-        isRefetching: deviceSessionsRefetching,
     } = useDeviceSessions({ enabled: isAuthenticated && !!activeSessionId });
 
-    const signOutDialog = useDialogControl();
-    const signOutAllDevicesDialog = useDialogControl();
-    const removeDeviceDialog = useDialogControl();
-    const downloadDataDialog = useDialogControl();
-    const deleteAccountDialog = useDialogControl();
-
-    const [pendingRemoveDevice, setPendingRemoveDevice] = useState<DeviceSessionRow | null>(null);
     const [removingDeviceId, setRemovingDeviceId] = useState<string | null>(null);
     const [signingOutAllDevices, setSigningOutAllDevices] = useState(false);
     const [signingOut, setSigningOut] = useState(false);
 
-    const displayName = useMemo(() => getAccountDisplayName(user, locale), [user, locale]);
+    const displayName = useMemo(
+        () =>
+            user?.name?.displayName ??
+            getNormalizedUserHandle(user) ??
+            getAccountDisplayName(null, locale),
+        [user, locale],
+    );
     const handle = useMemo(() => getAccountFallbackHandle(user), [user]);
     const avatarUri = useMemo(() => {
         return user?.avatar
@@ -136,6 +137,16 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
 
     const handleSignOut = useCallback(async () => {
         if (signingOut) {
+            return;
+        }
+        const confirmed = await surfaces.confirm({
+            title: t('common.actions.signOut') || 'Sign out',
+            message: t('common.confirms.signOut') || 'Are you sure you want to sign out?',
+            confirmLabel: t('common.actions.signOut') || 'Sign out',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) {
             return;
         }
         setSigningOut(true);
@@ -151,35 +162,55 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         }
     }, [signingOut, logout, t, onClose]);
 
-    const confirmRemoveDevice = useCallback((device: DeviceSessionRow) => {
-        setPendingRemoveDevice(device);
-        removeDeviceDialog.open();
-    }, [removeDeviceDialog]);
-
-    const handleRemoveDevice = useCallback(async () => {
-        if (!pendingRemoveDevice || !activeSessionId) {
+    const confirmRemoveDevice = useCallback(async (device: DeviceSessionRow) => {
+        if (!activeSessionId) {
             return;
         }
-        const target = pendingRemoveDevice;
-        setRemovingDeviceId(target.sessionId);
+        const confirmed = await surfaces.confirm({
+            title: t('manageAccount.confirms.removeDeviceTitle') || 'Remove device',
+            message:
+                t('manageAccount.confirms.removeDevice', { name: device.deviceName })
+                || `Sign out from "${device.deviceName}"?`,
+            confirmLabel: t('common.remove') || 'Remove',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) {
+            return;
+        }
+        setRemovingDeviceId(device.sessionId);
         try {
-            await oxyServices.logoutSession(activeSessionId, target.sessionId);
+            await oxyServices.logoutSession(activeSessionId, device.sessionId);
             await refetchDeviceSessions();
             toast.success(
-                t('manageAccount.toasts.deviceRemoved', { name: target.deviceName })
-                || `Signed out from ${target.deviceName}`,
+                t('manageAccount.toasts.deviceRemoved', { name: device.deviceName })
+                || `Signed out from ${device.deviceName}`,
             );
         } catch (error) {
             loggerUtil.warn('Remove device failed', { component: 'ManageAccountScreen' }, error as unknown);
             toast.error(t('manageAccount.toasts.deviceRemoveFailed') || 'Failed to remove device');
         } finally {
             setRemovingDeviceId(null);
-            setPendingRemoveDevice(null);
         }
-    }, [pendingRemoveDevice, activeSessionId, oxyServices, refetchDeviceSessions, t]);
+    }, [activeSessionId, oxyServices, refetchDeviceSessions, t]);
 
     const handleSignOutAllDevices = useCallback(async () => {
         if (!activeSessionId || signingOutAllDevices) {
+            return;
+        }
+        const otherDeviceCount = ((deviceSessions ?? []) as DeviceSessionRow[]).filter(
+            (device) => !device.isCurrent,
+        ).length;
+        const confirmed = await surfaces.confirm({
+            title: t('manageAccount.confirms.signOutAllDevicesTitle') || 'Sign out of all other devices',
+            message:
+                t('manageAccount.confirms.signOutAllDevices', { count: otherDeviceCount })
+                || `End ${otherDeviceCount} other device session(s)? This won't sign you out here.`,
+            confirmLabel: t('common.actions.signOut') || 'Sign out',
+            cancelLabel: t('common.cancel') || 'Cancel',
+            destructive: true,
+        });
+        if (!confirmed) {
             return;
         }
         setSigningOutAllDevices(true);
@@ -199,7 +230,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         } finally {
             setSigningOutAllDevices(false);
         }
-    }, [activeSessionId, signingOutAllDevices, oxyServices, refetchDeviceSessions, t]);
+    }, [activeSessionId, signingOutAllDevices, deviceSessions, oxyServices, refetchDeviceSessions, t]);
 
     const performDownload = useCallback(
         async (format: 'json' | 'csv') => {
@@ -245,6 +276,9 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
         [oxyServices, user, t],
     );
 
+    // Runs the actual deletion from inside the delete-account surface; it throws
+    // on failure so the surface can surface the error and stay open. Sign-out +
+    // close happen in `handleDeleteAccount` once the surface resolves `true`.
     const handleConfirmDelete = useCallback(
         async (confirmText: string) => {
             if (!user) {
@@ -258,62 +292,70 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                 t('accountOverview.items.deleteAccount.success')
                 || 'Account deleted successfully',
             );
-            deleteAccountDialog.close();
-            await logout();
-            onClose?.();
         },
-        [oxyServices, user, logout, onClose, t, deleteAccountDialog],
+        [oxyServices, user, t],
     );
 
-    const handleDownloadData = useCallback(() => {
+    const handleDownloadData = useCallback(async () => {
         if (!user) {
             toast.error(
                 t('accountOverview.items.downloadData.error') || 'Service not available',
             );
             return;
         }
-        downloadDataDialog.open();
-    }, [user, t, downloadDataDialog]);
+        const format = await presentActionSheet<'json' | 'csv'>({
+            title: t('accountOverview.items.downloadData.confirmTitle') || 'Download account data',
+            message:
+                t('accountOverview.items.downloadData.confirmMessage')
+                || 'Choose the format for your account data export:',
+            options: [
+                { label: 'JSON', value: 'json' },
+                { label: 'CSV', value: 'csv' },
+            ],
+            cancelLabel: t('common.cancel') || 'Cancel',
+        });
+        if (format) {
+            await performDownload(format);
+        }
+    }, [user, t, performDownload]);
 
-    const handleDeleteAccount = useCallback(() => {
+    const handleDeleteAccount = useCallback(async () => {
         if (!user) {
             toast.error(
                 t('accountOverview.items.deleteAccount.error') || 'User not available',
             );
             return;
         }
-        deleteAccountDialog.open();
-    }, [user, t, deleteAccountDialog]);
+        const deleted = await presentDeleteAccount({
+            username: user.username || '',
+            onDelete: handleConfirmDelete,
+            t,
+        });
+        if (deleted) {
+            await logout();
+            onClose?.();
+        }
+    }, [user, t, handleConfirmDelete, logout, onClose]);
 
     if (!isAuthenticated) {
         return (
-            <View className="flex-1 bg-bg">
-                <Header
-                    title={t('manageAccount.title') || 'Manage your Oxy Account'}
-                    onBack={goBack || onClose}
-                    elevation="subtle"
-                />
-                <View style={styles.center}>
+            <>
+                <View className="items-center py-space-40">
                     <Text className="text-text font-medium text-base">
                         {t('common.status.notSignedIn') || 'Not signed in'}
                     </Text>
                 </View>
-            </View>
+            </>
         );
     }
 
     if (userLoading && !user) {
         return (
-            <View className="flex-1 bg-bg">
-                <Header
-                    title={t('manageAccount.title') || 'Manage your Oxy Account'}
-                    onBack={goBack || onClose}
-                    elevation="subtle"
-                />
-                <View style={styles.center}>
+            <>
+                <View className="items-center py-space-40">
                     <ActivityIndicator color={bloomTheme.colors.primary} size="large" />
                 </View>
-            </View>
+            </>
         );
     }
 
@@ -321,54 +363,21 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
     const otherDevices = deviceRows.filter((d) => !d.isCurrent);
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('manageAccount.title') || 'Manage your Oxy Account'}
-                onBack={goBack || onClose}
-                elevation="subtle"
-            />
-            <ScrollView
-                className="flex-1"
-                contentContainerClassName="px-screen-margin pb-space-24"
-                refreshControl={
-                    <RefreshControl
-                        refreshing={deviceSessionsRefetching}
-                        onRefresh={refetchDeviceSessions}
-                        tintColor={bloomTheme.colors.primary}
-                    />
-                }
-            >
+        <>
+            <View className="px-screen-margin pb-space-24">
                 {/* Profile card */}
-                <View className="items-center bg-fill-secondary rounded-radius-20 px-space-20 py-space-24 mb-space-16">
-                    <TouchableOpacity
-                        onPress={openAvatarPicker}
-                        accessibilityRole="button"
-                        accessibilityLabel={t('editProfile.changeAvatar') || 'Change avatar'}
-                        style={styles.avatarTouchable}
-                        className="mb-space-12"
-                    >
-                        <Avatar uri={avatarUri} name={displayName} size={AVATAR_SIZE} />
-                        <View
-                            style={styles.avatarBadge}
-                            className="bg-fill-brand border-border-image"
-                        >
-                            <Ionicons name="camera" size={14} color={bloomTheme.colors.primaryForeground} />
-                        </View>
-                    </TouchableOpacity>
-                    <H4 className="text-text" numberOfLines={1}>
-                        {displayName}
-                    </H4>
-                    {handle ? (
-                        <Text className="text-text-secondary text-sm mt-space-2" numberOfLines={1}>
-                            {user?.username ? `@${handle}` : handle}
-                        </Text>
-                    ) : null}
-                    {user?.email ? (
-                        <Text className="text-text-secondary text-sm mt-space-2" numberOfLines={1}>
-                            {user.email}
-                        </Text>
-                    ) : null}
-                </View>
+                <ProfileSummaryCard
+                    displayName={displayName}
+                    avatarUri={avatarUri}
+                    avatarSize={AVATAR_SIZE}
+                    onAvatarPress={openAvatarPicker}
+                    showCameraBadge
+                    avatarAccessibilityLabel={t('editProfile.changeAvatar') || 'Change avatar'}
+                    lines={[
+                        handle ? (user?.username ? `@${handle}` : handle) : null,
+                        user?.email || null,
+                    ]}
+                />
 
                 {/* Profile section */}
                 <SettingsListGroup title={t('manageAccount.sections.profile') || 'Profile'}>
@@ -384,9 +393,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             t('manageAccount.items.editProfile.subtitle')
                             || 'Name, username, bio, links'
                         }
-                        onPress={() =>
-                            navigate?.('EditProfileField', { field: 'username' })
-                        }
+                        onPress={() => navigate?.('EditProfile')}
                     />
                     <SettingsListItem
                         icon={
@@ -400,9 +407,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             t('manageAccount.items.theme.subtitle')
                             || 'Personalize your Bloom color'
                         }
-                        onPress={() =>
-                            navigate?.('EditProfileField', { field: 'color' })
-                        }
+                        onPress={() => navigate?.('Preferences')}
                     />
                     <SettingsListItem
                         icon={
@@ -539,7 +544,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                                 })
                                 || `End ${otherDevices.length} other device session(s)`
                             }
-                            onPress={() => signOutAllDevicesDialog.open()}
+                            onPress={handleSignOutAllDevices}
                             destructive
                             showChevron={false}
                             disabled={signingOutAllDevices}
@@ -704,7 +709,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                                         || 'Accounts you own or share'
                                     )
                             }
-                            onPress={() => navigate?.('AccountSwitcher')}
+                            onPress={() => openAccountDialog('accounts')}
                         />
                         <SettingsListItem
                             icon={
@@ -897,7 +902,7 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                             t('manageAccount.signOutOfThisAccount')
                             || 'Sign out of this account'
                         }
-                        onPress={() => signOutDialog.open()}
+                        onPress={handleSignOut}
                         destructive
                         showChevron={false}
                         disabled={signingOut}
@@ -920,92 +925,8 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                 </View>
 
                 <View style={styles.footerSpacer} />
-            </ScrollView>
-
-            <Dialog
-                control={signOutDialog}
-                title={t('common.actions.signOut') || 'Sign out'}
-                description={
-                    t('common.confirms.signOut')
-                    || 'Are you sure you want to sign out?'
-                }
-                actions={[
-                    {
-                        label: t('common.actions.signOut') || 'Sign out',
-                        color: 'destructive',
-                        onPress: handleSignOut,
-                    },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={signOutAllDevicesDialog}
-                title={
-                    t('manageAccount.confirms.signOutAllDevicesTitle')
-                    || 'Sign out of all other devices'
-                }
-                description={
-                    t('manageAccount.confirms.signOutAllDevices', {
-                        count: otherDevices.length,
-                    })
-                    || `End ${otherDevices.length} other device session(s)? This won't sign you out here.`
-                }
-                actions={[
-                    {
-                        label: t('common.actions.signOut') || 'Sign out',
-                        color: 'destructive',
-                        onPress: handleSignOutAllDevices,
-                    },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={removeDeviceDialog}
-                title={
-                    t('manageAccount.confirms.removeDeviceTitle') || 'Remove device'
-                }
-                description={
-                    pendingRemoveDevice
-                        ? (t('manageAccount.confirms.removeDevice', {
-                            name: pendingRemoveDevice.deviceName,
-                        })
-                            || `Sign out from "${pendingRemoveDevice.deviceName}"?`)
-                        : ''
-                }
-                actions={[
-                    {
-                        label: t('common.remove') || 'Remove',
-                        color: 'destructive',
-                        onPress: handleRemoveDevice,
-                    },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            <Dialog
-                control={downloadDataDialog}
-                title={
-                    t('accountOverview.items.downloadData.confirmTitle')
-                    || 'Download account data'
-                }
-                description={
-                    t('accountOverview.items.downloadData.confirmMessage')
-                    || 'Choose the format for your account data export:'
-                }
-                actions={[
-                    { label: 'JSON', onPress: () => performDownload('json') },
-                    { label: 'CSV', onPress: () => performDownload('csv') },
-                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-                ]}
-            />
-            {user ? (
-                <DeleteAccountModal
-                    control={deleteAccountDialog}
-                    username={user.username || ''}
-                    onDelete={handleConfirmDelete}
-                    t={t}
-                />
-            ) : null}
-        </View>
+            </View>
+        </>
     );
 };
 
@@ -1014,25 +935,6 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
 // spacing, radius, and typography roles live on Bloom components + NativeWind
 // token classes.
 const styles = StyleSheet.create({
-    center: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    avatarTouchable: {
-        position: 'relative',
-    },
-    avatarBadge: {
-        position: 'absolute',
-        right: 0,
-        bottom: 0,
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 2,
-    },
     footerSpacer: {
         height: 24,
     },

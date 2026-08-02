@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { type Document, Schema } from 'mongoose';
 import {
   REPUTATION_CATEGORIES,
   REPUTATION_TRANSACTION_STATUSES,
@@ -6,7 +6,7 @@ import {
   type ReputationCategory,
   type ReputationTransactionStatus,
   type ReputationTargetEntityType,
-} from '../utils/reputation.constants';
+} from '@oxyhq/contracts';
 
 /**
  * A single immutable entry in the reputation ledger (#217).

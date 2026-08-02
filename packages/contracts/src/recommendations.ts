@@ -51,6 +51,7 @@ export const recommendationSignalWeightsSchema = z
         interest: z.number().min(0).max(10).optional(),
         appBoost: z.number().min(0).max(10).optional(),
         repCandidate: z.number().min(0).max(10).optional(),
+        affinity: z.number().min(0).max(10).optional(),
     })
     .partial();
 
@@ -155,3 +156,54 @@ export const appUserSignalIngestSchema = z
     );
 
 export type AppUserSignalIngest = z.infer<typeof appUserSignalIngestSchema>;
+
+/**
+ * The directed interaction types a consuming app may report between two users.
+ * Each type carries a server-side default weight (see the API's
+ * `AFFINITY_EVENT_WEIGHTS`); a caller may override the applied weight per event.
+ */
+export const appAffinityEventTypeSchema = z.enum([
+    'like',
+    'reply',
+    'boost',
+    'follow',
+    'mention',
+    'profile_view',
+    'quote',
+    'repost',
+]);
+
+export type AppAffinityEventType = z.infer<typeof appAffinityEventTypeSchema>;
+
+/**
+ * One directed interaction event: `fromUserId` interacted with `toUserId`
+ * (`type`) at `occurredAt`. The Oxy affinity-graph folds these into a per-app,
+ * time-decayed directed affinity edge (`fromUserId → toUserId`).
+ *
+ * - `weight` (optional) overrides the per-type default weight for this event.
+ * - `occurredAt` (optional, ISO) is the event time; absent means "now" at ingest.
+ * - `eventId` (optional) makes an event idempotent — a repeated `eventId` for the
+ *   same application is folded at most once (bounded dedup window).
+ */
+export const appAffinityEventSchema = z.object({
+    fromUserId: z.string().trim().min(1),
+    toUserId: z.string().trim().min(1),
+    type: appAffinityEventTypeSchema,
+    weight: z.number().min(0).max(100).optional(),
+    occurredAt: z.string().datetime().optional(),
+    eventId: z.string().trim().min(1).max(200).optional(),
+});
+
+export type AppAffinityEvent = z.infer<typeof appAffinityEventSchema>;
+
+/**
+ * Request body for `POST /app-signals/events` (service token, `signals:write`).
+ *
+ * A non-empty batch (1..1000) of directed interaction events for the requesting
+ * application. Self-edges (`fromUserId === toUserId`) are dropped server-side.
+ */
+export const appAffinityEventsIngestSchema = z.object({
+    events: z.array(appAffinityEventSchema).min(1).max(1000),
+});
+
+export type AppAffinityEventsIngest = z.infer<typeof appAffinityEventsIngestSchema>;

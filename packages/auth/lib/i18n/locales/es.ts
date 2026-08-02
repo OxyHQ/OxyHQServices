@@ -72,13 +72,6 @@ const es: LocaleDict = {
     },
   },
 
-  fedcm: {
-    status: {
-      signedInAs: 'Sesión iniciada como {{name}}',
-      signedOut: 'Sesión cerrada',
-    },
-  },
-
   authorize: {
     title: 'Continuar a {{app}}',
     subtitle:
@@ -110,6 +103,14 @@ const es: LocaleDict = {
       'Al continuar, {{app}} podrá iniciar sesión con tu cuenta de Oxy. Puedes gestionar las apps conectadas cuando quieras en los ajustes de tu cuenta de Oxy.',
     expiresAt: 'La solicitud caduca a las {{time}}.',
     signingIn: 'Iniciando sesión…',
+    // La entrega por ventana emergente informó de un fallo a la app que abrió
+    // esta ventana.
+    relayFailedTitle: 'No se pudo completar el inicio de sesión',
+    // Una solicitud que pedía completarse sin mostrar nada (`prompt=none`). Oxy
+    // nunca autoriza sin preguntarte, así que se rechaza.
+    silentUnsupportedTitle: 'Oxy siempre te pregunta antes',
+    silentUnsupportedDesc:
+      'Esta app pidió iniciar tu sesión sin mostrarte nada. Oxy no autoriza el acceso de esa forma. Vuelve a la app e inicia sesión de nuevo.',
     requestTitle: 'Solicitud de autorización',
     requestUnavailable: 'No pudimos cargar los detalles de esta solicitud.',
     completeTitle: 'Autorización completada',
@@ -121,6 +122,25 @@ const es: LocaleDict = {
     noRequestDesc:
       'Abre la app en la que quieres iniciar sesión e inténtalo de nuevo. La solicitud de autorización empieza ahí.',
     goToSignIn: 'Ir a iniciar sesión',
+    // La vía de Commons: aprobar la autorización directamente en Oxy, sin
+    // iniciar sesión antes en este sitio. El titular y los mensajes de progreso
+    // vienen del diccionario compartido `accountSwitcher.*` de `@oxyhq/core`,
+    // así que aquí solo viven las cadenas propias de esta vía.
+    commons: {
+      description:
+        'Apruébalo en Oxy desde tu móvil. No hace falta que inicies sesión aquí primero.',
+      openOnThisDevice: 'Tengo Oxy en este dispositivo',
+      signInHere: 'Iniciar sesión en este dispositivo',
+      errors: {
+        startFailed: 'No pudimos iniciar esta solicitud. Inténtalo de nuevo.',
+        requestExpired: 'Esta solicitud caducó antes de que se aprobara.',
+        unreachable: 'Perdimos el contacto con esta solicitud y no pudimos saber si se aprobó.',
+        finalizeFailed:
+          'No pudimos completar esta autorización. Inicia una solicitud nueva para volver a intentarlo.',
+        redirectMismatch:
+          'Esta autorización no se pudo entregar de forma segura. Vuelve a la app y empieza de nuevo.',
+      },
+    },
   },
 };
 

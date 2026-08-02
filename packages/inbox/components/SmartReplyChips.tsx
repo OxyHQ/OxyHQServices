@@ -13,15 +13,15 @@ import {
   Platform,
   TouchableOpacity,
 } from 'react-native';
-import { Loading } from '@oxyhq/bloom/loading';
 import { Chip } from '@oxyhq/bloom/chip';
 import * as Skeleton from '@oxyhq/bloom/skeleton';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { AiMail01Icon } from '@hugeicons/core-free-icons';
 
 import { useColors } from '@/constants/theme';
 import { useSmartReplies } from '@/hooks/queries/useSmartReplies';
+import { useInboxPrefs } from '@/contexts/inbox-prefs-context';
 import type { Message } from '@/services/emailApi';
 
 interface SmartReplyChipsProps {
@@ -31,6 +31,7 @@ interface SmartReplyChipsProps {
 
 export function SmartReplyChips({ message, onSelectReply }: SmartReplyChipsProps) {
   const colors = useColors();
+  const { prefs } = useInboxPrefs();
   const [hasRequestedReplies, setHasRequestedReplies] = useState(false);
   const { replies, isLoading, refetch } = useSmartReplies(message);
 
@@ -38,6 +39,11 @@ export function SmartReplyChips({ message, onSelectReply }: SmartReplyChipsProps
     setHasRequestedReplies(true);
     void refetch();
   }, [refetch]);
+
+  // Smart Reply is opt-in; render nothing when the user disabled it.
+  if (!prefs.aiSmartReply) {
+    return null;
+  }
 
   if (!hasRequestedReplies) {
     return (
@@ -95,9 +101,6 @@ export function SmartReplyChips({ message, onSelectReply }: SmartReplyChipsProps
         <Text style={[styles.label, { color: colors.secondaryText }]}>
           Quick replies
         </Text>
-        {isLoading && (
-          <Loading variant="inline" size="small" />
-        )}
       </View>
 
       <View style={styles.chips}>

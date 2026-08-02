@@ -39,4 +39,20 @@ describe('useValidatorInbox', () => {
     expect(getValidatorInbox).toHaveBeenCalledTimes(1);
     expect(result.current.data).toEqual(INBOX);
   });
+
+  it('does not fetch until a session user id resolves', async () => {
+    const getValidatorInbox = jest.fn(async () => INBOX);
+    const getCurrentUserId = jest.fn(() => null);
+    __setOxyState({
+      isAuthenticated: false,
+      user: null,
+      oxyServices: { getValidatorInbox, getCurrentUserId },
+    });
+
+    const { result } = renderHook(() => useValidatorInbox(), { wrapper: makeWrapper() });
+
+    await waitFor(() => expect(result.current.fetchStatus).toBe('idle'));
+    expect(getValidatorInbox).not.toHaveBeenCalled();
+    expect(result.current.isPending).toBe(true);
+  });
 });

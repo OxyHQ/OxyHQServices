@@ -1,13 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import {
     View,
-    ScrollView,
     StyleSheet,
-    Platform,
-    KeyboardAvoidingView,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H4, Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
@@ -15,8 +13,8 @@ import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { IconCircle } from '@oxyhq/bloom/icon-circle';
 import { BenefitList, BenefitRow } from '@oxyhq/bloom/benefit-list';
 import * as Icons from '@oxyhq/bloom/icons';
-import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 
 const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
@@ -26,21 +24,13 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     // Use useOxy() hook for OxyContext values
     const { oxyServices } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('accountVerification.title') || 'Account Verification' });
     const bloomTheme = useTheme();
 
     const [reason, setReason] = useState('');
     const [evidence, setEvidence] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [successMessage, setSuccessMessage] = useState('');
-
-    // Dialog controls
-    const successDialog = useDialogControl();
-
-    const handleSuccessAcknowledged = useCallback(() => {
-        setReason('');
-        setEvidence('');
-        goBack?.();
-    }, [goBack]);
 
     const handleSubmit = useCallback(async () => {
         if (!reason.trim()) {
@@ -60,10 +50,18 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                 evidence.trim() || undefined
             );
 
-            setSuccessMessage(
-                t('accountVerification.successMessage') || `Your verification request has been submitted. Request ID: ${result.requestId}`
-            );
-            successDialog.open();
+            // Acknowledgement surface — dismiss (button OR backdrop) resets and
+            // returns; there is no negative action.
+            await surfaces.confirm({
+                title: t('accountVerification.successTitle') || 'Request Submitted',
+                message:
+                    t('accountVerification.successMessage') || `Your verification request has been submitted. Request ID: ${result.requestId}`,
+                confirmLabel: t('accountVerification.ok') || 'OK',
+                hideCancel: true,
+            });
+            setReason('');
+            setEvidence('');
+            goBack?.();
         } catch (error: unknown) {
             if (__DEV__) {
                 console.error('Failed to submit verification request:', error);
@@ -74,28 +72,14 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
         } finally {
             setIsSubmitting(false);
         }
-    }, [reason, evidence, oxyServices, t, successDialog]);
+    }, [reason, evidence, oxyServices, t, goBack]);
 
     const canSubmit = Boolean(reason.trim()) && !isSubmitting;
 
     return (
-        <KeyboardAvoidingView
-            className="flex-1 bg-bg"
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-            <Header
-                title={t('accountVerification.title') || 'Account Verification'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
+        <>
 
-            <ScrollView
-                className="flex-1 px-screen-margin"
-                showsVerticalScrollIndicator={false}
-                contentContainerClassName="pb-space-32"
-                keyboardShouldPersistTaps="handled"
-            >
+            <View className="px-screen-margin pb-space-32">
                 {/* Hero */}
                 <View className="items-center py-space-24 gap-space-12">
                     <IconCircle icon={Icons.Verified_Stroke2_Corner2_Rounded} />
@@ -185,20 +169,8 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                         {t('accountVerification.note') || 'Note: Verification requests are reviewed manually and may take several days. We will notify you once your request has been reviewed.'}
                     </Text>
                 </View>
-            </ScrollView>
-
-            <Dialog
-                control={successDialog}
-                title={t('accountVerification.successTitle') || 'Request Submitted'}
-                description={successMessage}
-                actions={[
-                    {
-                        label: t('accountVerification.ok') || 'OK',
-                        onPress: handleSuccessAcknowledged,
-                    },
-                ]}
-            />
-        </KeyboardAvoidingView>
+            </View>
+        </>
     );
 };
 

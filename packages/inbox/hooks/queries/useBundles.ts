@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Bundle } from '@/services/emailApi';
 
 export function useBundles() {
   const api = useEmailStore((s) => s._api);
 
   return useQuery<Bundle[]>({
-    queryKey: ['bundles'],
+    queryKey: emailKeys.bundles,
     queryFn: async () => {
       if (!api) throw new Error('Email API not initialized');
       return api.listBundles();

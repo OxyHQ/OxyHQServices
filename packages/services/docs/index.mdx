@@ -6,7 +6,7 @@ order: 0
 
 # @oxyhq/services
 
-The Expo and React Native SDK for the Oxy platform. Ships `OxyProvider`, `useOxy`, 29+ pre-built bottom-sheet screens (auth, profile, security, files, payments, karma, …), and native UI primitives like `OxySignInButton`, `Avatar`, and `LogoIcon`.
+The Expo, React Native, and React Native Web SDK for the Oxy platform. Ships `OxyProvider`, `useOxy`, the unified account dialog (switcher + sign-in), 25+ pre-built bottom-sheet screens (profile, security, files, payments, trust, …), and native UI primitives like `OxySignInButton`, `Avatar`, and `LogoIcon`.
 
 <Badge variant="success">SDK</Badge> <Badge>Expo / RN / Web</Badge>
 
@@ -14,7 +14,7 @@ The Expo and React Native SDK for the Oxy platform. Ships `OxyProvider`, `useOxy
 
 `@oxyhq/services` is the all-in-one mobile SDK. Drop `OxyProvider` at the root of your Expo app and you get sign-in, account management, multi-account switching, file uploads, security screens, and the bottom-sheet navigation system the official Oxy apps use. Authentication state, mutations, and offline queueing are wired through TanStack Query with `networkMode: 'offlineFirst'` and `AsyncStorage`-backed persistence.
 
-For web-only apps see [`@oxyhq/auth`](/developers/docs/auth-sdk). For server / edge runtimes see [`@oxyhq/core`](/developers/docs/core).
+Web apps use this same package through `react-native-web` — there is no separate web auth SDK. For server / edge runtimes see [`@oxyhq/core`](/developers/docs/core).
 
 ## Install
 
@@ -67,7 +67,7 @@ function Shell() {
 
 ### OxyProvider + useOxy
 
-`OxyProvider` owns the same things `WebOxyProvider` does (HTTP client, QueryClient, AuthManager) plus the bottom-sheet route registry, Inter font loader, and image resolver. `useOxy()` returns the full context value; for narrower surfaces use `useAuth()`, `useCurrentUser()`, or the query/mutation hooks directly.
+`OxyProvider` owns the HTTP client, the QueryClient, the device-first session cold boot, and the unified account dialog, plus the bottom-sheet route registry, Inter font loader, and image resolver. `useOxy()` returns the full context value; for narrower surfaces use `useAuth()`, `useCurrentUser()`, or the query/mutation hooks directly.
 
 ### Bottom-sheet navigation
 
@@ -81,7 +81,7 @@ import { showBottomSheet } from '@oxyhq/services';
 </Pressable>
 ```
 
-Built-in routes include `ManageAccount`, `Profile`, `PrivacySettings`, `FileManagement`, `SessionManagement`, `PaymentGateway`, `TrustCenter`, `OxyAuth`, `EditProfileField`, `AvatarCrop`, `WelcomeNewUser`, and more. See [Bottom Sheets](./bottom-sheets) for the full list and customisation patterns.
+Built-in routes include `ManageAccount`, `Profile`, `PrivacySettings`, `FileManagement`, `ConnectedApps`, `PaymentGateway`, `TrustCenter`, `EditProfileField`, `AvatarCrop`, `WelcomeNewUser`, and more. Sign-in and account switching are not bottom sheets — they live in the unified account dialog (`useOxy().openAccountDialog()`). See [Bottom Sheets](./bottom-sheets) for the full list and customisation patterns.
 
 ### Screens lazy-load
 

@@ -7,5 +7,5 @@
   "versioned": false,
   "defaultVersion": "main",
   "docsPath": "docs/",
-  "description": "Standalone Vite auth app and FedCM Identity Provider."
+  "description": "Standalone Vite auth app — third-party \"Sign in with Oxy\" OAuth Identity Provider."
 }

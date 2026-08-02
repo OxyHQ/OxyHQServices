@@ -1,0 +1,5 @@
+# The repo-root .gitignore excludes build-output dir names (lib/, dist/, .expo/).
+# Under templates/ those names are literal SOURCE a scaffolded app needs (e.g.
+# packages/frontend/lib/config.ts), so re-include them here.
+!templates/**/lib/
+!templates/**/lib/**

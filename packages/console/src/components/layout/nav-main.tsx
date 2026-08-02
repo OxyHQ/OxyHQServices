@@ -1,7 +1,7 @@
 import { Link, useLocation } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
-import type { IconSvgElement } from '@hugeicons/react';
 import { ArrowRight01Icon } from '@hugeicons/core-free-icons';
+import type { IconSvgElement } from '@hugeicons/react';
 import {
   Collapsible,
   CollapsibleContent,
@@ -25,14 +25,14 @@ interface NavItem {
   isActive?: boolean;
   /** Render as an external anchor (opens in a new tab) instead of a router link. */
   external?: boolean;
-  items?: {
+  items?: Array<{
     title: string;
     url: string;
-  }[];
+  }>;
 }
 
 interface NavMainProps {
-  items: NavItem[];
+  items: Array<NavItem>;
   label?: string;
 }
 

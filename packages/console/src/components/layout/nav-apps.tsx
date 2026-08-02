@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Package01Icon,
   MoreHorizontalSquare01Icon,
+  Package01Icon,
   Settings01Icon,
 } from '@hugeicons/core-free-icons';
 import {
@@ -21,9 +21,12 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { useApplications } from '@/hooks/use-applications';
+import { useAuth } from '@oxyhq/services';
+import { resolveStoredImageUrl } from '@/lib/image-upload';
 
 export function NavApps() {
   const { isMobile } = useSidebar();
+  const { oxyServices } = useAuth();
   const { data: applications = [] } = useApplications();
 
   if (applications.length === 0) {
@@ -40,7 +43,7 @@ export function NavApps() {
               <Link to="/apps/$appId/settings" params={{ appId: app._id }}>
                 {app.icon ? (
                   <img
-                    src={app.icon}
+                    src={resolveStoredImageUrl(oxyServices, app.icon)}
                     alt=""
                     className="size-4 shrink-0 rounded-sm object-cover"
                   />

@@ -1,17 +1,21 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { Link, createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useAuth } from '@oxyhq/auth';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
+import { getNormalizedUserHandle } from '@oxyhq/core';
+import { useAuth } from '@oxyhq/services';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  ArrowLeft01Icon,
-  Delete02Icon,
   Add01Icon,
-  UserMultiple02Icon,
-  Mail01Icon,
+  ArrowDataTransferHorizontalIcon,
+  ArrowLeft01Icon,
   Cancel01Icon,
   CrownIcon,
-  ArrowDataTransferHorizontalIcon,
+  Delete02Icon,
+  Mail01Icon,
+  UserMultiple02Icon,
 } from '@hugeicons/core-free-icons';
+import { toast } from 'sonner';
+import type {AccountMember, AccountRole, AssignableAccountRole} from '@/hooks/use-account';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,21 +52,20 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
+  
+  
+  
   useAccount,
   useAccountMembers,
   useInviteAccountMember,
-  useUpdateAccountMember,
   useRemoveAccountMember,
   useTransferAccountOwnership,
-  type AccountRole,
-  type AccountMember,
-  type AssignableAccountRole,
+  useUpdateAccountMember
 } from '@/hooks/use-account';
-import { toast } from 'sonner';
 import {
+  USER_NOT_FOUND_MESSAGE,
   getErrorMessage,
   isUserNotFoundError,
-  USER_NOT_FOUND_MESSAGE,
 } from '@/lib/api-error';
 import { stripSensitiveImageUrlQueryParams } from '@/lib/image-upload';
 
@@ -87,7 +90,7 @@ const roleDescriptions: Record<AssignableAccountRole, string> = {
   viewer: 'Read-only access',
 };
 
-const ASSIGNABLE_ROLES: AssignableAccountRole[] = ['admin', 'editor', 'developer', 'billing', 'viewer'];
+const ASSIGNABLE_ROLES: Array<AssignableAccountRole> = ['admin', 'editor', 'developer', 'billing', 'viewer'];
 
 /** Short, readable handle for a member identified only by user id. */
 function shortUserId(userId: string): string {
@@ -112,7 +115,8 @@ function AccountSettingsPage() {
 
   // The display label for the account: its canonical `name.displayName`, falling
   // back to the handle. Used in the header and delete confirmation.
-  const accountLabel = accountUser?.name?.displayName ?? accountUser?.username ?? '';
+  const accountLabel =
+    accountUser?.name?.displayName ?? getNormalizedUserHandle(accountUser) ?? '';
 
   // Personal accounts show the signed-in user's avatar (read-only — it is
   // managed in the user's Oxy account). Resolved the same way as `nav-user.tsx`.
@@ -123,11 +127,15 @@ function AccountSettingsPage() {
   })();
 
   const userInitials = ((): string => {
-    const name = user?.name as { first?: string; last?: string } | undefined;
-    if (name?.first && name?.last) {
-      return `${name.first[0]}${name.last[0]}`.toUpperCase();
+    const label = user?.name?.displayName ?? getNormalizedUserHandle(user);
+    if (label) {
+      const parts = label.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+      }
+      return label.slice(0, 2).toUpperCase();
     }
-    return (name?.first?.[0] || user?.username?.[0] || 'U').toUpperCase();
+    return 'U';
   })();
 
   // Members are fetched only for non-personal accounts with permission to read.
@@ -447,7 +455,7 @@ function AccountSettingsPage() {
           {membersQuery.isLoading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" />
+                <Skeleton.Box key={i} width="100%" height={56} borderRadius={14} />
               ))}
             </div>
           ) : activeMembers.length === 0 ? (

@@ -1,13 +1,16 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { Link, createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   Add01Icon,
-  Package01Icon,
   ArrowRight01Icon,
-  Settings01Icon,
   Copy01Icon,
+  Package01Icon,
+  Settings01Icon,
 } from '@hugeicons/core-free-icons';
+import { toast } from 'sonner';
+import { useAuth } from '@oxyhq/services';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -32,7 +35,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { useApplications, useCreateApplication } from '@/hooks/use-applications';
-import { toast } from 'sonner';
+import { resolveStoredImageUrl } from '@/lib/image-upload';
 
 export const Route = createFileRoute('/_layout/apps/')({
   component: AppsPage,
@@ -47,6 +50,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 function AppsPage() {
   const navigate = useNavigate();
+  const { oxyServices } = useAuth();
   const { data: applications = [], isLoading } = useApplications();
   const createApplicationMutation = useCreateApplication();
 
@@ -113,9 +117,9 @@ function AppsPage() {
         {isLoading ? (
           <div className="py-6">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="py-4 border-b border-border animate-pulse">
-                <div className="h-4 w-32 bg-muted rounded mb-2" />
-                <div className="h-3 w-48 bg-muted rounded" />
+              <div key={i} className="py-4 border-b border-border">
+                <Skeleton.Box width={128} height={16} style={{ marginBottom: 8 }} />
+                <Skeleton.Box width={192} height={12} />
               </div>
             ))}
           </div>
@@ -151,7 +155,13 @@ function AppsPage() {
                   >
                     <div className="flex flex-1 items-start gap-3">
                       <Avatar size="default" className="mt-0.5 rounded-lg after:rounded-lg">
-                        {app.icon && <AvatarImage src={app.icon} alt={app.name} className="rounded-lg" />}
+                        {app.icon && (
+                          <AvatarImage
+                            src={resolveStoredImageUrl(oxyServices, app.icon)}
+                            alt={app.name}
+                            className="rounded-lg"
+                          />
+                        )}
                         <AvatarFallback className="rounded-lg uppercase">
                           {app.name.charAt(0)}
                         </AvatarFallback>

@@ -1,7 +1,8 @@
 import type React from 'react';
+import type { ComponentProps } from 'react';
 import { useMemo } from 'react';
 import { View, Text, Animated } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Button } from '@oxyhq/bloom/button';
 import { createPaymentStyles } from './paymentStyles';
@@ -20,7 +21,9 @@ interface PaymentSummaryStepProps {
     onNext: () => void;
 }
 
-const getItemTypeIcon = (type: string): string => {
+type IoniconName = ComponentProps<typeof Ionicons>['name'];
+
+const getItemTypeIcon = (type: string): IoniconName => {
     switch (type) {
         case 'product': return 'cart-outline';
         case 'subscription': return 'repeat-outline';
@@ -82,9 +85,9 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
                             <>
                                 <View style={styles.summaryCardItems}>
                                     <SettingsListGroup>
-                                        {paymentItems.map((item, idx) => (
+                                        {paymentItems.map((item) => (
                                             <SettingsListItem
-                                                key={`item-${idx}`}
+                                                key={`${item.type}-${item.name}-${item.price}-${item.period ?? ''}`}
                                                 icon={<Ionicons name={getItemTypeIcon(item.type)} size={20} color={colors.primary} />}
                                                 title={`${item.type === 'product' && item.quantity ? `${item.quantity} \u00d7 ` : ''}${item.name}${item.type === 'subscription' && item.period ? ` (${item.period})` : ''}`}
                                                 description={item.description || `${item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol} ${item.price * (item.quantity ?? 1)}`}

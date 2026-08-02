@@ -44,16 +44,12 @@ const ca: LocaleDict = {
   },
 
   tabs: {
-    home: 'Inici',
     inbox: 'Safata',
     search: 'Cerca',
     settings: 'Configuració',
-    forYou: 'Per a tu',
   },
 
   drawer: {
-    home: 'Inici',
-    forYou: 'Per a tu',
     starred: 'Destacats',
     snoozed: 'Posposats',
     subscriptions: 'Subscripcions',
@@ -124,6 +120,11 @@ const ca: LocaleDict = {
       analyzing: "L'Alia està analitzant la safata…",
       unavailable: "No s'ha pogut generar el resum ara mateix.",
       empty: 'Encara no hi ha correus per resumir.',
+      writing: 'Escrivint el teu resum…',
+      preparing: 'Preparant el teu resum…',
+      failed: "No s'ha pogut escriure el resum d'avui.",
+      nothingNew: 'Res de nou avui.',
+      tapRetry: 'Toca per tornar-ho a provar.',
     },
     feedEmpty: {
       title: 'Tot al dia',
@@ -135,25 +136,6 @@ const ca: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'Per a tu',
-    starred: 'Destacats',
-    unread: 'Sense llegir',
-    attachments: 'Adjunts',
-    empty: {
-      title: 'Tot al dia',
-      subtitle: 'No hi ha res destacat per a tu ara mateix.',
-    },
-    summary: {
-      fromOne: 'De {{a}}',
-      fromTwo: 'De {{a}} i {{b}}',
-      fromManyOne: 'De {{a}}, {{b}} i {{count}} més',
-      fromManyOther: 'De {{a}}, {{b}} i {{count}} més',
-      aboutOne: ' — sobre {{topic}}',
-      aboutTwo: ' — sobre {{a}}, {{b}}',
-      aboutMore: ' i més',
-    },
-  },
 
   inbox: {
     title: 'Safata',
@@ -389,6 +371,7 @@ const ca: LocaleDict = {
     keyPoints: 'Punts clau',
     actionItems: 'Accions pendents',
     due: 'Per a: {{date}}',
+    unavailable: "No s'ha pogut resumir aquesta conversa ara mateix.",
   },
 
   staleThread: {

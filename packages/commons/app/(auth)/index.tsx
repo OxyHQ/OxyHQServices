@@ -1,16 +1,20 @@
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
 import Animated, {
   useSharedValue,
   withTiming,
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import { Redirect, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useColors } from '@/hooks/useColors';
 import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
+import { Button } from '@/components/ui';
+import { CenteredState } from '@/components/ui/centered-state';
 import { useTranslation } from '@/lib/i18n';
-import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
+import { useOnboardingStatus, ONBOARDING_IDENTITY_QUERY_KEY, getOnboardingResumeHref } from '@/hooks/useOnboardingStatus';
+import { persistOnboardingFlow } from '@/hooks/identity/identityStore';
 
 const humanTranslations = [
   'Human',
@@ -28,7 +32,12 @@ export default function AuthIndexScreen() {
   const backgroundColor = colors.background;
   const textColor = colors.text;
   const { t } = useTranslation();
-  const { status, hasIdentity } = useOnboardingStatus();
+  const { status, hasIdentity, onboardingFlow } = useOnboardingStatus();
+  const queryClient = useQueryClient();
+
+  const handleRetryIdentityProbe = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ONBOARDING_IDENTITY_QUERY_KEY });
+  }, [queryClient]);
 
   // Entrance animation values
   const helloOpacity = useSharedValue(0);
@@ -92,6 +101,14 @@ export default function AuthIndexScreen() {
     router.push('./welcome');
   }, [router]);
 
+  // A returning user with an existing account (but no local identity on THIS
+  // device) needs a direct path to paste their recovery phrase, without being
+  // funneled through the create-flavored welcome screen first.
+  const handleRestore = useCallback(() => {
+    void persistOnboardingFlow('import');
+    router.push('/(auth)/import-identity');
+  }, [router]);
+
   // CRITICAL: when an identity already exists on this device but the user
   // has no active session (e.g., they closed and re-opened the app), we
   // MUST NOT show the marketing "Hello / Human / Tap to continue" splash
@@ -119,7 +136,36 @@ export default function AuthIndexScreen() {
   // `create-identity` is a route WITHIN the `(auth)` group, so redirecting to it
   // does NOT race the root Stack's cross-group swap — it's safe here.
   if (hasIdentity && status === 'in_progress') {
-    return <Redirect href="/(auth)/create-identity" />;
+    return <Redirect href={getOnboardingResumeHref(onboardingFlow)} />;
+  }
+
+  // A `lost` identity (marker present, keys gone) must go to the recovery ladder,
+  // NEVER the "Hello Human" welcome — the welcome looks identical to a fresh
+  // install and would invite the user to overwrite a still-recoverable identity.
+  if (status === 'recovery') {
+    return <Redirect href="/(auth)/recover-identity" />;
+  }
+
+  // Storage is unreadable RIGHT NOW (locked keychain). This is NOT a blank
+  // device, so we render a neutral "identity protected, couldn't be read" retry
+  // surface — never the welcome splash. Retrying re-runs the local identity
+  // probe; once the keychain unlocks the status settles to its real verdict.
+  if (status === 'unavailable') {
+    return (
+      <View style={[styles.container, { backgroundColor }]}>
+        <CenteredState
+          icon="shield-lock-outline"
+          iconColor={textColor}
+          title={t('recovery.lockedTitle')}
+          body={t('recovery.lockedBody')}
+          action={
+            <Button variant="primary" onPress={handleRetryIdentityProbe}>
+              {t('common.retry')}
+            </Button>
+          }
+        />
+      </View>
+    );
   }
 
   // While the onboarding status is still resolving on cold start, render a
@@ -172,6 +218,17 @@ export default function AuthIndexScreen() {
           fontSize={16}
           textStyle={[styles.tapText, { color: textColor }]}
         />
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={handleRestore}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={t('auth.indexRestore')}
+        >
+          <Text style={[styles.restoreText, { color: textColor }]}>
+            {t('auth.indexRestore')}
+          </Text>
+        </TouchableOpacity>
       </Animated.View>
     </Pressable>
   );
@@ -207,5 +264,16 @@ const styles = StyleSheet.create({
   tapText: {
     fontWeight: '400',
     opacity: 0.6,
+  },
+  restoreButton: {
+    marginTop: 24,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  restoreText: {
+    fontSize: 14,
+    fontWeight: '500',
+    opacity: 0.7,
+    textDecorationLine: 'underline',
   },
 });

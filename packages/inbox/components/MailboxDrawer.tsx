@@ -6,24 +6,26 @@
  * pill, Create folder) are hidden until the user is authenticated.
  */
 
-import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
   Platform,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useOxy, OxySignInButton, showSignInModal, AccountMenu, type AccountMenuAnchor } from '@oxyhq/services';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { useQueryClient } from '@tanstack/react-query';
+import { useOxy, OxySignInButton, openAccountDialog, ProfileButton } from '@oxyhq/services';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
+import { Button } from '@oxyhq/bloom/button';
 import { useRouter, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Badge } from '@oxyhq/bloom/badge';
 import {
-  Home01Icon,
   FavouriteIcon,
   InboxIcon,
   SentIcon,
@@ -41,14 +43,17 @@ import {
   ArrowUp01Icon,
   Mail01Icon,
   Clock01Icon,
+  Add01Icon,
 } from '@hugeicons/core-free-icons';
 import { useColors } from '@/constants/theme';
 import { Divider } from '@oxyhq/bloom/divider';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
+import { clearPersistedInboxCache } from '@/hooks/queries/queryClient';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
-import { Avatar } from '@/components/Avatar';
+import { useCreateMailbox, useDeleteMailbox } from '@/hooks/mutations/useMailboxMutations';
 import type { Mailbox } from '@/services/emailApi';
 import { LogoIcon } from '@/assets/logo';
 
@@ -108,6 +113,7 @@ function NavItem({
   bold,
   colorDot,
   onPress,
+  onLongPress,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   hugeIcon: IconSvgElement;
@@ -119,6 +125,7 @@ function NavItem({
   bold?: boolean;
   colorDot?: string;
   onPress: () => void;
+  onLongPress?: () => void;
 }) {
   const iconColor = isActive ? colors.sidebarItemActiveText : colors.icon;
   const accessibilityLabel = badge != null && badge > 0 ? `${label}, ${badge} unread` : label;
@@ -133,6 +140,7 @@ function NavItem({
         collapsed && styles.itemCollapsed,
       ]}
       onPress={onPress}
+      onLongPress={onLongPress}
       activeOpacity={0.7}
     >
       {colorDot ? (
@@ -169,67 +177,25 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const router = useRouter();
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [accountMenuAnchor, setAccountMenuAnchor] = useState<AccountMenuAnchor | null>(null);
-
-  // Trigger refs for the two footer account buttons (expanded row + collapsed
-  // avatar). On web we measure the pressed trigger so the popover anchors to
-  // the bottom-left button and opens upward; native ignores the anchor.
-  const expandedAccountBtnRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
-  const collapsedAccountBtnRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
-
-  const measureAndOpen = useCallback(
-    (ref: React.RefObject<React.ComponentRef<typeof TouchableOpacity> | null>) => {
-      if (Platform.OS !== 'web') {
-        setAccountMenuAnchor(null);
-        setAccountMenuOpen(true);
-        return;
-      }
-      const node = ref.current;
-      if (!node || typeof node.measure !== 'function' || typeof window === 'undefined') {
-        setAccountMenuAnchor(null);
-        setAccountMenuOpen(true);
-        return;
-      }
-      // RN-Web exposes measure() on host views; use the native API.
-      node.measure((_x, _y, _w, _h, pageX, pageY) => {
-        if (typeof pageX !== 'number' || typeof pageY !== 'number') {
-          setAccountMenuAnchor(null);
-        } else {
-          // Panel is 360 wide; keep an 8px gutter on both sides (368 = 360 + 8).
-          const left = Math.min(Math.max(8, pageX), Math.max(8, window.innerWidth - 368));
-          // Anchor the panel's BOTTOM edge 8px above the button's top → opens upward.
-          const bottom = Math.max(8, window.innerHeight - pageY + 8);
-          setAccountMenuAnchor({ left, bottom });
-        }
-        setAccountMenuOpen(true);
-      });
-    },
-    [],
-  );
 
   const resetInboxForAccountChange = useCallback(() => {
     useEmailStore.getState().resetAccountScopedState();
-    queryClient.removeQueries({ queryKey: ['mailboxes'] });
-    queryClient.removeQueries({ queryKey: ['labels'] });
-    queryClient.removeQueries({ queryKey: ['messages'] });
-    queryClient.removeQueries({ queryKey: ['message'] });
+    queryClient.clear();
+    void clearPersistedInboxCache();
+    queryClient.removeQueries({ queryKey: emailKeys.mailboxes.root });
+    queryClient.removeQueries({ queryKey: emailKeys.labels });
+    queryClient.removeQueries({ queryKey: emailKeys.messages.root });
+    queryClient.removeQueries({ queryKey: emailKeys.message.root });
   }, [queryClient]);
 
-  const handleCloseMenu = useCallback(() => {
-    setAccountMenuOpen(false);
-  }, []);
-
   const handleAddAccount = useCallback(() => {
-    setAccountMenuOpen(false);
-    // Open the sign-in modal to authenticate a new account.
-    // OxyContext picks up the new session and AccountMenu reflects it.
+    // Open the sign-in modal to authenticate a new account. OxyContext picks up
+    // the new session and ProfileButton's menu reflects it.
     resetInboxForAccountChange();
-    showSignInModal();
+    openAccountDialog('signin');
   }, [resetInboxForAccountChange]);
 
   const handleNavigateManage = useCallback(() => {
-    setAccountMenuOpen(false);
     router.push('/settings');
     onClose?.();
   }, [router, onClose]);
@@ -240,7 +206,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const { data: mailboxes = [] } = useMailboxes();
   const { data: labels = [] } = useLabels();
 
-  const activeUserId = user?.id ?? user?._id ?? null;
+  const activeUserId = user?.id ?? null;
   const previousUserIdRef = useRef<string | null>(activeUserId);
 
   useEffect(() => {
@@ -253,17 +219,15 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
   // Determine active state from URL pathname.
   // Path shapes we care about here:
-  //   /home, /for-you  → top-level
-  //   /<view>          → system mailbox (inbox, sent, drafts, etc.)
+  //   /                → inbox (the app's root view)
+  //   /<view>          → system mailbox (sent, drafts, etc.)
   //   /label/<name>    → label view (owned by app/.../label/[name].tsx)
-  const isHomeActive = pathname === '/home';
-  const isForYouActive = pathname === '/for-you';
   const pathSegments = useMemo(() => pathname.split('/').filter(Boolean), [pathname]);
   const isLabelRoute = pathSegments[0]?.toLowerCase() === 'label';
   const activeLabelName = isLabelRoute ? pathSegments[1]?.toLowerCase() ?? null : null;
   const currentView = isLabelRoute ? 'label' : pathSegments[0]?.toLowerCase() || 'inbox';
 
-  const { primaryMailboxes, snoozedMailbox, secondaryMailboxes } = useMemo(() => {
+  const { primaryMailboxes, snoozedMailbox, secondaryMailboxes, customFolders } = useMemo(() => {
     const order: Record<string, number> = {
       [SPECIAL_USE.INBOX]: 0, [SPECIAL_USE.SENT]: 1, [SPECIAL_USE.DRAFTS]: 2,
       [SPECIAL_USE.SNOOZED]: 3, [SPECIAL_USE.SPAM]: 4, [SPECIAL_USE.TRASH]: 5, [SPECIAL_USE.ARCHIVE]: 6,
@@ -278,19 +242,61 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       secondaryMailboxes: sorted.filter(
         (m) => !PRIMARY_SPECIAL_USE.has(m.specialUse) && m.specialUse !== SPECIAL_USE.SNOOZED,
       ),
+      // User-created folders have no specialUse. They are addressable via the
+      // `[view]` route using the mailbox id as the segment.
+      customFolders: mailboxes
+        .filter((m) => !m.specialUse)
+        .sort((a, b) => a.name.localeCompare(b.name)),
     };
   }, [mailboxes]);
 
-  // Custom (non-system) folders are not addressable yet. Today we expose
-  // system mailboxes via the `[view]` route (inbox/sent/drafts/trash/spam/
-  // archive/snoozed/starred) and labels via the `label/[name]` subroute. We
-  // hide custom mailboxes and the "Create folder" affordance until a
-  // `folder/[id]` route exists.
+  // Custom-folder create / delete flows.
+  const createMailbox = useCreateMailbox();
+  const deleteMailbox = useDeleteMailbox();
+  const createFolderControl = useDialogControl();
+  const deleteFolderControl = useDialogControl();
+  const [newFolderName, setNewFolderName] = useState('');
+  const [folderPendingDelete, setFolderPendingDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const handleCustomFolderSelect = useCallback(
+    (mailbox: Mailbox) => {
+      router.push({ pathname: '/(drawer)/(tabs)/(inbox)/[view]', params: { view: mailbox._id } });
+      onClose?.();
+    },
+    [router, onClose],
+  );
+
+  const handleCreateFolder = useCallback(() => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    createMailbox.mutate(
+      { name },
+      {
+        onSuccess: () => {
+          setNewFolderName('');
+          createFolderControl.close();
+        },
+      },
+    );
+  }, [newFolderName, createMailbox, createFolderControl]);
+
+  const handleConfirmDeleteFolder = useCallback(() => {
+    if (!folderPendingDelete) return;
+    deleteMailbox.mutate(
+      { mailboxId: folderPendingDelete.id },
+      { onSettled: () => setFolderPendingDelete(null) },
+    );
+  }, [folderPendingDelete, deleteMailbox]);
 
   const handleSelect = useCallback(
     (mailbox: Mailbox & { specialUse: string }) => {
-      const viewMap: Record<string, 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'archive' | 'snoozed'> = {
-        [SPECIAL_USE.INBOX]: 'inbox',
+      // The inbox is the root view, so it is addressed as `/`, not `/inbox`.
+      if (mailbox.specialUse === SPECIAL_USE.INBOX) {
+        router.push('/');
+        onClose?.();
+        return;
+      }
+      const viewMap: Record<string, 'sent' | 'drafts' | 'trash' | 'spam' | 'archive' | 'snoozed'> = {
         [SPECIAL_USE.SENT]: 'sent',
         [SPECIAL_USE.DRAFTS]: 'drafts',
         [SPECIAL_USE.TRASH]: 'trash',
@@ -322,16 +328,6 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     [router, onClose],
   );
 
-  const handleHome = useCallback(() => {
-    router.push('/home');
-    onClose?.();
-  }, [router, onClose]);
-
-  const handleForYou = useCallback(() => {
-    router.push('/for-you');
-    onClose?.();
-  }, [router, onClose]);
-
   const handleCompose = useCallback(() => {
     router.push('/compose');
     onClose?.();
@@ -344,11 +340,8 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
   // Real email from the active session's user. Never synthesize `username@oxy.so`.
   // When the user has no email on record, fall back to the `@username` handle.
+  // Shown in the header; the footer identity is owned by `ProfileButton`.
   const emailAddress = user?.email || (user?.username ? `@${user.username}` : '');
-  // Render the API's canonical `name.displayName` directly; only fall back to a
-  // neutral default for the signed-out / not-yet-loaded case (display-name
-  // contract — no recomposition from `username`).
-  const displayName = user?.name.displayName ?? 'Account';
 
   // Check if a mailbox route is active
   const isMailboxActive = useCallback(
@@ -475,8 +468,6 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
       {isAuthenticated ? (
         <ScrollView style={[styles.list, collapsed && styles.listCollapsed]} showsVerticalScrollIndicator={false}>
-          <NavItem icon="home-outline" hugeIcon={Home01Icon as unknown as IconSvgElement} label="Home" isActive={isHomeActive} colors={colors} collapsed={collapsed} onPress={handleHome} />
-          <NavItem icon="cards-heart-outline" hugeIcon={FavouriteIcon as unknown as IconSvgElement} label="For You" isActive={isForYouActive} colors={colors} collapsed={collapsed} onPress={handleForYou} />
 
           {/* Primary Mailboxes (Inbox, Sent, Drafts) */}
           {primaryMailboxes.map((mailbox) => {
@@ -596,14 +587,49 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           )}
           {/* Labels hidden when collapsed for cleaner UI */}
 
-          {/*
-            Custom folders are intentionally hidden. The dynamic [view] route
-            only handles inbox/sent/drafts/trash/spam/archive/snoozed/starred
-            and labels live at /label/<name>. There's no /folder/<id> handler
-            yet, so exposing "Create folder" or rendering user-created
-            mailboxes here would ship a navigation dead-end. Re-enable once
-            a folder route exists.
-          */}
+          {/* Custom folders — addressable via the [view] route (view = mailbox id) */}
+          {!collapsed && (
+            <>
+              <Divider />
+              <View style={styles.foldersHeaderRow}>
+                <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Folders</Text>
+                <TouchableOpacity
+                  accessibilityLabel="Create folder"
+                  accessibilityRole="button"
+                  onPress={() => createFolderControl.open()}
+                  style={styles.folderAddButton}
+                  activeOpacity={0.7}
+                >
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={Add01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+                  ) : (
+                    <MaterialCommunityIcons name="plus" size={16} color={colors.icon} />
+                  )}
+                </TouchableOpacity>
+              </View>
+              {customFolders.map((folder) => (
+                <NavItem
+                  key={folder._id}
+                  icon="folder-outline"
+                  hugeIcon={Folder01Icon as unknown as IconSvgElement}
+                  label={folder.name}
+                  isActive={currentView === folder._id.toLowerCase()}
+                  colors={colors}
+                  badge={folder.unseenMessages}
+                  onPress={() => handleCustomFolderSelect(folder)}
+                  onLongPress={() => {
+                    setFolderPendingDelete({ id: folder._id, name: folder.name });
+                    deleteFolderControl.open();
+                  }}
+                />
+              ))}
+              {customFolders.length === 0 && (
+                <Text style={[styles.foldersHint, { color: colors.secondaryText }]}>
+                  Tap + to create a folder. Long-press a folder to delete it.
+                </Text>
+              )}
+            </>
+          )}
         </ScrollView>
       ) : (
         <View style={[styles.list, collapsed && styles.listCollapsed, styles.signedOutBody]}>
@@ -636,33 +662,18 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
        * isn't clipped by the home indicator / Android gesture area.
        */}
       {!collapsed && isAuthenticated && (
-        <View style={styles.footerWrapper}>
-          <View
-            style={[
-              styles.footer,
-              { borderTopColor: colors.border, paddingBottom: insets.bottom + 8 },
-            ]}
-          >
-            <TouchableOpacity
-              ref={expandedAccountBtnRef}
-              style={styles.accountButton}
-              onPress={() => measureAndOpen(expandedAccountBtnRef)}
-              activeOpacity={0.7}
-              accessibilityLabel={`Switch account, signed in as ${displayName}`}
-              accessibilityRole="button"
-            >
-              <Avatar name={displayName} size={32} />
-              <View style={styles.accountInfo}>
-                <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
-                  {displayName}
-                </Text>
-                <Text style={[styles.accountEmail, { color: colors.secondaryText }]} numberOfLines={1}>
-                  {emailAddress}
-                </Text>
-              </View>
-              <MaterialCommunityIcons name="unfold-more-horizontal" size={18} color={colors.secondaryText} />
-            </TouchableOpacity>
-          </View>
+        <View
+          style={[
+            styles.footer,
+            { borderTopColor: colors.border, paddingBottom: insets.bottom + 8 },
+          ]}
+        >
+          <ProfileButton
+            expanded
+            avatarSize={32}
+            onNavigateManage={handleNavigateManage}
+            onAddAccount={handleAddAccount}
+          />
         </View>
       )}
 
@@ -685,35 +696,55 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         <View
           style={[
             styles.footer,
+            styles.collapsedFooter,
             { borderTopColor: colors.border, paddingBottom: insets.bottom + 8 },
           ]}
         >
-          <TouchableOpacity
-            ref={collapsedAccountBtnRef}
-            style={styles.collapsedAccountButton}
-            onPress={() => measureAndOpen(collapsedAccountBtnRef)}
-            activeOpacity={0.7}
-            accessibilityLabel={`Switch account, signed in as ${displayName}`}
-            accessibilityRole="button"
-          >
-            <Avatar name={displayName} size={32} />
-          </TouchableOpacity>
+          <ProfileButton
+            expanded={false}
+            avatarSize={32}
+            onNavigateManage={handleNavigateManage}
+            onAddAccount={handleAddAccount}
+          />
         </View>
       )}
 
-      {/* Shared account switcher (only mounted when signed-in). Sources its rows
-          from the SDK's useDeviceAccounts — real shared sessions with real
-          names/emails/avatars. Sign out / Sign out all are handled internally. */}
-      {isAuthenticated && (
-        <AccountMenu
-          open={accountMenuOpen}
-          onClose={handleCloseMenu}
-          onNavigateManage={handleNavigateManage}
-          onAddAccount={handleAddAccount}
-          anchor={accountMenuAnchor}
-          onBeforeSessionChange={resetInboxForAccountChange}
-        />
-      )}
+      {/* Create folder */}
+      <Dialog control={createFolderControl} title="New folder" label="New folder">
+        <View style={styles.folderDialogBody}>
+          <TextInput
+            value={newFolderName}
+            onChangeText={setNewFolderName}
+            placeholder="Folder name"
+            placeholderTextColor={colors.secondaryText}
+            autoFocus
+            onSubmitEditing={handleCreateFolder}
+            returnKeyType="done"
+            style={[styles.folderDialogInput, { color: colors.text, borderColor: colors.border }]}
+          />
+          <Button
+            onPress={handleCreateFolder}
+            disabled={!newFolderName.trim() || createMailbox.isPending}
+          >
+            {createMailbox.isPending ? 'Creating…' : 'Create folder'}
+          </Button>
+        </View>
+      </Dialog>
+
+      {/* Delete folder confirmation */}
+      <Dialog
+        control={deleteFolderControl}
+        title="Delete folder?"
+        description={
+          folderPendingDelete
+            ? `"${folderPendingDelete.name}" and its organization will be removed. Messages inside are not deleted.`
+            : ''
+        }
+        actions={[
+          { label: 'Delete', color: 'destructive', onPress: handleConfirmDeleteFolder },
+          { label: 'Cancel', color: 'cancel' },
+        ]}
+      />
     </View>
   );
 }
@@ -863,6 +894,37 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     letterSpacing: 0.5,
   },
+  foldersHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingRight: 8,
+  },
+  folderAddButton: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  foldersHint: {
+    fontSize: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    lineHeight: 16,
+  },
+  folderDialogBody: {
+    gap: 12,
+    paddingTop: 8,
+    minWidth: 260,
+  },
+  folderDialogInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+  },
   signedOutBody: {
     paddingHorizontal: 16,
     paddingTop: 24,
@@ -903,37 +965,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  footerWrapper: {
-    position: 'relative',
-  },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 8,
     paddingVertical: 8,
   },
-  accountButton: {
-    flexDirection: 'row',
+  collapsedFooter: {
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    gap: 10,
-  },
-  collapsedAccountButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-  },
-  accountInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  accountName: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  accountEmail: {
-    fontSize: 11,
-    marginTop: 1,
   },
 });

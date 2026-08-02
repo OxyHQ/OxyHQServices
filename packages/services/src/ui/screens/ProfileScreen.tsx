@@ -1,19 +1,20 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import { useMemo } from 'react';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { H2, Text } from '@oxyhq/bloom/typography';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
-import Avatar from '../components/Avatar';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import FollowButton from '../components/FollowButton';
 import { useFollow } from '../hooks/useFollow';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
-import { getAccountDisplayName, logger, normalizeProfileLinks } from '@oxyhq/core';
-import type { User, ProfileLink } from '@oxyhq/core';
+import { getNormalizedUserHandle, logger, normalizeProfileLinks } from '@oxyhq/core';
 import { extractErrorMessage } from '../utils/errorHandlers';
 
 interface ProfileScreenProps extends BaseScreenProps {
@@ -32,13 +33,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     // into), so previewing my profile while switched into an org/project/bot
     // resolves "this is mine" against that account, not the session owner.
     const { oxyServices, user: currentUser } = useOxy();
-    const [profile, setProfile] = useState<User | null>(null);
-    const [reputationTotal, setReputationTotal] = useState<number | null>(null);
-    const [postsCount, setPostsCount] = useState<number | null>(null);
-    const [commentsCount, setCommentsCount] = useState<number | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [links, setLinks] = useState<ProfileLink[]>([]);
 
     // Use the follow hook for real follower data
     const {
@@ -48,7 +42,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     } = useFollow(userId);
 
     const bloomTheme = useTheme();
-    const { t, locale } = useI18n();
+    const { t } = useI18n();
 
     // Check if current user is viewing their own profile
     // Normalize IDs by trimming whitespace to handle format mismatches
@@ -59,128 +53,141 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     const currentUserId = normalizeId(currentUser?.id);
     const targetUserId = normalizeId(userId);
-    const isOwnProfile = currentUserId && targetUserId && currentUserId === targetUserId;
+    const isOwnProfile = !!(currentUserId && targetUserId && currentUserId === targetUserId);
 
-    useEffect(() => {
-        if (!userId) {
-            setError('No user ID provided');
-            setIsLoading(false);
-            return;
+    // Profile + reputation + stats in ONE React Query (no data-fetch effect). The
+    // reputation/stats reads swallow their own failures; only `getUserById` can
+    // reject the query, and for MY OWN profile a failed fetch falls back to the
+    // active-account snapshot instead of erroring. The key includes both ids so a
+    // switch/own-profile change refetches.
+    const profileQuery = useQuery({
+        queryKey: ['profileScreen', targetUserId, currentUserId],
+        enabled: !!userId,
+        retry: false,
+        queryFn: async () => {
+            // Follower/following counts come from the `useFollow` hook; the stats
+            // read is kept for parity (it warms server-side counters) but its
+            // result is not surfaced in this view, so it is not bound.
+            const [profileRes, reputationRes] = await Promise.all([
+                oxyServices.getUserById(userId).catch((err: unknown) => {
+                    if (isOwnProfile) return currentUser;
+                    logger.error(
+                        'Profile loading error',
+                        err instanceof Error ? err : new Error(String(err)),
+                        { component: 'ProfileScreen' },
+                    );
+                    throw err;
+                }),
+                (isOwnProfile
+                    ? oxyServices.getMyReputationBalance()
+                    : oxyServices.getReputationBalance(userId))
+                    .then((balance): { total: number | undefined } => ({ total: balance.total }))
+                    .catch((): { total: number | undefined } => ({ total: undefined })),
+                oxyServices.getUserStats
+                    ? oxyServices.getUserStats(userId).catch(() => ({ postCount: 0, commentCount: 0 }))
+                    : Promise.resolve({ postCount: 0, commentCount: 0 }),
+            ]);
+            if (!profileRes) {
+                throw new Error('Profile data is not available');
+            }
+            return {
+                profile: profileRes,
+                reputationTotal: typeof reputationRes.total === 'number' ? reputationRes.total : null,
+                links: normalizeProfileLinks(profileRes.linksMetadata, profileRes.links),
+            };
+        },
+    });
+
+    const profile = profileQuery.data?.profile ?? null;
+    const reputationTotal = profileQuery.data?.reputationTotal ?? null;
+    const links = profileQuery.data?.links ?? [];
+    const isLoading = !!userId && profileQuery.isLoading;
+
+    // Friendly, status-aware error copy derived from the query error (no effect).
+    const error = useMemo<string | null>(() => {
+        if (!userId) return 'No user ID provided';
+        if (!profileQuery.isError) return null;
+        const err = profileQuery.error;
+        const errorWithStatus =
+            err && typeof err === 'object' && 'status' in err
+                ? (err as { status?: number; message?: string })
+                : null;
+        const errorMessageText = extractErrorMessage(err, '');
+        if (
+            errorWithStatus?.status === 404 ||
+            errorMessageText.includes('not found') ||
+            errorMessageText.includes('Resource not found')
+        ) {
+            return isOwnProfile
+                ? 'Unable to load your profile from the server. This may be due to a temporary service issue.'
+                : 'This user profile could not be found or may have been removed.';
         }
+        if (errorWithStatus?.status === 403) {
+            return 'You do not have permission to view this profile.';
+        }
+        if (errorWithStatus?.status === 500) {
+            return 'Server error occurred while loading the profile. Please try again later.';
+        }
+        return errorMessageText || 'Failed to load profile';
+    }, [userId, profileQuery.isError, profileQuery.error, isOwnProfile]);
 
-        setIsLoading(true);
-        setError(null);
-
-        // Load user profile, reputation total, and stats
-        Promise.all([
-            oxyServices.getUserById(userId).catch((err: unknown) => {
-                // If this is the current user and the API call fails, use current user data as fallback
-                const normalizedCurrentId = normalizeId(currentUser?.id);
-                const normalizedTargetId = normalizeId(userId);
-                if (normalizedCurrentId && normalizedTargetId && normalizedCurrentId === normalizedTargetId) {
-                    return currentUser;
-                }
-                throw err;
-            }),
-            oxyServices.getReputationBalance(userId)
-                .then((balance): { total: number | undefined } => ({ total: balance.total }))
-                .catch((): { total: number | undefined } => ({ total: undefined })),
-            oxyServices.getUserStats ?
-                oxyServices.getUserStats(userId).catch(() => {
-                    return { postCount: 0, commentCount: 0 };
-                }) :
-                Promise.resolve({ postCount: 0, commentCount: 0 })
-        ])
-            .then(([profileRes, reputationRes, statsRes]) => {
-                if (!profileRes) {
-                    setError('Profile data is not available');
-                    setIsLoading(false);
-                    return;
-                }
-
-                setProfile(profileRes);
-                setReputationTotal(typeof reputationRes.total === 'number' ? reputationRes.total : null);
-
-                // Normalize profile links via the shared @oxyhq/core helper.
-                setLinks(normalizeProfileLinks(profileRes.linksMetadata, profileRes.links));
-
-                // Follower/following counts are managed by the `useFollow` hook.
-
-                // User stats from API
-                setPostsCount(statsRes?.postCount ?? 0);
-                setCommentsCount(statsRes?.commentCount ?? 0);
-            })
-            .catch((err: unknown) => {
-                logger.error('Profile loading error', err instanceof Error ? err : new Error(String(err)), { component: 'ProfileScreen' });
-                // Provide user-friendly error messages based on the error type
-                let errorMessage = 'Failed to load profile';
-
-                // Type guard for error with status property
-                const errorWithStatus = err && typeof err === 'object' && 'status' in err ? err as { status?: number; message?: string } : null;
-                const errorMessageText = extractErrorMessage(err, '');
-
-                if (errorWithStatus?.status === 404 || errorMessageText.includes('not found') || errorMessageText.includes('Resource not found')) {
-                    const normalizedCurrentId = normalizeId(currentUser?.id);
-                    const normalizedTargetId = normalizeId(userId);
-                    if (normalizedCurrentId && normalizedTargetId && normalizedCurrentId === normalizedTargetId) {
-                        errorMessage = 'Unable to load your profile from the server. This may be due to a temporary service issue.';
-                    } else {
-                        errorMessage = 'This user profile could not be found or may have been removed.';
-                    }
-                } else if (errorWithStatus?.status === 403) {
-                    errorMessage = 'You do not have permission to view this profile.';
-                } else if (errorWithStatus?.status === 500) {
-                    errorMessage = 'Server error occurred while loading the profile. Please try again later.';
-                } else if (errorMessageText) {
-                    errorMessage = errorMessageText;
-                }
-
-                setError(errorMessage);
-            })
-            .finally(() => setIsLoading(false));
-    }, [userId]);
+    // Display name: the loaded profile's, else the passed handle. Also the nav-bar
+    // title (a stable "Profile" fallback before it resolves), so the banner +
+    // overlapping avatar scroll as content UNDER the shared gradient nav bar.
+    // `onImage` tone keeps the title + close legible over the colored banner.
+    // Ends in a string, deliberately: `getNormalizedUserHandle` answers `null` for a
+    // user it cannot normalise, and letting that null travel makes this `string | null`
+    // — which does not satisfy `Avatar.name` and does not typecheck. Empty is the honest
+    // bottom of the chain and every reader below already treats it as falsy
+    // (`displayName || t('profile.title')`), so nothing renders a literal "null".
+    const displayName = profile
+        ? (profile.name?.displayName ?? getNormalizedUserHandle(profile) ?? '')
+        : username || '';
+    useSurfaceHeader({
+        title: displayName || t('profile.title'),
+        largeTitle: false,
+        tone: 'onImage',
+    });
 
     if (isLoading) {
         return (
-            <View style={styles.centerContainer} className="bg-bg">
+            <View className="items-center py-space-40">
                 <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
             </View>
         );
     }
 
     if (error) {
+        // The shared nav header owns back/close; the error body is just the alert.
         return (
-            <View style={styles.container} className="bg-bg">
-                <View style={styles.errorHeader} className="px-screen-margin py-space-12 border-b border-border">
-                    {goBack && (
-                        <Button
-                            variant="icon"
-                            size="icon"
-                            onPress={goBack}
-                            accessibilityLabel={t('common.back') || 'Back'}
-                            icon={<Ionicons name="arrow-back" size={22} color={bloomTheme.colors.text} />}
-                        />
-                    )}
-                    <H2 style={styles.errorTitle} className="text-text">
-                        {t('profile.errorTitle') || 'Profile Error'}
-                    </H2>
-                </View>
-                <View style={styles.errorContent} className="px-space-32 gap-space-12">
-                    <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} />
-                    <Text style={styles.errorText} className="text-text">{error}</Text>
-                    <Text style={styles.errorSubtext} className="text-text-secondary">
-                        {t('profile.errorSubtext') || "This could happen if the user doesn't exist or the profile service is unavailable."}
-                    </Text>
-                </View>
+            <View style={styles.errorContent} className="px-space-32 gap-space-12 py-space-40">
+                <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} />
+                <H2 style={styles.errorTitle} className="text-text text-center">
+                    {t('profile.errorTitle') || 'Profile Error'}
+                </H2>
+                <Text style={styles.errorText} className="text-text">{error}</Text>
+                <Text style={styles.errorSubtext} className="text-text-secondary">
+                    {t('profile.errorSubtext') || "This could happen if the user doesn't exist or the profile service is unavailable."}
+                </Text>
             </View>
         );
     }
 
-    const displayName = profile ? getAccountDisplayName(profile, locale) : username || '';
+    // The singular `location` field was removed from the User contract; derive
+    // the primary place from the `locations` list instead. `locations` is only
+    // reachable through the User index signature (typed `unknown`), so narrow it
+    // defensively before rendering the chip.
+    const primaryLocation = ((): string | undefined => {
+        const locations = profile?.locations;
+        const first: unknown = Array.isArray(locations) ? locations[0] : undefined;
+        if (first && typeof first === 'object' && 'name' in first && typeof first.name === 'string') {
+            return first.name || undefined;
+        }
+        return undefined;
+    })();
 
     return (
-        <View style={styles.container} className="bg-bg">
-            <ScrollView style={styles.flex} contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.scrollContainer}>
                 {/* Banner Image */}
                 <View style={styles.bannerContainer} className="bg-fill-brand/20">
                     <View style={styles.flex} className="bg-fill-brand" />
@@ -189,8 +196,17 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 <View style={styles.avatarRow} className="px-screen-margin">
                     <View style={styles.avatarWrapper} className="border-bg bg-bg rounded-radius-max">
                         <Avatar
-                            uri={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar, 'thumb') : undefined}
-                            name={displayName || username}
+                            // `getFileDownloadUrl` answers `null` for a reference it cannot
+                            // resolve, and `Avatar.source` takes `undefined` for "no picture" —
+                            // the two spellings of absent do not meet, so the coalesce is the
+                            // whole fix. Without it this file does not typecheck, which blocks
+                            // `bun run build` and therefore every publish of this package.
+                            source={
+                                profile?.avatar
+                                    ? (oxyServices.getFileDownloadUrl(profile.avatar, 'thumb') ?? undefined)
+                                    : undefined
+                            }
+                            name={displayName}
                             size={AVATAR_SIZE}
                         />
                     </View>
@@ -230,6 +246,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 </View>
 
                 {/* Info Grid as a settings list group */}
+                <View className="px-screen-margin">
                 <SettingsListGroup>
                     {profile?.createdAt && (
                         <SettingsListItem
@@ -238,10 +255,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                             showChevron={false}
                         />
                     )}
-                    {profile?.location && (
+                    {primaryLocation && (
                         <SettingsListItem
                             icon={<Ionicons name="location-outline" size={INFO_ICON_SIZE} color={bloomTheme.colors.textSecondary} />}
-                            title={profile.location}
+                            title={primaryLocation}
                             showChevron={false}
                         />
                     )}
@@ -289,11 +306,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         />
                     )}
                 </SettingsListGroup>
+                </View>
 
                 {/* All Stats in one row */}
                 <View style={styles.statsRow} className="px-screen-margin">
                     <View style={styles.statItem}>
-                        <Text style={styles.statAmount} className="text-text-inverse">{reputationTotal !== null && reputationTotal !== undefined ? reputationTotal : '--'}</Text>
+                        <Text style={styles.statAmount} className="text-text">{reputationTotal !== null && reputationTotal !== undefined ? reputationTotal : '--'}</Text>
                         <Text style={styles.statLabel} className="text-text-secondary">{t('profile.reputation') || 'Reputation'}</Text>
                     </View>
                     <View style={styles.statItem}>
@@ -313,7 +331,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         <Text style={styles.statLabel} className="text-text-secondary">{t('profile.following') || 'Following'}</Text>
                     </View>
                 </View>
-            </ScrollView>
         </View>
     );
 };
@@ -322,9 +339,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 // that no token class can express. Colors, spacing, radius, and typography roles
 // live on Bloom components + NativeWind token classes.
 const styles = StyleSheet.create({
-    container: { flex: 1 },
     flex: { flex: 1 },
-    centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     scrollContainer: { alignItems: 'stretch', paddingBottom: 40 },
     bannerContainer: { height: BANNER_HEIGHT, position: 'relative', overflow: 'hidden' },
     avatarRow: {
@@ -351,9 +366,8 @@ const styles = StyleSheet.create({
     statLabel: { fontSize: 14, marginBottom: 2, textAlign: 'center' },
     statAmount: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', letterSpacing: 0.2 },
     // Error state layout
-    errorHeader: { flexDirection: 'row', alignItems: 'center', gap: 16 },
     errorTitle: { fontSize: 20 },
-    errorContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    errorContent: { justifyContent: 'center', alignItems: 'center' },
     errorText: { fontSize: 18, fontWeight: '600', textAlign: 'center' },
     errorSubtext: { fontSize: 14, textAlign: 'center' },
 });

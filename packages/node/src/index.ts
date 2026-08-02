@@ -47,6 +47,9 @@ function main(): void {
     }
     shuttingDown = true;
     logger.info({ signal }, 'shutting down');
+    // Release the app's background resources (the rate-limiter sweep timer)
+    // before draining HTTP so nothing keeps a reference alive during shutdown.
+    app.stop();
     server.close((closeError) => {
       if (closeError) {
         logger.error({ err: closeError }, 'error while closing HTTP server');

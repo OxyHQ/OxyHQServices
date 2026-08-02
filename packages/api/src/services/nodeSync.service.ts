@@ -2,8 +2,8 @@
  * Node Sync Service (self-sovereign identity layer — F5b node → Oxy ingest)
  *
  * Pulls a user's authentic signed-record chain BACK from their personal data
- * node and mirrors it into Oxy's fast local copy ({@link SignedRecord} +
- * {@link RepoHead}). This is the inbound half of the two-way sync; F5a is the
+ * node and mirrors it into Oxy's fast local copy (`signed_records` +
+ * `repo_heads`). This is the inbound half of the two-way sync; F5a is the
  * outbound (Oxy → node) export.
  *
  * ## Absolute read-path invariant
@@ -13,23 +13,23 @@
  * in the background (the BullMQ worker / the in-process fallback). NOTHING in a
  * request's read path ever calls this. A down/slow/malicious node leaves Oxy's
  * mirror STALE — never wrong and never slow. `ingestFromNode` NEVER throws into a
- * caller; it logs and records `lastError` on the {@link UserNode} row.
+ * caller; it logs and records `lastError` on the `user_nodes` row.
  *
  * ## Trust model — verify everything, trust nothing the node says
  *
  * The node is untrusted transport. Every record it returns is independently
- * re-verified with the EXISTING `signedRecord.service.verifyEnvelope` (signature
- * over the canonical input, recomputed `recordId`, current-verification-method /
- * subject ownership, freshness, and v2 chain continuity). A record whose
- * `publicKey` is not a current verification method of THIS user's DID, or whose
- * `subject` is not this user's DID, is rejected as forged/foreign — a node
- * cannot inject a record the user did not sign.
+ * re-verified with the EXISTING `signedRecord.service.verifyAndStoreRecord`
+ * (signature over the canonical input, recomputed `recordId`,
+ * current-verification-method / subject ownership, freshness, and v2 chain
+ * continuity). A record whose `publicKey` is not a current verification method of
+ * THIS user's DID, or whose `subject` is not this user's DID, is rejected as
+ * forged/foreign — a node cannot inject a record the user did not sign.
  *
  * ## Conflict resolution
  *
  *  - **Linear append** (the normal case): a record that extends Oxy's chain head
  *    by one is appended atomically via `verifyAndStoreRecord`, advancing the
- *    head and the {@link UserNode} cursor.
+ *    head and the `user_nodes` cursor.
  *  - **Last-writer-wins per `(userId, nsid, rkey)`**: a record whose `issuedAt`
  *    is not newer than Oxy's current value for that key (tiebreak: higher
  *    `recordId`) is the loser — Oxy keeps what it has and skips. This also makes
@@ -37,38 +37,55 @@
  *  - **Genuine fork** (a record authentically signed by the owner that conflicts
  *    Oxy's chain at an existing point): append-only history is authentic, so the
  *    forked envelope is ALSO preserved (stored as a non-chained mirror row so the
- *    unique `(userId, seq)` chain index is never violated) and the materialized
+ *    unique `(user_id, seq)` chain index is never violated) and the materialized
  *    "current" value for its key advances to it when it wins LWW. Both branches
  *    persist; nothing is ever deleted; the fork is logged.
+ *
+ * ## The fork mirror is what `seq is null` MEANS on a v2 row
+ *
+ * A fork carries a `seq` that is already taken, so it cannot join the linear
+ * chain — the whole point of the unique `(user_id, seq)` index. It is stored with
+ * its content address and record key but WITHOUT `seq`, which is exactly how the
+ * ledger says "authentic, preserved, off the linear chain".
+ * `signed_records_chain_completeness_check` admits that shape (a v2 row needs
+ * `record_id`/`nsid`/`rkey` together; `seq` is the separate on-chain marker) —
+ * before migration `0009` it did not, and this whole branch could only ever have
+ * raised a CHECK violation. See `db/schema/signedRecords.ts`.
  *
  * ## Anti-rewrite counter-signature
  *
  * Every recordId Oxy ingests is COUNTER-SIGNED with the Oxy custodial key into an
- * append-only {@link NodeIngestWitness}. If the user's node key were stolen and
+ * append-only `node_ingest_witnesses` row. If the user's node key were stolen and
  * used to silently rewrite history, the witness proves the original record
  * existed and was observed by Oxy at a specific time. When the Oxy key is
  * unconfigured (dev/pre-prod) witnessing is skipped (logged once) but ingest
  * still proceeds.
+ *
+ * `ingested_at` is a `timestamptz` column but the SIGNED input keeps the
+ * millisecond epoch number Mongo stored, so the signature over
+ * `canonicalize({ recordId, userId, ingestedAt })` is reproducible from the
+ * stored row via `.getTime()`.
  */
 
-import { canonicalize, computeRecordId } from '@oxyhq/core';
+import { and, desc, eq, ne } from 'drizzle-orm';
+import { canonicalize, computeRecordId } from '@oxyhq/protocol';
+import { NodeClient, type NodeFetch } from '@oxyhq/protocol/node';
 import { safeFetch } from '@oxyhq/core/server';
-import { signedRecordEnvelopeSchema, type SignedRecordEnvelope } from '@oxyhq/contracts';
-import UserNode from '../models/UserNode';
-import SignedRecord from '../models/SignedRecord';
-import NodeIngestWitness from '../models/NodeIngestWitness';
-import { User } from '../models/User';
+import {
+  oxySignedRecordTypeSchema,
+  signedRecordEnvelopeSchema,
+  type SignedRecordEnvelope,
+} from '@oxyhq/contracts';
+import { getDb } from '../config/postgres';
+import { nodeIngestWitnesses } from '../db/schema/nodeIngestWitnesses';
+import { signedRecords } from '../db/schema/signedRecords';
+import { userNodes } from '../db/schema/userNodes';
 import SignatureService from './signature.service';
 import { getHead } from './repoLog.service';
-import {
-  verifyAndStoreRecord,
-  type SignedRecordSubject,
-} from './signedRecord.service';
+import { verifyAndStoreRecord } from './signedRecord.service';
 import userCache from '../utils/userCache';
 import { logger } from '../utils/logger';
 import {
-  NODE_OXY_HEAD_PATH,
-  NODE_OXY_LOG_PATH,
   NODE_INGEST_BATCH,
   NODE_INGEST_MAX_ITERATIONS,
   NODE_INGEST_FETCH_TIMEOUT_MS,
@@ -79,12 +96,6 @@ import {
 /** True only once the missing-Oxy-key warning has been logged (avoid log spam). */
 let warnedMissingOxyKey = false;
 
-/** The cached node fields the ingest worker needs. */
-interface IngestNode {
-  endpoint: string;
-  cursor?: number;
-}
-
 /** Per-record ingest outcome, used to drive cursor advance + loop control. */
 type IngestOutcome =
   | { kind: 'appended'; seq: number; recordId: string }
@@ -92,78 +103,67 @@ type IngestOutcome =
   | { kind: 'skipped' }
   | { kind: 'stop'; reason: string };
 
-/** A bounded JSON read of a node response (rejects when the cap is exceeded). */
-function readBoundedJson(stream: NodeJS.ReadableStream, maxBytes: number): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    stream.on('data', (chunk: Buffer) => {
-      total += chunk.length;
-      if (total > maxBytes) {
-        (stream as { destroy?: () => void }).destroy?.();
-        reject(new Error(`node response exceeded ${maxBytes} bytes`));
-        return;
-      }
-      chunks.push(chunk);
-    });
-    stream.on('end', () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-      }
-    });
-    stream.on('error', reject);
-  });
-}
-
 /**
- * Fetch the node's chain head seq via `safeFetch ${endpoint}/oxy/head`. Throws on
- * a non-2xx response, an oversized body, or any fetch/parse error — the caller
- * records that as `lastError` and leaves the mirror stale.
+ * The injected transport for the protocol {@link NodeClient}: a thin adapter over
+ * `@oxyhq/core/server`'s `safeFetch` (HTTPS-only, DNS-pinned, private-IP
+ * denylist, bounded redirects). The client owns the bounded-body reads; this
+ * adapter only hands it the SSRF-safe streamed response. The read-path invariant
+ * still holds — this runs ONLY in the background ingest worker.
  */
-async function fetchNodeHeadSeq(endpoint: string): Promise<number> {
-  const result = await safeFetch(`${endpoint}${NODE_OXY_HEAD_PATH}`, {
-    headersTimeoutMs: NODE_INGEST_FETCH_TIMEOUT_MS,
-    maxRedirects: 1,
-  });
-  if (result.status < 200 || result.status >= 300) {
-    result.response.destroy();
-    throw new Error(`node /oxy/head responded HTTP ${result.status}`);
-  }
-  const body = await readBoundedJson(result.response, 64 * 1024);
-  const seq = (body as { seq?: unknown }).seq;
-  return typeof seq === 'number' && Number.isFinite(seq) ? seq : -1;
-}
-
-/**
- * Fetch one ordered page of the node's log via
- * `safeFetch ${endpoint}/oxy/log?since=<seq>&limit=<n>`. Returns the raw record
- * objects (each is re-validated + re-verified per record by the caller). Throws
- * on a non-2xx / oversized / malformed-envelope response.
- */
-async function fetchNodeLogPage(endpoint: string, sinceSeq: number, limit: number): Promise<unknown[]> {
-  const url = `${endpoint}${NODE_OXY_LOG_PATH}?since=${encodeURIComponent(String(sinceSeq))}&limit=${encodeURIComponent(String(limit))}`;
+const nodeFetch: NodeFetch = async (url, init) => {
   const result = await safeFetch(url, {
+    method: init.method,
+    ...(init.headers ? { headers: init.headers } : {}),
+    headersTimeoutMs: init.headersTimeoutMs,
+    maxRedirects: init.maxRedirects,
+  });
+  return {
+    status: result.status,
+    headers: result.headers,
+    body: result.response,
+    destroy: () => result.response.destroy(),
+  };
+};
+
+/** Build a {@link NodeClient} for a node endpoint with the ingest tunables. */
+function makeNodeClient(endpoint: string): NodeClient {
+  return new NodeClient({
+    baseUrl: endpoint,
+    fetch: nodeFetch,
     headersTimeoutMs: NODE_INGEST_FETCH_TIMEOUT_MS,
     maxRedirects: 1,
+    logMaxBytes: NODE_INGEST_MAX_BYTES,
   });
-  if (result.status < 200 || result.status >= 300) {
-    result.response.destroy();
-    throw new Error(`node /oxy/log responded HTTP ${result.status}`);
-  }
-  const body = await readBoundedJson(result.response, NODE_INGEST_MAX_BYTES);
-  const records = (body as { records?: unknown }).records;
-  if (!Array.isArray(records)) {
-    throw new Error('node /oxy/log returned no records array');
-  }
-  return records;
+}
+
+/** Every non-revoked node row for a user — the only rows ingest ever writes. */
+function liveNodeFor(userId: string) {
+  return and(eq(userNodes.userId, userId), ne(userNodes.status, 'revoked'));
+}
+
+/**
+ * The `cursor` COLUMN value for an in-memory cursor.
+ *
+ * `-1` is this module's in-memory sentinel for "nothing mirrored yet"; the
+ * column expresses that as NULL, and `user_nodes_cursor_check` refuses a
+ * negative. Mongo stored the `-1` verbatim, so a literal translation writes a
+ * row Postgres rejects — and because the write sits inside the background-safe
+ * `try`, the rejection would be swallowed into `lastError` and every ingest that
+ * had appended nothing yet (a chain gap, a rejected record, an unreachable
+ * frontier) would silently fail to stamp its real reason.
+ */
+function storedCursor(cursor: number): number | null {
+  return cursor < 0 ? null : cursor;
 }
 
 /**
  * Counter-sign an ingested recordId with the Oxy custodial key and append it to
  * the witness ledger (idempotent per recordId). Non-fatal and never throws: a
- * missing Oxy key skips witnessing (warned once); a duplicate is a no-op.
+ * missing Oxy key skips witnessing (warned once); a re-pull of an already
+ * witnessed record is a no-op via `on conflict do nothing`.
+ *
+ * `ingestedAt` stays a millisecond epoch NUMBER in the signed input — it is part
+ * of the signature — and is stored as the equivalent `timestamptz` instant.
  */
 async function witnessRecord(userId: string, recordId: string, ingestedAt: number): Promise<void> {
   const privateKey = process.env.OXY_PRIVATE_KEY;
@@ -182,13 +182,14 @@ async function witnessRecord(userId: string, recordId: string, ingestedAt: numbe
       canonicalize({ recordId, userId, ingestedAt }),
       privateKey,
     );
-    await NodeIngestWitness.create({ userId, recordId, witnessSignature, ingestedAt });
+    await getDb()
+      .insert(nodeIngestWitnesses)
+      .values({ userId, recordId, witnessSignature, ingestedAt: new Date(ingestedAt) })
+      .onConflictDoNothing({ target: nodeIngestWitnesses.recordId });
   } catch (err) {
-    // A duplicate recordId (E11000) means we already witnessed it — expected on
-    // a re-pull. Anything else is logged, never thrown (background-safe).
-    if (typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000) {
-      return;
-    }
+    // Background-safe: a witness is evidence, never a gate on ingest. The one
+    // error that reaches here is a foreign-key violation from a content address
+    // that names no stored row (an unchained v1 append), and it must be visible.
     logger.warn('Node ingest counter-signature failed (non-fatal)', {
       component: 'nodeSync',
       userId,
@@ -206,10 +207,24 @@ async function currentKeyValue(
   nsid: string,
   rkey: string,
 ): Promise<{ issuedAt: number; recordId: string } | null> {
-  const row = await SignedRecord.findOne({ userId, nsid, rkey, verified: true })
-    .sort({ createdAt: -1 })
-    .lean<{ recordId?: string; envelope?: { issuedAt?: number } } | null>();
-  if (!row || typeof row.envelope?.issuedAt !== 'number' || typeof row.recordId !== 'string') {
+  const [row] = await getDb()
+    .select({ recordId: signedRecords.recordId, envelope: signedRecords.envelope })
+    .from(signedRecords)
+    .where(
+      and(
+        eq(signedRecords.userId, userId),
+        eq(signedRecords.nsid, nsid),
+        eq(signedRecords.rkey, rkey),
+        eq(signedRecords.verified, true),
+      ),
+    )
+    .orderBy(desc(signedRecords.createdAt))
+    .limit(1);
+  // `record_id` is non-null for any row carrying an `nsid`
+  // (`signed_records_chain_completeness_check`), so this guard is the type
+  // system's, not a real case — but LWW must never compare against a missing
+  // content address, so it is answered as "no current value" rather than cast.
+  if (!row || row.recordId === null) {
     return null;
   }
   return { issuedAt: row.envelope.issuedAt, recordId: row.recordId };
@@ -232,32 +247,56 @@ function incomingWinsLww(
 /**
  * Persist a forked / tie-breaking envelope as a NON-chained mirror row. It keeps
  * the AtProto `(nsid, rkey)` materialization fields and `recordId` (so it becomes
- * the current value for its key by `createdAt`) but deliberately carries NO `seq`
- * — the authentic linear chain (and its unique `(userId, seq)` index) is left
- * untouched, so both the existing chain row AND this fork branch persist. The
- * unique `recordId` index makes a re-ingested fork idempotent.
+ * the current value for its key by `created_at`) but deliberately carries NO
+ * `seq` — the authentic linear chain, and its unique `(user_id, seq)` index, is
+ * left untouched, so both the existing chain row AND this fork branch persist.
+ * The unique `record_id` index makes a re-ingested fork idempotent.
+ *
+ * Only a v2 envelope can fork (a v1 append runs no continuity check at all), so
+ * the chain fields are required here rather than derived — a v1 envelope would
+ * otherwise produce a half-chained row the CHECK constraint refuses.
+ *
+ * Returns `true` when this call is the one that stored the row.
  */
-async function storeForkMirror(env: SignedRecordEnvelope, userId: string, recordId: string): Promise<boolean> {
-  try {
-    await SignedRecord.create({
+async function storeForkMirror(
+  env: SignedRecordEnvelope,
+  userId: string,
+  recordId: string,
+  nsid: string,
+  rkey: string,
+): Promise<boolean> {
+  // The envelope `type` is an OPEN string on the shared protocol grammar; the
+  // `signed_records.type` column is the closed Oxy set with a matching CHECK.
+  // `verifyAndStoreRecord`'s store policy already rejected anything outside it
+  // (as `invalid_envelope`, which never reaches a fork branch), so this is the
+  // narrowing that carries the guarantee into the INSERT rather than a cast.
+  const oxyType = oxySignedRecordTypeSchema.safeParse(env.type);
+  if (!oxyType.success) {
+    logger.warn('Node ingest refused to mirror a fork of a non-Oxy record type', {
+      component: 'nodeSync',
+      userId,
+      recordId,
+    });
+    return false;
+  }
+
+  const inserted = await getDb()
+    .insert(signedRecords)
+    .values({
       subjectDid: env.subject,
       userId,
-      type: env.type,
+      type: oxyType.data,
       envelope: env,
       publicKey: env.publicKey,
       verified: true,
       // No `seq`/`prev` — intentionally off the linear chain (fork archive).
       recordId,
-      nsid: env.version === 2 ? env.collection : undefined,
-      rkey: env.version === 2 ? env.rkey : undefined,
-    });
-    return true;
-  } catch (err) {
-    if (typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000) {
-      return false; // already stored (idempotent re-pull)
-    }
-    throw err;
-  }
+      nsid,
+      rkey,
+    })
+    .onConflictDoNothing({ target: signedRecords.recordId })
+    .returning({ id: signedRecords.id });
+  return inserted.length > 0;
 }
 
 /**
@@ -268,15 +307,13 @@ async function storeForkMirror(env: SignedRecordEnvelope, userId: string, record
  */
 async function ingestEnvelope(
   env: SignedRecordEnvelope,
-  subject: SignedRecordSubject,
   userId: string,
 ): Promise<IngestOutcome> {
-  const result = await verifyAndStoreRecord(env, subject, userId);
+  const result = await verifyAndStoreRecord(env, userId);
 
   if (result.ok) {
-    const recordId = result.record.recordId ?? (await computeRecordId(env));
-    await witnessRecord(userId, recordId, Date.now());
-    return { kind: 'appended', seq: typeof result.record.seq === 'number' ? result.record.seq : -1, recordId };
+    await witnessRecord(userId, result.record.recordId, Date.now());
+    return { kind: 'appended', seq: result.record.seq, recordId: result.record.recordId };
   }
 
   switch (result.reason) {
@@ -285,11 +322,11 @@ async function ingestEnvelope(
       // an exact-issuedAt tie with a higher recordId flips to incoming (fork
       // archive); otherwise Oxy keeps what it has. Either way the linear chain
       // cannot advance through a stale frontier record, so we stop.
-      if (env.version === 2 && env.collection && env.rkey) {
+      if (env.version === 2 && typeof env.collection === 'string' && typeof env.rkey === 'string') {
         const recordId = await computeRecordId(env);
         const existing = await currentKeyValue(userId, env.collection, env.rkey);
         if (incomingWinsLww({ issuedAt: env.issuedAt, recordId }, existing)) {
-          const stored = await storeForkMirror(env, userId, recordId);
+          const stored = await storeForkMirror(env, userId, recordId, env.collection, env.rkey);
           if (stored) {
             await witnessRecord(userId, recordId, Date.now());
             logger.info('Node ingest LWW tiebreak adopted incoming record', {
@@ -314,7 +351,18 @@ async function ingestEnvelope(
       // its key (it is strictly newer — `stale_issued_at` is handled above). The
       // authentic linear chain is left intact; we stop advancing past the fork.
       const recordId = await computeRecordId(env);
-      const stored = await storeForkMirror(env, userId, recordId);
+      if (env.version !== 2 || typeof env.collection !== 'string' || typeof env.rkey !== 'string') {
+        // Unreachable: only a v2 envelope is chain-checked, so only a v2 envelope
+        // can be rejected for a chain reason. Answered as a hard stop rather than
+        // written, because a half-chained mirror row is not representable.
+        logger.warn('Node ingest saw a chain rejection on an unchained envelope', {
+          component: 'nodeSync',
+          userId,
+          reason: result.reason,
+        });
+        return { kind: 'stop', reason: `rejected:${result.reason}` };
+      }
+      const stored = await storeForkMirror(env, userId, recordId, env.collection, env.rkey);
       if (stored) {
         await witnessRecord(userId, recordId, Date.now());
       }
@@ -351,29 +399,33 @@ async function ingestEnvelope(
  *
  * Background-safe: NEVER throws. A missing/revoked/unreachable node is a no-op
  * (or records `lastError`) — the mirror simply stays as-is. On success the
- * {@link UserNode} cursor (= Oxy's local head seq) and `lastSyncedAt` advance, and
+ * `user_nodes` cursor (= Oxy's local head seq) and `lastSyncedAt` advance, and
  * the user cache is invalidated when the materialized records/DID changed.
  */
 export async function ingestFromNode(userId: string): Promise<void> {
   try {
-    const node = await UserNode.findOne({ userId, status: { $ne: 'revoked' } })
-      .select('endpoint cursor')
-      .lean<IngestNode | null>();
+    const [node] = await getDb()
+      .select({ endpoint: userNodes.endpoint, cursor: userNodes.cursor })
+      .from(userNodes)
+      .where(liveNodeFor(userId))
+      .limit(1);
     if (!node) {
-      return; // no registered node — nothing to ingest
-    }
-
-    const user = await User.findById(userId).select('publicKey authMethods').lean();
-    if (!user) {
+      // No registered node — nothing to ingest. This ALSO covers a deleted
+      // account: `user_nodes.user_id` is `NOT NULL REFERENCES users(id) ON
+      // DELETE CASCADE`, so a node row cannot outlive its account. Mongo had no
+      // such constraint and needed a separate existence check here; in Postgres
+      // that check can never fail, so it is deleted rather than translated.
       return;
     }
-    const subject: SignedRecordSubject = { publicKey: user.publicKey, authMethods: user.authMethods };
+
+    const client = makeNodeClient(node.endpoint);
 
     // Compare the node's head against Oxy's local head. When Oxy is already at or
     // ahead of the node, there is nothing to pull — just stamp the sync time.
     let remoteHeadSeq: number;
     try {
-      remoteHeadSeq = await fetchNodeHeadSeq(node.endpoint);
+      const head = await client.head();
+      remoteHeadSeq = typeof head.seq === 'number' && Number.isFinite(head.seq) ? head.seq : -1;
     } catch (err) {
       await recordIngestError(userId, err);
       return;
@@ -383,7 +435,7 @@ export async function ingestFromNode(userId: string): Promise<void> {
     const localHeadSeq = localHead ? localHead.seq : -1;
     // Never re-pull below our own head: start from the greater of the persisted
     // cursor and the live local head (idempotent — avoids re-ingesting).
-    let cursor = Math.max(typeof node.cursor === 'number' ? node.cursor : -1, localHeadSeq);
+    let cursor = Math.max(node.cursor ?? -1, localHeadSeq);
 
     if (remoteHeadSeq <= cursor) {
       await markSynced(userId, cursor, true);
@@ -396,7 +448,7 @@ export async function ingestFromNode(userId: string): Promise<void> {
     for (let iteration = 0; iteration < NODE_INGEST_MAX_ITERATIONS && !stopReason; iteration += 1) {
       let page: unknown[];
       try {
-        page = await fetchNodeLogPage(node.endpoint, cursor, NODE_INGEST_BATCH);
+        page = (await client.log(cursor, NODE_INGEST_BATCH)).records;
       } catch (err) {
         await recordIngestError(userId, err);
         return;
@@ -419,7 +471,7 @@ export async function ingestFromNode(userId: string): Promise<void> {
           continue;
         }
 
-        const outcome = await ingestEnvelope(env, subject, userId);
+        const outcome = await ingestEnvelope(env, userId);
         if (outcome.kind === 'appended') {
           cursor = outcome.seq >= 0 ? outcome.seq : cursor;
           changed = true;
@@ -444,10 +496,14 @@ export async function ingestFromNode(userId: string): Promise<void> {
     }
 
     if (stopReason && stopReason !== 'lww_tiebreak') {
-      await UserNode.updateOne(
-        { userId, status: { $ne: 'revoked' } },
-        { $set: { cursor, lastSyncedAt: new Date(), lastError: stopReason.slice(0, NODE_LAST_ERROR_MAX_LEN) } },
-      );
+      await getDb()
+        .update(userNodes)
+        .set({
+          cursor: storedCursor(cursor),
+          lastSyncedAt: new Date(),
+          lastError: stopReason.slice(0, NODE_LAST_ERROR_MAX_LEN),
+        })
+        .where(liveNodeFor(userId));
     } else {
       await markSynced(userId, cursor, true);
     }
@@ -468,21 +524,22 @@ export async function ingestFromNode(userId: string): Promise<void> {
 
 /** Advance the cursor + stamp `lastSyncedAt`; clear `lastError` when requested. */
 async function markSynced(userId: string, cursor: number, clearError: boolean): Promise<void> {
-  await UserNode.updateOne(
-    { userId, status: { $ne: 'revoked' } },
-    {
-      $set: { cursor, lastSyncedAt: new Date() },
-      ...(clearError ? { $unset: { lastError: '' } } : {}),
-    },
-  );
+  await getDb()
+    .update(userNodes)
+    .set({
+      cursor: storedCursor(cursor),
+      lastSyncedAt: new Date(),
+      ...(clearError ? { lastError: null } : {}),
+    })
+    .where(liveNodeFor(userId));
 }
 
 /** Record a non-throwing ingest failure as `lastError` on the node row. */
 async function recordIngestError(userId: string, err: unknown): Promise<void> {
   const message = err instanceof Error ? err.message : String(err);
   logger.debug('Node ingest fetch failed', { component: 'nodeSync', userId, error: message });
-  await UserNode.updateOne(
-    { userId, status: { $ne: 'revoked' } },
-    { $set: { lastError: message.slice(0, NODE_LAST_ERROR_MAX_LEN), lastSyncedAt: new Date() } },
-  );
+  await getDb()
+    .update(userNodes)
+    .set({ lastError: message.slice(0, NODE_LAST_ERROR_MAX_LEN), lastSyncedAt: new Date() })
+    .where(liveNodeFor(userId));
 }

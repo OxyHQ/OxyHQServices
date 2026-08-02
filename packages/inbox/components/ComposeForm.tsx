@@ -15,8 +15,8 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Dialog, useDialogControl } from '@oxyhq/bloom';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Dialog, useDialogControl, toast } from '@oxyhq/bloom';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
   Cancel01Icon,
@@ -26,12 +26,11 @@ import {
   Attachment01Icon,
   Clock01Icon,
 } from '@hugeicons/core-free-icons';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy } from '@oxyhq/services';
 import type { FileMetadata } from '@oxyhq/core';
-import { toast } from '@oxyhq/bloom';
 
+import { useGoBack } from '@/hooks/useGoBack';
 import { useColors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useSendMessageWithUndo, useSendMessage, useSaveDraft } from '@/hooks/mutations/useMessageMutations';
@@ -41,6 +40,7 @@ import { RichTextEditor, stripHtml, type RichTextEditorHandle } from '@/componen
 import { ScheduleSendSheet } from '@/components/ScheduleSendSheet';
 import { TemplatePicker } from '@/components/TemplatePicker';
 import type { ContactSuggestion, EmailTemplate } from '@/services/emailApi';
+import { parseRecipientList } from '@/schemas/emailSchemas';
 
 /**
  * Local composer representation of an attachment. Just enough to render the
@@ -76,7 +76,8 @@ interface ComposeFormProps {
 }
 
 export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initialCc, subject: initialSubject, body: initialBody }: ComposeFormProps) {
-  const router = useRouter();
+  // Compose can be opened from a deep link, where there is no history to pop.
+  const closeCompose = useGoBack();
   const insets = useSafeAreaInsets();
   const colors = useColors();
 
@@ -146,9 +147,9 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       const snapshot = latestDraftRef.current;
       saveDraftMutate(
         {
-          to: snapshot.to.trim() ? parseAddresses(snapshot.to) : undefined,
-          cc: snapshot.cc.trim() ? parseAddresses(snapshot.cc) : undefined,
-          bcc: snapshot.bcc.trim() ? parseAddresses(snapshot.bcc) : undefined,
+          to: snapshot.to.trim() ? parseRecipientList(snapshot.to) : undefined,
+          cc: snapshot.cc.trim() ? parseRecipientList(snapshot.cc) : undefined,
+          bcc: snapshot.bcc.trim() ? parseRecipientList(snapshot.bcc) : undefined,
           subject: snapshot.subject || undefined,
           text: isWeb ? stripHtml(snapshot.body) || undefined : snapshot.body || undefined,
           html: isWeb ? snapshot.body || undefined : undefined,
@@ -193,16 +194,9 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     [],
   );
 
-  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-
-  const parseAddresses = (input: string) => {
-    return input
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .filter((addr) => isValidEmail(addr))
-      .map((addr) => ({ address: addr }));
-  };
+  // Recipient parsing + validation is centralised in the Zod-backed
+  // `parseRecipientList` (schemas/emailSchemas.ts) so the composer and any
+  // future caller share one definition of a valid address.
 
   // Append a selected file to the attachment list, de-duplicating by fileId so
   // that picking the same Cloud file twice doesn't create a duplicate chip.
@@ -248,7 +242,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       return;
     }
 
-    const toAddresses = parseAddresses(to);
+    const toAddresses = parseRecipientList(to);
     if (toAddresses.length === 0) {
       toast.error('Please enter a valid email address.');
       return;
@@ -258,8 +252,8 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     sendWithUndo(
       {
         to: toAddresses,
-        cc: cc.trim() ? parseAddresses(cc) : undefined,
-        bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
+        cc: cc.trim() ? parseRecipientList(cc) : undefined,
+        bcc: bcc.trim() ? parseRecipientList(bcc) : undefined,
         subject,
         text: isWeb ? stripHtml(body) : body,
         html: isWeb ? body : undefined,
@@ -267,7 +261,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         attachments: attachments.length > 0 ? attachments.map((a) => ({ fileId: a.fileId })) : undefined,
       },
       {
-        onSuccess: () => router.back(),
+        onSuccess: () => closeCompose(),
         onError: (err: unknown) => {
           sentRef.current = false;
           const message = err instanceof Error ? err.message : 'Unable to send email. Please try again.';
@@ -275,14 +269,14 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         },
       },
     );
-  }, [to, cc, bcc, subject, body, replyTo, attachments, sendWithUndo, router]);
+  }, [to, cc, bcc, subject, body, replyTo, attachments, sendWithUndo, closeCompose]);
 
   const handleSaveDraft = useCallback(() => {
     saveDraftMutation.mutate(
       {
-        to: to.trim() ? parseAddresses(to) : undefined,
-        cc: cc.trim() ? parseAddresses(cc) : undefined,
-        bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
+        to: to.trim() ? parseRecipientList(to) : undefined,
+        cc: cc.trim() ? parseRecipientList(cc) : undefined,
+        bcc: bcc.trim() ? parseRecipientList(bcc) : undefined,
         subject,
         text: isWeb ? stripHtml(body) : body,
         html: isWeb ? body : undefined,
@@ -293,10 +287,10 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         onSuccess: (draft) => {
           draftIdRef.current = draft._id;
         },
-        onSettled: () => router.back(),
+        onSettled: () => closeCompose(),
       },
     );
-  }, [to, cc, bcc, subject, body, replyTo, saveDraftMutation, router]);
+  }, [to, cc, bcc, subject, body, replyTo, saveDraftMutation, closeCompose]);
 
   const saveDraftDialog = useDialogControl();
 
@@ -304,9 +298,9 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     if (hasContent) {
       saveDraftDialog.open();
     } else {
-      router.back();
+      closeCompose();
     }
-  }, [hasContent, saveDraftDialog, router]);
+  }, [hasContent, saveDraftDialog, closeCompose]);
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -360,7 +354,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       return;
     }
 
-    const toAddresses = parseAddresses(to);
+    const toAddresses = parseRecipientList(to);
     if (toAddresses.length === 0) {
       toast.error('Please enter a valid email address.');
       return;
@@ -370,8 +364,8 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     sendMessageMutation.mutate(
       {
         to: toAddresses,
-        cc: cc.trim() ? parseAddresses(cc) : undefined,
-        bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
+        cc: cc.trim() ? parseRecipientList(cc) : undefined,
+        bcc: bcc.trim() ? parseRecipientList(bcc) : undefined,
         subject,
         text: isWeb ? stripHtml(body) : body,
         html: isWeb ? body : undefined,
@@ -389,7 +383,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
             minute: '2-digit',
           });
           toast.success(`Email scheduled for ${timeStr}`);
-          router.back();
+          closeCompose();
         },
         onError: (err: Error) => {
           sentRef.current = false;
@@ -397,7 +391,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         },
       },
     );
-  }, [to, cc, bcc, subject, body, replyTo, attachments, sendMessageMutation, router]);
+  }, [to, cc, bcc, subject, body, replyTo, attachments, sendMessageMutation, closeCompose]);
 
   return (
     <KeyboardAvoidingView
@@ -686,12 +680,12 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       {/* Save as draft confirmation */}
       <Dialog
         control={saveDraftDialog}
-        onClose={() => router.back()}
+        onClose={() => closeCompose()}
         title="Save draft?"
         description="Do you want to save this message as a draft?"
         actions={[
           { label: 'Save', onPress: handleSaveDraft },
-          { label: 'Discard', color: 'destructive', onPress: () => router.back() },
+          { label: 'Discard', color: 'destructive', onPress: () => closeCompose() },
           { label: 'Cancel', color: 'cancel' },
         ]}
       />

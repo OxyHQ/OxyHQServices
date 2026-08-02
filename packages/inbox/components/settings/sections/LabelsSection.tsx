@@ -19,7 +19,7 @@ import { Button } from '@oxyhq/bloom/button';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Admonition } from '@oxyhq/bloom/admonition';
-import { Dialog, useDialogControl } from '@oxyhq/bloom';
+import { Dialog, useDialogControl, toast } from '@oxyhq/bloom';
 import {
   Pin_Stroke2_Corner0_Rounded,
   Pencil_Stroke2_Corner0_Rounded,
@@ -28,7 +28,6 @@ import {
   CircleCheck_Stroke2_Corner0_Rounded,
   ColorPalette_Stroke2_Corner0_Rounded,
 } from '@oxyhq/bloom/icons';
-import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { SectionHeader } from '@/components/settings/SectionHeader';
@@ -179,34 +178,44 @@ export function LabelsSection() {
                       <Text style={[styles.labelName, { color: colors.text }]} numberOfLines={1}>
                         {label.name}
                       </Text>
-                      <Pressable
-                        onPress={() => {
-                          setEditingLabelId(label._id);
-                          setEditingLabelName(label.name);
-                        }}
-                        style={styles.iconBtn}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Rename ${label.name}`}
-                      >
-                        <Pencil_Stroke2_Corner0_Rounded
-                          size="sm"
-                          style={{ color: colors.icon }}
-                        />
-                      </Pressable>
-                      <Pressable
-                        onPress={() => {
-                          setLabelPendingDelete({ id: label._id, name: label.name });
-                          deleteConfirm.open();
-                        }}
-                        style={styles.iconBtn}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Delete ${label.name}`}
-                      >
-                        <Trash_Stroke2_Corner0_Rounded
-                          size="sm"
-                          style={{ color: colors.error }}
-                        />
-                      </Pressable>
+                      {/* System labels ship with the product: no rename, no
+                          delete, and the server rejects both anyway. */}
+                      {label.system ? (
+                        <Text style={[styles.systemTag, { color: colors.secondaryText }]}>
+                          Built-in
+                        </Text>
+                      ) : (
+                        <>
+                          <Pressable
+                            onPress={() => {
+                              setEditingLabelId(label._id);
+                              setEditingLabelName(label.name);
+                            }}
+                            style={styles.iconBtn}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Rename ${label.name}`}
+                          >
+                            <Pencil_Stroke2_Corner0_Rounded
+                              size="sm"
+                              style={{ color: colors.icon }}
+                            />
+                          </Pressable>
+                          <Pressable
+                            onPress={() => {
+                              setLabelPendingDelete({ id: label._id, name: label.name });
+                              deleteConfirm.open();
+                            }}
+                            style={styles.iconBtn}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Delete ${label.name}`}
+                          >
+                            <Trash_Stroke2_Corner0_Rounded
+                              size="sm"
+                              style={{ color: colors.error }}
+                            />
+                          </Pressable>
+                        </>
+                      )}
                     </>
                   )}
                 </View>
@@ -297,6 +306,9 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
+  },
+  systemTag: {
+    fontSize: 12,
   },
   labelName: {
     flex: 1,

@@ -21,9 +21,9 @@ jest.mock('../../utils/logger', () => ({
 
 const REQUIRED_BASE_ENV: Record<string, string> = {
   MONGODB_URI: 'mongodb://localhost:27017/test',
+  DATABASE_URL: 'postgres://oxy:oxy@127.0.0.1:5432/oxy_test',
   ACCESS_TOKEN_SECRET: 'a'.repeat(64),
   REFRESH_TOKEN_SECRET: 'b'.repeat(64),
-  FEDCM_TOKEN_SECRET: 'c'.repeat(64),
   AWS_REGION: 'eu-west-1',
   AWS_ACCESS_KEY_ID: 'test-access-key',
   AWS_SECRET_ACCESS_KEY: 'test-secret-key',
@@ -69,39 +69,61 @@ describe('isValidHostname', () => {
   });
 });
 
-describe('validateRequiredEnvVars — REFRESH_COOKIE_DOMAIN', () => {
+describe('validateRequiredEnvVars — DATABASE_URL', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     process.env = { ...originalEnv, ...REQUIRED_BASE_ENV };
-    delete process.env.REFRESH_COOKIE_DOMAIN;
+    process.env.NODE_ENV = 'development';
+    process.env.DEVICE_ID_SALT = 'x'.repeat(48);
   });
 
   afterAll(() => {
     process.env = originalEnv;
   });
 
-  it('passes when REFRESH_COOKIE_DOMAIN is unset', () => {
-    expect(() => validateRequiredEnvVars()).not.toThrow();
-  });
-
-  it('passes for the exact API host emergency override', () => {
-    process.env.REFRESH_COOKIE_DOMAIN = 'api.oxy.so';
-    expect(() => validateRequiredEnvVars()).not.toThrow();
-  });
-
-  it.each([
-    'oxy.so',
-    'auth.oxy.so',
-    'oxy.so; Secure',
-    'oxy.so,evil.com',
-    'http://oxy.so',
-    'oxy .so',
-    'oxy.so\nSet-Cookie: x=y',
-  ])('fails fast with a clear error for %j', (value) => {
-    process.env.REFRESH_COOKIE_DOMAIN = value;
+  it('fails fast when DATABASE_URL is unset', () => {
+    delete process.env.DATABASE_URL;
     expect(() => validateRequiredEnvVars()).toThrow(ConfigurationError);
-    expect(() => validateRequiredEnvVars()).toThrow(/REFRESH_COOKIE_DOMAIN/);
+    expect(() => validateRequiredEnvVars()).toThrow(/DATABASE_URL/);
+  });
+
+  it.each(['postgres://oxy@localhost:5432/oxy', 'postgresql://oxy@localhost:5432/oxy'])(
+    'accepts %s without a shape warning',
+    (url) => {
+      process.env.DATABASE_URL = url;
+      expect(() => validateRequiredEnvVars()).not.toThrow();
+      const warnCalls = JSON.stringify((logger.warn as jest.Mock).mock.calls);
+      expect(warnCalls).not.toMatch(/DATABASE_URL/);
+    }
+  );
+
+  it('warns (but does not throw) when DATABASE_URL is not a Postgres URI', () => {
+    process.env.DATABASE_URL = 'mysql://oxy@localhost:3306/oxy';
+    expect(() => validateRequiredEnvVars()).not.toThrow();
+    const warnCalls = JSON.stringify((logger.warn as jest.Mock).mock.calls);
+    expect(warnCalls).toMatch(/DATABASE_URL/);
+  });
+
+  // The inverse of the assertion this replaces, and the point of the change:
+  // the API used to REFUSE TO BOOT without a Mongo connection string, months
+  // after it stopped reading Mongo to serve a request. Nothing in `src/`
+  // outside `scripts/` and `db/backfill/` touches Mongo now, so requiring one
+  // was requiring a dependency the process does not have.
+  it('boots with no MONGODB_URI at all — Mongo left the serving path', () => {
+    delete process.env.MONGODB_URI;
+    expect(() => validateRequiredEnvVars()).not.toThrow();
+  });
+
+  // MONGODB_URI is still SUPPLIED (the backfill and the one-shot admin scripts
+  // read it, and Mongo is the rollback source), so a malformed one must still
+  // be called out — dropping the requirement must not drop the diagnosis.
+  it('still warns when a supplied MONGODB_URI is not a Mongo URI', () => {
+    process.env.MONGODB_URI = 'postgres://oxy@localhost:5432/oxy';
+    expect(() => validateRequiredEnvVars()).not.toThrow();
+    const warnCalls = JSON.stringify((logger.warn as jest.Mock).mock.calls);
+    expect(warnCalls).toMatch(/MONGODB_URI/);
   });
 });
 

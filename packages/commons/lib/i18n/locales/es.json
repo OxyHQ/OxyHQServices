@@ -1,6 +1,7 @@
 {
   "common": {
     "cancel": "Cancelar",
+    "copy": "Copiar",
     "save": "Guardar",
     "ok": "Aceptar",
     "continue": "Continuar",
@@ -42,20 +43,23 @@
   "auth": {
     "indexHello": "Hola",
     "indexTapToContinue": "Toca para continuar",
-    "signIn": {
-      "title": "Inicia sesión en tu cuenta",
-      "subtitle": "Usa tu cuenta de Oxy para gestionar tu perfil, seguridad y apps conectadas.",
-      "button": "Iniciar sesión con Oxy",
-      "error": "No se pudo iniciar sesión. Inténtalo de nuevo.",
-      "unsupported": "Tu navegador no admite el inicio de sesión seguro. Actualízalo o usa la app de Oxy.",
-      "noAccount": "¿Aún no tienes una cuenta de Oxy?",
-      "createAccount": "Créala en la app"
+    "indexRestore": "Restaurar con frase de recuperación",
+    "errors": {
+      "invalidPhrase": "Frase de recuperación no válida. Revisa las palabras e inténtalo de nuevo.",
+      "importSyncFailed": "Tu identidad se importó en este dispositivo, pero no pudimos conectarla con tu cuenta. Comprueba tu conexión e inténtalo de nuevo.",
+      "identityAlreadyExists": "Ya existe una identidad en este dispositivo. Usa tu identidad actual o elimínala desde ajustes antes de importar una nueva.",
+      "importFailed": "No se pudo importar la identidad",
+      "identityExistsSyncFailed": "Tu identidad existe en este dispositivo, pero no pudimos conectarla con tu cuenta. Comprueba tu conexión e inténtalo de nuevo.",
+      "identityCreatedSyncFailed": "Tu identidad se creó en este dispositivo, pero no pudimos conectarla con tu cuenta. Comprueba tu conexión e inténtalo de nuevo.",
+      "noIdentityFound": "No se encontró ninguna identidad en este dispositivo.",
+      "couldNotReadIdentity": "No se pudo leer tu identidad. Inténtalo de nuevo."
     },
     "welcome": {
       "lead": "Oxy es tu",
       "termsAgree": "Acepto los Términos y Condiciones de Usuario de Oxy y reconozco el Aviso de Privacidad",
       "decline": "Rechazar",
       "accept": "Aceptar",
+      "restore": "Ya tengo una cuenta",
       "rotating": {
         "humanId": "ID humana",
         "digitalIdentity": "identidad digital",
@@ -80,9 +84,7 @@
       "createIdentity": "Crear identidad nueva",
       "createIdentitySubtitle": "Genera una identidad de autocustodia",
       "importIdentity": "Importar identidad existente",
-      "importIdentitySubtitle": "Usa tu frase de recuperación o archivo de copia",
-      "signInExisting": "Iniciar sesión en cuenta existente",
-      "signInExistingSubtitle": "Usa tu usuario y contraseña"
+      "importIdentitySubtitle": "Usa tu frase de recuperación o archivo de copia"
     },
     "creating": {
       "messages": [
@@ -91,10 +93,12 @@
         "Configurando tu cuenta..."
       ],
       "subtitle": "Esto puede tardar un momento",
-      "signingIn": "Iniciando sesión...",
-      "signingInSubtitle": "¡Casi listo!",
+      "connecting": "Conectando tu identidad…",
+      "connectingSubtitle": "¡Casi listo!",
       "syncing": "Sincronizando tu identidad...",
-      "syncingSubtitle": "Conectando con los servidores de Oxy"
+      "syncingSubtitle": "Conectando con los servidores de Oxy",
+      "errorTitle": "No se pudo terminar la configuración",
+      "retry": "Reintentar"
     },
     "usernameRequired": {
       "title": "Nombre de usuario requerido",
@@ -260,7 +264,6 @@
     "title": "Seguridad e inicio de sesión",
     "subtitle": "Gestiona tu configuración de seguridad y métodos de inicio de sesión.",
     "loading": "Cargando configuración de seguridad...",
-    "signInRequired": "Inicia sesión para ver tu configuración de seguridad.",
     "sections": {
       "recommendations": "Recomendaciones de seguridad",
       "recentActivity": "Actividad de seguridad reciente",
@@ -370,7 +373,6 @@
     "title": "Datos y privacidad",
     "subtitle": "Gestiona tus datos y tu configuración de privacidad.",
     "loading": "Cargando configuración de privacidad...",
-    "signInRequired": "Inicia sesión para ver tu configuración de privacidad.",
     "sections": {
       "download": "Descargar tus datos",
       "downloadSubtitle": "Obtén una copia de los datos de tu cuenta",
@@ -446,7 +448,6 @@
       "failedTitle": "Eliminación fallida",
       "failedDefault": "No se pudo eliminar la cuenta. Inténtalo de nuevo.",
       "localKeyPurgeWarning": "Tu cuenta se eliminó, pero no se pudo borrar la clave de identidad de este dispositivo. Reinstala la app para borrarla por completo.",
-      "signInRequired": "Inicia sesión para eliminar tu cuenta.",
       "thisAccount": "esta cuenta",
       "confirmInputLabel": "Escribe tu nombre de usuario para confirmar la eliminación de cuenta"
     },
@@ -469,7 +470,6 @@
     "retry": "Reintentar",
     "errorTitle": "No se pudo cargar la actividad",
     "errorMessage": "Ocurrió un error al cargar tu actividad. Desliza para actualizar o inténtalo de nuevo.",
-    "signInRequired": "Inicia sesión para ver tu actividad.",
     "empty": {
       "title": "Sin actividad todavía",
       "subtitle": "Aquí aparecerán inicios de sesión, cambios de seguridad y eventos de dispositivos."
@@ -516,7 +516,6 @@
     "title": "Información personal",
     "subtitle": "Gestiona tu información personal y los datos de tu perfil.",
     "loading": "Cargando información personal...",
-    "signInRequired": "Inicia sesión para ver tu información personal.",
     "sections": {
       "profileSummary": "Resumen del perfil",
       "contactDetails": "Contacto y detalles",
@@ -649,7 +648,6 @@
   "storage": {
     "title": "Almacenamiento Oxy",
     "subtitle": "Gestiona tu uso de almacenamiento y archivos.",
-    "signInRequired": "Inicia sesión para ver tu uso de almacenamiento.",
     "loading": "Cargando uso de almacenamiento…",
     "loadFailed": "No se pudo cargar el uso de almacenamiento",
     "retry": "Reintentar",
@@ -690,14 +688,12 @@
   "family": {
     "title": "Conexiones de terceros",
     "subtitle": "Gestiona las apps y servicios conectados a tu cuenta.",
-    "signInRequired": "Inicia sesión para gestionar tus conexiones de terceros.",
     "emptyTitle": "Aún no hay apps conectadas",
     "emptySubtitle": "Cuando autorices a apps externas a acceder a tu cuenta de Oxy, aparecerán aquí."
   },
   "sharing": {
     "title": "Personas y compartido",
     "subtitle": "Gestiona tus conexiones y ajustes de compartido.",
-    "signInRequired": "Inicia sesión para gestionar tus conexiones y ajustes de compartido.",
     "sections": {
       "contacts": "Contactos",
       "contactsSubtitle": "Gestiona tus conexiones y encuentra nuevas personas",
@@ -946,8 +942,12 @@
     "idCard": "Tarjeta de identidad",
     "copyPublicKey": "Copiar clave pública",
     "publicKeyCopied": "Clave pública copiada al portapapeles",
+    "didCopied": "ID descentralizado copiado al portapapeles",
     "copyFailed": "No se pudo copiar",
     "importantNotice": "Tu frase de recuperación es la ÚNICA forma de restaurar tu identidad si pierdes el acceso a este dispositivo. Oxy no puede restablecer ni recuperar tu cuenta. Guarda tu frase de recuperación en un lugar seguro y nunca la compartas.",
+    "identifiersTitle": "Identificadores",
+    "publicKeyRow": "Clave pública",
+    "didRow": "ID descentralizado",
     "selfCustodyTitle": "Identidad de autocustodia",
     "selfCustodyDescription": "A diferencia de las cuentas tradicionales, tu identidad de Oxy usa la misma tecnología que protege Bitcoin. Tienes control total sobre tu identidad.",
     "items": {
@@ -960,13 +960,6 @@
       "decentralizedTitle": "Identidad descentralizada",
       "decentralizedSubtitle": "Tu identidad no está controlada por ninguna empresa. Es completamente tuya."
     },
-    "securityActions": "Acciones de seguridad",
-    "createBackupTitle": "Crear copia de seguridad cifrada",
-    "createBackupSubtitle": "Genera un archivo de copia de seguridad protegido con contraseña",
-    "exportKeyTitle": "Exportar clave privada",
-    "exporting": "Exportando…",
-    "lastExported": "Exportada por última vez {{time}}",
-    "exportKeySubtitle": "Imprime tu clave privada para una copia de seguridad segura",
     "accountSettings": "Configuración de la cuenta",
     "accountSettingsDescription": "Gestiona las preferencias y la configuración de caducidad de tu cuenta.",
     "accountExpiration": "Caducidad de la cuenta",
@@ -985,78 +978,128 @@
       "never": "Nunca"
     },
     "expirationUpdated": "Configuración de caducidad de la cuenta actualizada",
-    "expirationUpdateFailed": "No se pudo actualizar la configuración de caducidad de la cuenta. Inténtalo de nuevo.",
-    "securityWarning": {
-      "title": "Advertencia de seguridad",
-      "message": "Al exportar tu clave privada se imprimirá en papel. Cualquiera con acceso a esta clave impresa puede controlar tu identidad. Asegúrate de estar en un lugar seguro y de guardar el documento impreso de forma segura.\n\n¿Quieres continuar?",
-      "continue": "Continuar"
-    },
-    "export": {
-      "noPrivateKey": "No se encontró ninguna clave privada en este dispositivo",
-      "sentToPrinter": "La clave privada se ha enviado a la impresora",
-      "failed": "No se pudo exportar la clave privada. Inténtalo de nuevo."
-    },
-    "print": {
-      "documentTitle": "Identidad de Oxy - Exportación de clave privada",
-      "generated": "Generado: {{date}}",
-      "warningTitle": "ADVERTENCIA DE SEGURIDAD",
-      "warningBody": "Este documento contiene tu clave privada. Cualquiera con acceso a esta clave puede controlar tu identidad. Guarda este documento en un lugar seguro, como una caja fuerte o una caja de seguridad. Nunca compartas esta clave con nadie.",
-      "publicKeyLabel": "Clave pública (tu identidad):",
-      "privateKeyLabel": "Clave privada (MANTÉNLA EN SECRETO):",
-      "infoTitle": "Información importante:",
-      "info1": "Esta clave privada se usa para firmar transacciones y demostrar tu identidad",
-      "info2": "Si pierdes esta clave y tu frase de recuperación, perderás el acceso a tu identidad de forma permanente",
-      "info3": "No guardes este documento de forma digital (capturas de pantalla, almacenamiento en la nube, etc.)",
-      "info4": "Considera guardar varias copias en distintos lugares seguros",
-      "info5": "Si esta clave se ve comprometida, deberías crear una nueva identidad de inmediato",
-      "footerLine1": "Identidad de Oxy - Identidad criptográfica de autocustodia",
-      "footerLine2": "Este documento fue generado por la app Oxy Accounts"
-    }
+    "expirationUpdateFailed": "No se pudo actualizar la configuración de caducidad de la cuenta. Inténtalo de nuevo."
   },
   "backup": {
-    "checkingIdentity": "Comprobando identidad…",
+    "title": "Copia de seguridad cifrada",
+    "subtitle": "Guarda una copia cifrada de tu clave de identidad con Oxy para poder recuperarla solo con tu frase de recuperación.",
+    "checkingStatus": "Comprobando el estado de la copia de seguridad…",
+    "existsTrue": "Copia de seguridad cifrada guardada",
+    "existsFalse": "Aún no hay copia de seguridad cifrada",
+    "identityHint": "Identidad {{hint}}…",
+    "createdAt": "Creada {{date}}",
+    "howItWorks": "Oxy solo guarda el texto cifrado, nunca tu frase de recuperación, la clave que lo descifra ni tu clave privada. Solo tu frase de recuperación puede descifrarlo.",
     "missingTitle": "No hay identidad en este dispositivo",
-    "missingSubtitle": "No pudimos encontrar una clave privada en este dispositivo. Las copias de seguridad cifran la clave de identidad almacenada localmente, así que primero debes crear o importar tu identidad.",
+    "missingSubtitle": "Las copias de seguridad protegen la clave de identidad almacenada en este dispositivo. Crea o importa tu identidad primero.",
     "missingBanner": "Si ya tienes una identidad en otro dispositivo, inicia sesión allí y crea la copia de seguridad desde ese dispositivo.",
     "goBack": "Volver",
     "setupIdentity": "Configurar identidad",
-    "title": "Crear copia de seguridad cifrada",
-    "subtitle": "Genera un archivo de copia de seguridad protegido con contraseña que puedas guardar de forma segura sin conexión.",
-    "banner": "Guarda este archivo en un lugar seguro (caja fuerte, unidad cifrada, etc.). Nunca compartas tu contraseña ni tu archivo de copia de seguridad.",
-    "password": "Contraseña",
-    "confirmPassword": "Confirmar contraseña",
-    "passwordPlaceholder": "Introduce la contraseña (mín. 12 caracteres)",
-    "confirmPasswordPlaceholder": "Confirma la contraseña",
-    "passwordTooShort": "La contraseña debe tener al menos 12 caracteres",
-    "passwordsDoNotMatch": "Las contraseñas no coinciden",
-    "cancel": "Cancelar",
-    "generating": "Generando…",
-    "generate": "Generar copia de seguridad",
-    "errors": {
-      "noPublicKey": "Clave pública no disponible",
-      "passwordMinLength": "La contraseña debe tener al menos 12 caracteres",
-      "passwordsMismatch": "Las contraseñas no coinciden",
-      "noPrivateKey": "No se encontró ninguna clave privada en este dispositivo",
-      "sharingUnavailable": "Compartir no está disponible en esta plataforma",
-      "generateFailed": "No se pudo generar el archivo de copia de seguridad"
+    "enterPhraseTitle": "Confirma tu frase de recuperación",
+    "enterPhraseSubtitle": "Introduce tu frase de 12 palabras existente. Se usa en este dispositivo para cifrar la copia de seguridad; nunca se envía a Oxy.",
+    "invalidPhrase": "Eso no parece una frase de recuperación válida. Revisa las palabras e inténtalo de nuevo.",
+    "phraseMismatch": "Esa frase no coincide con la identidad de este dispositivo.",
+    "create": "Crear copia de seguridad cifrada",
+    "replace": "Reemplazar copia de seguridad cifrada",
+    "creating": "Cifrando…",
+    "createSuccess": "Copia de seguridad cifrada guardada con Oxy.",
+    "createFailed": "No pudimos crear tu copia de seguridad. Inténtalo de nuevo.",
+    "delete": "Eliminar copia de seguridad",
+    "deleting": "Eliminando…",
+    "deleteConfirmTitle": "¿Eliminar la copia de seguridad cifrada?",
+    "deleteConfirmBody": "Ya no podrás recuperar esta identidad desde Oxy solo con tu frase de recuperación. Puedes crear una nueva copia de seguridad en cualquier momento.",
+    "deleteSuccess": "Copia de seguridad cifrada eliminada.",
+    "deleteFailed": "No pudimos eliminar tu copia de seguridad. Inténtalo de nuevo.",
+    "biometricReason": "Verifica que eres tú para crear una copia de seguridad cifrada",
+    "biometricFailed": "Verifícate con la biometría o el código de tu dispositivo para continuar.",
+    "identityUnavailable": "No pudimos leer tu identidad del almacenamiento seguro. Desbloquea tu dispositivo e inténtalo de nuevo.",
+    "unavailableSubtitle": "El almacenamiento seguro no está disponible temporalmente"
+  },
+  "restoreBackup": {
+    "entry": "Restaurar desde copia de seguridad cifrada",
+    "title": "Restaurar desde copia de seguridad",
+    "subtitle": "Introduce tu frase de recuperación para restaurar tu identidad desde tu copia de seguridad cifrada de Oxy.",
+    "invalidPhrase": "Eso no parece una frase de recuperación válida. Revisa las palabras e inténtalo de nuevo.",
+    "noBackup": "No encontramos una copia de seguridad cifrada para esa frase de recuperación.",
+    "restore": "Restaurar identidad",
+    "restoring": "Restaurando…",
+    "failed": "No pudimos restaurar desde la copia de seguridad. Revisa tu frase e inténtalo de nuevo.",
+    "offline": "Estás sin conexión. Conéctate a internet para restaurar desde tu copia de seguridad cifrada.",
+    "syncFailed": "Tu identidad se restauró en este dispositivo, pero no pudimos conectarla con tu cuenta. Comprueba tu conexión e inténtalo de nuevo.",
+    "overwriteTitle": "¿Reemplazar la identidad de este dispositivo?",
+    "overwriteBody": "Ya existe una identidad diferente en este dispositivo. Restaurar la reemplazará. Asegúrate de haber guardado su frase de recuperación primero.",
+    "overwriteConfirm": "Reemplazar y restaurar",
+    "cancel": "Cancelar"
+  },
+  "importPrivateKey": {
+    "entry": "Importar con clave privada",
+    "title": "Importar con clave privada",
+    "subtitle": "Pega la clave privada de tu exportación de Identidad Oxy. Esto restaura el control total de tu cuenta cuando no tienes tu frase de recuperación.",
+    "placeholder": "Clave privada (hex)",
+    "invalidKey": "Eso no parece una clave privada válida. Revisa el valor e inténtalo de nuevo.",
+    "import": "Importar identidad",
+    "importing": "Importando…",
+    "failed": "No pudimos importar esa clave privada. Revisa el valor e inténtalo de nuevo.",
+    "syncFailed": "Se importó en este dispositivo, pero no pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.",
+    "offlineHint": "Parece que estás sin conexión. La identidad se guardará en este dispositivo y se sincronizará al reconectar.",
+    "identityAlreadyExists": "Ya existe una identidad diferente en este dispositivo. Elimínala en Ajustes primero y luego importa."
+  },
+  "backupRecovery": {
+    "title": "Copia y recuperación",
+    "subtitle": "Todo lo que necesitas para respaldar y restaurar esta identidad.",
+    "statusPresent": "Esta identidad está respaldada por tu frase de recuperación de 12 palabras. Guárdala en un lugar seguro — es la única forma de restaurar tu cuenta en un dispositivo nuevo.",
+    "statusAbsent": "Esta identidad se importó desde una clave privada, así que no tiene frase de recuperación — y no se puede crear una a partir de la clave. La frase y la copia cifrada de abajo no están disponibles. Para obtener una frase de recuperación, rota a una clave nueva.",
+    "rotateCta": "Rotar a una clave con frase de recuperación",
+    "methodsTitle": "Métodos de copia",
+    "phraseTitle": "Frase de recuperación",
+    "phraseSubtitle": "Revela las 12 palabras que restauran tu identidad",
+    "phraseUnavailable": "No disponible — esta identidad se importó desde una clave privada",
+    "encryptedTitle": "Copia cifrada",
+    "encryptedSubtitle": "Guarda una copia recuperable de tus claves fuera del dispositivo",
+    "encryptedUnavailable": "No disponible — requiere una frase de recuperación"
+  },
+  "rotateKey": {
+    "settingsEntry": "Rota tu clave",
+    "settingsEntrySubtitle": "Reemplaza tu clave de identidad por una nueva",
+    "title": "Rota tu clave",
+    "subtitle": "Reemplaza la clave de firma de tu identidad por una totalmente nueva. Tu cuenta, nombre de usuario e historial se mantienen.",
+    "warningTitle": "Esto cambia tus claves",
+    "warning": "Rotar genera una NUEVA frase de recuperación. Tu frase y clave antiguas dejan de funcionar en cuanto se completa la rotación; guarda la nueva frase antes de terminar.",
+    "pathSection": "Elige cómo rotar",
+    "pathDevice": "Rotar con este dispositivo",
+    "pathDeviceSubtitle": "Usa la clave de este dispositivo para autorizar el cambio.",
+    "pathPhrase": "Perdí la clave de mi dispositivo",
+    "pathPhraseSubtitle": "Introduce tu frase de recuperación actual para reemplazar tu última clave restante.",
+    "currentPhrase": {
+      "title": "Introduce tu frase de recuperación actual",
+      "subtitle": "Necesitamos tu frase actual de 12 palabras para probar que controlas la clave que vas a reemplazar.",
+      "invalid": "Eso no parece una frase de recuperación válida. Revisa las palabras e inténtalo de nuevo.",
+      "continue": "Continuar"
     },
-    "shareDialogTitle": "Compartir copia de seguridad de identidad de Oxy",
-    "shareSuccess": "Archivo de copia de seguridad listo. Guárdalo en un lugar seguro, como tu gestor de contraseñas, una unidad cifrada o almacenamiento sin conexión.",
-    "readme": {
-      "title": "Copia de seguridad de identidad de Oxy",
-      "intro": "Este archivo de copia de seguridad contiene tu identidad cifrada.",
-      "restoreTitle": "Para restaurar:",
-      "restoreStep1": "Extrae este archivo ZIP",
-      "restoreStep2": "Usa la app Oxy Accounts para importar el archivo wallet.json",
-      "restoreStep3": "Introduce la contraseña de tu copia de seguridad cuando se te solicite",
-      "importantTitle": "IMPORTANTE:",
-      "important1": "Guarda este archivo en un lugar seguro (caja fuerte, unidad cifrada, etc.)",
-      "important2": "Nunca compartas tu contraseña ni tu archivo de copia de seguridad",
-      "important3": "Guarda varias copias en distintos lugares seguros",
-      "important4": "Si esta copia de seguridad se ve comprometida, crea una nueva identidad de inmediato",
-      "createdLabel": "Creado",
-      "publicKeyLabel": "Clave pública"
-    }
+    "newPhrase": {
+      "deriving": "Preparando tu nueva frase de recuperación…",
+      "error": "No pudimos preparar una nueva frase de recuperación. Inténtalo de nuevo.",
+      "retry": "Reintentar"
+    },
+    "confirm": {
+      "title": "Confirmar rotación",
+      "subtitle": "Esto reemplaza tu clave de firma. Asegúrate de haber guardado tu nueva frase de recuperación.",
+      "summaryDevice": "Autorizarás esto con la clave de este dispositivo.",
+      "summaryPhrase": "Autorizarás esto con tu frase de recuperación actual.",
+      "signOutEverywhere": "Cerrar sesión en todos los demás dispositivos",
+      "signOutEverywhereHint": "Recomendado si tu clave antigua puede estar comprometida. Este dispositivo permanece con la sesión iniciada.",
+      "cta": "Rotar mi clave",
+      "rotating": "Rotando…",
+      "successTitle": "Clave rotada",
+      "successBody": "Tu identidad ahora usa tu nueva clave. Mantén tu nueva frase de recuperación a salvo.",
+      "done": "Hecho",
+      "localPersistTitle": "Rotada — un paso más",
+      "localPersistBody": "Tu clave se rotó, pero la nueva clave no se pudo guardar en este dispositivo. Tu nueva frase de recuperación (que acabas de ver) es la única copia. Para terminar, elimina esta identidad en Ajustes e importa tu nueva frase.",
+      "errorGeneric": "No pudimos completar la rotación. Tu clave anterior no ha cambiado.",
+      "biometricReason": "Verifica que eres tú para rotar tu clave de identidad",
+      "biometricFailed": "Verifícate con la biometría o el código de tu dispositivo para rotar tu clave."
+    },
+    "backBlockedTitle": "Guarda tu nueva frase primero",
+    "backBlockedMessage": "Anota tu nueva frase de recuperación antes de continuar. Es la única forma de recuperar tu clave rotada."
   },
   "vault": {
     "home": {
@@ -1069,10 +1112,8 @@
       "account": "Cuenta",
       "accountSubtitle": "Gestiona tu perfil, dispositivos y privacidad en la app de Accounts.",
       "actions": {
-        "aboutIdentity": "Sobre tu identidad",
-        "aboutIdentitySubtitle": "Clave pública, detalles de autocustodia y exportación",
-        "createBackup": "Crear una copia cifrada",
-        "createBackupSubtitle": "Guarda una copia recuperable de tus claves",
+        "backupRecovery": "Copia y recuperación",
+        "backupRecoverySubtitle": "Frase de recuperación y copia cifrada",
         "manageAccount": "Gestionar cuenta",
         "manageAccountSubtitle": "Perfil, dispositivos, pagos y privacidad",
         "deleteAccount": "Eliminar cuenta",
@@ -1111,32 +1152,60 @@
     "approve": {
       "loading": "Cargando solicitud…",
       "heading": "Solicitud de inicio de sesión",
-      "wantsToSignIn": "{{app}} quiere iniciar sesión como {{user}}",
+      "title": "Inicia sesión en {{app}}",
+      "requestedFrom": "Solicitado desde {{client}}",
       "officialBadge": "App oficial de Oxy",
       "developerBy": "de {{developer}}",
-      "originLabel": "Origen",
-      "scopesTitle": "Esta app podrá acceder a",
-      "approve": "Aprobar",
-      "deny": "Denegar",
-      "approving": "Aprobando…",
-      "denying": "Denegando…",
+      "receivesTitle": "{{app}} recibirá",
+      "receivesBasic": "Tu identidad, tu nombre y tu foto de perfil",
+      "approvingWith": "Apruebas con",
+      "identityOf": "La identidad Oxy de {{name}}",
+      "identityYours": "Tu identidad Oxy",
+      "willActAs": "{{app}} actuará como",
+      "identityUnchanged": "Sigues siendo tú. Tu identidad no cambia: solo autorizas a {{app}} a actuar como esta cuenta.",
+      "confirm": "Confirmar identidad",
+      "reject": "No he sido yo",
+      "rejecting": "Deteniendo…",
       "approvedTitle": "Sesión iniciada",
       "approvedBody": "Aprobaste el inicio de sesión. Puedes volver al otro dispositivo.",
-      "deniedTitle": "Solicitud denegada",
-      "deniedBody": "Denegaste esta solicitud de inicio de sesión.",
+      "deniedTitle": "Inicio de sesión detenido",
+      "deniedBody": "Esa solicitud se detuvo y no se compartió nada. Ya no se puede aprobar.",
+      "deniedNotMeBody": "Esa solicitud se detuvo y no se compartió nada. Ya no se puede aprobar y hemos registrado que no la iniciaste tú. No tienes que hacer nada más.",
       "errorTitle": "No se pudo cargar la solicitud",
       "errorBody": "Esta solicitud de inicio de sesión no es válida, ya se usó o ha caducado.",
-      "biometricReason": "Verifica tu identidad para aprobar este inicio de sesión",
-      "biometricFailedTitle": "Verificación requerida",
-      "biometricFailedBody": "Apruébalo con la biometría o el código de tu dispositivo para continuar.",
+      "biometricReason": "Confirma que eres tú para iniciar sesión",
+      "gate": {
+        "declined": "Confirmación cancelada. No se aprobó nada: pulsa «Confirmar identidad» cuando quieras.",
+        "failed": "No pudimos confirmar que eres tú, así que no se aprobó nada. Inténtalo de nuevo.",
+        "lockout": "Demasiados intentos: tu dispositivo bloqueó la biometría. Desbloquéalo con tu código y vuelve a intentarlo.",
+        "notEnrolled": "Este dispositivo no tiene biometría ni bloqueo de pantalla, así que Commons no puede confirmar que eres tú. Configura Face ID, Touch ID, una huella o un código en los ajustes del dispositivo y vuelve a intentarlo.",
+        "unsupported": "Este dispositivo no puede confirmar que eres tú, así que esta solicitud no se puede aprobar aquí. Apruébala en el dispositivo que guarda tu identidad."
+      },
       "done": "Hecho",
       "tryAgain": "Reintentar",
       "noCode": "No se proporcionó ningún código de inicio de sesión.",
       "unverifiedTitle": "No pudimos verificar este inicio de sesión",
-      "unverifiedBody": "No pudimos confirmar desde dónde se inició esta solicitud. Apruébalo solo si acabas de iniciarlo tú en un dispositivo de confianza. Si no fuiste tú, deniégalo."
+      "unverifiedBody": "No pudimos confirmar desde dónde se inició esta solicitud. Continúa solo si acabas de iniciarla tú en un dispositivo de confianza. Si no fuiste tú, pulsa «No he sido yo».",
+      "privacyLink": "Política de privacidad",
+      "termsLink": "Términos del servicio"
+    },
+    "channel": {
+      "name": "Solicitudes de inicio de sesión",
+      "description": "Avisos cuando otro dispositivo pide iniciar sesión como tú"
     }
   },
   "civic": {
+    "sessionGate": {
+      "connecting": "Conectando tu identidad…",
+      "error": {
+        "title": "No pudimos conectar",
+        "body": "No pudimos conectar tu identidad con Oxy. Reintenta cuando quieras."
+      },
+      "offline": {
+        "title": "Sin conexión",
+        "body": "Reconectaremos tu identidad automáticamente cuando vuelvas a tener conexión."
+      }
+    },
     "hub": {
       "title": "Ciudadanía",
       "subtitle": "Tu identidad Oxy verificable: muéstrala, demuéstrala, llévala contigo.",
@@ -1238,6 +1307,29 @@
     "reputation": {
       "title": "Reputación",
       "subtitle": "La confianza que has ganado, ponderada por lo real que es.",
+      "standingTitle": "Nivel",
+      "getStarted": {
+        "title": "Empezar",
+        "dismiss": "Descartar empezar"
+      },
+      "tabs": {
+        "overview": "Resumen",
+        "activity": "Actividad"
+      },
+      "cta": {
+        "attest": {
+          "title": "Verifícate en persona",
+          "desc": "Reúnete con alguien en persona y que firme por tu Oxy ID."
+        },
+        "validate": {
+          "title": "Valida a otros",
+          "desc": "Revisa solicitudes de validación como jurado de confianza."
+        },
+        "personhood": {
+          "title": "Prueba tu personalidad",
+          "desc": "Acumula señales de que eres una persona real y única."
+        }
+      },
       "loading": "Cargando reputación…",
       "total": "Reputación total",
       "bySource": "Por origen",
@@ -1287,13 +1379,39 @@
       },
       "composition": {
         "earned": "Ganado",
-        "empty": "Aún no has ganado reputación: tus acciones verificadas la construirán."
+        "empty": "Aún no has ganado reputación: tus acciones verificadas la construirán.",
+        "readout": "{{points}} pts · {{percent}} %",
+        "hint": "Toca un segmento para ver su parte"
       },
       "duty": {
         "secondary": "Valida solicitudes · Avala a personas"
       },
       "activity": {
         "title": "Actividad reciente",
+        "heatmapTitle": "Actividad",
+        "months": [
+          "Ene",
+          "Feb",
+          "Mar",
+          "Abr",
+          "May",
+          "Jun",
+          "Jul",
+          "Ago",
+          "Sep",
+          "Oct",
+          "Nov",
+          "Dic"
+        ],
+        "weekdays": [
+          "Dom",
+          "Lun",
+          "Mar",
+          "Mié",
+          "Jue",
+          "Vie",
+          "Sáb"
+        ],
         "loading": "Cargando actividad…",
         "error": "No se pudo cargar la actividad reciente.",
         "empty": "Aún no hay actividad de reputación: tus acciones verificadas aparecerán aquí.",
@@ -1317,6 +1435,18 @@
       }
     },
     "attest": {
+      "confirmed": "Verificado en persona",
+      "review": {
+        "title": "¿Conociste a esta persona?",
+        "resolving": "Resolviendo su identidad…",
+        "submitting": "Firmando tu confirmación…",
+        "caution": "Confirma solo si de verdad os conocisteis en persona — esto afecta su reputación.",
+        "confirm": "Confirmo que nos conocimos",
+        "unverified": "Tarjeta sin verificar",
+        "unresolvedTitle": "No pudimos identificar a esta persona",
+        "unresolvedBody": "No pudimos resolver el código escaneado a una cuenta Oxy. Pídele que muestre un código nuevo e inténtalo de nuevo.",
+        "biometricReason": "Confirma que conociste a esta persona en la vida real"
+      },
       "section": {
         "title": "Confirmación en persona",
         "subtitle": "La reputación más fuerte viene de quienes te conocieron en persona.",
@@ -1333,13 +1463,8 @@
         "regenerate": "Generar un código nuevo"
       },
       "confirm": {
-        "title": "Confirmar en persona",
-        "biometricReason": "Verifica que eres tú para confirmar que conociste a esta persona",
         "loading": "Resolviendo identidad…",
-        "prompt": "¿Conociste a {{name}} en persona?",
-        "weight": "Las confirmaciones en persona tienen el mayor peso de reputación.",
-        "cta": "Sí, la conocí",
-        "biometricFailed": "Confirma con la biometría o el código de tu dispositivo para continuar.",
+        "submitting": "Confirmando que conociste a {{name}}…",
         "error": {
           "title": "No se pudo confirmar"
         },
@@ -1353,6 +1478,10 @@
         "nonce_used": "Este código ya se usó. Pídele que genere uno nuevo.",
         "pair_cooldown": "Ya confirmaste a esta persona hace poco. Inténtalo más tarde.",
         "excluded_graph_neighbor": "Estás demasiado conectado para confirmar a esta persona.",
+        "excluded_shared_device": "Este móvil está vinculado a su cuenta, así que no puede confirmarla.",
+        "self_attestation": "No puedes confirmar tu propia identidad. Inicia sesión con otra cuenta para confirmar a otra persona.",
+        "bad_signature": "No se pudo verificar tu clave de identidad. Abre Commons y termina de configurar tu identidad, luego inténtalo de nuevo.",
+        "subject_not_found": "No encontramos la identidad de esa persona.",
         "generic": "No pudimos registrar esta confirmación. Inténtalo de nuevo."
       }
     },
@@ -1449,7 +1578,6 @@
         "voucher_below_threshold": "Tu propia confianza aún no es suficiente para avalar. Genera más reputación primero.",
         "excluded_graph_neighbor": "Estás demasiado conectado para avalar a esta persona.",
         "excluded_shared_device": "Esta cuenta comparte dispositivo con la tuya, así que no puedes avalarla.",
-        "excluded_shared_ip": "Esta cuenta comparte red con la tuya, así que no puedes avalarla.",
         "subject_not_found": "No pudimos encontrar la cuenta de esta persona.",
         "generic": "No pudimos registrar tu aval. Inténtalo de nuevo."
       }
@@ -1606,7 +1734,8 @@
       },
       "selfHost": {
         "cta": "Conectar mi propio nodo",
-        "ctaSubtitle": "Avanzado: indica a Oxy un nodo que tú operas."
+        "ctaSubtitle": "Avanzado: indica a Oxy un nodo que tú operas.",
+        "webUnavailable": "Conectar tu propio nodo requiere la app móvil de Oxy: debe firmar con la clave de identidad guardada en tu dispositivo. En la web, usa «Crear una bóveda gestionada» para configurar un nodo ahora; podrás cambiar a tu propio nodo desde la app más adelante."
       },
       "form": {
         "title": "Conecta tu nodo",
@@ -1705,6 +1834,37 @@
   },
   "settings": {
     "title": "Ajustes",
-    "subtitle": "Gestiona tu identidad, copias de seguridad y cuenta."
+    "subtitle": "Gestiona tu identidad, copias de seguridad y cuenta.",
+    "recoveryPhrase": {
+      "title": "Frase de recuperación",
+      "subtitle": "Las 12 palabras que restauran tu identidad en un dispositivo nuevo.",
+      "warning": "Cualquiera con estas 12 palabras puede tomar el control total de tu identidad. No las compartas nunca ni las escribas en ningún sitio web o app que no sea Oxy.",
+      "lockedTitle": "Tu frase de recuperación está protegida",
+      "lockedBody": "Confirma que eres tú para revelar las 12 palabras que respaldan esta identidad.",
+      "revealButton": "Revelar frase de recuperación",
+      "hide": "Ocultar frase",
+      "copyWarning": "Anota estas palabras en papel. No hagas capturas de pantalla ni las guardes de forma digital.",
+      "biometricReason": "Autentícate para revelar tu frase de recuperación",
+      "notStoredTitle": "La frase no está disponible en este dispositivo",
+      "notStoredBody": "Esta identidad se creó o importó antes de que existiera la reaparición de la frase, así que su frase nunca se guardó aquí, y no puede derivarse de las claves. Si la anotaste, guarda esa copia a buen recaudo: es la única forma de restaurar esta identidad.",
+      "unavailableTitle": "No se pudo leer tu frase",
+      "unavailableBody": "El almacenamiento de tu identidad está bloqueado ahora mismo. Desbloquea tu dispositivo e inténtalo de nuevo.",
+      "gateFailedTitle": "No se pudo verificar tu identidad"
+    }
+  },
+  "recovery": {
+    "attemptingTitle": "Restaurando tu identidad",
+    "attemptingBody": "Comprobando las copias protegidas de este dispositivo…",
+    "restoredTitle": "Identidad restaurada",
+    "restoredBody": "Todo listo, volviendo a la app.",
+    "failedTitle": "No pudimos restaurarla automáticamente",
+    "failedBody": "Tu identidad ({{key}}) está protegida en este dispositivo pero no se pudo leer desde una copia. Introduce tu frase de recuperación para restaurarla, o empieza de nuevo.",
+    "lockedTitle": "Identidad protegida",
+    "lockedBody": "Tu identidad está a salvo, pero el almacén seguro no se pudo leer ahora mismo. Inténtalo de nuevo.",
+    "enterPhrase": "Introducir frase de recuperación",
+    "startOver": "Empezar de nuevo",
+    "startOverConfirmTitle": "¿Empezar de nuevo?",
+    "startOverConfirmBody": "Esto borra permanentemente la identidad protegida de este dispositivo. Sin tu frase de recuperación de 12 palabras, tu cuenta será irrecuperable.",
+    "startOverConfirmCta": "Borrar y empezar de nuevo"
   }
 }

@@ -1,4 +1,4 @@
-import nodemailer, { Transporter } from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import {
   SMTP_OUTBOUND_CONFIG,
@@ -7,23 +7,24 @@ import {
 } from '../config/email.config';
 import { emailService } from './email.service';
 import { assetService } from './assetServiceSingleton';
-import { IEmailAddress, IAttachment } from '../models/Message';
+import type { MessageAttachment } from '../db/schema/messageAttachments';
+import type { EmailAddress } from '../db/schema/messages';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { getRedisClient } from '../config/redis';
 
 interface OutboundMessage {
   userId: string;
-  from: IEmailAddress;
-  to: IEmailAddress[];
-  cc?: IEmailAddress[];
-  bcc?: IEmailAddress[];
+  from: EmailAddress;
+  to: EmailAddress[];
+  cc?: EmailAddress[];
+  bcc?: EmailAddress[];
   subject: string;
   text?: string;
   html?: string;
   inReplyTo?: string;
   references?: string[];
-  attachments?: IAttachment[];
+  attachments?: MessageAttachment[];
   /** When true, add Disposition-Notification-To header requesting a read receipt */
   requestReadReceipt?: boolean;
 }
@@ -179,7 +180,7 @@ class SmtpOutboundService {
    * disposition-notification part.
    */
   async sendMdn(params: {
-    from: IEmailAddress;
+    from: EmailAddress;
     to: string;
     originalRecipient: string;
     originalMessageId: string;
@@ -255,7 +256,7 @@ class SmtpOutboundService {
   }
 
   private async resolveAttachments(
-    attachments: IAttachment[]
+    attachments: MessageAttachment[]
   ): Promise<Array<{ filename: string; content: Buffer; contentType: string; cid?: string }>> {
     type ResolvedAttachment = { filename: string; content: Buffer; contentType: string; cid?: string };
 
@@ -313,6 +314,7 @@ class SmtpOutboundService {
   private ensureRetryTimer(): void {
     if (this.retryTimer) return;
     this.retryTimer = setInterval(() => this.processQueue(), 30_000);
+    this.retryTimer.unref?.();
   }
 
   private async processQueue(): Promise<void> {

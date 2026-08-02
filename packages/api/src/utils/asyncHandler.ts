@@ -5,7 +5,7 @@
  * Provides consistent error handling across all routes.
  */
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { logger } from './logger';
 import { ApiError } from './error';
 
@@ -40,7 +40,7 @@ export const asyncHandler = (fn: AsyncRequestHandler) => {
 
       res.status(500).json({
         error: 'INTERNAL_SERVER_ERROR',
-        message: 'An unexpected error occurred',
+        message: isDev ? message : 'An unexpected error occurred',
         ...(details && { details }),
       });
     });
@@ -53,7 +53,7 @@ export const asyncHandler = (fn: AsyncRequestHandler) => {
 export const sendSuccess = <T = unknown>(
   res: Response,
   data: T,
-  statusCode: number = 200,
+  statusCode = 200,
   meta?: Record<string, unknown>
 ) => {
   const response: { data: T; meta?: Record<string, unknown> } = { data };

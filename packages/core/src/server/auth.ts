@@ -1,5 +1,9 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { OxyServices } from '../OxyServices';
+import { OXY_SERVICE_ENVIRONMENTS, type OxyServiceEnvironment } from '../utils/oxyServiceEnvironment';
+
+export { OXY_SERVICE_ENVIRONMENTS };
+export type { OxyServiceEnvironment };
 
 export interface OxyRequestUser {
   id: string;
@@ -15,6 +19,7 @@ export interface OxyServiceAppContext {
   appName: string;
   scopes: string[];
   credentialId: string;
+  environment: OxyServiceEnvironment;
 }
 
 export interface OxyServiceActingAsContext {

@@ -4,7 +4,7 @@ export class AuthenticationError extends Error {
     public statusCode: number;
     public code: string;
 
-    constructor(message: string, statusCode: number = 401, code: string = 'INVALID_SESSION') {
+    constructor(message: string, statusCode = 401, code = 'INVALID_SESSION') {
         super(message);
         this.name = 'AuthenticationError';
         this.statusCode = statusCode;

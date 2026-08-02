@@ -1,20 +1,30 @@
 /**
- * Gmail-style message row for the inbox list.
+ * Message row shared by the inbox list and search results.
  *
- * Shows sender, subject, preview, and mini-card previews for attachments.
- * Supports multi-select via avatar checkbox (web hover / native long-press).
+ * The row is `[avatar] [block]`, where the block is two stacked lines:
+ * a headline row carrying the sender and, as its sibling, the timestamp —
+ * swapped for the row actions (archive / trash / read / pin) on hover — and
+ * below it the subject + snippet summary. The avatar doubles as the selection
+ * checkbox while hovered.
+ *
+ * `MessageRowExtras` renders everything else the message carries: a chip line
+ * (importance, sentiment, labels) and a horizontal rail of cards for the
+ * extracted smart card and any attachments.
+ *
+ * Hover is tracked in React state rather than `group-hover:` because the web
+ * build has no verified NativeWind hover pipeline; the state approach behaves
+ * identically and is inert on native, where the actions are never revealed.
  */
 
 import React, { useCallback, useState, useRef } from 'react';
-import { View, Pressable, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Pressable, TouchableOpacity, ScrollView, StyleSheet, Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOxy } from '@oxyhq/services';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Text } from '@oxyhq/bloom/typography';
 import * as Haptics from 'expo-haptics';
 import {
-  StarIcon,
   PinIcon,
   Clock01Icon,
   Image01Icon,
@@ -26,7 +36,6 @@ import {
   Doc01Icon,
   FileZipIcon,
   File01Icon,
-  Attachment01Icon,
 } from '@hugeicons/core-free-icons';
 import { Chip } from '@oxyhq/bloom/chip';
 import { Badge } from '@oxyhq/bloom/badge';
@@ -37,29 +46,55 @@ import { SentimentIndicator } from './SentimentIndicator';
 import type { SentimentResult } from '@/hooks/queries/useSentimentAnalysis';
 import { CardPreview } from './cards/CardPreview';
 import { useColors } from '@/constants/theme';
+import { useTranslation } from '@/lib/i18n';
+import { SPACING, RADIUS, TIMESTAMP_WIDTH } from '@/constants/layout';
+import { DENSITY_STYLES } from '@/constants/densityStyles';
+import type { MessageDensity } from '@/contexts/inbox-prefs-context';
+import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { Message, Attachment } from '@/services/emailApi';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
-function formatDate(dateStr: string): string {
+/**
+ * Row timestamp, scaled to how far back the message is: the closer it is, the
+ * more precise the label. Today only needs a time; last week only needs a
+ * weekday; older than that needs the date.
+ *
+ *   today      → 3:33 PM
+ *   yesterday  → Yesterday
+ *   < 7 days   → Sat
+ *   this year  → Jul 22
+ *   older      → Jul 22, 24
+ */
+/**
+ * Built once and reused. `toLocaleTimeString(undefined, {...})` constructs a
+ * new `Intl.DateTimeFormat` on every call — the options path defeats the
+ * engine's format cache — and a list mounts one row per message.
+ */
+const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const WEEKDAY_FORMAT = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+const MONTH_DAY_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const MONTH_DAY_YEAR_FORMAT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+const WEEKDAY_MONTH_DAY_FORMAT = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
+function formatDate(dateStr: string, yesterdayLabel: string): string {
   const date = new Date(dateStr);
   const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.floor((today.getTime() - msgDay.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (isToday) {
-    return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (diffDays === 0) {
+    return TIME_FORMAT.format(date);
   }
+  if (diffDays === 1) return yesterdayLabel;
+  if (diffDays < 7) return WEEKDAY_FORMAT.format(date);
 
-  const thisYear = date.getFullYear() === now.getFullYear();
-  if (thisYear) {
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (date.getFullYear() === now.getFullYear()) {
+    return MONTH_DAY_FORMAT.format(date);
   }
-
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: '2-digit',
-  });
+  return MONTH_DAY_YEAR_FORMAT.format(date);
 }
 
 function getSenderName(message: Message): string {
@@ -102,55 +137,63 @@ function formatSnoozeTime(dateStr: string): string {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const snoozeDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const diffDays = Math.floor((snoozeDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const time = TIME_FORMAT.format(date);
 
   if (diffDays === 0) return `Today, ${time}`;
   if (diffDays === 1) return `Tomorrow, ${time}`;
-  return `${date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}, ${time}`;
+  return `${WEEKDAY_MONTH_DAY_FORMAT.format(date)}, ${time}`;
 }
 
 interface MessageRowProps {
   message: Message;
-  onStar: (id: string) => void;
   onPin?: (id: string) => void;
   onSelect: (id: string) => void;
+  onArchive?: (id: string) => void;
+  onDelete?: (id: string) => void;
+  onToggleRead?: (id: string, seen: boolean) => void;
   isSelected?: boolean;
   isSelectionMode?: boolean;
   isMultiSelected?: boolean;
   onToggleSelect?: (id: string) => void;
   onLongPress?: (id: string) => void;
-  isStarPending?: boolean;
   isPinPending?: boolean;
   showSnoozeTime?: boolean;
-  labelColorMap?: Map<string, string>;
-  sentiment?: SentimentResult | null;
+  density?: MessageDensity;
+  showAvatars?: boolean;
+  showPreviews?: boolean;
 }
 
 function MessageRowInner({
   message,
-  onStar,
   onPin,
   onSelect,
+  onArchive,
+  onDelete,
+  onToggleRead,
   isSelected,
   isSelectionMode,
   isMultiSelected,
   onToggleSelect,
   onLongPress,
-  isStarPending,
   isPinPending,
   showSnoozeTime,
-  labelColorMap,
-  sentiment,
+  density = 'comfortable',
+  showAvatars = true,
+  showPreviews = true,
 }: MessageRowProps) {
   const colors = useColors();
+  const { t } = useTranslation();
+  const densityStyle = DENSITY_STYLES[density];
   const isUnread = !message.flags.seen;
-  const [avatarHovered, setAvatarHovered] = useState(false);
+  const [rowHovered, setRowHovered] = useState(false);
   const queryClient = useQueryClient();
   const { user } = useOxy();
   const userId = user?.id ?? null;
+  const api = useEmailStore((s) => s._api);
   const prefetchedRef = useRef(false);
 
-  const showCheckbox = isSelectionMode || (Platform.OS === 'web' && avatarHovered);
+  const showCheckbox = isSelectionMode || (Platform.OS === 'web' && rowHovered);
+  const showRowActions = Platform.OS === 'web' && rowHovered && !isSelectionMode;
 
   const handlePress = useCallback(() => {
     if (isSelectionMode && onToggleSelect) {
@@ -167,91 +210,147 @@ function MessageRowInner({
     }
   }, [message._id, onLongPress]);
 
-  const handleAvatarPress = useCallback(() => {
+  const handleCheckboxPress = useCallback(() => {
     if (onToggleSelect) {
       onToggleSelect(message._id);
     }
   }, [message._id, onToggleSelect]);
 
-  const handleStar = useCallback(() => {
-    onStar(message._id);
-  }, [onStar, message._id]);
-
   const handlePin = useCallback(() => {
     onPin?.(message._id);
   }, [onPin, message._id]);
 
+  const handleArchive = useCallback(() => {
+    onArchive?.(message._id);
+  }, [onArchive, message._id]);
+
+  const handleDelete = useCallback(() => {
+    onDelete?.(message._id);
+  }, [onDelete, message._id]);
+
+  const handleToggleRead = useCallback(() => {
+    onToggleRead?.(message._id, !message.flags.seen);
+  }, [onToggleRead, message._id, message.flags.seen]);
+
   // Prefetch message data on hover (web only, once per mount)
   const handleMouseEnter = useCallback(() => {
-    if (!prefetchedRef.current && userId) {
+    if (!prefetchedRef.current && userId && api) {
       prefetchedRef.current = true;
       queryClient.prefetchQuery({
-        queryKey: ['message', message._id, userId],
+        queryKey: emailKeys.message.detail(message._id, userId),
+        queryFn: async () => api.getMessage(message._id),
         staleTime: 60_000,
       });
     }
-  }, [queryClient, message._id, userId]);
+  }, [queryClient, message._id, userId, api]);
 
   const senderName = getSenderName(message);
   const preview = getPreview(message);
-  const dateStr = formatDate(message.date);
-  const hasAttachments = message.attachments.length > 0;
+  const dateStr = formatDate(message.date, t('inbox.sections.yesterday'));
 
-  const rowBg = isMultiSelected
+  // Unread is carried by the row background alone: a tinted row reads at a
+  // glance across a whole list, which a 6dp dot does not, and it keeps the
+  // leading edge free of decoration.
+  const rowBg = isMultiSelected || isSelected
     ? colors.selectedRow
-    : isSelected
-      ? colors.selectedRow
-      : isUnread
-        ? colors.surface
-        : colors.background;
+    : isUnread
+      ? colors.surface
+      : 'transparent';
+
+  // Only built when it is about to be shown. These are a web hover affordance,
+  // so on native — and for every row the pointer is not over — the whole list
+  // would otherwise be allocated and thrown away unread, once per render.
+  const rowActions: { key: string; icon: keyof typeof MaterialCommunityIcons.glyphMap; label: string; onPress: () => void; active?: boolean }[] = [];
+  if (showRowActions) {
+    if (onArchive) rowActions.push({ key: 'archive', icon: 'archive-arrow-down-outline', label: 'Archive', onPress: handleArchive });
+    if (onDelete) rowActions.push({ key: 'trash', icon: 'delete-outline', label: 'Move to Trash', onPress: handleDelete });
+    if (onToggleRead) {
+      rowActions.push({
+        key: 'read',
+        icon: isUnread ? 'email-open-outline' : 'email-outline',
+        label: isUnread ? 'Mark as read' : 'Mark as unread',
+        onPress: handleToggleRead,
+      });
+    }
+    if (onPin) rowActions.push({ key: 'pin', icon: message.flags.pinned ? 'pin' : 'pin-outline', label: 'Pin thread', onPress: handlePin, active: message.flags.pinned });
+  }
 
   return (
     <Pressable
       style={({ pressed }) => [
         styles.container,
-        { backgroundColor: rowBg },
-        isMultiSelected && { borderLeftWidth: 3, borderLeftColor: colors.primary, paddingLeft: 13 },
+        {
+          backgroundColor: rowBg,
+          paddingVertical: densityStyle.rowPaddingVertical,
+          gap: densityStyle.rowGap,
+        },
+        rowHovered && !isMultiSelected && { backgroundColor: colors.surfaceVariant },
         pressed && { opacity: 0.7 },
       ]}
       onPress={handlePress}
       onLongPress={handleLongPress}
       delayLongPress={500}
-      {...(Platform.OS === 'web' ? ({ onMouseEnter: handleMouseEnter } as { onMouseEnter?: () => void }) : {})}
+      {...(Platform.OS === 'web' ? ({
+        onMouseEnter: () => {
+          setRowHovered(true);
+          handleMouseEnter();
+        },
+        onMouseLeave: () => setRowHovered(false),
+      } as { onMouseEnter?: () => void; onMouseLeave?: () => void }) : {})}
     >
-      <Pressable
-        onPress={showCheckbox ? handleAvatarPress : undefined}
-        hitSlop={4}
-        {...(Platform.OS === 'web' ? ({
-          onMouseEnter: () => setAvatarHovered(true),
-          onMouseLeave: () => setAvatarHovered(false),
-        } as { onMouseEnter?: () => void; onMouseLeave?: () => void }) : {})}
-      >
-        <Avatar
-          name={senderName}
-          size={40}
-          showCheckbox={showCheckbox}
-          isChecked={isMultiSelected}
-          avatarUrl={message.senderAvatarPath ? `${API_URL}${message.senderAvatarPath}` : null}
-        />
-      </Pressable>
+      {showAvatars && (
+        <Pressable
+          onPress={showCheckbox ? handleCheckboxPress : undefined}
+          hitSlop={SPACING.xs}
+          accessibilityRole={showCheckbox ? 'checkbox' : undefined}
+          accessibilityState={showCheckbox ? { checked: Boolean(isMultiSelected) } : undefined}
+          accessibilityLabel={showCheckbox ? 'Select' : undefined}
+        >
+          <Avatar
+            name={senderName}
+            size={densityStyle.avatarSize}
+            showCheckbox={showCheckbox}
+            isChecked={isMultiSelected}
+            avatarUrl={message.senderAvatarPath ? `${API_URL}${message.senderAvatarPath}` : null}
+          />
+        </Pressable>
+      )}
 
-      <View style={styles.content}>
-        <View style={styles.topRow}>
-          <Text
-            style={[
-              styles.sender,
-              { color: isUnread ? colors.unread : colors.read },
-              isUnread && styles.senderUnread,
-            ]}
-            numberOfLines={1}
-          >
+      {/* Two stacked lines. The first one is a row that holds BOTH the sender
+          and the trailing control (timestamp, snooze or the hover actions), so
+          they share a baseline because they are siblings in the same flex row —
+          not because their boxes were sized to match. The second is the
+          summary, spanning the full width. */}
+      <View style={[styles.main, { gap: densityStyle.contentGap }]}>
+        <View style={styles.headline}>
+          <Text style={[styles.sender, { color: colors.unread }]} numberOfLines={1}>
             {senderName}
           </Text>
           {(message.threadCount ?? 0) > 1 && (
-            <Badge variant="subtle" color="default" content={message.threadCount!} size="small" />
+            <Badge variant="subtle" color="default" content={message.threadCount ?? 0} size="small" />
           )}
-          {showSnoozeTime && message.snoozedUntil ? (
-            <View style={styles.snoozeTimeRow}>
+
+          {showRowActions && rowActions.length > 0 ? (
+            <View style={styles.trailing}>
+              {rowActions.map((action) => (
+                <TouchableOpacity
+                  key={action.key}
+                  onPress={action.onPress}
+                  hitSlop={SPACING.md}
+                  style={styles.rowActionButton}
+                  accessibilityLabel={action.label}
+                  disabled={action.key === 'pin' && isPinPending}
+                >
+                  <MaterialCommunityIcons
+                    name={action.icon}
+                    size={16}
+                    color={action.active ? colors.primary : colors.icon}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : showSnoozeTime && message.snoozedUntil ? (
+            <View style={styles.trailing}>
               {Platform.OS === 'web' ? (
                 <HugeiconsIcon icon={Clock01Icon as unknown as IconSvgElement} size={12} color={colors.primary} />
               ) : (
@@ -262,82 +361,45 @@ function MessageRowInner({
               </Text>
             </View>
           ) : (
-            <Text
-              style={[
-                styles.date,
-                { color: isUnread ? colors.unread : colors.read },
-                isUnread && styles.dateUnread,
-              ]}
-            >
+            <Text style={[styles.date, { color: colors.secondaryText }]} numberOfLines={1}>
               {dateStr}
             </Text>
           )}
-          {onPin && (
-            <TouchableOpacity
-              onPress={handlePin}
-              hitSlop={8}
-              style={[styles.starButton, isPinPending && { opacity: 0.5 }]}
-              disabled={isPinPending}
-            >
-              {Platform.OS === 'web' ? (
-                <HugeiconsIcon
-                  icon={PinIcon as unknown as IconSvgElement}
-                  size={16}
-                  color={message.flags.pinned ? colors.primary : colors.icon}
-                  strokeWidth={1.5}
-                  fill={message.flags.pinned ? colors.primary : 'none'}
-                />
-              ) : (
-                <MaterialCommunityIcons
-                  name={message.flags.pinned ? 'pin' : 'pin-outline'}
-                  size={18}
-                  color={message.flags.pinned ? colors.primary : colors.icon}
-                />
-              )}
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            onPress={handleStar}
-            hitSlop={8}
-            style={[styles.starButton, isStarPending && { opacity: 0.5 }]}
-            disabled={isStarPending}
-          >
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon
-                icon={StarIcon as unknown as IconSvgElement}
-                size={16}
-                color={message.flags.starred ? colors.starred : colors.icon}
-                strokeWidth={message.flags.starred ? 1.5 : 1.5}
-                fill={message.flags.starred ? colors.starred : 'none'}
-              />
-            ) : (
-              <MaterialCommunityIcons
-                name={message.flags.starred ? 'star' : 'star-outline'}
-                size={20}
-                color={message.flags.starred ? colors.starred : colors.icon}
-              />
-            )}
-          </TouchableOpacity>
         </View>
 
-        <View style={styles.subjectRow}>
-          <Text
-            style={[
-              styles.subject,
-              { color: isUnread ? colors.unread : colors.read },
-              isUnread && styles.subjectUnread,
-            ]}
-            numberOfLines={1}
-          >
+        <Text style={styles.summaryLine} numberOfLines={1}>
+          <Text style={[styles.subject, { color: colors.unread }]}>
             {message.subject || '(no subject)'}
           </Text>
-          <ImportanceBadge message={message} />
-          <SentimentIndicator sentiment={sentiment ?? null} size="small" />
-        </View>
+          {showPreviews && preview.length > 0 && (
+            <Text style={[styles.snippet, { color: colors.secondaryText }]}>{`  ${preview}`}</Text>
+          )}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
 
-        {/* Label chips */}
-        {message.labels.length > 0 && (
+/**
+ * Everything a message can carry beyond the single line — labels, card
+ * preview, attachment thumbnails. Rendered by the list under the row so the
+ * row itself stays exactly one line tall.
+ */
+function MessageRowExtrasInner({ message, sentiment }: { message: Message; sentiment?: SentimentResult | null }) {
+  const colors = useColors();
+  const hasAttachments = message.attachments.length > 0;
+  const hasChips = message.labels.length > 0 || Boolean(sentiment);
+
+  if (!hasChips && !message.card && !hasAttachments) return null;
+
+  return (
+    <View style={styles.extras}>
+        {/* Chip row: importance, sentiment and labels all live on this second
+            line so the message line itself stays a single uninterrupted row. */}
+        {hasChips && (
           <View style={styles.labelChipRow}>
+            <ImportanceBadge message={message} />
+            <SentimentIndicator sentiment={sentiment ?? null} size="small" />
             {message.labels.slice(0, 3).map((labelName) => {
               return (
                 <Chip
@@ -357,193 +419,196 @@ function MessageRowInner({
           </View>
         )}
 
-        <View style={styles.bottomRow}>
-          <Text style={[styles.preview, { color: colors.secondaryText }]} numberOfLines={1}>
-            {preview}
-          </Text>
-        </View>
+        {/* One horizontal rail of cards, Inbox-by-Gmail style: the extracted
+            smart card (flight, order, event, bill, package) leads, then a card
+            per attachment. Scrolls sideways instead of stacking rows, so a
+            message with a flight and four files still costs one row of height. */}
+        {(message.card || hasAttachments) && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.cardRail}
+          >
+            {message.card && (
+              <View style={[styles.railCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <CardPreview card={message.card} />
+              </View>
+            )}
 
-        {/* Card preview */}
-        {message.card && (
-          <View style={styles.cardPreviewRow}>
-            <CardPreview card={message.card} />
-          </View>
+            {message.attachments.map((att, i) => {
+              const isImage = att.contentType.toLowerCase().startsWith('image/');
+              const info = getAttachmentInfo(att);
+              return (
+                <View
+                  key={att.fileId || i}
+                  style={[styles.railCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                >
+                  {isImage ? (
+                    <AttachmentThumbnail fileId={att.fileId} size={40} />
+                  ) : Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={info.hugeIcon} size={20} color={info.color} />
+                  ) : (
+                    <MaterialCommunityIcons name={info.icon} size={20} color={info.color} />
+                  )}
+                  <Text style={[styles.railCardLabel, { color: colors.secondaryText }]} numberOfLines={1}>
+                    {info.label}
+                  </Text>
+                </View>
+              );
+            })}
+          </ScrollView>
         )}
-
-        {/* Attachment thumbnails + mini-cards */}
-        {hasAttachments && (() => {
-          const imageAtts = message.attachments.filter(a => a.contentType.toLowerCase().startsWith('image/'));
-          const otherAtts = message.attachments.filter(a => !a.contentType.toLowerCase().startsWith('image/'));
-          const maxThumbs = 3;
-          const extraImages = imageAtts.length > maxThumbs ? imageAtts.length - maxThumbs : 0;
-
-          return (
-            <>
-              {imageAtts.length > 0 && (
-                <View style={styles.thumbnailRow}>
-                  {imageAtts.slice(0, maxThumbs).map((att, i) => (
-                    <AttachmentThumbnail key={att.fileId || i} fileId={att.fileId} size={48} />
-                  ))}
-                  {extraImages > 0 && (
-                    <View style={[styles.thumbnailOverflow, { backgroundColor: colors.surfaceVariant }]}>
-                      <Text style={[styles.thumbnailOverflowText, { color: colors.secondaryText }]}>
-                        +{extraImages}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              )}
-              {otherAtts.length > 0 && (
-                <View style={styles.attachmentRow}>
-                  {otherAtts.slice(0, 3).map((att, i) => {
-                    const info = getAttachmentInfo(att);
-                    const icon = Platform.OS === 'web' ? (
-                      <HugeiconsIcon icon={info.hugeIcon} size={14} color={info.color} />
-                    ) : (
-                      <MaterialCommunityIcons name={info.icon} size={14} color={info.color} />
-                    );
-                    return (
-                      <Chip
-                        key={i}
-                        variant="outlined"
-                        size="small"
-                        startIcon={icon}
-                      >
-                        {info.label}
-                      </Chip>
-                    );
-                  })}
-                  {otherAtts.length > 3 && (
-                    <Text style={[styles.moreAttachments, { color: colors.secondaryText }]}>
-                      +{otherAtts.length - 3}
-                    </Text>
-                  )}
-                </View>
-              )}
-            </>
-          );
-        })()}
-      </View>
-    </Pressable>
+    </View>
   );
 }
 
 export const MessageRow = React.memo(MessageRowInner, (prev, next) => {
+  if (
+    prev.isSelected !== next.isSelected ||
+    prev.isMultiSelected !== next.isMultiSelected ||
+    prev.isSelectionMode !== next.isSelectionMode ||
+    prev.isPinPending !== next.isPinPending ||
+    prev.showSnoozeTime !== next.showSnoozeTime ||
+    prev.density !== next.density ||
+    prev.showAvatars !== next.showAvatars ||
+    prev.showPreviews !== next.showPreviews
+  ) {
+    return false;
+  }
+
+  const pm = prev.message;
+  const nm = next.message;
   return (
-    prev.message._id === next.message._id &&
-    prev.message.flags.starred === next.message.flags.starred &&
-    prev.message.flags.seen === next.message.flags.seen &&
-    prev.message.flags.pinned === next.message.flags.pinned &&
-    prev.message.labels === next.message.labels &&
-    prev.isSelected === next.isSelected &&
-    prev.isMultiSelected === next.isMultiSelected &&
-    prev.isSelectionMode === next.isSelectionMode &&
-    prev.isStarPending === next.isStarPending &&
-    prev.isPinPending === next.isPinPending &&
-    prev.sentiment?.type === next.sentiment?.type
+    pm._id === nm._id &&
+    pm.flags.starred === nm.flags.starred &&
+    pm.flags.seen === nm.flags.seen &&
+    pm.flags.pinned === nm.flags.pinned &&
+    pm.threadCount === nm.threadCount &&
+    pm.subject === nm.subject &&
+    pm.text === nm.text &&
+    pm.date === nm.date &&
+    pm.from.address === nm.from.address &&
+    pm.from.name === nm.from.name &&
+    pm.senderAvatarPath === nm.senderAvatarPath &&
+    pm.snoozedUntil === nm.snoozedUntil &&
+    (pm.labels?.length ?? 0) === (nm.labels?.length ?? 0) &&
+    (pm.labels?.every((label, i) => label === nm.labels?.[i]) ?? true) &&
+    (pm.attachments?.length ?? 0) === (nm.attachments?.length ?? 0) &&
+    Boolean(pm.card) === Boolean(nm.card) &&
+    pm.card?.type === nm.card?.type
   );
 });
 
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    gap: 12,
+    // The avatar centres against the whole two-line block. The sender and the
+    // timestamp align to each other inside `headline`, not here.
+    alignItems: 'center',
+    // Horizontal inset is fixed; vertical padding and gap come from density.
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.row,
   },
-  content: {
+  main: {
     flex: 1,
-    gap: 2,
+    minWidth: 0,
   },
-  topRow: {
+  /**
+   * First line: sender on the left, trailing control on the right. They are
+   * siblings in one row, so the timestamp lines up with the name by
+   * construction — no matched box heights, no offsets.
+   */
+  headline: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: SPACING.xs,
   },
   sender: {
-    fontSize: 14,
+    // Takes the slack in `headline`, pushing the trailing control to the edge.
     flex: 1,
-  },
-  senderUnread: {
+    // Matches the notification title in Mention (`UserName`): 15/700, no
+    // letter-spacing, so a row title reads the same across Oxy apps.
+    fontSize: 15,
     fontWeight: '700',
   },
-  date: {
-    fontSize: 12,
-  },
-  dateUnread: {
-    fontWeight: '600',
-  },
-  subjectRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  summaryLine: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   subject: {
-    fontSize: 14,
-    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: -0.26,
   },
-  subjectUnread: {
-    fontWeight: '600',
+  snippet: {
+    fontSize: 13,
+    fontWeight: '400',
+    letterSpacing: -0.26,
   },
-  bottomRow: {
+  date: {
+    flexShrink: 0,
+    minWidth: TIMESTAMP_WIDTH,
+    fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: -0.24,
+    textAlign: 'right',
+  },
+  trailing: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: SPACING.xs,
   },
-  preview: {
-    fontSize: 13,
-    flex: 1,
-  },
-  cardPreviewRow: {
-    marginTop: 4,
-  },
-  thumbnailRow: {
-    flexDirection: 'row',
-    gap: 4,
-    marginTop: 6,
-  },
-  thumbnailOverflow: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
+  rowActionButton: {
+    // `hitSlop` keeps the touch target comfortable without growing the box,
+    // which would stretch the headline row it sits in.
+    width: 28,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  thumbnailOverflowText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  attachmentRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 6,
-  },
-  moreAttachments: {
-    fontSize: 11,
-    alignSelf: 'center',
-    paddingHorizontal: 4,
-  },
-  starButton: {
-    padding: 2,
-  },
-  snoozeTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
   },
   snoozeTimeText: {
     fontSize: 11,
     fontWeight: '600',
   },
+  cardRail: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    paddingRight: SPACING.lg,
+  },
+  railCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    maxWidth: 220,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.row,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  railCardLabel: {
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  extras: {
+    paddingHorizontal: SPACING.sm,
+    paddingBottom: SPACING.sm,
+    gap: SPACING.sm,
+  },
   labelChipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 2,
+    alignItems: 'center',
+    gap: SPACING.xs,
   },
   moreLabelText: {
     fontSize: 10,
-    alignSelf: 'center',
   },
 });
+
+/**
+ * Memoized for the same reason `MessageRow` is: it renders beside one for every
+ * row, and the list re-renders mounted items on each selection toggle
+ * (`extraData`). Without this, the row's comparator only halves the work.
+ */
+export const MessageRowExtras = React.memo(MessageRowExtrasInner);

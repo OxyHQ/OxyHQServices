@@ -1,10 +1,10 @@
 import type React from 'react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { toast } from '@oxyhq/bloom';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { toast } from '@oxyhq/bloom/toast';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { SearchInput } from '@oxyhq/bloom/search-input';
+import { Search } from '@oxyhq/bloom/search';
 import { Button } from '@oxyhq/bloom/button';
 import {
     Accordion,
@@ -14,10 +14,9 @@ import {
 } from '@oxyhq/bloom/accordion';
 import { Text } from '@oxyhq/bloom/typography';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
-import LoadingState from '../components/LoadingState';
-import EmptyState from '../components/EmptyState';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
 
 interface FAQ {
@@ -33,6 +32,8 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { oxyServices } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({ title: t('faq.title') || 'FAQ' });
     const bloomTheme = useTheme();
 
     const [faqs, setFaqs] = useState<FAQ[]>([]);
@@ -97,17 +98,11 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
     );
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('faq.title') || 'FAQ'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
+        <>
 
             {/* Search bar */}
             <View className="px-screen-margin py-space-12">
-                <SearchInput
+                <Search
                     label={t('faq.searchPlaceholder') || 'Search FAQs...'}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
@@ -148,17 +143,17 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                 </ScrollView>
             )}
 
-            <ScrollView className="flex-1 px-screen-margin" showsVerticalScrollIndicator={false}>
+            <View className="px-screen-margin">
                 {isLoading ? (
-                    <LoadingState
-                        message={t('faq.loading') || 'Loading FAQs...'}
+                    <Loading
+                        size="large"
                         color={bloomTheme.colors.text}
+                        text={t('faq.loading') || 'Loading FAQs...'}
                     />
                 ) : filteredFaqs.length === 0 ? (
-                    <EmptyState
-                        message={searchQuery ? (t('faq.noResults') || 'No FAQs match your search') : (t('faq.empty') || 'No FAQs available')}
-                        textColor={bloomTheme.colors.text}
-                    />
+                    <Text className="text-text-secondary text-center p-space-40">
+                        {searchQuery ? (t('faq.noResults') || 'No FAQs match your search') : (t('faq.empty') || 'No FAQs available')}
+                    </Text>
                 ) : (
                     <Accordion
                         type="multiple"
@@ -189,8 +184,8 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                         ))}
                     </Accordion>
                 )}
-            </ScrollView>
-        </View>
+            </View>
+        </>
     );
 };
 

@@ -34,10 +34,20 @@ module.exports = {
     '!src/**/__tests__/**',
   ],
   moduleNameMapper: {
+    // Resolve workspace deps from TypeScript SOURCE so services tests do not
+    // depend on packages being built first (mirrors packages/node/jest.config.cjs).
+    '^@oxyhq/contracts$': '<rootDir>/../contracts/src/index.ts',
+    '^@oxyhq/protocol$': '<rootDir>/../protocol/src/index.ts',
+    '^@oxyhq/core/server$': '<rootDir>/../core/src/server/index.ts',
+    '^@oxyhq/core$': '<rootDir>/../core/src/index.ts',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^react-native$': '<rootDir>/__tests__/__mocks__/react-native.ts',
+    '^expo-modules-core$': '<rootDir>/__tests__/__mocks__/expo-modules-core.ts',
+    '^react-native-reanimated$': '<rootDir>/__tests__/__mocks__/reanimated.ts',
+    '^react-native-svg$': '<rootDir>/__tests__/__mocks__/react-native-svg.ts',
     '^@oxyhq/bloom$': '<rootDir>/__tests__/__mocks__/bloom.ts',
     '^@oxyhq/bloom/(.*)$': '<rootDir>/__tests__/__mocks__/bloom.ts',
+    '^@expo/vector-icons(/.*)?$': '<rootDir>/__tests__/__mocks__/expo-vector-icons.tsx',
   },
   testTimeout: 10000,
 };

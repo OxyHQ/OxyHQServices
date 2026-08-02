@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from "mongoose";
+import mongoose, { type Document, Schema } from "mongoose";
 
 /**
  * AuthCode Model
@@ -25,8 +25,20 @@ import mongoose, { Document, Schema } from "mongoose";
 export interface IAuthCode extends Document {
   /** SHA-256 hex digest of the raw authorization code. */
   codeHash: string;
-  /** ObjectId of the user that approved this grant. */
+  /**
+   * SUBJECT of the grant — the account the code authorizes access to. For a
+   * delegated authorization this is the ORGANIZATION/PROJECT account, not the
+   * human that approved it (see `operatedByUserId`).
+   */
   userId: mongoose.Types.ObjectId;
+  /**
+   * OPERATOR identity for a DELEGATED grant: the human identity that approved
+   * the app to act as `userId`. Absent for ordinary self-grants. Modelled
+   * separately so identity and account are never conflated; the session minted
+   * at exchange time carries it as `operatedByUserId`, which binds that
+   * session's validity to the operator's live `account:act_as` membership.
+   */
+  operatedByUserId?: mongoose.Types.ObjectId;
   /** Application ObjectId (string) the code was issued for. */
   appId: string;
   /** Exact redirect URI used at issue time — must match exchange request. */
@@ -37,6 +49,11 @@ export interface IAuthCode extends Document {
   codeChallengeMethod?: 'S256';
   /** Optional OAuth scope list bound at issue time. */
   scopes: string[];
+  /**
+   * DeviceSession id from the authorizing bearer — threads cross-app OAuth
+   * token exchange onto the same device doc instead of minting an isolated one.
+   */
+  deviceId?: string;
   /** Set when the code is exchanged. Single-use enforcement. */
   usedAt?: Date;
   expiresAt: Date;
@@ -57,6 +74,11 @@ const AuthCodeSchema: Schema = new Schema(
       ref: 'User',
       required: true,
       index: true,
+    },
+    operatedByUserId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
     },
     appId: {
       type: String,
@@ -79,6 +101,10 @@ const AuthCodeSchema: Schema = new Schema(
     scopes: {
       type: [String],
       default: [],
+    },
+    deviceId: {
+      type: String,
+      default: null,
     },
     usedAt: {
       type: Date,

@@ -10,9 +10,15 @@ yarn-error.log*
 dist/
 lib/
 build/
+**/public/_headers
 *.tgz
 .turbo
 *.tsbuildinfo
+
+# test-app-vite ships a shadcn `src/lib/` SOURCE directory (the `cn()` helper),
+# which the broad `lib/` build-output rule above would otherwise swallow.
+!packages/test-app-vite/src/lib/
+!packages/test-app-vite/src/lib/**
 
 # Environment files — real secrets must NEVER be committed.
 # Patterns cover the repo root AND every workspace package
@@ -111,3 +117,5 @@ dkim-private.pem
 *_private.key
 *_public.key
 c4p0_*.key
+# Wrangler local state (miniflare cache from `wrangler pages dev`)
+.wrangler/

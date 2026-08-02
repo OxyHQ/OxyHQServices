@@ -19,9 +19,10 @@
  * Faithful to the producers:
  *  - `packages/api/src/utils/serializeApplication.ts` `serializePublicApplication`
  *    — the ONLY shape returned to an unauthenticated consent UI. Optional fields
- *    (`description`, `icon`, `websiteUrl`, `developerName`) are OMITTED when
- *    absent (never serialized as `null`), so they are `.optional()` — NOT
- *    `.nullable()`. `type` is the `Application.type` enum.
+ *    (`description`, `icon`, `websiteUrl`, `privacyPolicyUrl`, `termsUrl`,
+ *    `developerName`) are OMITTED when absent (never serialized as `null`), so
+ *    they are `.optional()` — NOT `.nullable()`. `type` is the `Application.type`
+ *    enum.
  *  - `packages/api/src/routes/auth.ts` `GET /session/status/:sessionToken` — the
  *    inner object of the API's `{ data: ... }` success envelope. The handler
  *    ALWAYS emits `status`, `authorized` (`status === 'authorized'`),
@@ -57,9 +58,10 @@ export type ApplicationTypeContract = z.infer<typeof applicationTypeSchema>;
  * `GET /auth/oauth/client/:clientId` (OAuth code flow).
  *
  * Optional fields are `.optional()` (NOT `.nullable()`): the serializer OMITS
- * `description` / `icon` / `websiteUrl` / `developerName` when the underlying
- * value is absent — it never writes `null` for them. `developerName` is only
- * attached for non-official apps when a name could be resolved.
+ * `description` / `icon` / `websiteUrl` / `privacyPolicyUrl` / `termsUrl` /
+ * `developerName` when the underlying value is absent — it never writes `null`
+ * for them. `developerName` is only attached for non-official apps when a name
+ * could be resolved.
  */
 export const publicApplicationSchema = z.object({
     id: z.string(),
@@ -67,6 +69,8 @@ export const publicApplicationSchema = z.object({
     description: z.string().optional(),
     icon: z.string().optional(),
     websiteUrl: z.string().optional(),
+    privacyPolicyUrl: z.string().optional(),
+    termsUrl: z.string().optional(),
     type: applicationTypeSchema,
     isOfficial: z.boolean(),
     isInternal: z.boolean(),
@@ -94,6 +98,14 @@ export type PublicApplicationResponse = z.infer<typeof publicApplicationSchema>;
  * current producer and are never `null`, but stay `.optional()` so the contract
  * tolerates leaner shapes from other producers of this same payload without a
  * coordinated bump.
+ *
+ * `pushSentAt` / `openedAt` are DELIVERY PROGRESS, not authorization state: they
+ * let a waiting surface render "Check Commons on your phone" → "Opened in
+ * Commons" without inventing competing statuses. `status` remains the only
+ * authority on whether the request is pending, authorized, cancelled or expired.
+ * Both are `.nullable().optional()` for the same reason as `sessionId` — the
+ * producer always emits the key with `null` until that step happens, and an
+ * older API that omits them entirely must degrade, not fail the parse.
  */
 export const sessionStatusSchema = z.object({
     status: z.string(),
@@ -104,6 +116,13 @@ export const sessionStatusSchema = z.object({
     sessionId: z.string().nullable().optional(),
     publicKey: z.string().nullable().optional(),
     userId: z.string().nullable().optional(),
+    /**
+     * What approving this request does. Legacy rows read as `device_sign_in`.
+     * OAuth-bound sessions finalize into an authorization code (no `sessionId`).
+     */
+    purpose: z.enum(['device_sign_in', 'oauth_authorization']).optional(),
+    pushSentAt: z.string().nullable().optional(),
+    openedAt: z.string().nullable().optional(),
 });
 
 export type SessionStatusResponse = z.infer<typeof sessionStatusSchema>;

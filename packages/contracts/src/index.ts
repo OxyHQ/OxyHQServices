@@ -2,7 +2,7 @@
  * @oxyhq/contracts — single source of truth for API request/response contracts.
  *
  * Zod schemas plus their inferred types, shared by the backend (`@oxyhq/api`)
- * and the client SDKs (`@oxyhq/core`, `@oxyhq/auth`, `@oxyhq/services`). The
+ * and the client SDKs (`@oxyhq/core`, `@oxyhq/services`). The
  * producer validates its output and every consumer validates its input against
  * exactly the same definitions, so the wire shape cannot drift.
  *
@@ -11,15 +11,26 @@
  */
 
 export {
+    ORGANIZATION_CATEGORIES,
+    organizationCategorySchema,
+    createAccountRequestSchema,
+} from './accountGraph';
+
+export type {
+    OrganizationCategory,
+    CreateAccountRequest,
+} from './accountGraph';
+
+export {
     // Schemas
     userNameSchema,
+    userRelationshipSchema,
+    themePreferenceSchema,
     userResponseSchema,
     userProfileUpdateSchema,
-    refreshAllAccountSchema,
-    refreshAllResponseSchema,
     currentUserResponseSchema,
-    deviceSessionAccountSchema,
-    deviceSessionsResponseSchema,
+    deviceLinkedSessionSchema,
+    deviceLinkedSessionsResponseSchema,
     // Helpers
     resolveUserId,
     safeParseContract,
@@ -27,13 +38,13 @@ export {
 
 export type {
     UserNameResponse,
+    UserRelationship,
+    ThemePreference,
     UserResponse,
     UserProfileUpdate,
-    RefreshAllAccountResponse,
-    RefreshAllResponseContract,
     CurrentUserResponseContract,
-    DeviceSessionAccountResponse,
-    DeviceSessionsResponseContract,
+    DeviceLinkedSessionResponse,
+    DeviceLinkedSessionsResponseContract,
 } from './userResponse';
 
 export {
@@ -50,13 +61,37 @@ export type {
 } from './sessionStatus';
 
 export {
-    // Schemas
-    fedcmTokenPayloadSchema,
-} from './fedcmToken';
+    // Closed set of denial reasons for POST /auth/session/deny/:authorizeCode —
+    // shared by the API request schema, the persisted `AuthSession.deniedReason`
+    // enum, and the SDK's `denyCommonsSignIn`.
+    COMMONS_DENY_REASONS,
+    commonsDenyReasonSchema,
+    IDENTITY_APPROVAL_PUSH_CHANNEL,
+} from './commonsSignIn';
+
+export type { CommonsDenyReason } from './commonsSignIn';
+
+export {
+    INBOX_EMAIL_PUSH_CHANNEL,
+    INBOX_EMAIL_PUSH_TYPE,
+    inboxEmailPushDataSchema,
+} from './inboxPush';
+
+export type { InboxEmailPushData } from './inboxPush';
+
+export {
+    OXY_USER_INVALIDATION_CHANNEL,
+    OXY_USER_CHANGE_REASONS,
+    OXY_PUBLISHED_USER_CHANGE_REASONS,
+    isPublishedOxyUserChangeReason,
+    oxyUserInvalidationEventSchema,
+} from './userInvalidation';
 
 export type {
-    FedcmTokenPayload,
-} from './fedcmToken';
+    OxyUserChangeReason,
+    PublishedOxyUserChangeReason,
+    OxyUserInvalidationEvent,
+} from './userInvalidation';
 
 export {
     // Schemas
@@ -70,6 +105,9 @@ export {
     appEndorsementInputSchema,
     appInterestInputSchema,
     appUserSignalIngestSchema,
+    appAffinityEventTypeSchema,
+    appAffinityEventSchema,
+    appAffinityEventsIngestSchema,
 } from './recommendations';
 
 export type {
@@ -83,6 +121,9 @@ export type {
     AppEndorsementInput,
     AppInterestInput,
     AppUserSignalIngest,
+    AppAffinityEventType,
+    AppAffinityEvent,
+    AppAffinityEventsIngest,
 } from './recommendations';
 
 export {
@@ -102,10 +143,11 @@ export {
 
 export type {
     VerificationMethod,
+    Secp256k1VerificationMethod,
+    MultikeyVerificationMethod,
     DidService,
     DidDocument,
     SignedRecordEnvelope,
-    SignedRecordType,
     VerifiedDomain,
     DomainVerificationRequest,
     DomainVerificationInstructions,
@@ -114,6 +156,27 @@ export type {
     ExportAttestation,
     ExportBundle,
 } from './identity';
+
+export {
+    // Schemas
+    oxySignedRecordTypeSchema,
+} from './oxyRecordTypes';
+
+export type {
+    OxySignedRecordType,
+} from './oxyRecordTypes';
+
+export {
+    // Schemas
+    chainHeadResponseSchema,
+    logPageResponseSchema,
+} from './protocol';
+
+export type {
+    LexiconRecord,
+    ChainHeadResponse,
+    LogPageResponse,
+} from './protocol';
 
 export {
     // Schemas
@@ -166,6 +229,163 @@ export type {
 } from './civic';
 
 export {
+    // Closed value sets — shared by the API's mongoose enums, the API's request
+    // validation, and the SDK's unions, so a new category/tier/status cannot be
+    // added on one side only.
+    REPUTATION_CATEGORIES,
+    REPUTATION_TRANSACTION_STATUSES,
+    TRUST_TIERS,
+    REPUTATION_TARGET_ENTITY_TYPES,
+    REPUTATION_DISPUTE_STATUSES,
+    REPUTATION_INFLUENCE_CONTEXTS,
+    // Schemas — closed value sets
+    reputationCategorySchema,
+    reputationTransactionStatusSchema,
+    trustTierSchema,
+    reputationTargetEntityTypeSchema,
+    reputationDisputeStatusSchema,
+    reputationInfluenceContextSchema,
+    // Schemas — responses
+    reputationTransactionSchema,
+    reputationBalanceBreakdownSchema,
+    reputationInfluenceSchema,
+    reputationReliabilitySchema,
+    reputationBalanceSummarySchema,
+    reputationBalanceSchema,
+    reputationDisputeSchema,
+    reputationRuleSchema,
+    reputationLeaderboardUserSchema,
+    reputationLeaderboardEntrySchema,
+    reputationInfluenceResultSchema,
+    reverseReputationTransactionResultSchema,
+    // Schemas — request bodies
+    awardReputationSchema,
+    createReputationDisputeSchema,
+    resolveReputationDisputeSchema,
+    upsertReputationRuleSchema,
+    reverseReputationTransactionSchema,
+    // Narrows the two balance views apart at runtime.
+    isFullReputationBalance,
+} from './reputation';
+
+export type {
+    ReputationCategory,
+    ReputationTransactionStatus,
+    TrustTier,
+    ReputationTargetEntityType,
+    ReputationDisputeStatus,
+    ReputationInfluenceContext,
+    ReputationTransaction,
+    ReputationBalanceBreakdown,
+    ReputationInfluence,
+    ReputationReliability,
+    ReputationBalanceSummary,
+    ReputationBalance,
+    ReputationBalanceView,
+    ReputationDispute,
+    ReputationRule,
+    ReputationLeaderboardUser,
+    ReputationLeaderboardEntry,
+    ReputationInfluenceResult,
+    ReverseReputationTransactionResult,
+    AwardReputationInput,
+    CreateReputationDisputeInput,
+    ResolveReputationDisputeInput,
+    UpsertReputationRuleInput,
+    UpsertReputationRuleRequest,
+    ReverseReputationTransactionInput,
+} from './reputation';
+
+export {
+    // Closed value sets — the moderation reputation bridge (CrowdSource → Oxy Trust).
+    MODERATION_SEVERITIES,
+    MODERATION_FINDING_SCOPES,
+    MODERATION_ATTRIBUTIONS,
+    MODERATION_DECISION_STATUSES,
+    MODERATION_EFFECT_TYPES,
+    MODERATION_EFFECT_STATUSES,
+    MODERATION_EFFECT_SKIP_REASONS,
+    CONDUCT_STRIKE_STATUSES,
+    CONDUCT_STANDINGS,
+    CONTRIBUTION_TIERS,
+    PERSONHOOD_STATUSES,
+    IDENTITY_BINDING_TYPES,
+    IDENTITY_BINDING_STATUSES,
+    APPLICATION_MODERATION_STANDINGS,
+    // Schemas — closed value sets
+    moderationSeveritySchema,
+    moderationFindingScopeSchema,
+    moderationAttributionSchema,
+    moderationDecisionStatusSchema,
+    moderationEffectTypeSchema,
+    moderationEffectStatusSchema,
+    moderationEffectSkipReasonSchema,
+    conductStrikeStatusSchema,
+    conductStandingSchema,
+    contributionTierSchema,
+    personhoodStatusSchema,
+    identityBindingTypeSchema,
+    identityBindingStatusSchema,
+    applicationModerationStandingSchema,
+    // Schemas — the event and its receipt
+    moderationFindingSchema,
+    moderationDecisionEventSubjectSchema,
+    moderationPolicyVersionsSchema,
+    moderationDecisionEventSchema,
+    finalizeModerationDecisionSchema,
+    reverseModerationEffectSchema,
+    moderationEffectSchema,
+    applyModerationDecisionResultSchema,
+    reverseModerationEffectResultSchema,
+    // Schemas — identity binding
+    registerIdentityBindingSchema,
+    identityBindingSchema,
+    // Schemas — the derived V2 axes
+    reputationPersonhoodSchema,
+    reputationContributionSchema,
+    reputationConductSchema,
+    reputationReportingSchema,
+    reputationReviewingSchema,
+    reputationContextualInfluenceSchema,
+    applicationModerationTrustSchema,
+} from './moderationReputation';
+
+export type {
+    ModerationSeverity,
+    ModerationFindingScope,
+    ModerationAttribution,
+    ModerationDecisionStatus,
+    ModerationEffectType,
+    ModerationEffectStatus,
+    ModerationEffectSkipReason,
+    ConductStrikeStatus,
+    ConductStanding,
+    ContributionTier,
+    PersonhoodStatusValue,
+    IdentityBindingType,
+    IdentityBindingStatus,
+    ApplicationModerationStanding,
+    ModerationFinding,
+    ModerationDecisionEventSubject,
+    ModerationPolicyVersions,
+    ModerationDecisionEvent,
+    FinalizeModerationDecisionInput,
+    ReverseModerationEffectInput,
+    ModerationEffect,
+    ApplyModerationDecisionResult,
+    ReverseModerationEffectResult,
+    RegisterIdentityBindingInput,
+    IdentityBinding,
+    ReputationPersonhood,
+    ReputationContribution,
+    ReputationConduct,
+    ReputationReporting,
+    ReputationReviewing,
+    ReputationContextualInfluence,
+    ApplicationModerationTrust,
+} from './moderationReputation';
+
+export {
     // Schemas
     linkPreviewSchema,
     linkPreviewBatchRequestSchema,
@@ -179,3 +399,183 @@ export type {
     LinkPreviewBatchRequest,
     LinkPreviewBatchResponse,
 } from './links';
+
+export {
+    sessionAccountSchema,
+    deviceSessionStateSchema,
+    activeTokenSchema,
+    deviceSessionSyncSchema,
+    deviceTokenMintRequestSchema,
+    deviceTokenMintResponseSchema,
+    deviceBackgroundCredentialResponseSchema,
+    deviceBackgroundTokenRequestSchema,
+    deviceBackgroundTokenResponseSchema,
+    SESSION_ACCOUNTS_CHANGED_EVENT,
+    sessionAccountsChangedReasonSchema,
+    sessionAccountsChangedEventSchema,
+} from './deviceSession';
+
+export type {
+    SessionAccount,
+    DeviceSessionState,
+    ActiveToken,
+    DeviceSessionSync,
+    DeviceTokenMintRequest,
+    DeviceTokenMintResponse,
+    DeviceBackgroundCredentialResponse,
+    DeviceBackgroundTokenRequest,
+    DeviceBackgroundTokenResponse,
+    SessionAccountsChangedReason,
+    SessionAccountsChangedEvent,
+} from './deviceSession';
+
+export {
+    // Schemas
+    loginResultSchema,
+} from './deviceBoot';
+
+export type {
+    LoginSessionResult,
+    LoginResult,
+    SecurityAlert,
+    SecurityAlertAnomaly,
+} from './deviceBoot';
+
+export {
+    // Schemas
+    rotateKeyChallengeResponseSchema,
+    rotateKeyCompleteRequestSchema,
+    rotateKeyCompleteResponseSchema,
+} from './keyRotation';
+
+export type {
+    RotateKeyChallengeResponse,
+    RotateKeyCompleteRequest,
+    RotateKeyCompleteResponse,
+} from './keyRotation';
+
+export {
+    // Schemas — encrypted off-device identity backup (b3 Feature 1)
+    backupLookupIdSchema,
+    encryptedBackupEnvelopeSchema,
+    backupUploadRequestSchema,
+    backupStatusResponseSchema,
+} from './keyRecovery';
+
+export type {
+    EncryptedBackupEnvelope,
+    BackupUploadRequest,
+    BackupStatusResponse,
+} from './keyRecovery';
+
+export {
+    // Shared primitives
+    updatePlatformSchema,
+    updateStatusSchema,
+    updateAssetStatusSchema,
+    sha256HexSchema,
+    channelNameSchema,
+    runtimeVersionSchema,
+    rolloutPercentSchema,
+    // Assets: init + complete
+    assetInitItemSchema,
+    assetInitRequestSchema,
+    assetUploadTicketSchema,
+    assetInitResponseSchema,
+    assetCompleteRequestSchema,
+    assetCompleteResultItemSchema,
+    assetCompleteResponseSchema,
+    // Create update
+    updateAssetRefSchema,
+    createUpdateRequestSchema,
+    // Read models
+    updateSchema,
+    createUpdateResponseSchema,
+    rollbackToEmbeddedEntrySchema,
+    channelSchema,
+    channelListResponseSchema,
+    updateListResponseSchema,
+    // Rollback / promote / rollout
+    rollbackRequestSchema,
+    rollbackToEmbeddedRequestSchema,
+    promoteRequestSchema,
+    updateRolloutPatchSchema,
+} from './updates';
+
+export type {
+    UpdatePlatform,
+    UpdateStatus,
+    UpdateAssetStatus,
+    AssetInitItem,
+    AssetInitRequest,
+    AssetUploadTicket,
+    AssetInitResponse,
+    AssetCompleteRequest,
+    AssetCompleteResultItem,
+    AssetCompleteResponse,
+    UpdateAssetRef,
+    CreateUpdateRequest,
+    Update,
+    CreateUpdateResponse,
+    RollbackToEmbeddedEntry,
+    Channel,
+    ChannelListResponse,
+    UpdateListResponse,
+    RollbackRequest,
+    RollbackToEmbeddedRequest,
+    PromoteRequest,
+    UpdateRolloutPatch,
+} from './updates';
+
+export {
+    // Schemas
+    webauthnRegisterOptionsRequestSchema,
+    webauthnLoginOptionsRequestSchema,
+    webauthnRegisterVerifyRequestSchema,
+    webauthnLoginVerifyRequestSchema,
+} from './webauthn';
+
+export type {
+    WebauthnRegisterOptionsRequest,
+    WebauthnLoginOptionsRequest,
+    WebauthnRegisterVerifyRequest,
+    WebauthnLoginVerifyRequest,
+} from './webauthn';
+
+export {
+    // Schemas
+    devicePairingStatusSchema,
+    deviceTransferInitRequestSchema,
+    deviceTransferInitResponseSchema,
+    deviceTransferInfoResponseSchema,
+    deviceTransferApproveRequestSchema,
+    deviceTransferApproveResponseSchema,
+    deviceTransferDenyResponseSchema,
+} from './devicePairing';
+
+export type {
+    DevicePairingStatus,
+    DeviceTransferInitRequest,
+    DeviceTransferInitResponse,
+    DeviceTransferInfoResponse,
+    DeviceTransferApproveRequest,
+    DeviceTransferApproveResponse,
+    DeviceTransferDenyResponse,
+} from './devicePairing';
+
+export {
+    // Schemas — transparency log (checkpoints + inclusion proofs)
+    transparencyCheckpointSignatureSchema,
+    transparencyAnchorSchema,
+    transparencyCheckpointSchema,
+    transparencyInclusionProofSchema,
+    transparencyCheckpointListSchema,
+} from './transparency';
+
+export type {
+    TransparencyCheckpointSignature,
+    TransparencyAnchor,
+    TransparencyCheckpoint,
+    TransparencyInclusionProof,
+    TransparencyCheckpointList,
+} from './transparency';

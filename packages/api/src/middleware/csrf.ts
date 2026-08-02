@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { logger } from '../utils/logger';
 
@@ -96,7 +96,6 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
       logger.warn('Native app CSRF bypass without auth', {
         method: req.method,
         path: req.path,
-        ip: req.ip,
       });
 
       return res.status(403).json({
@@ -109,7 +108,6 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
       logger.warn('CSRF token missing (native app)', {
         method: req.method,
         path: req.path,
-        ip: req.ip,
       });
 
       return res.status(403).json({
@@ -124,7 +122,6 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
       logger.warn('CSRF token invalid format (native app)', {
         method: req.method,
         path: req.path,
-        ip: req.ip,
       });
 
       return res.status(403).json({
@@ -148,7 +145,6 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
       path: req.path,
       hasCookie: !!cookieToken,
       hasHeader: !!headerToken,
-      ip: req.ip,
     });
 
     return res.status(403).json({
@@ -157,12 +153,15 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
     });
   }
 
-  // Tokens must match (timing-safe comparison)
-  if (!crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken))) {
+  // Tokens must match (timing-safe comparison). Length must match first —
+  // timingSafeEqual throws RangeError on mismatched buffer lengths.
+  if (
+    cookieToken.length !== headerToken.length ||
+    !crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken))
+  ) {
     logger.warn('CSRF token mismatch', {
       method: req.method,
       path: req.path,
-      ip: req.ip,
     });
 
     return res.status(403).json({

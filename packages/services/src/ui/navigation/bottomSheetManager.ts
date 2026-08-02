@@ -1,88 +1,60 @@
 import type { RouteName } from './routes';
 import { isValidRoute } from './routes';
-import { createStore } from 'zustand/vanilla';
+import { getSurfaceConfig } from './surfaceRegistry';
+import { closeAllRouteSurfaces, presentRoute, topRouteSurface } from './surfaces';
 
 /**
- * Bottom Sheet State Manager
+ * Bottom-sheet manager — the INTERNAL adapter that keeps the historical
+ * `showBottomSheet` / `closeBottomSheet` API working on top of the new Bloom
+ * surface stack (`navigation/surfaces.ts`). The public signatures are unchanged;
+ * this file just re-expresses them as thin calls into the typed surface layer.
+ *
+ * The old single-surface store is gone: `showBottomSheet` now open-or-navigates
+ * the "base" (top-most) route surface, and cross-presentation targets (the
+ * full-bleed image picker) stack a NEW surface on top — Bloom coordinates the
+ * z-order / backdrop / dismiss so nothing clashes.
  */
 
-export interface BottomSheetState {
-    currentScreen: RouteName | null;
-    screenProps: Record<string, unknown>;
-    currentStep?: number;
-    history: Array<{ screen: RouteName; props: Record<string, unknown>; step?: number }>;
-    isOpen: boolean;
-    fullScreen: boolean;
-}
-
-const initialState: BottomSheetState = {
-    currentScreen: null,
-    screenProps: {},
-    currentStep: undefined,
-    history: [],
-    isOpen: false,
-    fullScreen: false,
-};
-
-export const bottomSheetStore = createStore<BottomSheetState>(() => initialState);
-
-export const getState = () => bottomSheetStore.getState();
-
+/**
+ * Open a bottom-sheet route. By DEFAULT it drills into the top-most active
+ * surface — morphing it in place (every screen morphs). A NEW surface is stacked
+ * on top only when the target route declares `stacks` (reserved for genuine
+ * overlays — none today). Opening with no active surface presents the first one.
+ *
+ * `fullScreen` is accepted for signature compatibility and ignored — a route's
+ * surface is now derived from its registry config, not a per-call flag.
+ */
 export const showBottomSheet = (
-    screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown>; fullScreen?: boolean },
+  screenOrConfig:
+    | RouteName
+    | { screen: RouteName; props?: Record<string, unknown>; fullScreen?: boolean },
 ): void => {
-    const screen = typeof screenOrConfig === 'string' ? screenOrConfig : screenOrConfig.screen;
-    const props = typeof screenOrConfig === 'string' ? {} : (screenOrConfig.props || {});
-    const fullScreen = typeof screenOrConfig === 'string' ? false : (screenOrConfig.fullScreen ?? false);
+  const screen = typeof screenOrConfig === 'string' ? screenOrConfig : screenOrConfig.screen;
+  const props = typeof screenOrConfig === 'string' ? {} : screenOrConfig.props ?? {};
 
-    if (!isValidRoute(screen)) {
-        if (__DEV__) console.warn(`[BottomSheet] Invalid route: ${screen}`);
-        return;
-    }
+  if (!isValidRoute(screen)) {
+    if (__DEV__) console.warn(`[BottomSheet] Invalid route: ${screen}`);
+    return;
+  }
 
-    const state = bottomSheetStore.getState();
-
-    // Push current screen to history if navigating to different screen
-    if (state.currentScreen && state.currentScreen !== screen) {
-        bottomSheetStore.setState({
-            history: [...state.history, {
-                screen: state.currentScreen,
-                props: state.screenProps,
-                step: state.currentStep,
-            }],
-        });
-    }
-
-    bottomSheetStore.setState({
-        currentScreen: screen,
-        screenProps: props,
-        currentStep: typeof props.initialStep === 'number' ? props.initialStep : undefined,
-        isOpen: true,
-        fullScreen,
-    });
+  const top = topRouteSurface();
+  if (top && !getSurfaceConfig(screen, props).stacks) {
+    top.navigate(screen, props);
+  } else {
+    presentRoute(screen, props);
+  }
 };
 
+/** Dismiss the whole bottom-sheet session (every active route surface). */
 export const closeBottomSheet = (): void => {
-    bottomSheetStore.setState(initialState);
+  closeAllRouteSurfaces();
 };
 
+/**
+ * Step back within the top-most surface's route history. Returns `true` when a
+ * frame was popped, `false` when the surface is already at its root frame.
+ */
 export const goBack = (): boolean => {
-    const { history } = bottomSheetStore.getState();
-
-    if (history.length > 0) {
-        const prev = history[history.length - 1];
-        bottomSheetStore.setState({
-            currentScreen: prev.screen,
-            screenProps: prev.props,
-            currentStep: prev.step,
-            history: history.slice(0, -1),
-        });
-        return true;
-    }
-
-    return false;
-};
-
-export const updateState = (updates: Partial<BottomSheetState>) => {
-    bottomSheetStore.setState((state) => ({ ...state, ...updates }));
+  const top = topRouteSurface();
+  return top ? top.goBack() : false;
 };

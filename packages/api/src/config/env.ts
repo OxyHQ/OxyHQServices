@@ -13,20 +13,37 @@ import { logger } from '../utils/logger';
  * Required environment variables
  */
 export interface RequiredEnvVars {
-  // Database
-  MONGODB_URI: string;
+  // MongoDB connection string. OPTIONAL since 2026-08-02: nothing in the
+  // serving path reads Mongo any more. The API had served every request from
+  // Postgres since the cutover on 2026-07-31, but three things still tied the
+  // PROCESS to Mongo — a boot-time `mongoose.connect` in `server.ts`, this
+  // entry in the `required` list below, and eleven type-only imports of
+  // `models/*` — and all three are gone. `src/models/` itself stays, because
+  // `src/scripts/` and `src/db/backfill/` (the migration, and the read-only
+  // `mongoSource` proxy) still use it: MongoDB is the ROLLBACK SOURCE.
+  //
+  // So this is still synced to SSM and still reaches the ECS task — a one-shot
+  // backfill or admin task needs it. It is simply no longer a condition of the
+  // API starting, which is the whole difference between "Postgres serves the
+  // traffic" and "Mongo is not in the serving path".
+  MONGODB_URI?: string;
+
+  // PostgreSQL connection string, consumed by `config/postgres.ts` (Drizzle
+  // over postgres.js) and by the migrator (`db/migrate.ts`). The live store.
+  //
+  // Every name in the `required` list below must reach the ECS task, which
+  // means being synced to SSM by `.github/workflows/deploy-aws.yml`. CI job
+  // "Deploy Secrets Sync" reads THIS array and fails the build on any entry
+  // that is neither synced nor recorded as a non-secret.
+  DATABASE_URL: string;
 
   // Authentication
   ACCESS_TOKEN_SECRET: string;
   REFRESH_TOKEN_SECRET: string;
-  FEDCM_TOKEN_SECRET: string;
-  FEDCM_ISSUER?: string;
 
-  // Central cross-domain SSO: shared secret the auth.oxy.so worker presents in
-  // the `X-Oxy-Internal` header on `POST /sso/code`. Must be provisioned
-  // (GitHub secret → SSM `/oxy/oxy-api/SSO_INTERNAL_SECRET`) and match the
-  // worker's value. When unset the `/sso/code` mint endpoint fails closed
-  // (returns 404 to every caller), disabling code-based SSO. ≥32 chars.
+  // Legacy cross-domain SSO secret (FedCM / POST /sso/code removed in wave 2).
+  // Still synced from GitHub → SSM for environments that haven't dropped it yet;
+  // no live route reads it. Safe to omit in new deployments.
   SSO_INTERNAL_SECRET?: string;
 
   // Device-id derivation salt (security review H1). Required in production
@@ -47,6 +64,17 @@ export interface RequiredEnvVars {
   // falls back to the documented default in `config/cdn.ts` when unset.
   ASSET_CDN_URL?: string;
 
+  // Oxy Updates code-signing private key (base64-encoded RSA PEM). OPTIONAL at
+  // boot: the process starts without it, but any manifest request that asks for
+  // a signature (`expo-expect-signature`) then fails with a 500 until it is set.
+  // Production supplies it via SSM `/oxy/oxy-api/UPDATES_CODE_SIGNING_PRIVATE_KEY`.
+  // Read directly by `services/updates/signing.service.ts`.
+  UPDATES_CODE_SIGNING_PRIVATE_KEY?: string;
+
+  // When `true`, `POST /federation/domain-purge` with `dryRun:false` may execute
+  // deletions. Defaults to disabled; read per request in `routes/federation.ts`.
+  FEDERATION_DOMAIN_PURGE_ENABLED?: string;
+
   // Server
   PORT?: string;
   NODE_ENV?: string;
@@ -56,7 +84,10 @@ export interface RequiredEnvVars {
  * Optional environment variables with defaults
  */
 export const ENV_DEFAULTS = {
-  PORT: '3001',
+  // Local dev default only — ECS injects PORT explicitly (oxy-infra
+  // terraform-uswest2/app-services.tf sets it to 8080). 4100 is oxy-api's slot
+  // in the per-app port map so several Oxy backends can run side by side.
+  PORT: '4100',
   NODE_ENV: 'development',
   AWS_REGION: 'us-east-1',
 } as const;
@@ -92,6 +123,13 @@ const MAX_HOSTNAME_LENGTH = 253;
 const MIN_DEVICE_ID_SALT_LENGTH = 32;
 
 /**
+ * Accepted URI schemes for `DATABASE_URL`. Both are the same protocol —
+ * `postgres://` is the historical spelling, `postgresql://` the one libpq
+ * documents — and Bun's SQL client accepts either.
+ */
+const POSTGRES_URL_SCHEMES = ['postgres://', 'postgresql://'] as const;
+
+/**
  * Development-only default for `DEVICE_ID_SALT`. NEVER use this in production —
  * production startup will fail-fast if `DEVICE_ID_SALT` is unset (see
  * `validateRequiredEnvVars`). The literal value is intentionally
@@ -114,10 +152,9 @@ export function isValidHostname(value: string): boolean {
  */
 export function validateRequiredEnvVars(): void {
   const required: (keyof RequiredEnvVars)[] = [
-    'MONGODB_URI',
+    'DATABASE_URL',
     'ACCESS_TOKEN_SECRET',
     'REFRESH_TOKEN_SECRET',
-    'FEDCM_TOKEN_SECRET',
     'AWS_REGION',
     'AWS_ACCESS_KEY_ID',
     'AWS_SECRET_ACCESS_KEY',
@@ -133,9 +170,15 @@ export function validateRequiredEnvVars(): void {
     }
   }
 
-  // Check for commonly misconfigured variables
+  // Check for commonly misconfigured variables. MONGODB_URI is no longer
+  // required, but a backfill or admin task that IS given one still deserves to
+  // hear that it is malformed before it fails to connect.
   if (process.env.MONGODB_URI && !process.env.MONGODB_URI.startsWith('mongodb')) {
     warnings.push('MONGODB_URI should start with "mongodb://" or "mongodb+srv://"');
+  }
+
+  if (process.env.DATABASE_URL && !POSTGRES_URL_SCHEMES.some(scheme => process.env.DATABASE_URL?.startsWith(scheme))) {
+    warnings.push('DATABASE_URL should start with "postgres://" or "postgresql://"');
   }
 
   if (process.env.AWS_S3_BUCKET && process.env.AWS_S3_BUCKET.includes('/')) {
@@ -166,7 +209,7 @@ export function validateRequiredEnvVars(): void {
     'password',
   ];
   if (isProduction()) {
-    for (const key of ['ACCESS_TOKEN_SECRET', 'REFRESH_TOKEN_SECRET', 'FEDCM_TOKEN_SECRET'] as const) {
+    for (const key of ['ACCESS_TOKEN_SECRET', 'REFRESH_TOKEN_SECRET'] as const) {
       const val = process.env[key];
       if (val && (WEAK_SECRETS.includes(val) || val.length < 32)) {
         missing.push(`${key} (insecure: must be at least 32 characters and not a default placeholder)`);
@@ -180,24 +223,6 @@ export function validateRequiredEnvVars(): void {
         warnings.push(`${key} is set to a default placeholder — generate a strong secret with: openssl rand -base64 64`);
       }
     }
-  }
-
-  // SSO_INTERNAL_SECRET gates the internal `POST /sso/code` mint endpoint that
-  // the auth.oxy.so worker calls server-to-server. It is NOT required for the
-  // API to boot — when unset, `/sso/code` fails closed (returns 404), which
-  // only disables code-based cross-domain SSO. But when it IS set it must be
-  // strong (≥32 chars), since it is a bearer-equivalent shared secret.
-  const ssoInternalSecret = process.env.SSO_INTERNAL_SECRET;
-  if (ssoInternalSecret && ssoInternalSecret.length > 0) {
-    if (ssoInternalSecret.length < 32 || WEAK_SECRETS.includes(ssoInternalSecret)) {
-      missing.push('SSO_INTERNAL_SECRET (insecure: must be at least 32 characters and not a default placeholder)');
-    }
-  } else if (isProduction()) {
-    warnings.push(
-      'SSO_INTERNAL_SECRET is unset — central cross-domain SSO (POST /sso/code) is disabled. ' +
-      'Provision it (GitHub secret → SSM /oxy/oxy-api/SSO_INTERNAL_SECRET) and set the matching ' +
-      'value on the auth.oxy.so worker to enable code-based SSO. Generate with: openssl rand -base64 48'
-    );
   }
 
   // DEVICE_ID_SALT scopes the derived deviceId hash (see
@@ -233,22 +258,6 @@ export function validateRequiredEnvVars(): void {
   } else if (deviceIdSalt.length < MIN_DEVICE_ID_SALT_LENGTH) {
     missing.push(
       `DEVICE_ID_SALT (insecure: must be at least ${MIN_DEVICE_ID_SALT_LENGTH} characters; got ${deviceIdSalt.length})`
-    );
-  }
-
-  // REFRESH_COOKIE_DOMAIN becomes a cookie Domain attribute. Refresh cookies
-  // are bearer-equivalent, so the safe default is host-only (unset). If an
-  // operator uses the emergency override, fail fast unless it is the exact API
-  // host; parent-domain scopes such as `oxy.so` leak the cookie to sibling
-  // subdomain servers despite HttpOnly.
-  const refreshCookieDomain = process.env.REFRESH_COOKIE_DOMAIN;
-  if (
-    refreshCookieDomain &&
-    (!isValidHostname(refreshCookieDomain) || refreshCookieDomain !== 'api.oxy.so')
-  ) {
-    missing.push(
-      'REFRESH_COOKIE_DOMAIN (invalid: leave unset for host-only cookies, or set exactly "api.oxy.so"; ' +
-      'parent domains, schemes, ports, paths, spaces, and ";"/"," characters are forbidden)'
     );
   }
 
@@ -293,7 +302,7 @@ export function getEnvNumber(key: string, defaultValue: number): number {
   const value = process.env[key];
   if (!value) return defaultValue;
   
-  const parsed = parseInt(value, 10);
+  const parsed = Number.parseInt(value, 10);
   return isNaN(parsed) ? defaultValue : parsed;
 }
 
@@ -326,6 +335,24 @@ export function isDevelopment(): boolean {
 }
 
 /**
+ * The WebAuthn Relying Party ID — the registrable domain a passkey is scoped to.
+ * Defaults to the Oxy apex `oxy.so` in production (so a single passkey works
+ * across every `*.oxy.so` first-party origin) and to `localhost` in development
+ * (matching a loopback dev server). Overridable via `WEBAUTHN_RP_ID`, mirroring
+ * the other domain-override envs (`FEDERATION_DOMAIN`, `DID_WEB_DOMAIN`) that are
+ * read inline at their call sites. The RP ID is a bare hostname — never a scheme,
+ * port, or path — so `verifyRegistrationResponse`/`verifyAuthenticationResponse`
+ * can match it against the ceremony's `rpIdHash`.
+ */
+export function getWebauthnRpId(): string {
+  const configured = process.env.WEBAUTHN_RP_ID?.trim();
+  if (configured) {
+    return configured;
+  }
+  return isDevelopment() ? 'localhost' : 'oxy.so';
+}
+
+/**
  * Get sanitized configuration for logging (without sensitive data)
  */
 export function getSanitizedConfig(): Record<string, string> {
@@ -337,6 +364,7 @@ export function getSanitizedConfig(): Record<string, string> {
     AWS_ENDPOINT_URL: process.env.AWS_ENDPOINT_URL || 'default',
     ASSET_CDN_URL: process.env.ASSET_CDN_URL || 'https://cloud.oxy.so',
     MONGODB_URI: process.env.MONGODB_URI ? maskConnectionString(process.env.MONGODB_URI) : '',
+    DATABASE_URL: process.env.DATABASE_URL ? maskConnectionString(process.env.DATABASE_URL) : '',
   };
 }
 

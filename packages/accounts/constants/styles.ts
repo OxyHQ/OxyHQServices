@@ -8,6 +8,7 @@ import { Platform, type ViewStyle } from 'react-native';
  * is validated instead of cast.
  */
 export const floatingPosition: ViewStyle = Platform.select<ViewStyle>({
-  web: { position: 'fixed' },
+  // RN Web supports `position: fixed`; the RN ViewStyle union does not include it.
+  web: { position: 'fixed' } as unknown as ViewStyle,
   default: { position: 'absolute' },
 }) ?? { position: 'absolute' };

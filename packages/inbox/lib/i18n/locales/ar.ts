@@ -44,16 +44,12 @@ const ar: LocaleDict = {
   },
 
   tabs: {
-    home: 'الرئيسية',
     inbox: 'البريد الوارد',
     search: 'بحث',
     settings: 'الإعدادات',
-    forYou: 'لك',
   },
 
   drawer: {
-    home: 'الرئيسية',
-    forYou: 'لك',
     starred: 'المميّزة',
     snoozed: 'مؤجَّلة',
     subscriptions: 'الاشتراكات',
@@ -123,6 +119,11 @@ const ar: LocaleDict = {
       analyzing: 'تقوم Alia بتحليل بريدك الوارد…',
       unavailable: 'تعذّر إنشاء الملخّص الآن.',
       empty: 'لا توجد رسائل للتلخيص بعد.',
+      writing: 'جارٍ كتابة ملخّصك…',
+      preparing: 'جارٍ تجهيز ملخّصك…',
+      failed: 'تعذّر كتابة ملخّص اليوم.',
+      nothingNew: 'لا جديد اليوم.',
+      tapRetry: 'اضغط لإعادة المحاولة.',
     },
     feedEmpty: {
       title: 'تم تحديث كل شيء',
@@ -134,25 +135,6 @@ const ar: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'لك',
-    starred: 'المميّزة',
-    unread: 'غير المقروءة',
-    attachments: 'المرفقات',
-    empty: {
-      title: 'تم تحديث كل شيء',
-      subtitle: 'لا يوجد شيء مميّز لك الآن.',
-    },
-    summary: {
-      fromOne: 'من {{a}}',
-      fromTwo: 'من {{a}} و{{b}}',
-      fromManyOne: 'من {{a}} و{{b}} و{{count}} آخر',
-      fromManyOther: 'من {{a}} و{{b}} و{{count}} آخرين',
-      aboutOne: ' — حول {{topic}}',
-      aboutTwo: ' — حول {{a}} و{{b}}',
-      aboutMore: ' والمزيد',
-    },
-  },
 
   inbox: {
     title: 'البريد الوارد',
@@ -385,6 +367,7 @@ const ar: LocaleDict = {
     keyPoints: 'النقاط الرئيسية',
     actionItems: 'بنود التنفيذ',
     due: 'الموعد: {{date}}',
+    unavailable: 'تعذّر تلخيص هذه المحادثة الآن.',
   },
 
   staleThread: {

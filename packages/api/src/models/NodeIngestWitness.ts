@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { type Document, Schema } from 'mongoose';
 
 /**
  * NodeIngestWitness (self-sovereign identity layer — F5b node→Oxy ingest)

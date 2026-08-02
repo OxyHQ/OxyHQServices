@@ -1,27 +1,37 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, StyleSheet, Platform, AccessibilityInfo } from 'react-native';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import {
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { useOxy, useCurrentUser } from '@oxyhq/services';
 import { buildUserDid } from '@oxyhq/core';
 import { Fab } from '@oxyhq/bloom/fab';
+import { useTabBarFootprint } from '@oxyhq/bloom/tab-bar';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Screen, Section, GroupedList, ListRow, Callout } from '@/components/ui';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { Screen, Section, Callout } from '@/components/ui';
 import { Ticket as OxyID } from '@/components/OxyID';
 import { FrontSide } from '@/components/OxyID/front-side';
+import { BackSide } from '@/components/OxyID/back-side';
 import { IdQrBack } from '@/components/civic/IdQrBack';
-import { CivicBadge } from '@/components/civic/CivicBadge';
+import { AttestQrSheet } from '@/components/civic/AttestQrSheet';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useCivicProfileState } from '@/hooks/useCivicProfileState';
-import { useCivicCard } from '@/hooks/useCivicCard';
-import { getTrustTierMeta } from '@/lib/civic/card-presentation';
-import { getDisplayName } from '@/utils/date-utils';
+import { useAttestedEvent, type AttestedEventPayload } from '@/hooks/civic/useAttestedEvent';
+import { getDisplayNameOrNull } from '@/utils/date-utils';
 import { useTranslation } from '@/lib/i18n';
 
-const CARD_WIDTH = 340;
-const CARD_HEIGHT = 214;
+const CARD_WIDTH = 240;
+const CARD_HEIGHT = 380;
 
 /**
  * The Oxy ID screen — the landing/home surface of Commons.
@@ -50,6 +60,7 @@ const CARD_HEIGHT = 214;
 export default function IdScreen() {
   const colors = useColors();
   const router = useRouter();
+  const tabBarFootprint = useTabBarFootprint();
   const { t } = useTranslation();
   const { user, oxyServices } = useOxy();
   // Hydrate the user record (createdAt + fields missing from a cached signIn).
@@ -64,7 +75,9 @@ export default function IdScreen() {
     isSynced: identitySyncState.isSynced,
   });
 
-  const displayName = getDisplayName(user);
+  // `getDisplayNameOrNull` answers `null` for intentional absence; card faces take
+  // `displayName?: string` (`undefined`, not `null`).
+  const displayName = getDisplayNameOrNull(user) ?? undefined;
   const avatarUrl = useAvatarUrl(user);
 
   // The public key lives in local secure storage — load it directly so the card
@@ -98,9 +111,41 @@ export default function IdScreen() {
     }
   }, [oxyServices, userId]);
 
-  // Live trust tier from the signed public card (cache-first).
-  const cardQuery = useCivicCard(userId);
-  const trustTier = cardQuery.data?.card.trustTier;
+  // ---- Attestation-confirmed card feedback --------------------------------
+  const attestGlow = useSharedValue(0);
+  const reducedMotion = useReducedMotion();
+
+  const [attestedVisible, setAttestedVisible] = useState(false);
+  const attestedBadgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (attestedBadgeTimeoutRef.current) clearTimeout(attestedBadgeTimeoutRef.current);
+    };
+  }, []);
+  const triggerAttestGlow = useCallback(() => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setAttestedVisible(true);
+    AccessibilityInfo.announceForAccessibility(t('civic.attest.confirmed'));
+    if (attestedBadgeTimeoutRef.current) clearTimeout(attestedBadgeTimeoutRef.current);
+    attestedBadgeTimeoutRef.current = setTimeout(() => setAttestedVisible(false), 2500);
+    if (reducedMotion) return;
+    attestGlow.value = withSequence(
+      withTiming(1, { duration: 400 }),
+      withDelay(1000, withTiming(0, { duration: 1400 })),
+    );
+  }, [attestGlow, reducedMotion, t]);
+
+  const handleAttestedEvent = useCallback(
+    (payload: AttestedEventPayload) => {
+      // A confirmation is only ever displayed for the identity currently on
+      // screen — ignore events for another account signed in on this device.
+      if (!userId || payload.subjectUserId !== userId) return;
+      triggerAttestGlow();
+    },
+    [userId, triggerAttestGlow],
+  );
+
+  useAttestedEvent(handleAttestedEvent);
 
   const publicKeyShort = useMemo(() => {
     if (!publicKey) return undefined;
@@ -112,9 +157,10 @@ export default function IdScreen() {
     router.push('/(scan)');
   }, [router]);
 
-  const handleAttestMe = useCallback(() => {
-    router.push('/(tabs)/(id)/attest-me');
-  }, [router]);
+  // Show A's fresh attestation QR as a bottom sheet (over the ID tab) instead of
+  // pushing a dedicated screen — a counterparty scans it to confirm they met A.
+  const [qrSheetOpen, setQrSheetOpen] = useState(false);
+  const handleGetVerified = useCallback(() => setQrSheetOpen(true), []);
 
   const handleAboutIdentity = useCallback(() => {
     router.push('/(tabs)/(settings)/about-identity');
@@ -124,32 +170,31 @@ export default function IdScreen() {
 
   return (
     <View style={styles.screen}>
-      <Screen>
+      {/* Flush column — Bloom's SettingsListGroup owns its horizontal gutter; the
+          centered hero and the DID/callout blocks are padded to align with it. */}
+      <Screen contentStyle={styles.flush} gap={16}>
         <View style={styles.hero}>
           <OxyID
             width={CARD_WIDTH}
             height={CARD_HEIGHT}
+            attestGlow={attestGlow}
             frontSide={
-              <View style={StyleSheet.absoluteFill}>
-                <FrontSide
-                  displayName={displayName}
-                  username={user?.username}
-                  avatarUrl={avatarUrl}
-                  accountCreated={user?.createdAt}
-                  publicKeyShort={publicKeyShort}
-                />
-                {trustTier && (
-                  <View style={styles.cardBadgeOverlay} pointerEvents="none">
-                    <CivicBadge
-                      tone={getTrustTierMeta(trustTier).tone}
-                      icon="shield-check"
-                      label={t(`civic.trustTier.${trustTier}`)}
-                    />
-                  </View>
-                )}
-              </View>
+              <FrontSide
+                displayName={displayName}
+                username={user?.username}
+                avatarUrl={avatarUrl}
+                accountCreated={user?.createdAt}
+                publicKeyShort={publicKeyShort}
+              />
             }
             backSide={
+              <BackSide
+                publicKey={publicKey ?? undefined}
+                displayName={displayName}
+                accountCreated={user?.createdAt}
+              />
+            }
+            qrSide={
               qrPayload ? (
                 <IdQrBack payload={qrPayload} caption={t('civic.id.qrCaption')} />
               ) : (
@@ -159,6 +204,12 @@ export default function IdScreen() {
               )
             }
           />
+          {attestedVisible && (
+            <View style={[styles.attestedBadge, { backgroundColor: colors.card }]}>
+              <MaterialCommunityIcons name="check-decagram" size={18} color={colors.success} />
+              <ThemedText style={styles.attestedBadgeText}>{t('civic.attest.confirmed')}</ThemedText>
+            </View>
+          )}
           <ThemedText style={[styles.flipHint, { color: colors.textSecondary }]}>
             {t('civic.id.flipHint')}
           </ThemedText>
@@ -166,62 +217,75 @@ export default function IdScreen() {
 
         {/* Self-custody identity actions (native only). */}
         {isNative && (
-          <Section title={t('vault.home.yourIdentity')} subtitle={t('vault.home.yourIdentitySubtitle')}>
-            <GroupedList>
-              <ListRow
-                icon="shield-key"
-                title={t('home.identity.selfCustody')}
-                subtitle={t('home.identity.selfCustodySubtitle')}
-                onPress={handleAboutIdentity}
-                showChevron
-              />
-              <ListRow
-                icon="key-variant"
-                title={t('home.identity.publicKey')}
-                subtitle={t('home.identity.publicKeySubtitle')}
-                onPress={handleAboutIdentity}
-                showChevron
-              />
-            </GroupedList>
-          </Section>
+          <SettingsListGroup
+            title={t('vault.home.yourIdentity')}
+            footer={t('vault.home.yourIdentitySubtitle')}
+          >
+            <SettingsListItem
+              icon={<MaterialCommunityIcons name="shield-key" size={22} color={colors.text} />}
+              title={t('home.identity.selfCustody')}
+              description={t('home.identity.selfCustodySubtitle')}
+              onPress={handleAboutIdentity}
+            />
+            <SettingsListItem
+              icon={<MaterialCommunityIcons name="key-variant" size={22} color={colors.text} />}
+              title={t('home.identity.publicKey')}
+              description={t('home.identity.publicKeySubtitle')}
+              onPress={handleAboutIdentity}
+            />
+          </SettingsListGroup>
         )}
 
         {/* Real-life attestation — A shows a QR for B to confirm they met IRL */}
-        <Section title={t('civic.attest.section.title')} subtitle={t('civic.attest.section.subtitle')}>
-          <GroupedList>
-            <ListRow
-              icon="handshake-outline"
-              title={t('civic.attest.section.action')}
-              subtitle={t('civic.attest.section.actionSubtitle')}
-              onPress={handleAttestMe}
-              showChevron
-            />
-          </GroupedList>
-        </Section>
+        <SettingsListGroup
+          title={t('civic.attest.section.title')}
+          footer={t('civic.attest.section.subtitle')}
+        >
+          <SettingsListItem
+            icon={<MaterialCommunityIcons name="handshake-outline" size={22} color={colors.text} />}
+            title={t('civic.attest.section.action')}
+            description={t('civic.attest.section.actionSubtitle')}
+            onPress={handleGetVerified}
+          />
+        </SettingsListGroup>
 
         {did && (
-          <Section title={t('civic.id.didLabel')}>
-            <ThemedText style={[styles.didValue, { color: colors.textSecondary }]} selectable numberOfLines={2}>
-              {did}
-            </ThemedText>
-          </Section>
+          <View style={styles.gutter}>
+            <Section title={t('civic.id.didLabel')}>
+              <ThemedText style={[styles.didValue, { color: colors.textSecondary }]} selectable numberOfLines={2}>
+                {did}
+              </ThemedText>
+            </Section>
+          </View>
         )}
 
         {state === 'pending' && (
-          <Callout tone="warning" icon="clock-outline">
-            {t('civic.id.pendingNote')}
-          </Callout>
+          <View style={styles.gutter}>
+            <Callout tone="warning" icon="clock-outline">
+              {t('civic.id.pendingNote')}
+            </Callout>
+          </View>
         )}
       </Screen>
 
-      {/* QR scanner is an action, not a tab — opens the root full-screen modal. */}
+      {/*
+        QR scanner is an action, not a tab — opens the root full-screen modal.
+
+        `offset` lifts the FAB clear of the floating tab bar. It is the bar's RAW
+        footprint: `Fab` supplies its own gap from that anchor, and the bottom
+        safe-area inset is already folded into the footprint, so adding
+        `insets.bottom` here would count the home indicator twice.
+      */}
       <Fab
         variant="primary"
         placement="bottom-right"
+        offset={tabBarFootprint}
         onPress={handleScan}
         accessibilityLabel={t('civic.id.scanAction')}
         icon={<MaterialCommunityIcons name="qrcode-scan" size={26} color={colors.primaryForeground} />}
       />
+
+      {qrSheetOpen && <AttestQrSheet onClose={() => setQrSheetOpen(false)} />}
     </View>
   );
 }
@@ -230,15 +294,12 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
   },
+  flush: { paddingHorizontal: 0 },
+  gutter: { paddingHorizontal: 20 },
   hero: {
     alignItems: 'center',
     gap: 16,
     paddingTop: 8,
-  },
-  cardBadgeOverlay: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
   },
   qrPlaceholder: {
     flex: 1,
@@ -254,6 +315,19 @@ const styles = StyleSheet.create({
   flipHint: {
     fontSize: 13,
     textAlign: 'center',
+  },
+  attestedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+  },
+  attestedBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   didValue: {
     fontSize: 13,

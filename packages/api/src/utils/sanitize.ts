@@ -10,11 +10,17 @@
  *    entities and strips tags instead. Use it for anything shown as text.
  *
  *  - `sanitizeHtml` — entity-escaping for values placed into an actual
- *    HTML/markup context, or combined with `escapeRegex` for safe use inside a
- *    MongoDB `$regex` (see `sanitizeSearchQuery`). Do NOT use it on text fields.
+ *    HTML/markup context. Do NOT use it on text fields or MongoDB `$regex`
+ *    inputs (see `sanitizeSearchQuery`).
  *
  * Never apply either to passwords, hashes, or binary data.
+ *
+ * Whitespace/Unicode normalization is NOT implemented here: `sanitizePlainText`
+ * delegates it to the canonical `normalizeMultilineText` from `@oxyhq/core`.
+ * This module owns only entity decoding and tag stripping.
  */
+
+import { normalizeMultilineText } from '@oxyhq/core';
 
 /**
  * Escape HTML special characters to prevent XSS.
@@ -43,7 +49,7 @@ export function decodeHtmlEntities(text: string): string {
   if (!text) return text;
   return text
     .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
@@ -68,8 +74,20 @@ export function decodeHtmlEntities(text: string): string {
  *     input, AND turns an encoded `&lt;script&gt;` into a real tag so step 2 can
  *     remove it (no executable markup survives into storage).
  *  2. Strip all HTML tags.
- *  3. Lightly collapse only EXCESSIVE whitespace (runs of spaces/tabs, 3+ blank
- *     lines) while preserving intentional single spacing and newlines, then trim.
+ *  3. Normalize the whitespace with the canonical {@link normalizeMultilineText}:
+ *     the author's line breaks survive (this is a BODY, not a title), while the
+ *     horizontal whitespace at BOTH ends of each line is removed and runs of
+ *     blank lines collapse to one.
+ *
+ * Step 3 is stricter than the collapse this function used to do inline: a line
+ * whose only content is spaces (`"a\n   \n   \nb"`) used to survive intact,
+ * because a bare `\n{3,}` collapse never sees a run of blank lines that spaces
+ * have broken up — and clients render these fields in an RN `Text`
+ * (`white-space: pre-wrap`), so the reader saw the extra blank lines. That is
+ * the bug the canonical helper fixes. Leading indentation on a line is dropped
+ * for the same reason: once the runs of horizontal whitespace collapse, an indent
+ * is already destroyed as an indent, and what is left is a stray leading space —
+ * an artifact of the source markup, not of the author.
  *
  * Idempotent: running it on its own output yields the same string.
  */
@@ -77,10 +95,7 @@ export function sanitizePlainText(input: string): string {
   if (!input) return input;
   const decoded = decodeHtmlEntities(input);
   const stripped = decoded.replace(/<[^>]*>/g, '');
-  return stripped
-    .replace(/[^\S\r\n]{2,}/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  return normalizeMultilineText(stripped);
 }
 
 /**
@@ -106,11 +121,16 @@ export function sanitizeObject<T extends Record<string, unknown>>(
   skipFields: string[] = []
 ): T {
   const result = { ...obj };
+  // `result` is the generic `T`, whose per-key value types TypeScript won't let
+  // us reassign through. Mutate it via a `Record<string, unknown>` view of the
+  // same object (an upcast of the `T extends Record<string, unknown>` bound),
+  // then return the original reference so the caller keeps the `T` shape.
+  const writable = result as Record<string, unknown>;
   for (const key of Object.keys(result)) {
     if (skipFields.includes(key)) continue;
-    const value = result[key];
+    const value = writable[key];
     if (typeof value === 'string') {
-      (result as any)[key] = sanitizePlainText(value);
+      writable[key] = sanitizePlainText(value);
     }
   }
   return result;
@@ -127,8 +147,15 @@ export function sanitizeObject<T extends Record<string, unknown>>(
  * (URLs), linksMetadata, locations.
  *
  * `name` is intentionally skipped: display names are validated against a strict
- * letters/spaces/apostrophe policy upstream (see `utils/displayNameSanitize.ts`)
+ * letters/spaces/apostrophe/separator policy upstream (see `utils/displayNameSanitize.ts`)
  * and are already clean, so reprocessing them here is unnecessary.
+ *
+ * The skipped fields are NOT unnormalized — they are structured values (a name
+ * sub-document, arrays of link/location objects) that this shallow string walker
+ * cannot reach into. `user.service`'s `normalizeProfileField` is their write-path
+ * chokepoint: it runs `cleanDisplayName` over `name`, and the canonical inline
+ * normalizer over `linksMetadata` / `locations` / `links`
+ * (see `utils/profileTextNormalization.ts`).
  */
 export function sanitizeProfileUpdate(updates: Record<string, unknown>): Record<string, unknown> {
   const skipFields = ['name', 'avatar', 'color', 'email', 'password', 'links', 'linksMetadata', 'locations'];
@@ -138,10 +165,10 @@ export function sanitizeProfileUpdate(updates: Record<string, unknown>): Record<
     if (skipFields.includes(key)) continue;
     const value = result[key];
     if (typeof value === 'string') {
-      (result as any)[key] = sanitizePlainText(value);
+      result[key] = sanitizePlainText(value);
     } else if (value && typeof value === 'object' && !Array.isArray(value)) {
       // Handle nested objects like `notificationPreferences` / `userPreferences`
-      (result as any)[key] = sanitizeObject(value as Record<string, unknown>);
+      result[key] = sanitizeObject(value as Record<string, unknown>);
     }
   }
 
@@ -157,13 +184,14 @@ export function escapeRegex(text: string): string {
 }
 
 /**
- * Sanitize a search query string.
+ * Sanitize a search query string for MongoDB `$regex` use.
  *
- * Trims, limits length, escapes HTML, and escapes regex metacharacters
- * so the result is safe for use in MongoDB $regex queries.
+ * Trims, limits length, and escapes regex metacharacters. HTML entity-escaping
+ * is intentionally omitted — stored usernames/names are literal text (e.g.
+ * `O'Brien`), and escaping would make the regex search for `O&#x27;Brien`
+ * instead.
  */
 export function sanitizeSearchQuery(query: string, maxLength = 100): string {
   const trimmed = query.trim().slice(0, maxLength);
-  const htmlSafe = sanitizeHtml(trimmed);
-  return escapeRegex(htmlSafe);
+  return escapeRegex(trimmed);
 }

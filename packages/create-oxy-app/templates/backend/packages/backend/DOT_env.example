@@ -1,0 +1,6 @@
+# Backend runtime configuration for {{APP_NAME}}.
+PORT=3000
+NODE_ENV=development
+
+# MongoDB connection string (the database name is derived as {{APP_SLUG}}-<env>).
+MONGODB_URI=mongodb://127.0.0.1:27017

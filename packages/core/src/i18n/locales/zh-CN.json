@@ -43,11 +43,28 @@
     "currentAccount": "当前",
     "or": "或",
     "viewAllAccounts": "查看更多{{count}}个",
+    "createAccountLink": "初次使用 Oxy？创建账户",
     "status": {
-      "accountSwitched": "正在使用{{name}}"
+      "accountSwitched": "正在使用{{name}}",
+      "signingIn": "正在登录…"
     }
   },
   "signup": {
+    "title": "创建您的账户",
+    "subtitle": "一个身份，畅行整个生态系统。",
+    "commonsHeadline": "在 Commons 中创建您的身份",
+    "commonsExplainer": "Commons 是您完全自主保管的 Oxy 身份——一个应用，随处可用。",
+    "createInCommons": "在 Commons 中创建您的身份",
+    "passkeyAlternative": "没有 Commons？改为在此设备上创建通行密钥",
+    "createAccount": "创建账户",
+    "creating": "正在创建…",
+    "usernamePlaceholder": "选择一个用户名",
+    "usernameChecking": "正在检查…",
+    "usernameAvailable": "可用",
+    "usernameTaken": "该用户名已被占用",
+    "backToSignInLink": "已有账户？登录",
+    "hubExplainer": "在安全窗口中创建您的 Oxy ID，然后立即返回。",
+    "continueInWindow": "在新窗口中继续",
     "welcome": {
       "title": "欢迎使用Oxy！",
       "subtitle": "只需几步即可创建您的账户",
@@ -94,6 +111,33 @@
       "legalReminder": "创建账户即表示您同意我们的服务条款和隐私政策。"
     }
   },
+  "accountSwitcher": {
+    "sections": {
+      "yourAccounts": "你的账户"
+    },
+    "loading": "正在加载账户...",
+    "qrHeadline": "使用您的 Oxy 身份登录",
+    "signInWithOxy": "使用 Oxy 登录",
+    "useIdentityOnDevice": "没有 Commons？改用此设备上的通行密钥",
+    "passkeySigningIn": "正在登录…",
+    "getCommons": "获取 Commons",
+    "commonsNotInstalled": "没有 Commons？获取应用以使用您的 Oxy ID 登录。",
+    "showQrAnyway": "我在另一台设备上有 Commons",
+    "switchWhileSignedInAs": "切换账号，当前登录为 {{name}}",
+    "manageOnDevice": "管理此设备上的账号",
+    "continueWithOxy": "使用 Oxy 继续",
+    "havingTrouble": "遇到问题？",
+    "progress": {
+      "preparing": "正在准备请求",
+      "awaitingApproval": "正在等待批准",
+      "scanWithCommons": "请用手机上的 Commons 扫描",
+      "continueInCommons": "请在 Commons 中继续",
+      "checkCommons": "请查看手机上的 Commons",
+      "openedInCommons": "已在 Commons 中打开",
+      "confirming": "正在确认身份",
+      "confirmed": "身份已确认"
+    }
+  },
   "common": {
     "actions": {
       "back": "返回",
@@ -105,7 +149,8 @@
       "verify": "验证",
       "resetPassword": "重置密码",
       "signedOut": "已退出",
-      "close": "关闭"
+      "close": "关闭",
+      "tryAgain": "重试"
     },
     "links": {
       "recoverAccount": "恢复您的账户",
@@ -193,6 +238,7 @@
       "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
     },
     "item": {
+      "granted": "已于 {{relative}} 授权",
       "lastUsed": "Last used {{relative}}"
     },
     "confirm": {
@@ -207,12 +253,30 @@
   "accountMenu": {
     "label": "账户菜单",
     "manage": "管理您的 Oxy 账户",
+    "viewProfile": "查看个人资料",
     "addAnother": "添加其他账户",
     "signOutAll": "退出所有账户",
     "open": "账户菜单",
     "openHint": "打开账户菜单",
     "openWithUser": "{{name}} 的账户菜单",
     "switching": "正在切换账户…",
-    "signOutAccount": "退出 {{name}}"
+    "signOutAccount": "退出 {{name}}",
+    "greeting": "你好，{{name}}！",
+    "switchAccount": "切换账号",
+    "storage": {
+      "title": "Oxy 存储",
+      "usage": "已使用 {{used}} / {{total}}",
+      "used": "已用",
+      "free": "可用",
+      "unavailable": "无法获取用量详情",
+      "upgrade": "升级方案",
+      "manage": "管理存储"
+    },
+    "data": "你在 Oxy 中的数据",
+    "settings": "Oxy 设置",
+    "help": "帮助与反馈",
+    "signOut": "退出登录",
+    "privacy": "隐私政策",
+    "terms": "服务条款"
   }
 }

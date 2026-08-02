@@ -14,8 +14,13 @@ import { getEnvNumber } from '../../config/env';
  * provider / re-host logic changes in a way that should force previously stored
  * previews to be re-resolved on their next read (a stored doc whose `version` is
  * below this is treated as stale and refreshed in the background).
+ *
+ * v2 — the resolver now whitespace-normalizes title/description/siteName (a
+ * multi-line `<title>` used to be stored verbatim and rendered with a blank line
+ * + indent by clients) and prefers `og:` over the document `<title>` / `<meta
+ * name="description">`. Both change stored text, so v1 docs must be re-resolved.
  */
-export const LINK_PREVIEW_RESOLVER_VERSION = 1;
+export const LINK_PREVIEW_RESOLVER_VERSION = 2;
 
 /**
  * Age (seconds) after which a stored `resolved` / `empty` preview is considered
@@ -126,10 +131,9 @@ export const LINK_PREVIEW_PREVIEW_RATE_MAX = getEnvNumber('LINK_PREVIEW_PREVIEW_
 export const LINK_PREVIEW_BATCH_RATE_MAX = getEnvNumber('LINK_PREVIEW_BATCH_RATE_MAX', 600);
 
 /**
- * Reserved synthetic owner id for every re-hosted link-preview image. NOT a
- * valid Mongo ObjectId, so it can never collide with a real user `_id` and the
- * media-privacy block checks short-circuit it (mirrors the federation-cache
- * owner). Keeps link-preview assets in their own namespace, distinct from
- * user media and from the federation media cache.
+ * The reserved owner of every re-hosted link-preview image is
+ * `__link_preview_cache__`, one of `FILE_SYSTEM_OWNERS` in `schema/files.ts`. It
+ * used to be declared here as `LINK_PREVIEW_OWNER_ID`, a sentinel string stored
+ * in the user-id column; it is now a value of `files.system_owner`, so the
+ * namespace is a real column rather than a naming convention.
  */
-export const LINK_PREVIEW_OWNER_ID = '__link_preview_cache__';

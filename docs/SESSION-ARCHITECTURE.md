@@ -1,115 +1,376 @@
-# Oxy Session Architecture (2026)
+# Session Architecture
 
-Single source of truth for how Oxy apps sign in, restore sessions, call app
-backends, and resolve user identity.
+> Device-first session model for the Oxy ecosystem. The server is the single session
+> authority (`DeviceSession`); clients mirror it through `SessionClient` in `@oxyhq/core`
+> and receive real-time pushes over Socket.IO. There is **one** UI SDK: `@oxyhq/services`
+> (`OxyProvider`) — the former web-only SDK package was deleted from the monorepo.
+>
+> Related docs: [device-session API reference](./auth/device-session.md) ·
+> [third-party integration guide](./auth/integration-guide.md) ·
+> [platform master plan](./architecture/oxy-auth-platform.md)
 
-## Principle
+## Principles
 
-The central IdP is `auth.oxy.so`. Relying-party apps consume it through the Oxy
-SDK. Apps do not implement their own SSO callback routes, local session
-restore, token plumbing, or auth middleware copies.
+- **Server authority.** Which accounts are signed in on a device — and which one is
+  active — lives in one MongoDB document per device. Clients never own that state; they
+  project it.
+- **Silent cold boot.** `OxyProvider` restores the session on mount with zero UI. It never
+  redirects to a login page and never opens a dialog on its own. Signed-out is a silent,
+  valid outcome; interactive sign-in is always user-initiated (profile button →
+  `OxyAccountDialog`).
+- **Tokens never ride the socket.** Socket pushes carry token-free state only. Access
+  tokens are minted and delivered exclusively over authenticated REST.
+- **One write path.** Every mutation (add / switch / sign-out) goes through
+  `/session/device/*`, bumps `revision`, and broadcasts — so every app on the device
+  converges instantly.
 
-## Current Package Contract
+## Server authority: `DeviceSession`
 
-Current package targets:
+Model: `packages/api/src/models/DeviceSession.ts` (collection `devicesessions`).
 
-| Package | Version | Contract |
-|---------|---------|----------|
-| `@oxyhq/core` | `3.4.13` | Platform-agnostic client, SSO helpers, linked clients, and server auth middleware. |
-| `@oxyhq/auth` | `4.1.1` | Web `WebOxyProvider` for RP apps; uses core cold boot and callback handling. |
-| `@oxyhq/services` | `10.2.10` | Expo/RN `OxyProvider`, `useAuth()` / `useOxy()`, private API readiness, native session handling. |
-| `@oxyhq/bloom` | `0.8.5` | Current UI package target for Oxy consumers. |
+```
+deviceId          string   unique — stable identifier for one device/origin
+accounts[]        { accountId, sessionId, authuser, addedAt, operatedByUserId? }
+activeAccountId   ObjectId | null
+secretHash        sha256 of the current deviceSecret (sparse-unique; see Transport)
+prevSecretHash    sha256 of the just-superseded secret (short grace; transient)
+revision          number   monotonic — $inc on every mutation
+```
 
-## Frontend RP Contract
+`accounts[]` is the **device set**: the accounts currently signed in on this device.
+`operatedByUserId` records the human operator when the entry is a managed account
+(org/project/bot) — audit trail for `act_as` switches. `revision` gives clients a total
+order: state application is last-writer-wins by revision across the device set.
 
-Relying-party frontends use the SDK only:
+### REST surface (`/session/device/*`)
 
-- Web apps use `WebOxyProvider` from `@oxyhq/auth` with a registered `clientId`.
-- Expo/RN apps use `OxyProvider` from `@oxyhq/services` with a registered
-  `clientId`.
-- SDK cold boot owns session restore. On web it runs the ordered restore chain
-  around callback consumption, FedCM/silent auth, cookie restore, stored bearer,
-  and terminal SSO bounce. Native uses the native-safe stored session path.
-- Apps must not add app-local `/__oxy/sso-callback` routes. The SDK intercepts
-  the path and consumes the SSO result universally.
-- Apps that serve root HTML and can receive `/__oxy/sso-callback` should inject
-  `getSsoCallbackBootstrapScript()` from `@oxyhq/core` before React or Expo
-  Router can rewrite the URL.
-- Apps must not copy SSO helpers such as `consumeSsoReturn`,
-  `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, SSO storage keys, or
-  callback bootstrap logic. These live once in `@oxyhq/core`.
-- Private frontend work must be gated by SDK state. Use
-  `useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending` or the
-  equivalent `useOxy()` state before calling private app APIs such as managed
-  accounts, privacy, follow status, library, preferences, or profile settings.
-- Apps must not keep fetching private APIs after the SDK access token is null,
-  even if stale UI state still has a user object.
+Routes: `packages/api/src/routes/sessionDevice.ts`. All routes except the mint require a
+bearer token; the `deviceId` is always derived from the **validated JWT claim**, never
+from the request body.
 
-## Linked App Backend Clients
+| Method | Route | Body | Behavior |
+|--------|-------|------|----------|
+| POST | `/session/device/token` | `{ deviceId, deviceSecret }` | **The zero-cookie mint** — PUBLIC (no bearer, no cookies): possession of the secret is the device-ownership proof. Verifies `sha256(deviceSecret)` (constant-time) against the device's `secretHash`, mints a short access token for the active account, and rotates the secret in-use (`nextDeviceSecret`; the presented secret stays valid for a short grace). Per-device lockout + rate limit blunt online guessing. |
+| GET | `/session/device/state` | — | Returns current state for the caller's JWT device. |
+| POST | `/session/device/add` | — | Registers the caller's account into the device set. Account + session ids come from the bearer (IDOR-safe); `operatedByUserId` is resolved from the session document. Idempotent — an unchanged re-register does not broadcast. |
+| POST | `/session/device/switch` | `{ accountId }` | Sets `activeAccountId`, bumps `revision`, broadcasts. If the target session was revoked, heals the device set (drops the dead account), broadcasts the healed state, and returns 403. |
+| POST | `/session/device/signout` | `{ accountId }` or `{ all: true }` | Removes one account or clears the device set; picks the next active account; broadcasts. `{ all: true }` also clears the device's `secretHash`. |
 
-RP apps that call their own backend must use SDK-linked clients:
+Every response is validated against `deviceSessionSyncSchema` from `@oxyhq/contracts`:
 
-- Create app backend clients with `oxyServices.createLinkedClient({ baseURL })`
-  from the active `OxyServices` instance.
-- The linked client attaches the current Oxy bearer token, follows the owner
-  client's refresh path, and invalidates the owner session when a linked 401
-  cannot recover.
-- Do not add Axios/fetch auth interceptors, app-local token providers, manual
-  `Authorization` header plumbing, refresh-cookie retries, or local
-  `clearTokens()` invalidators in consumer apps.
-- Do not copy user payloads or auth state into local API wrappers. Ownership
-  and profile comparisons use the SDK-normalized `user.id`.
+```
+{ data: { state: DeviceSessionState, activeToken: { accessToken, expiresAt } | null } }
+```
 
-## Backend Auth Contract
+Contracts (`packages/contracts/src/deviceSession.ts`): `sessionAccountSchema`,
+`deviceSessionStateSchema`, `activeTokenSchema`, `deviceSessionSyncSchema` — shared by
+the server (output validation) and `SessionClient` (input validation).
 
-Backend APIs use `@oxyhq/core/server` for Oxy identity:
+## Session transport (zero-cookie)
 
-- Mount `createOxyRateLimit(oxy)` once near the top of the Express app when the
-  API needs Oxy-aware rate limiting. It resolves the optional session and
-  rate-limits by the real user when present.
-- Use `createOptionalOxyAuth(oxy)` where a route can behave differently for
-  anonymous and signed-in callers.
-- Use `createOxyAuthMiddleware(oxy)` or `requireOxyAuth` for private routes.
-- Use `getRequiredOxyUserId(req)` for required user identity instead of reading
-  backend-specific fields directly.
-- Use `authSocket` for Socket.IO/WebSocket authentication.
-- Do not define local `AuthRequest`, `requireAuth`, `getUserId`,
-  `getAuthenticatedUserId`, token-decoding, or bearer parsing helpers in apps.
-  If a helper is missing, add it to `@oxyhq/core/server` and consume it from
-  there.
+The transport that carries "which device is this?" across reloads is **`deviceId` +
+`deviceSecret`** — no cookies, no refresh-token family, no boot-fragment hop.
 
-## CSRF Contract
+1. **`deviceId` + `deviceSecret`** — every successful sign-in (password, 2FA, QR claim,
+   challenge verify) returns the session's `deviceId` and a 256-bit `deviceSecret`. The
+   client persists both first-party (localStorage on web per origin; SecureStore on
+   native). The server stores only `sha256(deviceSecret)` (`DeviceSession.secretHash`,
+   sparse-unique), so a database dump cannot forge the secret and the secret reveals
+   nothing about any other device.
+2. **Mint** — to restore or refresh, the client POSTs `{ deviceId, deviceSecret }` to
+   `POST /session/device/token` (no bearer, no cookies). The server verifies the secret
+   (constant-time) and returns a short access token for the active account plus a
+   rotated `nextDeviceSecret`. **Rotation-in-use:** the presented secret stays valid for
+   a short grace window (60s) so a multi-tab race is not locked out; the client persists
+   the next secret BEFORE planting the minted token.
+3. **Revocation** — sign-out-all (`POST /session/device/signout { all: true }`) clears
+   `secretHash` so a retained secret can never mint again. A theft divergence is detected
+   at the next mint (the loser's secret no longer matches → `invalid_device_secret`).
+4. **Cross-origin convergence is USER-INITIATED (zero cookies).** Each web origin
+   persists its own `{ deviceId, deviceSecret }` copy in `localStorage`. Official apps
+   (including custom domains like `mention.earth`) and third-party RPs converge on the
+   **same** server-side `DeviceSession` only when the user actually signs in on that
+   origin: the authorize round trip threads the same `deviceId`, so the origin ends up
+   holding a credential for the device session it just joined. Once each app holds a
+   bearer, realtime changes propagate over Socket.IO `session_state` on
+   `device:<deviceId>`.
 
-Bearer-authenticated writes do not fetch or depend on app-local CSRF tokens.
+   There is **no automatic convergence**. An origin the user has never signed in on
+   cold-boots SIGNED OUT and stays there until the user's next explicit "Continue with
+   Oxy" — the SDK never navigates the top-level window by itself. Both mechanisms that
+   used to do it were removed in issue #691 phase 7b, in every `webAuthMode`:
 
-- SDK bearer requests are explicit authorization and should not call duplicated
-  `/csrf-token` endpoints in every app backend.
-- CSRF remains relevant for ambient cookie credentials and cookie-only writes.
-  Those flows must continue to fetch and send CSRF according to the owning
-  backend's cookie contract.
+   - **Silent OAuth restore** (`prompt=none` cold-boot bounce to
+     `auth.oxy.so/authorize`) — gone, on both ends. `crossOriginRestore.ts` and the
+     `allowsAutomaticIdpRedirect` gate were deleted; `'none'` was removed from the
+     `prompt` union of `buildOAuthAuthorizeUrl` so it cannot be rebuilt in one line;
+     and the IdP refuses an `authorize?prompt=none` it receives anyway with a visible
+     terminal screen instead of a silent redirect back, so it cannot be hidden in an
+     iframe or a background tab.
+   - **Hub-ticket sync** (`POST /session/device/hub-ticket` +
+     `/session/device/redeem-ticket` → a one-time redirect to `auth.oxy.so/sync`) —
+     gone, including the server routes, service, model, rate limiters, and the
+     `@oxyhq/contracts` ticket schemas.
 
-## IdP Exception
+   Do not reintroduce either. The accepted trade is explicit: a signed-out first visit
+   on a new origin, in exchange for a tab that never leaves the relying party's route
+   without the user asking.
 
-`packages/auth` / `auth.oxy.so` is the IdP, not an RP:
+## Cold boot
 
-- Do not wrap the auth app in `WebOxyProvider`.
-- Do not run RP cold boot or the RP SSO bounce chain inside the auth app.
-- The auth app uses its first-party IdP session path:
-  `useDeviceAccounts()` reads shared refresh cookies through
-  `POST api.oxy.so/auth/refresh-all` with `credentials: include`.
-- This exception applies only to the IdP. Mention, Allo, Homiio, Alia, TNP,
-  Syra, accounts, console, inbox, and other RP apps follow the SDK RP contract.
+`runSessionColdBoot` (`packages/core/src/boot/sessionColdBoot.ts`, exported from
+`@oxyhq/core`) is a pure ordered short-circuit: the first step that yields a session
+wins. `@oxyhq/services`' `runProviderColdBoot` (`packages/services/src/ui/boot/`) wraps
+it with the web-only OAuth-return lane described below. It is invoked by `OxyProvider`
+on mount — apps never implement restore themselves, and the boot never navigates the
+top-level window.
 
-## Development Contract
+**Two session modes** (`OxyProvider` prop `sessionMode: 'account' | 'identity'`, default
+`'account'`; issue #691 Phase 1): `'account'` is every ordinary Oxy app — the device's
+active account owns the session. `'identity'` is Commons — the owner of THIS device's
+PRIMARY identity key owns the session PERMANENTLY, independent of the device's mutable
+`activeAccountId`. Each step below is bound to a persisted `{publicKey, accountId}` pin
+(`packages/core/src/session/identityPin.ts`) reconciled against the live
+`KeyManager.getPublicKey()`; `switchToAccount`/`switchSession` throw
+`IdentityBoundSessionError` in this mode instead of switching.
 
-During local cross-package work, consumers should use linked SDK clients and the
-current published package targets above. If a bug is in a shared package, fix and
-build the source package first, then update/verify the consumer. Do not patch the
-consumer with local auth/session workarounds.
+`runSessionColdBoot` steps, in order:
 
-## Obsolete Text
+1. **`warm-token-plant`** (web + native) — when the persisted store already holds a
+   still-valid access token (expiry more than the refresh-lead window away) plant it
+   AS-IS with zero network round-trip. In `'identity'` mode the token is only accepted
+   when it belongs to the PINNED account (checked against both the stored `userId` and
+   the token's own identity-tag claim).
+2. **`device-secret-mint`** (web + native) — when the origin persisted a `deviceId` +
+   `deviceSecret`, mint a short access token with a single bearer-less POST to
+   `/session/device/token`, persist the rotated secret, plant the token. In `'account'`
+   mode this mints for the device's active account; in `'identity'` mode it passes the
+   pinned `accountId` as the optional `accountId` field of that same request (see
+   [device-session.md](./auth/device-session.md)) — a rejected pin
+   (`account_not_on_device`) falls through to step 3 without dropping the secret. A
+   `no_active_session` 401 is an authoritative signed-out; an `invalid_device_secret` 401
+   drops the (diverged) secret and falls through.
+3. **`shared-key-signin`** (native, `'account'` mode) — re-mint from the shared Commons
+   identity in the app-group keychain — **replaced by `identity-key-signin`** in
+   `'identity'` mode, which re-mints from THIS device's PRIMARY key
+   (`KeyManager.getPublicKey()` → challenge → sign → `verifyChallenge`) and
+   (re)establishes the identity pin. Both are network steps, gated on the same
+   best-effort offline hint as step 2, and both run with `{ retry: false }` (the proactive
+   refresh scheduler and the reactive 401 lane own retries).
 
-Older notes that said to leave Mention, Homiio, or Alia untouched until a
-`*.oxy.so` foundation was verified are obsolete. The current contract applies to
-all active RP apps. Work should still be sequenced safely: fix shared SDK/server
-helpers upstream, then verify downstream consumers.
+If nothing yields a session, `runSessionColdBoot` resolves signed out — silently, with no
+navigation and no dialog. One more lane runs around it, in `@oxyhq/services`, for WEB
+apps in `'account'` mode only (it is inert in `sessionMode: 'identity'`, which would
+otherwise commit whichever account the IdP resolves rather than the local key's owner):
+
+4. **OAuth authorization-code return** (`tryCompleteOAuthReturn`) — consumes a `?code=`
+   **already on the URL**, BEFORE `runSessionColdBoot` runs. Always enabled in both
+   `webAuthMode`s: this is not a navigation the SDK started, it is the return leg of a
+   full-page authorize the user themselves triggered — either an explicit
+   `webAuthMode: 'redirect'` sign-in or a `'popup'` sign-in whose window the browser
+   blocked and which fell back to a redirect. It is also the single cleanup path for an
+   OAuth `?error=` landing on the URL (the params and the stale PKCE handshake are
+   stripped, and the boot continues).
+
+There is no fifth lane. The `prompt=none` silent cross-origin restore that used to run
+here was deleted in issue #691 phase 7b, in **both** transports — not gated, removed.
+A web origin with no local device credential resolves signed out and waits for the
+user's next explicit "Continue with Oxy".
+
+The proactive scheduler + the reactive 401 handler both re-mint via the same
+`deviceSecret` path (`refreshPersistedSession`), so a long-lived session stays alive past
+the short access-token TTL without any refresh token.
+
+```mermaid
+flowchart TD
+  Mount["OxyProvider mount"] --> Return{"?code= already on URL? (authorize return leg)"}
+  Return -->|yes| Exchange["Exchange code -> commit session"] --> In["Authenticated — no UI"]
+  Return -->|no| Warm{"warm access token still valid?"}
+  Warm -->|yes| In
+  Warm -->|no| Secret{"persisted deviceId + deviceSecret?"}
+  Secret -->|yes| Mint["POST /session/device/token"]
+  Mint -->|session| In
+  Mint -->|"401 no_active_session"| Native
+  Mint -->|"401 invalid_device_secret / transient"| Native
+  Secret -->|no| Native{"account mode: native + Commons key? / identity mode: primary key"}
+  Native -->|yes| Shared["shared-key-signin (account) / identity-key-signin (identity)"]
+  Shared --> In
+  Native -->|"no / web"| Out["Signed out — silent, no navigation"]
+  Out --> Btn["User taps Continue with Oxy -> OxyAccountDialog / OxySignInButton"]
+  Btn --> Gesture["Popup (default) or full-page redirect — from a real user gesture"]
+  Gesture --> In
+```
+
+## `SessionClient` (`@oxyhq/core`)
+
+`packages/core/src/session/` — a framework-agnostic client mirror of the server state.
+Exported from `@oxyhq/core` as `SessionClient`, plus the wiring helpers
+`createSessionClient` and `createSessionClientHost`. `OxyProvider` constructs it; apps
+consume it only through hooks.
+
+Key behavior:
+
+- `getState()` / `subscribe(listener)` — synchronous access to the current
+  `DeviceSessionState` projection.
+- `bootstrap()` — initial `GET /session/device/state` fetch + token plant.
+- `switchAccount(accountId)` / `signOut({ accountId } | { all: true })` /
+  `addCurrentAccount()` / `registerAndActivate()` — the only mutation paths; each calls
+  the corresponding REST route and applies the returned sync.
+- **`applyState` is last-writer-wins by `revision`** across the device set — a stale
+  push or response can never regress newer state.
+- **`applySync`** validates `{ state, activeToken }` against `deviceSessionSyncSchema`
+  and plants the access token host-side; token planting is decoupled from revision
+  advancement (an idempotent re-fetch still plants).
+- `start()` attaches the Socket.IO listener; when the device set empties,
+  `onUnauthenticated` clears the persisted store so a reload cannot restore a dead
+  session.
+
+## Real-time sync: `session_state`
+
+Server side (`packages/api/src/utils/socket.ts`): each authenticated socket joins the
+room `device:<deviceId>` — the id is derived from the **validated JWT claim**
+(`deviceRoomFor`), never from a client-supplied value. Every `DeviceSession` mutation
+calls `broadcastDeviceState(state)`, which emits `session_state` to that room with the
+**token-free** `DeviceSessionState` payload.
+
+Client side: on a `session_state` push, `SessionClient` applies the state
+(revision-gated) and then asks its transport to `ensureActiveToken` — an authenticated
+`GET /session/device/state` that returns `{ state, activeToken }` and plants the token.
+Tokens therefore only ever travel over authenticated REST.
+
+### Switch → broadcast (cross-app, same device)
+
+```mermaid
+sequenceDiagram
+  participant A as App A (device X)
+  participant SCA as SessionClient A
+  participant API as api.oxy.so
+  participant Room as Socket.IO room device:X
+  participant SCB as SessionClient B (App B, device X)
+
+  A->>SCA: switchAccount(accountId)
+  SCA->>API: POST /session/device/switch { accountId }
+  API->>API: activeAccountId = accountId, revision++
+  API->>Room: emit session_state (token-free)
+  API-->>SCA: { data: { state, activeToken } }
+  SCA->>SCA: applyState + plant activeToken
+  Room-->>SCB: session_state push
+  SCB->>SCB: applyState (revision wins)
+  SCB->>API: GET /session/device/state (bearer)
+  API-->>SCB: { data: { state, activeToken } }
+  SCB->>SCB: plant activeToken → UI switches instantly
+```
+
+## Multi-account: device set + account graph
+
+Two distinct layers — do not conflate them:
+
+| Layer | What it is | API |
+|-------|-----------|-----|
+| **DeviceSession** (device set) | Accounts signed in **on this device** right now | `/session/device/*`, `SessionClient` |
+| **Account graph** | Accounts the user **may** use — own, child orgs/projects/bots, shared via membership | `GET /accounts`, `POST /accounts/:id/switch` (`account.service.ts`) |
+
+The account switcher (`OxyAccountDialog`) shows both: the device set, plus graph accounts
+available for `act_as` that are not yet signed in here.
+
+Switch semantics (`useOxy().switchToAccount(accountId)`):
+
+- **Account already in the device set** → `POST /session/device/switch` — flips
+  `activeAccountId`, no new session minted.
+- **Graph account not yet in the device set** (first entry) → `POST /accounts/:id/switch`
+  mints a real session with `operatedByUserId` set to the operator, then registers it via
+  `POST /session/device/add` — after which it switches like any other account. One
+  uniform path; minting happens only on first entry.
+
+Because the state lives server-side keyed by device, **a switch persists across reloads**
+— the next cold boot reads the same `DeviceSession` and restores the same
+`activeAccountId`. Signing an account out of the device set never revokes its graph
+membership. See [device-session.md](./auth/device-session.md) for the full API detail.
+
+## SDK surface
+
+`@oxyhq/services` is the single UI SDK for Expo, React Native, and React Native Web. Auth state is implemented in a split context layer under `packages/services/src/ui/context/`:
+
+| Module | Role |
+|--------|------|
+| `OxyContext.tsx` | `OxyProvider` / `useOxy()` — session commit, cold boot, token side-effects |
+| `oxyContextTypes.ts` | `OxyContextState`, `PasswordSignInResult` |
+| `useOxyAccountGraph.ts` | `accounts`, `switchToAccount`, `createAccount` |
+| `navigation/accountDialogManager.ts` | Imperative `openAccountDialog('signin')` |
+
+```tsx
+import { OxyProvider, useAuth, OxySignInButton } from '@oxyhq/services';
+
+export function App() {
+  return (
+    <OxyProvider clientId={process.env.OXY_CLIENT_ID} baseURL="https://api.oxy.so">
+      <Home />
+    </OxyProvider>
+  );
+}
+
+function Home() {
+  const { isAuthenticated, signIn } = useAuth();
+  if (!isAuthenticated) return <OxySignInButton />;
+  return <Dashboard />;
+}
+```
+
+- **`useAuth().signIn()`** opens the in-app dialog — interactive sign-in is never a
+  redirect to a login page.
+- **`OxyAccountDialog`** — the single account surface (switcher + sign-in), built on
+  Bloom `<Dialog placement={{ base: 'bottom', md: 'center' }}>`. Opened via
+  `useOxy().openAccountDialog()`. Its sign-in entry (issue #691, Phase 5) shows existing
+  device accounts plus ONE primary "Continue with Oxy" action — Oxy picks the delivery
+  route automatically (same-device Commons deep link → known-install push → QR; see
+  [device-session.md](./auth/device-session.md) § Automatic delivery). There is no
+  password option; scan-QR / passkey-on-this-device / "Get Commons" sit behind a
+  collapsed "Having trouble?" disclosure.
+- **`OxySignInButton`** resolves the registered Application via
+  `GET /auth/oauth/client/:clientId`: official apps open the dialog in-app;
+  `third_party` apps sign in via OAuth + PKCE (`generatePkcePair`, `generateOAuthState`,
+  `buildOAuthAuthorizeUrl` from `@oxyhq/core`). On web the transport is `OxyProvider`
+  prop `webAuthMode: 'popup' | 'redirect'` (default `'popup'`; issue #691 Phases 2/7b) —
+  `'popup'` opens a small `auth.oxy.so` window and relays the result via `postMessage`
+  instead of navigating the relying party's tab, falling back to a full-page redirect if
+  the browser blocks it; `'redirect'` always does the full-page navigation. Either way
+  the hop only ever starts from a real user gesture. See the
+  [integration guide](./auth/integration-guide.md).
+- **`OxyConsentScreen`** — the IdP's OAuth consent surface, exported from
+  `@oxyhq/services` and mounted by auth.oxy.so.
+
+### IdP exception
+
+auth.oxy.so is the OAuth authorize/consent surface, **not** a relying party. It mounts
+`OxyProvider` device-first like every Oxy app (normal cold boot from its own per-origin
+`{deviceId, deviceSecret}`, `useSwitchableAccounts` chooser) but stays a SHELL that emits
+the OAuth code after authenticating — it does not bounce elsewhere for its own session.
+It redirects all `/settings/*` paths to accounts.oxy.so, which is the sole owner of
+account management. (The former `coldBoot={false}` exception existed for the deleted
+SSO bounce.)
+
+### Removed
+
+FedCM, the silent-restore iframe, the cross-domain redirect-chain restore, and the
+legacy client-side auth manager were all deleted earlier. The **zero-cookie cutover**
+then deleted the entire cookie/refresh transport: the `oxy_device` cookie
+(`cookieKeyHash`, the `/auth/device/bootstrap` + `/auth/device/exchange` +
+`/auth/device/web-session` hop, the `#oxy_boot` fragment), the rotating refresh-token
+family (`/auth/refresh-token`, `/auth/logout`), and the opaque device-attribution token
+(the `POST /auth/device/token` native mint, the shared-keychain device token, and the
+anonymous device socket). Sockets are **bearer-only** — a signed-out client opens no
+socket.
+
+Issue #691 phase 7b then removed the last two SDK-initiated, gesture-less full-page
+navigations to the IdP: the cold-boot **`prompt=none` silent restore**
+(`crossOriginRestore.ts`, `legacyRedirectLanes.ts`, and `'none'` as an accepted `prompt`
+value on `buildOAuthAuthorizeUrl`) and the post-sign-in **hub-ticket sync**
+(`hubSync.ts`, the `auth.oxy.so/sync` page, `POST /session/device/hub-ticket` +
+`/session/device/redeem-ticket`, the `DeviceHubTicket` model, and the ticket schemas in
+`@oxyhq/contracts`). `webAuthMode` now defaults to `'popup'` and only picks the transport
+for a sign-in the user actually asked for.
+
+Cold boot is the device-secret chain above plus the `?code=` return leg — nothing else.
+Do not reintroduce cookies, a refresh-token family, a boot-fragment hop, an anonymous
+device socket, per-app session restore, a silent `prompt=none` bounce, or a hub-sync
+redirect.

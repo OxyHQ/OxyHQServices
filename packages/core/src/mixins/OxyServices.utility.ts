@@ -5,11 +5,14 @@
  * and Express.js authentication middleware
  */
 import { jwtDecode } from 'jwt-decode';
+import type { LinkPreview } from '@oxyhq/contracts';
 import type { ApiError, User } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { loadNodeCrypto } from '../utils/platformCrypto';
-import { logger } from '../utils/loggerUtils';
+import { loadNodeCrypto } from '@oxyhq/protocol';
+import { buildUrl } from '../utils/apiUtils';
+import { logger } from '../logger';
 import { CACHE_TIMES } from './mixinHelpers';
+import { OXY_SERVICE_ENVIRONMENTS, type OxyServiceEnvironment } from '../utils/oxyServiceEnvironment';
 
 interface JwtPayload {
   exp?: number;
@@ -23,6 +26,7 @@ interface JwtPayload {
   scopes?: string[];
   aud?: string | string[];
   iss?: string;
+  environment?: string;
   [key: string]: unknown;
 }
 
@@ -55,6 +59,8 @@ export interface ServiceApp {
   scopes: string[];
   /** The credentialId of the specific service credential that minted this token. */
   credentialId: string;
+  /** Test/live isolation (F2.0): which `ApplicationCredential.environment` minted this token. */
+  environment: OxyServiceEnvironment;
 }
 
 /**
@@ -90,6 +96,13 @@ class ServiceTokenClaimError extends Error {
     super(message);
     this.name = 'ServiceTokenClaimError';
   }
+}
+
+function isOxyServiceEnvironment(value: unknown): value is OxyServiceEnvironment {
+  return (
+    typeof value === 'string' &&
+    (OXY_SERVICE_ENVIRONMENTS as readonly string[]).includes(value)
+  );
 }
 
 /**
@@ -217,15 +230,14 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
       image?: string;
     }> {
       try {
-        return await this.makeRequest<{
-          url: string;
-          title: string;
-          description: string;
-          image?: string;
-        }>('GET', '/link-metadata', { url }, {
-          cache: true,
-          cacheTTL: CACHE_TIMES.EXTRA_LONG,
-        });
+        const path = buildUrl('/links/preview', { url, wait: 1 });
+        const preview = await this.makeRequest<LinkPreview>('GET', path, undefined, { cache: false });
+        return {
+          url: preview.url,
+          title: preview.title?.trim() || preview.url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+          description: preview.description?.trim() || 'Link',
+          image: preview.image,
+        };
       } catch (error) {
         throw this.handleError(error);
       }
@@ -383,9 +395,9 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             // Signature verification uses a manual HMAC-SHA256 compare because
             // this file ships into RN/web bundles where `jsonwebtoken` is
             // unavailable. The middleware only ever runs on Node hosts (see
-            // platformCrypto's doc-comment), and `loadNodeCrypto` is per-
-            // platform: the RN variant throws so Metro never bundles a Node
-            // built-in reference.
+            // `@oxyhq/protocol`'s `platform/crypto` doc-comment), and
+            // `loadNodeCrypto` is per-platform: the RN variant throws so Metro
+            // never bundles a Node built-in reference.
             try {
               await verifyServiceTokenSignature(token, jwtSecret);
               verifyServiceTokenClaims(decoded, {
@@ -458,7 +470,13 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             // Validate required service token fields
             const appId = decoded.appId;
             const credentialId = decoded.credentialId;
-            if (!appId || typeof credentialId !== 'string' || credentialId.length === 0) {
+            const environment = decoded.environment;
+            if (
+              !appId ||
+              typeof credentialId !== 'string' ||
+              credentialId.length === 0 ||
+              !isOxyServiceEnvironment(environment)
+            ) {
               if (optional) {
                 req.userId = null;
                 req.user = null;
@@ -512,6 +530,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               appName: decoded.appName || 'unknown',
               credentialId,
               scopes: Array.isArray(decoded.scopes) ? decoded.scopes : [],
+              environment,
             };
 
             if (debug) {

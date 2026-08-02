@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEmailStore } from '@/hooks/useEmail';
+import { emailKeys } from '@/hooks/queries/queryKeys';
 import type { ContactSuggestion } from '@/services/emailApi';
 
 export function useContactSuggestions(query: string) {
@@ -7,7 +8,7 @@ export function useContactSuggestions(query: string) {
   const trimmed = query.trim();
 
   return useQuery<ContactSuggestion[]>({
-    queryKey: ['contactSuggestions', trimmed],
+    queryKey: emailKeys.contactSuggestions(trimmed),
     queryFn: async () => {
       if (!api) throw new Error('Email API not initialized');
       return api.suggestContacts(trimmed);

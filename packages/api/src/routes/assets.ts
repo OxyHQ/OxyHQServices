@@ -1,15 +1,18 @@
 import express from 'express';
 import multer from 'multer';
-import { assetService, s3Service } from '../services/assetServiceSingleton';
+import { assetService } from '../services/assetServiceSingleton';
+import { s3Service } from '../services/s3ServiceSingleton';
 import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { optionalAuthMiddleware, getMediaViewerUserId } from '../middleware/optionalAuth';
 import { mediaHeadersMiddleware } from '../middleware/mediaHeaders';
 import { rateLimit } from '../middleware/rateLimiter';
+import { hashedIpKey } from '../utils/ipKey';
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { ApiError, BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, ValidationError, ConflictError } from '../utils/error';
 import { z } from 'zod';
-import { FileVisibility } from '../models/File';
+import type { FileLinkRecord, FileVariantRecord, FileVisibility } from '../types/file.types';
+import type { MediaAccessContext } from '../types/mediaPrivacy.types';
 import { validate } from '../middleware/validate';
 import {
   assetIdParams,
@@ -17,12 +20,17 @@ import {
   assetUrlQuerySchema,
   updateVisibilitySchema,
   batchAccessSchema,
+  assetsByIdsBodySchema,
+  assetsBySha256BodySchema,
 } from '../schemas/assets.schemas';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
 import { buildCdnUrl, stripPublicPrefix, isPublicKey, CDN_REDIRECT_MAX_AGE_SECONDS } from '../config/cdn';
-import { FEDERATION_CACHE_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
-import User from '../models/User';
-import { isValidObjectId } from '../utils/validation';
+import { MEDIA_TOKEN_QUERY_PARAM, MEDIA_TOKEN_TTL_SECONDS, signMediaToken } from '../utils/mediaToken';
+import { FEDERATION_CACHE_MAX_BYTES, USER_MEDIA_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
+import { and, eq } from 'drizzle-orm';
+import { getDb } from '../config/postgres';
+import { users } from '../db/schema';
+import { resolveFileMediaMetadata } from '../utils/fileMediaMetadata';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -35,23 +43,88 @@ const router = express.Router();
 const upload = multer(); // memory storage
 
 /**
+ * Project a link/variant row onto the wire shape clients already receive.
+ *
+ * Two differences would otherwise ship silently. Mongo stored these as
+ * subdocuments declared `{ _id: false }`, so they carried NO id and no parent
+ * pointer — the `file_links.id` / `file_variants.id` / `file_id` columns are
+ * new and internal, and must not leak. And Mongo OMITTED an unset optional
+ * field, where a Postgres row spells it `null`; `JSON.stringify` drops
+ * `undefined` but preserves `null`, so passing rows through verbatim would turn
+ * "absent" into an explicit `null` for every consumer in the ecosystem.
+ */
+function serializeLink(link: FileLinkRecord) {
+  return {
+    app: link.app,
+    entityType: link.entityType,
+    entityId: link.entityId,
+    createdBy: link.createdBy,
+    createdAt: link.createdAt,
+    ...(link.webhookUrl === null ? {} : { webhookUrl: link.webhookUrl }),
+  };
+}
+
+function serializeVariant(variant: FileVariantRecord) {
+  return {
+    type: variant.type,
+    key: variant.key,
+    ...(variant.width === null ? {} : { width: variant.width }),
+    ...(variant.height === null ? {} : { height: variant.height }),
+    ...(variant.readyAt === null ? {} : { readyAt: variant.readyAt }),
+    ...(variant.size === null ? {} : { size: variant.size }),
+    ...(variant.metadata === null ? {} : { metadata: variant.metadata }),
+  };
+}
+
+/**
  * Build an absolute, our-origin streaming URL for an asset on the host that
  * served this request (e.g. `https://api.oxy.so/assets/<id>/stream`). Used for
  * any asset NOT served by the public CDN (private/unlisted, or a public object
  * not yet under the `public/` prefix) so clients always hit our own domain —
  * never a raw `amazonaws.com` URL.
+ *
+ * `mediaToken` attaches a SCOPED media credential (`?mt=`) so an `<img src>`,
+ * which can send neither an `Authorization` header nor an ambient cookie, can
+ * still render a private asset the caller was already authorized for. It is
+ * single-asset, read-only, and ~15-minute-lived — see `utils/mediaToken.ts`.
+ * Omit it for assets that are readable anonymously.
  */
 function buildOriginStreamUrl(
   req: express.Request,
   fileId: string,
-  variant?: string
+  variant?: string,
+  mediaToken?: string
 ): string {
   const host = req.get('host') ?? '';
   const url = new URL(`${req.protocol}://${host}${req.baseUrl}/${encodeURIComponent(fileId)}/stream`);
   if (variant) {
     url.searchParams.set('variant', variant);
   }
+  if (mediaToken) {
+    url.searchParams.set(MEDIA_TOKEN_QUERY_PARAM, mediaToken);
+  }
   return url.toString();
+}
+
+/**
+ * Parse a media access-check context string into a {@link MediaAccessContext}.
+ *
+ * The wire form is `app:entityType:entityId` (e.g. `mention:post:123`), which
+ * gates media behind an entity's own visibility. Anything without at least three
+ * colon-separated parts — a bare label like `file-manager`, an empty string, or a
+ * non-string — carries no entity gate and resolves to `undefined`. Shared by the
+ * stream route (`?context=`) and the batch route (body `context`) so both parse
+ * identically.
+ */
+function parseMediaAccessContext(raw: unknown): MediaAccessContext | undefined {
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+  const parts = raw.split(':');
+  if (parts.length < 3) {
+    return undefined;
+  }
+  return { app: parts[0], entityType: parts[1], entityId: parts[2] };
 }
 
 // Auth applied per-route: authMiddleware for private routes,
@@ -150,7 +223,7 @@ router.get('/', authMiddleware, validate({ query: listAssetsQuerySchema }), asyn
 
   sendSuccess(res, {
     files: files.map((file) => ({
-      id: file._id,
+      id: file.id,
       sha256: file.sha256,
       size: file.size,
       mime: file.mime,
@@ -158,11 +231,11 @@ router.get('/', authMiddleware, validate({ query: listAssetsQuerySchema }), asyn
       originalName: file.originalName,
       ownerUserId: file.ownerUserId,
       status: file.status,
-      usageCount: file.usageCount,
+      usageCount: file.links.length,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
-      links: file.links,
-      variants: file.variants,
+      links: file.links.map(serializeLink),
+      variants: file.variants.map(serializeVariant),
       metadata: file.metadata,
     })),
     total,
@@ -341,24 +414,24 @@ router.post('/complete', authMiddleware, validate({ body: completeUploadSchema }
 
   logger.info('Asset upload completed', { 
     userId: user._id, 
-    fileId: file._id,
+    fileId: file.id,
     originalName: validatedData.originalName
   });
 
   sendSuccess(res, {
-    assetId: file._id.toString(),
+    assetId: file.id,
     file: {
-      id: file._id,
+      id: file.id,
       sha256: file.sha256,
       size: file.size,
       mime: file.mime,
       originalName: file.originalName,
       status: file.status,
-      usageCount: file.usageCount,
+      usageCount: file.links.length,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
-      links: file.links,
-      variants: file.variants
+      links: file.links.map(serializeLink),
+      variants: file.variants.map(serializeVariant)
     }
   });
 }));
@@ -478,13 +551,13 @@ router.post('/upload', authMiddleware, upload.single('file'), asyncHandler(async
 
   logger.info('File uploaded via direct endpoint', { 
     userId: user._id, 
-    fileId: file._id,
+    fileId: file.id,
     sha256: file.sha256
   });
 
   sendSuccess(res, {
     file: {
-      id: file._id.toString(),
+      id: file.id,
       sha256: file.sha256,
       size: file.size,
       mime: file.mime,
@@ -492,8 +565,8 @@ router.post('/upload', authMiddleware, upload.single('file'), asyncHandler(async
       originalName: file.originalName,
       visibility: file.visibility,
       metadata: file.metadata,
-      links: file.links,
-      variants: file.variants
+      links: file.links.map(serializeLink),
+      variants: file.variants.map(serializeVariant)
     }
   });
 }));
@@ -520,6 +593,8 @@ router.post('/upload', authMiddleware, upload.single('file'), asyncHandler(async
 const CACHE_RATE_WINDOW_MS = 60 * 1000;
 const CACHE_UPLOAD_MAX_PER_MINUTE = 30;
 const CACHE_DELETE_MAX_PER_MINUTE = 240;
+/** See {@link assetServiceLookupLimiter} for how this ceiling was chosen. */
+const SERVICE_LOOKUP_MAX_PER_MINUTE = 600;
 
 function requireServiceScope(req: ServiceAuthRequest, scope: string): void {
   const scopes = req.serviceApp?.scopes ?? [];
@@ -549,7 +624,40 @@ const cacheUploadLimiter = rateLimit({
     if (serviceApp?.appId) {
       return `asset-cache:upload:${serviceApp.appId}`;
     }
-    return `asset-cache:upload:ip:${req.ip ?? 'unknown'}`;
+    return `asset-cache:upload:ip:${hashedIpKey(req)}`;
+  },
+});
+
+/**
+ * Per-app rate limit for the two bulk service LOOKUPS (`/service/by-ids`,
+ * `/service/by-sha256`). Both are exempt from the general per-IP browser budget
+ * via `SERVICE_TO_SERVICE_BULK_PATHS`, so this is their SOLE ceiling for
+ * authenticated service traffic and the invariant that exemption depends on.
+ * (Requests WITHOUT a valid service token are never exempted, so they remain
+ * under `rl:general` — this limiter bounds the authenticated path.)
+ *
+ * Sized for the workload that exposed the gap: a relying app's media-metadata
+ * backfill resolves up to {@link SERVICE_ASSET_METADATA cap} 100 ids per request,
+ * so 600/min per app is 60,000 ids/min — comfortably above any backfill sweep
+ * while still bounding a runaway loop or a compromised credential. Deliberately
+ * far above `cacheUploadLimiter`'s 30/min: that guards an S3 write, this is a
+ * projected read of documents by `_id`.
+ *
+ * Unique redis prefix per the rate-limiter convention — a duplicated prefix on a
+ * shared store makes a request increment the same counter twice
+ * (`ERR_ERL_DOUBLE_COUNT`) and silently halves the budget.
+ */
+const assetServiceLookupLimiter = rateLimit({
+  prefix: 'rl:asset-lookup:',
+  windowMs: CACHE_RATE_WINDOW_MS,
+  max: SERVICE_LOOKUP_MAX_PER_MINUTE,
+  message: 'Too many asset metadata lookups. Please slow down.',
+  keyGenerator: (req: express.Request) => {
+    const serviceApp = (req as ServiceAuthRequest).serviceApp;
+    if (serviceApp?.appId) {
+      return `asset-lookup:${serviceApp.appId}`;
+    }
+    return `asset-lookup:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -563,7 +671,7 @@ const cacheDeleteLimiter = rateLimit({
     if (serviceApp?.appId) {
       return `asset-cache:delete:${serviceApp.appId}`;
     }
-    return `asset-cache:delete:ip:${req.ip ?? 'unknown'}`;
+    return `asset-cache:delete:ip:${hashedIpKey(req)}`;
   },
 });
 
@@ -613,14 +721,14 @@ router.post(
       logger.info('Federation media cached', {
         appId: req.serviceApp?.appId,
         appName: req.serviceApp?.appName,
-        fileId: file._id,
+        fileId: file.id,
         mime,
         size: file.size,
       });
 
       sendSuccess(res, {
         file: {
-          id: file._id.toString(),
+          id: file.id,
         },
       });
     } catch (error) {
@@ -648,13 +756,19 @@ router.post(
     requireServiceScope(req, 'files:write');
 
     const ownerUserId = getSingleHeader(req, 'x-owner-user-id')?.trim();
-    if (!ownerUserId || !isValidObjectId(ownerUserId)) {
+    if (!ownerUserId) {
       throw new BadRequestError('x-owner-user-id must be a valid federated user id');
     }
 
-    const owner = await User.findOne({ _id: ownerUserId, type: 'federated' })
-      .select('_id type')
-      .lean();
+    // An id of the wrong SHAPE is no longer a separate 400: a `text` primary key
+    // matches no row, so it lands on the same 403 an id that simply names no
+    // federated account does. That is the answer this endpoint already gives for
+    // "not a federated user", and it is the accurate one.
+    const [owner] = await getDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, ownerUserId), eq(users.type, 'federated')))
+      .limit(1);
     if (!owner) {
       throw new ForbiddenError('Federated media owner must be an existing federated user');
     }
@@ -705,14 +819,14 @@ router.post(
         appId: req.serviceApp?.appId,
         appName: req.serviceApp?.appName,
         ownerUserId,
-        fileId: file._id,
+        fileId: file.id,
         mime,
         size: file.size,
       });
 
       sendSuccess(res, {
         file: {
-          id: file._id.toString(),
+          id: file.id,
           sha256: file.sha256,
           size: file.size,
           mime: file.mime,
@@ -722,6 +836,108 @@ router.post(
     } catch (error) {
       if (error instanceof Error && error.name === 'CacheMediaTooLargeError') {
         throw new ApiError(413, 'Federated media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
+      }
+      throw error;
+    }
+  })
+);
+
+/**
+ * @route POST /api/assets/service/user-media
+ * @desc Stream-upload durable media into a normal public file owned by an
+ *       existing local Oxy user. Used by Mention MCP intent-media when the
+ *       caller authenticates with an MCP JWT (no Oxy session bearer).
+ * @access Service token only (requires files:write)
+ */
+router.post(
+  '/service/user-media',
+  serviceAuthMiddleware,
+  cacheUploadLimiter,
+  asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    requireServiceScope(req, 'files:write');
+
+    const ownerUserId = getSingleHeader(req, 'x-owner-user-id')?.trim();
+    if (!ownerUserId) {
+      throw new BadRequestError('x-owner-user-id must be a valid user id');
+    }
+
+    // Same reasoning as `/service/federation` above: a malformed id matches no
+    // row and gets the endpoint's existing "not an existing local user" 403.
+    const [owner] = await getDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, ownerUserId), eq(users.type, 'local')))
+      .limit(1);
+    if (!owner) {
+      throw new ForbiddenError('User media owner must be an existing local user');
+    }
+
+    const mime = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (!mime) {
+      throw new BadRequestError('Content-Type header is required');
+    }
+    if (!mime.startsWith('image/') && !mime.startsWith('video/')) {
+      throw new ApiError(415, 'Unsupported media type for user upload', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+    if (!isAllowedCacheMime(mime)) {
+      throw new ApiError(415, 'Unsupported media type for user upload', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+
+    const declaredLength = Number(req.headers['content-length']);
+    if (Number.isFinite(declaredLength) && declaredLength > USER_MEDIA_MAX_BYTES) {
+      throw new ApiError(413, 'User media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
+    }
+
+    const originalNameHeader = getSingleHeader(req, 'x-original-name');
+    const originalName = originalNameHeader && originalNameHeader.trim().length > 0
+      ? originalNameHeader.trim().slice(0, 255)
+      : 'user-media';
+
+    const metadataHeader = getSingleHeader(req, 'x-media-metadata');
+    let metadata: Record<string, unknown> | undefined;
+    if (metadataHeader) {
+      try {
+        metadata = JSON.parse(metadataHeader) as Record<string, unknown>;
+      } catch {
+        throw new BadRequestError('x-media-metadata must be valid JSON');
+      }
+    }
+
+    try {
+      const file = await assetService.uploadUserMediaStream(
+        req,
+        mime,
+        originalName,
+        USER_MEDIA_MAX_BYTES,
+        ownerUserId,
+        {
+          ...(metadata || {}),
+          serviceAppId: req.serviceApp?.appId,
+          serviceAppName: req.serviceApp?.appName,
+        }
+      );
+
+      logger.info('User media persisted', {
+        appId: req.serviceApp?.appId,
+        appName: req.serviceApp?.appName,
+        ownerUserId,
+        fileId: file.id,
+        mime,
+        size: file.size,
+      });
+
+      sendSuccess(res, {
+        file: {
+          id: file.id,
+          sha256: file.sha256,
+          size: file.size,
+          mime: file.mime,
+          visibility: file.visibility,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'CacheMediaTooLargeError') {
+        throw new ApiError(413, 'User media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
       }
       throw error;
     }
@@ -765,6 +981,243 @@ router.delete(
 );
 
 /**
+ * @openapi
+ * /assets/service/by-ids:
+ *   post:
+ *     tags:
+ *       - Files
+ *     summary: Batch-resolve asset metadata for a service
+ *     description: >
+ *       Service-token-only batch metadata read. Given up to 100 file ids,
+ *       returns the content hash (`sha256`), `mime`, `size`, and `status` for
+ *       each KNOWN, non-deleted file. This is a METADATA-ONLY surface — it never
+ *       returns bytes, signed URLs, owner ids, links, or any other field, so a
+ *       service token can map a file id to its content hash without being able
+ *       to read private file contents. Unknown, invalid, or deleted ids are
+ *       silently omitted from `data` (the batch never 404s as a whole).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ids
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Resolved asset metadata (order not guaranteed).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       sha256:
+ *                         type: string
+ *                       mime:
+ *                         type: string
+ *                       size:
+ *                         type: integer
+ *                       status:
+ *                         type: string
+ *                         enum: [active, trash]
+ *       400:
+ *         description: Validation failed (empty array or more than 100 ids).
+ *       401:
+ *         description: Missing or expired service token.
+ *       403:
+ *         description: Not a service token, or missing the files:read scope.
+ */
+router.post(
+  '/service/by-ids',
+  serviceAuthMiddleware,
+  assetServiceLookupLimiter,
+  validate({ body: assetsByIdsBodySchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    requireServiceScope(req, 'files:read');
+
+    const { ids } = req.body as { ids: string[] };
+
+    const files = await assetService.getFilesByIds(ids);
+
+    // Metadata only: never expose bytes, signed URLs, owner ids, storage keys,
+    // links, or variants. Deleted tombstones are omitted so a resolved id always
+    // maps to a live asset.
+    const data = files
+      .filter((file) => file.status !== 'deleted')
+      .map((file) => {
+        const media = resolveFileMediaMetadata(file);
+        return {
+          id: file.id,
+          sha256: file.sha256,
+          mime: file.mime,
+          size: file.size,
+          status: file.status,
+          ...(media.width !== undefined ? { width: media.width } : {}),
+          ...(media.height !== undefined ? { height: media.height } : {}),
+          ...(media.durationSec !== undefined ? { durationSec: media.durationSec } : {}),
+          ...(media.orientation !== undefined ? { orientation: media.orientation } : {}),
+          ...(media.aspectRatio !== undefined ? { aspectRatio: media.aspectRatio } : {}),
+        };
+      });
+
+    logger.debug('POST /assets/service/by-ids', {
+      appId: req.serviceApp?.appId,
+      requested: ids.length,
+      resolved: data.length,
+    });
+
+    sendSuccess(res, data);
+  })
+);
+
+/**
+ * @openapi
+ * /assets/service/by-sha256:
+ *   post:
+ *     tags:
+ *       - Files
+ *     summary: Reverse content-address resolve assets by SHA-256
+ *     description: >
+ *       Service-token-only batch REVERSE lookup. Given up to 100 lowercase hex
+ *       SHA-256 content hashes, resolves each to the live (non-deleted) Oxy asset
+ *       holding that content: its file `id`, `mime`, byte `size`, `status`, and —
+ *       for ACTIVE, PUBLIC, CDN-reachable assets only — a public `url`
+ *       (`cloud.oxy.so`). This is the inverse of `POST /assets/service/by-ids`:
+ *       callers (e.g. Mention's MTN materializer / node-blob sync) that hold a
+ *       record's `blob.sha256` use it to find the servable asset for that
+ *       content. Private/unlisted assets omit `url`. Unknown, invalid, or deleted
+ *       hashes are silently omitted from `data` (the batch never 404s as a
+ *       whole); the result may be shorter than the requested list — map by
+ *       `sha256`.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - sha256s
+ *             properties:
+ *               sha256s:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items:
+ *                   type: string
+ *                   pattern: '^[a-f0-9]{64}$'
+ *     responses:
+ *       200:
+ *         description: Resolved asset metadata (order not guaranteed).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       sha256:
+ *                         type: string
+ *                       id:
+ *                         type: string
+ *                       mime:
+ *                         type: string
+ *                       size:
+ *                         type: integer
+ *                       status:
+ *                         type: string
+ *                         enum: [active, trash]
+ *                       url:
+ *                         type: string
+ *                         description: Public CDN URL; present only for active, public, CDN-reachable assets.
+ *       400:
+ *         description: Validation failed (empty array, > 100 hashes, or a non-hex digest).
+ *       401:
+ *         description: Missing or expired service token.
+ *       403:
+ *         description: Not a service token, or missing the files:read scope.
+ */
+router.post(
+  '/service/by-sha256',
+  serviceAuthMiddleware,
+  assetServiceLookupLimiter,
+  validate({ body: assetsBySha256BodySchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    requireServiceScope(req, 'files:read');
+
+    const { sha256s } = req.body as { sha256s: string[] };
+
+    // Dedupe so a single batch never issues duplicate work; the schema already
+    // lowercased + validated each entry as a 64-char hex digest.
+    const uniqueShas = Array.from(new Set(sha256s));
+
+    // One live record per hash: several File docs can share a sha256 (per-owner),
+    // so the service collapses each hash to a single deterministic representative
+    // (oldest by createdAt/_id) — the sha256 -> id mapping is stable across calls.
+    const files = await assetService.findActiveFilesBySha256(uniqueShas);
+
+    // Resolve the public CDN URL for active public assets. getPublicCdnUrl gates
+    // on active+public and verifies CDN reachability (returns null otherwise), so
+    // private/unlisted/non-reachable assets simply omit `url`. Never expose
+    // bytes, owner ids, storage keys, links, or variants.
+    const data = await Promise.all(
+      files.map(async (file) => {
+        let url: string | null = null;
+        try {
+          url = await assetService.getPublicCdnUrl(file);
+        } catch (error) {
+          // A transient S3/variant error on one hash must not 500 the whole
+          // batch — omit `url` and keep metadata (mirrors batch-access).
+          logger.warn('service/by-sha256: CDN resolution failed; omitting url', {
+            sha256: file.sha256,
+            fileId: file.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        const media = resolveFileMediaMetadata(file);
+        return {
+          sha256: file.sha256,
+          id: file.id,
+          mime: file.mime,
+          size: file.size,
+          status: file.status,
+          ...(url ? { url } : {}),
+          ...(media.width !== undefined ? { width: media.width } : {}),
+          ...(media.height !== undefined ? { height: media.height } : {}),
+          ...(media.durationSec !== undefined ? { durationSec: media.durationSec } : {}),
+          ...(media.orientation !== undefined ? { orientation: media.orientation } : {}),
+          ...(media.aspectRatio !== undefined ? { aspectRatio: media.aspectRatio } : {}),
+        };
+      })
+    );
+
+    logger.debug('POST /assets/service/by-sha256', {
+      appId: req.serviceApp?.appId,
+      requested: uniqueShas.length,
+      resolved: data.length,
+    });
+
+    sendSuccess(res, data);
+  })
+);
+
+/**
  * @route POST /api/assets/:id/links
  * @desc Link file to an entity
  * @access Private
@@ -776,20 +1229,20 @@ router.post('/:id/links', authMiddleware, validate({ params: assetIdParams, body
   }
 
   const { id: fileId } = req.params;
-  let validatedData;
+  let validatedData: z.infer<typeof linkFileSchema>;
   try {
     validatedData = linkFileSchema.parse(req.body);
-  } catch (error: any) {
-    if (error.name === 'ZodError') {
+  } catch (error) {
+    if (error instanceof z.ZodError) {
       throw new ValidationError('Invalid request data', { details: error.errors });
     }
     throw error;
   }
-  
+
   const linkRequest = {
     ...validatedData,
     createdBy: user._id,
-    webhookUrl: (validatedData as any).webhookUrl
+    webhookUrl: validatedData.webhookUrl
   };
 
   const file = await assetService.linkFile(fileId, linkRequest);
@@ -801,11 +1254,11 @@ router.post('/:id/links', authMiddleware, validate({ params: assetIdParams, body
   });
 
   sendSuccess(res, {
-    assetId: file._id.toString(),
+    assetId: file.id,
     file: {
-      id: file._id,
-      usageCount: file.usageCount,
-      links: file.links,
+      id: file.id,
+      usageCount: file.links.length,
+      links: file.links.map(serializeLink),
       status: file.status
     }
   });
@@ -848,9 +1301,9 @@ router.delete('/:id/links', authMiddleware, validate({ params: assetIdParams, bo
 
   sendSuccess(res, {
     file: {
-      id: file._id,
-      usageCount: file.usageCount,
-      links: file.links,
+      id: file.id,
+      usageCount: file.links.length,
+      links: file.links.map(serializeLink),
       status: file.status
     }
   });
@@ -901,9 +1354,9 @@ router.get('/:id', authMiddleware, validate({ params: assetIdParams }), asyncHan
   });
 
   sendSuccess(res, {
-    assetId: file._id.toString(),
+    assetId: file.id,
     file: {
-      id: file._id,
+      id: file.id,
       sha256: file.sha256,
       size: file.size,
       mime: file.mime,
@@ -911,11 +1364,11 @@ router.get('/:id', authMiddleware, validate({ params: assetIdParams }), asyncHan
       originalName: file.originalName,
       ownerUserId: file.ownerUserId,
       status: file.status,
-      usageCount: file.usageCount,
+      usageCount: file.links.length,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
-      links: file.links,
-      variants: file.variants,
+      links: file.links.map(serializeLink),
+      variants: file.variants.map(serializeVariant),
       metadata: file.metadata
     }
   });
@@ -982,29 +1435,55 @@ router.get('/:id/url', authMiddleware, validate({ params: assetIdParams, query: 
   const { variant, expiresIn } = req.query;
 
   const variantType = typeof variant === 'string' ? variant : undefined;
-  const expiry = typeof expiresIn === 'string' ? parseInt(expiresIn) : 3600;
+  const expiry = typeof expiresIn === 'string' ? Number.parseInt(expiresIn) : 3600;
 
   const file = await assetService.getFile(fileId);
   if (!file) {
     throw new NotFoundError('File not found');
   }
 
-  // Public + CDN-reachable → CDN URL; otherwise serve through our own origin
-  // (never a raw S3 URL).
-  const cdnUrl = await assetService.getFileUrl(fileId, variantType, expiry, file);
-  const url = cdnUrl ?? buildOriginStreamUrl(req, fileId, variantType);
+  // The caller must actually be allowed to see this asset before we hand back a
+  // renderable URL. `authMiddleware` proves identity; this proves authorization
+  // for THIS asset (ownership, follow/block, entity context) — so we never mint
+  // a media token for an asset the caller can't access.
+  if (!(await assetService.canUserAccessFile(file, user._id))) {
+    logger.warn('Access denied to asset URL', { fileId, userId: user._id, visibility: file.visibility });
+    throw new ForbiddenError('Access denied');
+  }
+
+  // Public + CDN-reachable → clean CDN URL (no credential). Otherwise serve
+  // through our own origin (never a raw S3 URL). A non-public asset streamed
+  // through origin needs a SCOPED media token so the resulting `<img src>` —
+  // which can carry neither a bearer nor a cookie — renders for this authorized
+  // viewer. Public-but-not-yet-CDN-prefixed assets are readable anonymously, so
+  // they get no token.
+  let cdnUrl: string | null = null;
+  try {
+    cdnUrl = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  } catch (error) {
+    logger.warn('asset URL: CDN resolution failed; falling back to origin stream URL', {
+      fileId,
+      variant: variantType,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  const mediaToken = cdnUrl || file.visibility === 'public'
+    ? undefined
+    : signMediaToken(fileId, user._id);
+  const url = cdnUrl ?? buildOriginStreamUrl(req, fileId, variantType, mediaToken);
 
   logger.debug('File URL generated', {
     userId: user._id,
     fileId,
     variant: variantType,
     via: cdnUrl ? 'cdn' : 'origin',
+    scoped: Boolean(mediaToken),
   });
 
   sendSuccess(res, {
     url,
     variant: variantType,
-    expiresIn: expiry
+    expiresIn: mediaToken ? MEDIA_TOKEN_TTL_SECONDS : expiry,
   });
 }));
 
@@ -1075,10 +1554,11 @@ router.get('/:id/exists', authMiddleware, validate({ params: assetIdParams }), a
  *         description: File not found (and no fallback requested).
  */
 router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdParams }), optionalAuthMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
-  // `<img src>` cannot send an Authorization header, so resolve the viewer from
-  // the `?token=` query (SDK-issued) when no session user is present, so owners
-  // can render their own private media. Access is still gated by canUserAccessFile.
-  const userId = await getMediaViewerUserId(req);
+  // `<img src>` can send neither an Authorization header nor a cookie, so resolve
+  // the viewer from the scoped `?mt=` media token (bound to this file id) when no
+  // session user is present, so owners can render their own private media. Access
+  // is still gated by canUserAccessFile.
+  const userId = getMediaViewerUserId(req);
   const { id: fileId } = req.params;
   const { variant } = req.query;
   const variantType = typeof variant === 'string' ? variant : undefined;
@@ -1103,13 +1583,7 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
     throw new NotFoundError('File not found');
   }
 
-  let context: any = undefined;
-  if (typeof req.query.context === 'string') {
-     const parts = req.query.context.split(':');
-     if (parts.length >= 3) {
-         context = { app: parts[0], entityType: parts[1], entityId: parts[2] };
-     }
-  }
+  const context = parseMediaAccessContext(req.query.context);
 
   if (!(await assetService.canUserAccessFile(file, userId, context))) {
     logger.warn('Access denied to file', { fileId, userId, visibility: file.visibility });
@@ -1136,7 +1610,21 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
       const ensured = await assetService.ensureVariant(fileId, variantType, file);
       storageKey = ensured.key;
     } catch (e: any) {
-      logger.warn('Variant ensure failed, falling back to original', { fileId, variantType, error: e?.message });
+      logger.warn('Variant ensure failed', { fileId, variantType, error: e?.message });
+      if (fallback === 'placeholder') {
+        const buf = Buffer.from(TRANSPARENT_PNG_PLACEHOLDER, 'base64');
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Length', String(buf.length));
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).end(buf);
+      }
+      if (fallback === 'icon' || fallback === 'placeholderVisible') {
+        const svg = generateMissingFilePlaceholder(fileId);
+        res.setHeader('Content-Type', 'image/svg+xml');
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).end(svg);
+      }
+      throw new NotFoundError('File not found');
     }
   }
 
@@ -1151,13 +1639,12 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
           storageKey = ensured.key;
           storageExists = await s3Service.fileExists(storageKey);
         } catch (e: any) {
-          logger.warn('Variant ensure failed after repairing original, falling back to original', {
+          logger.warn('Variant ensure failed after repairing original', {
             fileId,
             variantType,
             error: e?.message,
           });
-          storageKey = file.storageKey;
-          storageExists = await s3Service.fileExists(storageKey);
+          storageExists = false;
         }
       }
     }
@@ -1285,10 +1772,10 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
  * @access Public (with optional authentication for private files)
  */
 router.get('/:id/download', validate({ params: assetIdParams }), optionalAuthMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
-  // Resolve viewer from the `?token=` query for direct-download links that
-  // cannot carry an Authorization header (owners downloading their own private
-  // files). Access is still gated by canUserAccessFile below.
-  const userId = await getMediaViewerUserId(req);
+  // Resolve viewer from the scoped `?mt=` media token for direct-download links
+  // that cannot carry an Authorization header or cookie (owners downloading
+  // their own private files). Access is still gated by canUserAccessFile below.
+  const userId = getMediaViewerUserId(req);
   const { id: fileId } = req.params;
   const { variant, expiresIn } = req.query;
 
@@ -1305,16 +1792,31 @@ router.get('/:id/download', validate({ params: assetIdParams }), optionalAuthMid
   }
 
   const variantType = typeof variant === 'string' ? variant : undefined;
-  const expiry = typeof expiresIn === 'string' ? parseInt(expiresIn) : 3600;
+  const expiry = typeof expiresIn === 'string' ? Number.parseInt(expiresIn) : 3600;
 
   if (!(await assetService.fileContentExists(fileId, file))) {
     await assetService.repairMissingFederationFileContent(file);
   }
 
   // Public + CDN-reachable → CDN URL; otherwise redirect to our own origin
-  // stream endpoint (which proxies the bytes). Never a raw S3 URL.
-  const cdnUrl = await assetService.getFileUrl(fileId, variantType, expiry, file);
-  const url = cdnUrl ?? buildOriginStreamUrl(req, fileId, variantType);
+  // stream endpoint (which proxies the bytes). Never a raw S3 URL. A non-public
+  // asset needs a freshly-scoped media token on the redirect target so the
+  // follow-up stream request (which also carries no bearer/cookie) renders for
+  // this authorized viewer.
+  let cdnUrl: string | null = null;
+  try {
+    cdnUrl = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  } catch (error) {
+    logger.warn('asset download: CDN resolution failed; falling back to origin stream URL', {
+      fileId,
+      variant: variantType,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  const mediaToken = cdnUrl || file.visibility === 'public' || !userId
+    ? undefined
+    : signMediaToken(fileId, userId);
+  const url = cdnUrl ?? buildOriginStreamUrl(req, fileId, variantType, mediaToken);
   res.setHeader('Cache-Control', 'private, max-age=60');
   return res.redirect(url);
 }));
@@ -1340,9 +1842,9 @@ router.post('/:id/restore', authMiddleware, validate({ params: assetIdParams }),
 
   sendSuccess(res, {
     file: {
-      id: file._id,
+      id: file.id,
       status: file.status,
-      usageCount: file.usageCount
+      usageCount: file.links.length
     }
   });
 }));
@@ -1373,7 +1875,7 @@ router.patch('/:id/visibility', authMiddleware, asyncHandler(async (req: Authent
   }
 
   // Compare as strings (handle ObjectId vs string comparison)
-  if (file.ownerUserId.toString() !== user._id.toString()) {
+  if (file.ownerUserId !== user._id) {
     throw new ForbiddenError('Access denied');
   }
 
@@ -1382,7 +1884,7 @@ router.patch('/:id/visibility', authMiddleware, asyncHandler(async (req: Authent
     // No change needed, return current file
     return sendSuccess(res, {
       file: {
-        id: file._id,
+        id: file.id,
         visibility: file.visibility,
         updatedAt: file.updatedAt
       }
@@ -1400,7 +1902,7 @@ router.patch('/:id/visibility', authMiddleware, asyncHandler(async (req: Authent
 
   sendSuccess(res, {
     file: {
-      id: updatedFile._id,
+      id: updatedFile.id,
       visibility: updatedFile.visibility,
       updatedAt: updatedFile.updatedAt
     }
@@ -1450,55 +1952,90 @@ router.delete('/:id', authMiddleware, asyncHandler(async (req: AuthenticatedRequ
 }));
 
 /**
+ * One `results` entry in the batch-access response. Access-granted entries carry
+ * a caller-scoped, `<img src>`-ready `url` (scoped `mt` stream URL for private
+ * assets, clean CDN URL for public) plus `visibility`/`mime`; denied or missing
+ * entries carry only `allowed:false` + `error` and NO `url` — a private asset
+ * must never be handed a public-CDN URL (a guaranteed 404).
+ */
+interface BatchAccessResult {
+  allowed: boolean;
+  url?: string;
+  visibility?: FileVisibility;
+  mime?: string;
+  error?: string;
+}
+
+/**
  * @route POST /api/assets/batch-access
- * @desc Check access for multiple files
+ * @desc Resolve access + a caller-scoped, variant-aware URL for many assets in
+ *       ONE round trip. Body: `{ files: [{ fileId, variant? }], expiresIn?, context? }`.
+ *       A file-manager grid resolves each tile's own rendition (thumb/poster)
+ *       without one request per tile. One denied/missing file never fails the
+ *       batch (still 200); denied/missing ids are returned with `allowed:false`.
  * @access Private
  */
-router.post('/batch-access', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/batch-access', authMiddleware, validate({ body: batchAccessSchema }), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
-  const { fileIds, context } = req.body;
+  const { files: requests, expiresIn, context: rawContext } = req.body as {
+    files: Array<{ fileId: string; variant?: string }>;
+    expiresIn?: number;
+    context?: string;
+  };
 
-  if (!Array.isArray(fileIds)) {
-    throw new BadRequestError('fileIds must be an array');
-  }
+  const expiry = typeof expiresIn === 'number' ? expiresIn : 3600;
+  const context = parseMediaAccessContext(rawContext);
 
-  if (fileIds.length > 100) {
-    throw new BadRequestError('Batch size limit exceeded (max 100)');
-  }
+  // One DB round trip for the whole batch, then map each request (with its own
+  // variant) back to its file. Unknown ids resolve to a "not found" entry.
+  const fetched = await assetService.getFilesByIds(requests.map((r) => r.fileId));
+  const filesById = new Map(fetched.map((f) => [f.id, f]));
 
-  const files = await assetService.getFilesByIds(fileIds);
-  const results: Record<string, any> = {};
+  const results: Record<string, BatchAccessResult> = {};
 
-  await Promise.all(files.map(async (file) => {
-    const canAccess = await assetService.canUserAccessFile(file, user?._id, context);
-    
-    if (canAccess) {
-      // Public + CDN-reachable → CDN URL; otherwise our own origin stream URL.
-      // Never a raw S3 URL.
-      const cdnUrl = await assetService.getFileUrl(file._id.toString(), undefined, 3600, file);
-      const url = cdnUrl ?? buildOriginStreamUrl(req, file._id.toString());
-      results[file._id.toString()] = {
-        allowed: true,
-        url,
-        visibility: file.visibility,
-        mime: file.mime
-      };
-    } else {
-      results[file._id.toString()] = {
-        allowed: false,
-        error: 'Access denied'
-      };
+  await Promise.all(requests.map(async ({ fileId, variant }) => {
+    const file = filesById.get(fileId);
+    if (!file) {
+      results[fileId] = { allowed: false, error: 'File not found' };
+      return;
     }
+
+    if (!(await assetService.canUserAccessFile(file, user?._id, context))) {
+      results[fileId] = { allowed: false, error: 'Access denied' };
+      return;
+    }
+
+    // Public + CDN-reachable → clean CDN URL for the requested variant.
+    // Otherwise our own origin stream URL (never a raw S3 URL); a non-public
+    // asset gets a SCOPED media token bound to THIS file id + the authenticated
+    // caller, so a token minted for file A can never open file B.
+    //
+    // Resolving the CDN URL can trigger on-demand variant generation, which
+    // downloads the original object from S3. A missing/misplaced S3 object
+    // throws (NoSuchKey) — that must NOT reject the whole batch (the caller is
+    // allowed to see this file). Fall back to the origin stream URL, whose
+    // route serves the bytes or a placeholder rendition for a missing object.
+    let cdnUrl: string | null = null;
+    try {
+      cdnUrl = await assetService.getFileUrl(fileId, variant, expiry, file);
+    } catch (error) {
+      logger.warn('batch-access: CDN resolution failed; falling back to origin stream URL', {
+        fileId,
+        variant,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    const mediaToken = cdnUrl || file.visibility === 'public' || !user?._id
+      ? undefined
+      : signMediaToken(fileId, user._id);
+    const url = cdnUrl ?? buildOriginStreamUrl(req, fileId, variant, mediaToken);
+    results[fileId] = {
+      allowed: true,
+      url,
+      visibility: file.visibility,
+      mime: file.mime,
+    };
   }));
-  
-  // Handle missing files
-  fileIds.forEach(id => {
-      // We need to check if we found the file. Since _id is ObjectId, we need to be careful with comparison.
-      const found = files.some(f => f._id.toString() === id);
-      if (!found) {
-          results[id] = { allowed: false, error: 'File not found' };
-      }
-  });
 
   sendSuccess(res, { results });
 }));

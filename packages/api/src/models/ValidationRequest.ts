@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { type Document, Schema } from 'mongoose';
 
 /**
  * ValidationRequest (civic / Commons — Fase 2 Part B jury)

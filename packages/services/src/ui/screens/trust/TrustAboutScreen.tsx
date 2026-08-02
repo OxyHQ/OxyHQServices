@@ -1,32 +1,26 @@
 import type React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H4, Text } from '@oxyhq/bloom/typography';
 import { IconCircle } from '@oxyhq/bloom/icon-circle';
 import { BenefitList, BenefitRow } from '@oxyhq/bloom/benefit-list';
 import * as Icons from '@oxyhq/bloom/icons';
 import type { BaseScreenProps } from '../../types/navigation';
-import Header from '../../components/Header';
 import { useI18n } from '../../hooks/useI18n';
+import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
 
-const TrustAboutScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
+const TrustAboutScreen: React.FC<BaseScreenProps> = () => {
     const { t } = useI18n();
     const bloomTheme = useTheme();
     const iconColor = bloomTheme.colors.primary;
 
+    useSurfaceHeader({
+        title: t('trust.about.title') || 'About Oxy Trust',
+        subtitle: t('trust.about.subtitle') || 'Learn about the reputation system',
+    });
+
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('trust.about.title') || 'About Oxy Trust'}
-                subtitle={t('trust.about.subtitle') || 'Learn about the reputation system'}
-                onBack={goBack}
-                elevation="subtle"
-            />
-            <ScrollView
-                className="flex-1 px-screen-margin"
-                showsVerticalScrollIndicator={false}
-                contentContainerClassName="pb-space-32"
-            >
+            <View className="px-screen-margin pt-space-16 pb-space-32">
                 <View className="items-center py-space-24 gap-space-12">
                     <IconCircle icon={Icons.ShieldCheck_Stroke2_Corner0_Rounded} />
                     <Text className="font-sans text-body text-text-secondary text-center">
@@ -69,8 +63,7 @@ const TrustAboutScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                 <Text className="font-sans text-body text-text-secondary">
                     {t('trust.about.why.text') || 'Your reputation and trust tier unlock special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!'}
                 </Text>
-            </ScrollView>
-        </View>
+            </View>
     );
 };
 

@@ -39,7 +39,7 @@ export default function CreateIdentityUsernameScreen() {
   const colors = useColors();
   const { oxyServices, user } = useOxy();
   const { isOffline } = useNetworkStatus();
-  const { usernameRef } = useAuthFlowContext();
+  const { usernameRef, error: authFlowError, setAuthError } = useAuthFlowContext();
   const updateProfile = useUpdateProfile();
 
   const backgroundColor = colors.background;
@@ -52,7 +52,15 @@ export default function CreateIdentityUsernameScreen() {
   const [username, setUsername] = useState<string>(
     () => user?.username || usernameRef.current || generateSuggestedUsername(),
   );
-  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(() => authFlowError);
+
+  // Surface any sync error stashed by the create-identity resume path.
+  useEffect(() => {
+    if (authFlowError) {
+      setUpdateError(authFlowError);
+      setAuthError(null);
+    }
+  }, [authFlowError, setAuthError]);
 
   // Keep the ref in sync so other steps (e.g. import-identity recovery) can
   // observe what the user typed if they back-navigate.
@@ -68,6 +76,25 @@ export default function CreateIdentityUsernameScreen() {
     }
 
     setUpdateError(null);
+
+    // The username write is an AUTHENTICATED call. If the create-sync hasn't
+    // established a session yet — an offline create, or a signIn that hasn't
+    // finished re-syncing after reconnect — `oxyServices` has no access token.
+    // Firing updateProfile then throws "No active access token", and because
+    // mutations run with networkMode:'offlineFirst' + retry, the retry is
+    // PAUSED, leaving the Confirm button spinning forever with no way out
+    // (issue #605). Guard it: surface a clear, actionable state instead. The
+    // session self-establishes via the reconnect/sync handler, so tapping
+    // Continue again once it's ready succeeds.
+    if (!oxyServices.getAccessToken()) {
+      const offline = await checkIfOffline();
+      setUpdateError(
+        offline
+          ? 'You are offline. Reconnect and tap continue to save your username.'
+          : 'Finishing setting up your account — tap continue again in a moment.',
+      );
+      return;
+    }
 
     try {
       // mutateAsync triggers the optimistic onMutate FIRST, which:

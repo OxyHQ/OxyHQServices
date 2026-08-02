@@ -1,30 +1,37 @@
 /**
- * Complete React Native Example: Cross-App Shared Identity
+ * React Native example: cross-app shared cryptographic identity
  *
- * This example shows how to implement shared authentication across multiple
- * React Native apps using iOS Keychain Groups and Android Account Manager.
+ * Shows the LOW-LEVEL identity primitives that Commons by Oxy uses under the
+ * hood: create/import a keypair, promote it to the shared keychain, register it
+ * with the server, and sign in with it. Most apps do NOT need this — they mount
+ * `<OxyProvider>` and the device-first cold boot + shared keychain handle
+ * everything automatically (see `expo-54-universal-auth.tsx`). This example is
+ * for building an identity/vault surface like Commons.
  *
- * Apps that share authentication:
+ * Apps that share one identity (illustrative bundle ids):
  * - Homiio (com.homiio.app)
  * - Mention (com.mention.app)
  * - Alia (com.alia.app)
  *
  * Setup required:
- * - iOS: Enable Keychain Sharing with group "group.com.oxy.shared"
- * - Android: Add sharedUserId="com.oxy.shared" to AndroidManifest.xml
+ * - iOS: enable Keychain Sharing with access group "group.so.oxy.shared"
+ * - Android: configure the shared identity store under "so.oxy.shared"
  */
 
 import React, { useEffect, useState, createContext, useContext } from 'react';
-import { View, Text, Button, ActivityIndicator, Alert } from 'react-native';
-import { OxyServices } from '@oxyhq/services';
-import { KeyManager, SignatureService, RecoveryPhraseService } from '@oxyhq/services/crypto';
-import type { User } from '@oxyhq/services';
+import { View, Text, Button, ActivityIndicator, Alert, TextInput, Platform } from 'react-native';
+import {
+  OxyServices,
+  KeyManager,
+  SignatureService,
+  RecoveryPhraseService,
+} from '@oxyhq/core';
+import type { User } from '@oxyhq/core';
 
 // ==================== 1. Setup ====================
 
 const oxyServices = new OxyServices({
   baseURL: 'https://api.oxy.so',
-  cloudURL: 'https://cloud.oxy.so',
 });
 
 // ==================== 2. Auth Context ====================
@@ -33,7 +40,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   hasIdentity: boolean;
-  createIdentity: () => Promise<string[]>; // Returns recovery phrase
+  createIdentity: () => Promise<string[]>; // Returns recovery phrase words
   importIdentity: (phrase: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -51,58 +58,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const initializeAuth = async () => {
     try {
-      // 1. Check for shared session first (from other Oxy apps)
+      // 1. Reuse a warm shared session planted by another Oxy app.
       const sharedSession = await KeyManager.getSharedSession();
       if (sharedSession) {
-        console.log('Found shared session from another Oxy app!');
         oxyServices.setTokens(sharedSession.accessToken);
-
         try {
-          const user = await oxyServices.getCurrentUser();
-          setUser(user);
+          setUser(await oxyServices.getCurrentUser());
           setHasIdentity(true);
-          setLoading(false);
           return;
-        } catch (error) {
-          console.warn('Shared session invalid, will try identity auth');
+        } catch {
+          // Shared session is stale — fall through to key-based sign-in.
         }
       }
 
-      // 2. Check for shared identity
-      const hasShared = await KeyManager.hasSharedIdentity();
-      if (hasShared) {
-        console.log('Found shared identity');
+      // 2. A shared identity exists (this or another app created it): the SDK
+      //    runs the whole challenge → sign → verify exchange and plants tokens.
+      if (await KeyManager.hasSharedIdentity()) {
         setHasIdentity(true);
+        await signInWithSharedIdentity();
+        return;
+      }
 
-        // Try to sign in with shared identity
-        const publicKey = await KeyManager.getSharedPublicKey();
-        if (publicKey) {
-          try {
-            const user = await signInWithIdentity(publicKey, true);
-            setUser(user);
-          } catch (error) {
-            console.error('Auto sign-in failed:', error);
-          }
-        }
-      } else {
-        // 3. Check for local identity (migrate to shared)
-        const hasLocal = await KeyManager.hasIdentity();
-        if (hasLocal) {
-          console.log('Migrating local identity to shared...');
-          const migrated = await KeyManager.migrateToSharedIdentity();
-          if (migrated) {
-            setHasIdentity(true);
-            // Try to sign in
-            const publicKey = await KeyManager.getSharedPublicKey();
-            if (publicKey) {
-              try {
-                const user = await signInWithIdentity(publicKey, true);
-                setUser(user);
-              } catch (error) {
-                console.error('Auto sign-in after migration failed:', error);
-              }
-            }
-          }
+      // 3. Only a LOCAL (app-private) identity exists: promote it to the shared
+      //    keychain so every Oxy app can use it, then sign in.
+      if (await KeyManager.hasIdentity()) {
+        const migrated = await KeyManager.migrateToSharedIdentity();
+        if (migrated) {
+          setHasIdentity(true);
+          await signInWithSharedIdentity();
         }
       }
     } catch (error) {
@@ -112,56 +95,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signInWithIdentity = async (publicKey: string, isShared: boolean = true): Promise<User> => {
-    // Request challenge from server
-    const { challenge } = await oxyServices.requestChallenge(publicKey);
-
-    // Sign challenge with private key
-    const signature = isShared
-      ? await SignatureService.signChallenge(challenge, await KeyManager.getSharedPrivateKey())
-      : await SignatureService.signChallenge(challenge);
-
-    // Verify challenge and get session
-    const session = await oxyServices.verifyChallenge(
-      publicKey,
-      challenge,
-      signature,
-      Date.now()
-    );
-
-    // Store session in shared storage for other apps
-    await KeyManager.storeSharedSession(session.sessionId, session.accessToken || '');
-
-    // Set access token
-    oxyServices.setTokens(session.accessToken || '');
-
-    return session.user;
+  // `signInWithSharedIdentity()` requests a challenge for the shared public key,
+  // signs it with the shared private key, verifies it, and plants the tokens —
+  // returns null on web or when no shared identity is present. We then read the
+  // full profile for display.
+  const signInWithSharedIdentity = async (): Promise<void> => {
+    const session = await oxyServices.signInWithSharedIdentity();
+    if (session) {
+      setUser(await oxyServices.getCurrentUser());
+    }
   };
 
   const createIdentity = async (): Promise<string[]> => {
     setLoading(true);
     try {
-      // Generate new identity with recovery phrase
-      const { publicKey, recoveryPhrase } = await RecoveryPhraseService.generateIdentityWithRecovery();
+      // Generate a new keypair + recovery phrase (written to the local keychain).
+      const { words } = await RecoveryPhraseService.generateIdentityWithRecovery();
 
-      // Import to shared storage so all Oxy apps can use it
-      await KeyManager.importSharedIdentity(
-        await RecoveryPhraseService.privateKeyFromPhrase(recoveryPhrase.join(' '))
+      // Promote it to the shared keychain so all Oxy apps can use it.
+      await KeyManager.migrateToSharedIdentity();
+
+      // Register the identity with the server (signature over the current key).
+      const registration = await SignatureService.createRegistrationSignature();
+      await oxyServices.register(
+        registration.publicKey,
+        registration.signature,
+        registration.timestamp,
       );
 
-      // Register with server
-      const signature = await SignatureService.createRegistrationSignature(
-        await KeyManager.getSharedPrivateKey()
-      );
-      await oxyServices.register(publicKey, signature, Date.now());
-
-      // Sign in
-      const user = await signInWithIdentity(publicKey, true);
-
-      setUser(user);
+      // Sign in with the freshly registered shared identity.
+      await signInWithSharedIdentity();
       setHasIdentity(true);
 
-      return recoveryPhrase;
+      return words;
     } catch (error) {
       console.error('Identity creation failed:', error);
       throw error;
@@ -173,25 +139,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const importIdentity = async (phrase: string): Promise<void> => {
     setLoading(true);
     try {
-      // Convert phrase to private key
-      const privateKey = await RecoveryPhraseService.privateKeyFromPhrase(phrase);
+      // Restore the keypair from the recovery phrase (written to the local
+      // keychain) and promote it to the shared keychain.
+      const publicKey = await RecoveryPhraseService.restoreFromPhrase(phrase);
+      await KeyManager.migrateToSharedIdentity();
 
-      // Import to shared storage
-      const publicKey = await KeyManager.importSharedIdentity(privateKey);
-
-      // Check if already registered
+      // Register only if the server hasn't seen this key before.
       const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
-
       if (!registered) {
-        // Register with server
-        const signature = await SignatureService.createRegistrationSignature(privateKey);
-        await oxyServices.register(publicKey, signature, Date.now());
+        const registration = await SignatureService.createRegistrationSignature();
+        await oxyServices.register(
+          registration.publicKey,
+          registration.signature,
+          registration.timestamp,
+        );
       }
 
-      // Sign in
-      const user = await signInWithIdentity(publicKey, true);
-
-      setUser(user);
+      await signInWithSharedIdentity();
       setHasIdentity(true);
     } catch (error) {
       console.error('Identity import failed:', error);
@@ -204,16 +168,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     setLoading(true);
     try {
-      // Logout from server
+      // Revoke the server session, then clear the shared session (signs out of
+      // EVERY Oxy app on this device).
       const sharedSession = await KeyManager.getSharedSession();
       if (sharedSession) {
         await oxyServices.logoutSession(sharedSession.sessionId);
       }
-
-      // Clear shared session (signs out from ALL Oxy apps)
       await KeyManager.clearSharedSession();
 
-      // Clear local state
       oxyServices.clearTokens();
       setUser(null);
     } catch (error) {
@@ -340,6 +302,9 @@ function DashboardScreen() {
 
   if (!user) return null;
 
+  // Render `name.displayName` when present; otherwise fall back to the handle.
+  const displayName = user.name?.displayName?.trim() || user.username;
+
   return (
     <View style={{ flex: 1, padding: 20 }}>
       <View style={{ alignItems: 'center', marginVertical: 20 }}>
@@ -352,8 +317,8 @@ function DashboardScreen() {
             marginBottom: 10,
           }}
         />
-        <Text style={{ fontSize: 20, fontWeight: 'bold' }}>{user.username}</Text>
-        <Text style={{ color: '#666' }}>{user.email}</Text>
+        <Text style={{ fontSize: 20, fontWeight: 'bold' }}>{displayName}</Text>
+        {user.email ? <Text style={{ color: '#666' }}>{user.email}</Text> : null}
       </View>
 
       <View
@@ -365,10 +330,10 @@ function DashboardScreen() {
         }}
       >
         <Text style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 10 }}>
-          ✅ Signed in across all Oxy apps
+          Signed in across all Oxy apps
         </Text>
         <Text style={{ color: '#666' }}>
-          Your identity is shared via {Platform.OS === 'ios' ? 'iOS Keychain' : 'Android Account Manager'}.
+          Your identity is shared via {Platform.OS === 'ios' ? 'iOS Keychain' : 'the Android identity store'}.
           Open any other Oxy app and you'll be automatically signed in!
         </Text>
       </View>
@@ -379,17 +344,15 @@ function DashboardScreen() {
         <Text style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 5 }}>
           Shared Identity Status:
         </Text>
-        <Text style={{ color: '#666' }}>✅ Identity stored in shared storage</Text>
-        <Text style={{ color: '#666' }}>✅ Session accessible to all Oxy apps</Text>
-        <Text style={{ color: '#666' }}>✅ No re-authentication needed</Text>
+        <Text style={{ color: '#666' }}>Identity stored in the shared keychain</Text>
+        <Text style={{ color: '#666' }}>Session accessible to all Oxy apps</Text>
+        <Text style={{ color: '#666' }}>No re-authentication needed</Text>
       </View>
     </View>
   );
 }
 
 // ==================== 4. Main App ====================
-
-import { TextInput, Platform } from 'react-native';
 
 export default function App() {
   return (
@@ -475,7 +438,7 @@ function ExampleComponent() {
   if (hasSharedSession) {
     return (
       <Text>
-        ✅ You're already signed in from another Oxy app! (Homiio, Mention, or Alia)
+        You're already signed in from another Oxy app! (Homiio, Mention, or Alia)
       </Text>
     );
   }

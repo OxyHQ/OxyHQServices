@@ -21,6 +21,7 @@ export default function AuthLayout() {
                 <Stack.Screen name="welcome" />
                 <Stack.Screen name="create-identity" />
                 <Stack.Screen name="import-identity" />
+                <Stack.Screen name="recover-identity" />
             </Stack>
         </AuthFlowProvider>
     );

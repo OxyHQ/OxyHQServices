@@ -18,9 +18,12 @@ import { RequestDeduplicator, RequestQueue, SimpleLogger } from './utils/request
 import { retryAsync } from './utils/asyncUtils';
 import { handleHttpError } from './utils/errorUtils';
 import { jwtDecode } from 'jwt-decode';
-import { isNative, isReactNative, getPlatformOS } from './utils/platform';
+import { isNative, getPlatformOS } from './utils/platform';
+import { isReactNative } from '@oxyhq/protocol';
 import { computeIdentityTag, fnv1a32 } from './utils/cacheKey';
+import { redactUrlQuery } from './utils/redactUrl';
 import type { OxyConfig } from './models/interfaces';
+import type { DeviceSecretMintOutcome } from './session/refresh';
 
 /**
  * Check if we're running in a native app environment (React Native, not web)
@@ -69,6 +72,33 @@ export interface RequestOptions {
   signal?: AbortSignal;
   headers?: Record<string, string>;
   responseType?: 'blob';
+  /**
+   * Skip BOTH the bearer auth header (and its near-expiry preflight refresh)
+   * AND the 401-driven auto-refresh/retry for this request.
+   *
+   * Required for the body-authenticated device-secret mint (`POST
+   * /session/device/token`): it does not need a bearer, and — critically — it is
+   * itself invoked from inside the registered `AuthRefreshHandler`. If it went
+   * through the normal preflight, `getAuthHeader` would call
+   * `refreshAccessToken` while the handler-owning `tokenRefreshPromise` is
+   * still in flight and await ITSELF (deadlock). Skipping auth makes the
+   * mint call fully independent of the current (near-expired) bearer.
+   */
+  skipAuth?: boolean;
+  /**
+   * Execute this request WITHOUT taking a `RequestQueue` slot — run it directly.
+   *
+   * A queue slot represents network occupancy for ordinary DATA requests. The
+   * CONTROL-PLANE calls the auth lane depends on (the device-secret mint, `POST
+   * /session/device/token`, reached from `getAuthHeader` → `refreshAccessToken`)
+   * must never compete for a slot: when `maxConcurrentRequests` requests are all
+   * parked awaiting that very mint, a queued mint could never acquire a slot to
+   * run — a systemic deadlock. `bypassQueue` lets the mint run even when the
+   * queue is saturated. (The auth preflight is also resolved OUTSIDE the slot in
+   * `request()`, so ordinary requests never hold a slot while awaiting the mint;
+   * this flag is the explicit guarantee for the mint itself.)
+   */
+  bypassQueue?: boolean;
 }
 
 interface RequestConfig extends RequestOptions {
@@ -113,11 +143,31 @@ const CSRF_FETCH_RETRY_DELAY_MS = 500;
 
 /**
  * Cooldown (ms) applied after a failed access-token refresh before another
- * refresh is attempted. Prevents a refresh storm (and server hammering) when
- * the AuthManager's refresh handler is failing — every in-flight request that
- * hits a 401 would otherwise trigger its own refresh.
+ * refresh is attempted while the CURRENT token is still valid (a proactive,
+ * near-expiry refresh). Prevents a refresh storm (and server hammering) when
+ * the auth refresh handler is failing — every in-flight request that
+ * hits a 401 would otherwise trigger its own refresh. A still-valid token can
+ * afford to wait this out; the request keeps carrying it in the meantime.
  */
 const TOKEN_REFRESH_COOLDOWN_MS = 15000;
+
+/**
+ * Cooldown (ms) applied after a failed refresh when the CURRENT access token is
+ * already past its `exp`. Much shorter than {@link TOKEN_REFRESH_COOLDOWN_MS}:
+ * an expired token is UNUSABLE, so the client must re-mint as soon as the mint
+ * endpoint is reachable again (e.g. a few seconds after an ECS rolling-deploy
+ * blip drains/restarts a task) instead of waiting out the full proactive
+ * cooldown while every request forwards or omits a stale bearer → server 401.
+ *
+ * Still NON-ZERO on purpose: it bounds the request-driven retry rate to at most
+ * one attempt per this interval so a PROLONGED outage cannot become a tight
+ * network storm. Combined with the process-wide single-flight below (concurrent
+ * requests coalesce to one in-flight mint) and the refresh handler's own
+ * terminal-state handling (a genuinely revoked session clears its device
+ * credential and stops issuing network mints), this recovers a transient blip
+ * ~15× faster without weakening the storm guard.
+ */
+const EXPIRED_TOKEN_REFRESH_COOLDOWN_MS = 1000;
 
 /**
  * Lead time (seconds) before access-token expiry at which a preflight refresh
@@ -217,20 +267,29 @@ export class HttpService {
   private logger: SimpleLogger;
   private config: OxyConfig;
   private tokenRefreshPromise: Promise<string | null> | null = null;
-  private tokenRefreshCooldownUntil: number = 0;
+  /**
+   * Epoch ms of the last FAILED refresh (0 = none since the last success). The
+   * post-failure cooldown is measured from here; its length depends on whether
+   * the current token is still valid ({@link TOKEN_REFRESH_COOLDOWN_MS}) or
+   * already expired ({@link EXPIRED_TOKEN_REFRESH_COOLDOWN_MS}), so an expired
+   * token recovers promptly the instant it crosses `exp` — without storing a
+   * fixed deadline that could not shrink once the token expired mid-cooldown.
+   */
+  private lastRefreshFailureAt = 0;
   private authRefreshHandler: AuthRefreshHandler | null = null;
   private accessTokenProvider: AccessTokenProvider | null = null;
+  private deviceSecretMintInFlight: Promise<DeviceSecretMintOutcome> | null = null;
 
   /**
    * Epoch (ms) before which a cache-size telemetry warning must not be
    * re-emitted. Throttles the {@link CACHE_SOFT_MAX_ENTRIES} warning to at most
    * one per {@link CACHE_SIZE_WARNING_THROTTLE_MS} window.
    */
-  private cacheSizeWarningSilentUntil: number = 0;
+  private cacheSizeWarningSilentUntil = 0;
 
   /**
    * Fan-out listeners notified on EVERY access-token change on this instance:
-   * explicit `setTokens`, `clearTokens`, an AuthManager-owned refresh, and the
+   * explicit `setTokens`, `clearTokens`, a refresh-handler rotation, and the
    * internal 401-driven clear. This is a Set so multiple independent observers
    * can mirror token state without clobbering each other.
    *
@@ -314,10 +373,9 @@ export class HttpService {
    *
    * Why we explicitly reject `URLSearchParams`:
    *  - `URLSearchParams` ALSO exposes `append` / `get` / `has`, so the
-   *    duck-type fallback below would have misidentified it as FormData.
-   *  - We want urlencoded payloads to take the JSON-stringify path so the
-   *    server receives them as `application/x-www-form-urlencoded` instead
-   *    of an empty multipart body.
+   *    duck-type fallback below would have misidentified it as FormData and
+   *    sent an empty multipart body.
+   *  - It has its own encoding path instead — see {@link isUrlSearchParams}.
    */
   private isFormData(data: unknown): data is FormDataLike {
     if (!data || typeof data !== 'object') {
@@ -359,6 +417,19 @@ export class HttpService {
   }
 
   /**
+   * True for an `application/x-www-form-urlencoded` payload.
+   *
+   * Needed because a handful of endpoints are defined by a standard that fixes
+   * their request encoding rather than by our own JSON conventions — today
+   * `POST /auth/oauth/token`, whose encoding RFC 6749 §4.1.3 mandates. Passing
+   * a `URLSearchParams` as `data` selects that encoding; everything else is
+   * still JSON.
+   */
+  private isUrlSearchParams(data: unknown): data is URLSearchParams {
+    return typeof URLSearchParams !== 'undefined' && data instanceof URLSearchParams;
+  }
+
+  /**
    * Main request method - handles everything in one place
    */
   async request<T = unknown>(config: RequestConfig): Promise<T> {
@@ -389,11 +460,30 @@ export class HttpService {
       const cached = this.cache.get(cacheKey) as T | null;
       if (cached !== null) {
         this.requestMetrics.cacheHits++;
-        this.logger.debug('Cache hit:', url);
+        // Redact the query string: an asset stream URL passed here carries a
+        // scoped `mt=` media token that must never reach a log sink.
+        this.logger.debug('Cache hit:', redactUrlQuery(url));
         return cached;
       }
       this.requestMetrics.cacheMisses++;
     }
+
+    // Resolve the auth preflight OUTSIDE the queue slot. A slot represents
+    // NETWORK OCCUPANCY only. `getAuthHeader` may await the single-flight token
+    // refresh/mint — itself a request — so if a slot-holding request awaited it
+    // here and every slot were held by requests all waiting on that same mint,
+    // the mint could never acquire a slot to run (systemic deadlock). Resolving
+    // it before enqueue means auth-blocked requests hold NO slot while the shared
+    // mint runs. `skipAuth` requests (the body-authenticated mint) send NO bearer
+    // and skip the near-expiry preflight — see RequestOptions.skipAuth. The
+    // 401/CSRF retry re-enters request() with a fresh config, so it re-resolves
+    // these here with the refreshed token / cleared CSRF.
+    const isStateChangingMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+    const authHeader = config.skipAuth ? null : await this.getAuthHeader();
+    // CSRF protects cookie-authenticated browser writes. Bearer-authenticated SDK
+    // clients are not vulnerable to ambient-cookie CSRF, and linked app APIs
+    // should not need to implement a duplicate `/csrf-token` route.
+    const csrfToken = isStateChangingMethod && !authHeader ? await this.fetchCsrfToken() : null;
 
     // Request function
     const requestFn = async (): Promise<T> => {
@@ -401,18 +491,10 @@ export class HttpService {
       try {
         // Build URL with params
         const fullUrl = this.buildURL(url, params);
-        
-        // Get auth token (with auto-refresh)
-        const authHeader = await this.getAuthHeader();
-
-        // CSRF protects cookie-authenticated browser writes. Bearer-authenticated
-        // SDK clients are not vulnerable to ambient-cookie CSRF, and linked app
-        // APIs should not need to implement a duplicate `/csrf-token` route.
-        const isStateChangingMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-        const csrfToken = isStateChangingMethod && !authHeader ? await this.fetchCsrfToken() : null;
 
         // Determine if data is FormData using robust detection
         const isFormData = this.isFormData(data);
+        const isUrlEncoded = this.isUrlSearchParams(data);
 
         // Make fetch request
         const controller = new AbortController();
@@ -428,7 +510,9 @@ export class HttpService {
         };
 
         // Only set Content-Type for non-FormData requests (FormData sets it automatically with boundary)
-        if (!isFormData) {
+        if (isUrlEncoded) {
+          headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+        } else if (!isFormData) {
           headers['Content-Type'] = 'application/json';
         }
 
@@ -476,8 +560,11 @@ export class HttpService {
           });
         }
 
+        // `URLSearchParams` is serialised explicitly rather than handed to
+        // `fetch` as-is: RN's fetch does not consistently encode it, and doing
+        // it here keeps the body identical across every platform.
         const bodyValue = method !== 'GET' && data
-            ? (isFormData ? data : JSON.stringify(data))
+            ? (isFormData ? data : isUrlEncoded ? data.toString() : JSON.stringify(data))
             : undefined;
 
         // React Native FormData workaround:
@@ -510,10 +597,10 @@ export class HttpService {
 
         // Handle response
         if (!response.ok) {
-          // On 401, delegate refresh to AuthManager and retry once before
-          // giving up. HttpService deliberately does not know any session
-          // routes; the AuthManager is the single session authority.
-          if (response.status === 401 && !config._isAuthRetry) {
+          // On 401, delegate to the installed auth refresh handler and retry
+          // once before giving up. HttpService deliberately does not know any
+          // session routes; the refresh handler owns session rotation.
+          if (response.status === 401 && !config._isAuthRetry && !config.skipAuth) {
             const refreshed = await this.refreshAccessToken('response-401');
             if (refreshed) {
               // `deduplicate: false` is REQUIRED on the retry (mirrors the 403
@@ -550,10 +637,17 @@ export class HttpService {
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
             try {
-              const errorData = await response.json() as { message?: string; error?: string } | null;
+              const errorData = await response.json() as {
+                message?: string;
+                error?: string;
+                error_description?: string;
+              } | null;
               // Accept either structured error field from API responses.
               if (errorData?.message) {
                 errorMessage = errorData.message;
+              } else if (errorData?.error_description) {
+                // RFC 6749 §5.2 / RFC 6750 §3 — OAuth endpoints surface human text here.
+                errorMessage = errorData.error_description;
               } else if (errorData?.error) {
                 errorMessage = errorData.error;
               }
@@ -643,8 +737,12 @@ export class HttpService {
       ? () => this.deduplicator.deduplicate(dedupeKey, requestWithRetry)
       : requestWithRetry;
 
-    // Execute request (with queue if needed)
-    const result = await this.requestQueue.enqueue(finalRequest);
+    // Execute the request. Control-plane calls the auth lane depends on
+    // (`bypassQueue`, e.g. the device-secret mint) run DIRECTLY — a queued mint
+    // could never acquire a slot when every slot is parked awaiting it.
+    const result = config.bypassQueue
+      ? await finalRequest()
+      : await this.requestQueue.enqueue(finalRequest);
 
     // Cache the result if caching is enabled
     if (cache && cacheKey && result) {
@@ -803,7 +901,7 @@ export class HttpService {
    * `clearCacheByPrefix` sweeps and `clearCacheEntry` base-key matching.
    * The `clearCacheEntry` callsites all pass fixed, dataless logical keys
    * (`GET:/users/<id>`, `GET:/session/user/<sessionId>`,
-   * `GET:/fedcm/me/authorized-apps`), so this readable suffix can never be
+   * `GET:/auth/grants`), so this readable suffix can never be
    * ambiguous with a serialized request body.
    */
   private static readonly CACHE_IDENTITY_DELIM = ' id=';
@@ -1013,7 +1111,16 @@ export class HttpService {
       return null;
     }
 
-    if (Date.now() < this.tokenRefreshCooldownUntil) {
+    // Post-failure cooldown. A genuinely EXPIRED current token uses a much
+    // shorter cooldown than a still-valid (proactive, near-expiry) one: an
+    // expired token is unusable, so re-mint as soon as the endpoint is reachable
+    // again rather than waiting out the full window while requests carry a stale
+    // bearer. Both cooldowns are measured from the last failure, so the moment a
+    // still-valid token crosses `exp` mid-cooldown the shorter window applies.
+    const cooldownMs = this.isAccessTokenExpired()
+      ? EXPIRED_TOKEN_REFRESH_COOLDOWN_MS
+      : TOKEN_REFRESH_COOLDOWN_MS;
+    if (Date.now() - this.lastRefreshFailureAt < cooldownMs) {
       return null;
     }
 
@@ -1021,19 +1128,22 @@ export class HttpService {
       this.tokenRefreshPromise = this.authRefreshHandler(reason)
         .then((newToken) => {
           if (!newToken) {
-            this.tokenRefreshCooldownUntil = Date.now() + TOKEN_REFRESH_COOLDOWN_MS;
+            this.lastRefreshFailureAt = Date.now();
             return null;
           }
           if (this.tokenStore.getAccessToken() !== newToken) {
             this.tokenStore.setTokens(newToken);
             this.notifyTokenChange();
           }
-          this.logger.debug('Token refreshed via AuthManager');
+          // A success clears the failure timestamp so the next refresh is never
+          // throttled by a stale cooldown.
+          this.lastRefreshFailureAt = 0;
+          this.logger.debug('Token refreshed via the auth refresh handler');
           return newToken;
         })
         .catch((error) => {
           this.logger.warn('Token refresh failed:', error);
-          this.tokenRefreshCooldownUntil = Date.now() + TOKEN_REFRESH_COOLDOWN_MS;
+          this.lastRefreshFailureAt = Date.now();
           return null;
         })
         .finally(() => {
@@ -1042,6 +1152,56 @@ export class HttpService {
     }
 
     return this.tokenRefreshPromise;
+  }
+
+  /**
+   * Whether the CURRENT stored access token is already past its `exp`. Drives
+   * the shorter post-failure refresh cooldown ({@link EXPIRED_TOKEN_REFRESH_COOLDOWN_MS}):
+   * a still-valid (near-expiry) token can wait out the full cooldown, but an
+   * expired one must re-mint promptly. Returns `false` for an absent or
+   * opaque/no-`exp` token — no proof it is expired, so keep the conservative
+   * (longer) cooldown and avoid an unnecessary retry loop.
+   */
+  private isAccessTokenExpired(): boolean {
+    const token = this.tokenStore.getAccessToken();
+    if (!token) {
+      return false;
+    }
+    try {
+      const decoded = jwtDecode<JwtPayload>(token);
+      return typeof decoded.exp === 'number' && decoded.exp <= Math.floor(Date.now() / 1000);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * PROCESS-WIDE single-flight for the rotating device-secret mint
+   * (`POST /session/device/token`).
+   *
+   * The server rotates the presented `deviceSecret` on every successful mint, so
+   * two concurrent mints would double-rotate and the durable store could end up
+   * holding a superseded secret → a later cold-boot mint 401s → the user is
+   * signed out. Every mint lane (the re-mint handler behind `refreshAccessToken`,
+   * the device-first cold boot, the socket token transport, the tab-focus
+   * reconcile) funnels its `refreshDeviceSecretArm` call through here, so
+   * concurrent callers await the SAME in-flight mint and all receive its result —
+   * exactly one server rotation.
+   *
+   * Distinct from {@link tokenRefreshPromise} (which dedups the FULL re-mint
+   * handler incl. the native shared-key arm + the failure cooldown): this inner
+   * guard serializes the rotation itself across BOTH the handler and the
+   * handler-independent cold boot, which never runs through `refreshAccessToken`.
+   */
+  runSingleFlightDeviceSecretMint(
+    mint: () => Promise<DeviceSecretMintOutcome>,
+  ): Promise<DeviceSecretMintOutcome> {
+    if (!this.deviceSecretMintInFlight) {
+      this.deviceSecretMintInFlight = mint().finally(() => {
+        this.deviceSecretMintInFlight = null;
+      });
+    }
+    return this.deviceSecretMintInFlight;
   }
 
   /**

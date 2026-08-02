@@ -22,6 +22,7 @@ export type SettingsTintKey =
   | 'inbox'
   | 'privacy'
   | 'labels'
+  | 'contacts'
   | 'ai'
   | 'storage'
   | 'advanced'
@@ -35,6 +36,7 @@ const TINT_PRESET: Record<Exclude<SettingsTintKey, 'neutral'>, AppColorName> = {
   inbox: 'green',
   privacy: 'red',
   labels: 'orange',
+  contacts: 'pink',
   ai: 'amber',
   storage: 'sky',
   advanced: 'teal',

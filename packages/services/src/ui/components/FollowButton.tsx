@@ -1,15 +1,14 @@
-import React, { useEffect, useCallback, useMemo, useState, memo } from 'react';
-import {
-  TouchableOpacity,
-  Text,
-  type ViewStyle,
-  type TextStyle,
-  type StyleProp,
-  Platform,
-  ActivityIndicator
+import type React from 'react';
+import { useEffect, useCallback, useMemo, useState, memo } from 'react';
+import type {
+  ViewStyle,
+  TextStyle,
+  StyleProp,
 } from 'react-native';
 import { useOxy } from '../context/OxyContext';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
+import { Button } from '@oxyhq/bloom/button';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useFollow, useFollowForButton } from '../hooks/useFollow';
 import { useFollowStore } from '../stores/followStore';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -61,7 +60,7 @@ const isMultiMode = (props: FollowButtonProps): props is MultiFollowButtonProps 
 const FollowButtonInner = memo(function FollowButtonInner({
   userId,
   oxyServices,
-  initiallyFollowing = false,
+  initiallyFollowing,
   size = 'medium',
   onFollowChange,
   style,
@@ -74,18 +73,19 @@ const FollowButtonInner = memo(function FollowButtonInner({
 
   const {
     isFollowing,
+    isKnown,
     isLoading,
     toggleFollow,
-    setFollowStatus,
-    fetchStatus,
-  } = useFollowForButton(userId, oxyServices);
+    resolveStatus,
+  } = useFollowForButton(userId, oxyServices, initiallyFollowing);
 
   const handlePress = useCallback(async (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     if (preventParentActions && event?.preventDefault) {
       event.preventDefault();
       event.stopPropagation?.();
     }
-    if (disabled || isLoading) return;
+    // Ignore presses while a mutation is in flight or the status is still unknown.
+    if (disabled || isLoading || !isKnown) return;
 
     try {
       await toggleFollow();
@@ -94,47 +94,40 @@ const FollowButtonInner = memo(function FollowButtonInner({
       const error = err instanceof Error ? err : new Error(String(err));
       toast.error(error.message || 'Failed to update follow status');
     }
-  }, [disabled, isLoading, toggleFollow, onFollowChange, isFollowing, preventParentActions]);
+  }, [disabled, isLoading, isKnown, toggleFollow, onFollowChange, isFollowing, preventParentActions]);
 
+  // Enqueue a batched status fetch ONLY when the status is genuinely unknown
+  // (not seeded from `initiallyFollowing`, not already resolved). All buttons
+  // that enqueue in the same commit coalesce into a single bulk request; known/
+  // seeded ids never fetch. Once resolved, `isKnown` flips true and this no-ops.
   useEffect(() => {
-    if (userId && !isFollowing && initiallyFollowing) {
-      setFollowStatus(initiallyFollowing);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, initiallyFollowing]);
+    if (!isKnown) resolveStatus();
+  }, [isKnown, resolveStatus]);
 
-  useEffect(() => {
-    if (userId) fetchStatus();
-  }, [userId, fetchStatus]);
-
-  const baseButtonStyle = getBaseButtonStyle(size, style);
-  const baseTextStyle = getBaseTextStyle(size, textStyle);
+  // While the status is genuinely unknown (being resolved), present a NEUTRAL,
+  // non-interactive state rather than a definitive "Follow".
+  const isBusy = isLoading || !isKnown;
+  const showFollowing = isKnown && isFollowing;
+  const showSpinner = showLoadingState && isBusy;
 
   return (
-    <TouchableOpacity
-      className={isFollowing
-        ? 'bg-background border-border'
-        : 'bg-primary border-primary'
-      }
-      style={baseButtonStyle}
-      onPress={handlePress}
-      disabled={disabled || isLoading}
-      activeOpacity={0.8}
-    >
-      {showLoadingState && isLoading ? (
-        <ActivityIndicator
+    <Button
+      variant={showFollowing ? 'secondary' : 'primary'}
+      size={size}
+      onPress={() => { void handlePress(); }}
+      disabled={disabled || isBusy}
+      style={style}
+      textStyle={textStyle}
+      icon={showSpinner ? (
+        <Loading
+          variant="inline"
           size="small"
-          color={isFollowing ? colors.text : colors.primaryForeground}
+          color={showFollowing ? colors.text : colors.primaryForeground}
         />
-      ) : (
-        <Text
-          className={isFollowing ? 'text-foreground' : 'text-primary-foreground'}
-          style={baseTextStyle}
-        >
-          {isFollowing ? 'Following' : 'Follow'}
-        </Text>
-      )}
-    </TouchableOpacity>
+      ) : undefined}
+    >
+      {showSpinner ? undefined : (isKnown ? (isFollowing ? 'Following' : 'Follow') : undefined)}
+    </Button>
   );
 });
 
@@ -185,17 +178,14 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
 
   const isLoading = isSubmitting || isAnyLoading;
 
-  // Populate the store with each member's follow status once on mount and again
-  // only when the SET of target users changes. `fetchAllStatuses` is referentially
-  // stable (its useFollow useCallback deps are [canUsePrivateApi, userIds,
-  // oxyServices]; `userIds` inside useFollow is memoized, and the outer wrapper
-  // memoizes `multiUserIds`), so depending on it plus the stable joined-string
-  // key cannot self-retrigger — `allFollowing`/loading are intentionally NOT in
+  // Populate the store with each member's follow status on mount and whenever
+  // the target set changes. `fetchAllStatuses` is recreated when `userIds`
+  // changes inside `useFollow`, so it is the sole effect dependency — no need
+  // for a joined-string key. `allFollowing`/loading are intentionally NOT in
   // the deps.
-  const userIdsKey = useMemo(() => userIds.join(','), [userIds]);
   useEffect(() => {
     fetchAllStatuses?.();
-  }, [userIdsKey, fetchAllStatuses]);
+  }, [fetchAllStatuses]);
 
   const handlePress = useCallback(async (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     if (preventParentActions && event?.preventDefault) {
@@ -246,34 +236,26 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
     }
   }, [disabled, isLoading, allFollowing, followAllUsers, unfollowAllUsers, onFollowChange, onBulkFollow, onBulkUnfollow, preventParentActions]);
 
-  const baseButtonStyle = getBaseButtonStyle(size, style);
-  const baseTextStyle = getBaseTextStyle(size, textStyle);
+  const showSpinner = showLoadingState && isLoading;
 
   return (
-    <TouchableOpacity
-      className={allFollowing
-        ? 'bg-background border-border'
-        : 'bg-primary border-primary'
-      }
-      style={baseButtonStyle}
-      onPress={handlePress}
+    <Button
+      variant={allFollowing ? 'secondary' : 'primary'}
+      size={size}
+      onPress={() => { void handlePress(); }}
       disabled={disabled || isLoading}
-      activeOpacity={0.8}
-    >
-      {showLoadingState && isLoading ? (
-        <ActivityIndicator
+      style={style}
+      textStyle={textStyle}
+      icon={showSpinner ? (
+        <Loading
+          variant="inline"
           size="small"
           color={allFollowing ? colors.text : colors.primaryForeground}
         />
-      ) : (
-        <Text
-          className={allFollowing ? 'text-foreground' : 'text-primary-foreground'}
-          style={baseTextStyle}
-        >
-          {allFollowing ? followedAllLabel : followAllLabel}
-        </Text>
-      )}
-    </TouchableOpacity>
+      ) : undefined}
+    >
+      {showSpinner ? undefined : (allFollowing ? followedAllLabel : followAllLabel)}
+    </Button>
   );
 });
 
@@ -327,53 +309,6 @@ const FollowButton: React.FC<FollowButtonProps> = (props) => {
     />
   );
 };
-
-function getBaseButtonStyle(size: string, style?: StyleProp<ViewStyle>): StyleProp<ViewStyle> {
-  const baseStyle: ViewStyle = {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    ...Platform.select({
-      web: {},
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
-      }
-    }),
-  };
-
-  let sizeStyle: ViewStyle;
-  if (size === 'small') {
-    sizeStyle = { paddingVertical: 6, paddingHorizontal: 12, minWidth: 70, borderRadius: 35 };
-  } else if (size === 'large') {
-    sizeStyle = { paddingVertical: 12, paddingHorizontal: 24, minWidth: 120, borderRadius: 35 };
-  } else {
-    sizeStyle = { paddingVertical: 8, paddingHorizontal: 16, minWidth: 90, borderRadius: 35 };
-  }
-
-  return [baseStyle, sizeStyle, style];
-}
-
-function getBaseTextStyle(size: string, textStyle?: StyleProp<TextStyle>): StyleProp<TextStyle> {
-  const baseTextStyle: TextStyle = {
-    fontWeight: '600',
-  };
-
-  let sizeTextStyle: TextStyle;
-  if (size === 'small') {
-    sizeTextStyle = { fontSize: 13 };
-  } else if (size === 'large') {
-    sizeTextStyle = { fontSize: 16 };
-  } else {
-    sizeTextStyle = { fontSize: 15 };
-  }
-
-  return [baseTextStyle, sizeTextStyle, textStyle];
-}
 
 export { FollowButton };
 export default FollowButton;

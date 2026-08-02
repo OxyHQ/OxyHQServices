@@ -12,14 +12,14 @@ import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H6, Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
-import Header from '../components/Header';
-import Avatar from '../components/Avatar';
+import { Avatar } from '@oxyhq/bloom/avatar';
 import FollowButton from '../components/FollowButton';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 import { useOxy } from '../context/OxyContext';
-import { logger, getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
-import type { User } from '@oxyhq/core';
+import { logger, getNormalizedUserHandle, getAccountFallbackHandle } from '@oxyhq/core';
+import type { User, FollowGraphSort } from '@oxyhq/core';
 
 type ListMode = 'followers' | 'following';
 
@@ -27,6 +27,12 @@ interface UserListScreenProps extends BaseScreenProps {
   userId: string;
   mode: ListMode;
   initialCount?: number;
+  /**
+   * Ordering of the list — `recent` (newest follow first) or `oldest`.
+   * Omitted ⇒ the server default (`recent`). Changing it re-fetches from
+   * offset 0, since a page boundary is meaningless across two orderings.
+   */
+  sort?: FollowGraphSort;
 }
 
 const PAGE_SIZE = 20;
@@ -46,7 +52,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   userId,
   mode,
   initialCount,
-  goBack,
+  sort,
   navigate,
 }) => {
   const { oxyServices, user: currentUser } = useOxy();
@@ -59,7 +65,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   const [hasMore, setHasMore] = useState(true);
 
   const bloomTheme = useTheme();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
 
   const currentUserId = currentUser ? resolveUserId(currentUser) : '';
 
@@ -86,12 +92,12 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         let hasMore: boolean;
 
         if (mode === 'followers') {
-          const result = await oxyServices.getUserFollowers(userId, { limit: PAGE_SIZE, offset });
+          const result = await oxyServices.getUserFollowers(userId, { limit: PAGE_SIZE, offset, sort });
           newUsers = result.followers;
           total = result.total;
           hasMore = result.hasMore;
         } else {
-          const result = await oxyServices.getUserFollowing(userId, { limit: PAGE_SIZE, offset });
+          const result = await oxyServices.getUserFollowing(userId, { limit: PAGE_SIZE, offset, sort });
           newUsers = result.following;
           total = result.total;
           hasMore = result.hasMore;
@@ -116,7 +122,10 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         setIsRefreshing(false);
       }
     },
-    [userId, mode, oxyServices]
+    // `sort` belongs here: without it the callback would close over the first
+    // ordering forever, and the mount effect below (keyed on `fetchUsers`)
+    // would never re-run — flipping the control would change nothing.
+    [userId, mode, sort, oxyServices]
   );
 
   useEffect(() => {
@@ -148,7 +157,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
       const itemUserId = resolveUserId(item);
       const isCurrentUser = itemUserId === currentUserId;
       const description = typeof item.description === 'string' ? item.description : '';
-      const displayName = getAccountDisplayName(item, locale);
+      const displayName = item.name?.displayName ?? getNormalizedUserHandle(item) ?? '';
       const handle = getAccountFallbackHandle(item);
 
       return (
@@ -161,7 +170,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
           accessibilityLabel={displayName}
         >
           <Avatar
-            uri={
+            source={
               item.avatar
                 ? oxyServices.getFileDownloadUrl(item.avatar, 'thumb')
                 : undefined
@@ -190,7 +199,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         </TouchableOpacity>
       );
     },
-    [handleUserPress, currentUserId, oxyServices, locale]
+    [handleUserPress, currentUserId, oxyServices]
   );
 
   const renderEmpty = useCallback(() => {
@@ -230,11 +239,11 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
     : (t('userList.following') || 'Following');
 
   const headerSubtitle = total > 0 ? String(total) : undefined;
+  useSurfaceHeader({ title, subtitle: headerSubtitle });
 
   if (isLoading && users.length === 0) {
     return (
       <View className="flex-1 bg-bg">
-        <Header title={title} onBack={goBack} elevation="subtle" />
         <View style={styles.center}>
           <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
         </View>
@@ -245,7 +254,6 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   if (error) {
     return (
       <View className="flex-1 bg-bg">
-        <Header title={title} onBack={goBack} elevation="subtle" />
         <View style={styles.center} className="px-space-32 gap-space-16">
           <Ionicons name="alert-circle" size={ERROR_ICON_SIZE} color={bloomTheme.colors.error} />
           <Text className="text-text-secondary text-base text-center">{error}</Text>
@@ -259,7 +267,6 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   return (
     <View className="flex-1 bg-bg">
-      <Header title={title} subtitle={headerSubtitle} onBack={goBack} elevation="subtle" />
       <FlatList
         data={users}
         renderItem={renderUser}

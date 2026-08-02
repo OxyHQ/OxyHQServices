@@ -11,8 +11,9 @@ import { useConnectedApps } from '@/hooks/useConnectedApps';
 
 /**
  * "Connected apps" entry on the security screen: a count-aware subtitle plus a
- * single navigation row into the full {@link ConnectedAppsScreen} where the user
- * reviews and revokes the third-party apps they've authorized.
+ * single navigation row into the third-party connections screen (`family`
+ * route) where the user reviews and revokes the third-party apps they've
+ * authorized.
  *
  * The count is read from the shared {@link useConnectedApps} query (cached and
  * reused by the destination screen), so this adds no extra steady-state fetch.
@@ -41,7 +42,7 @@ export function ConnectedAppsSection() {
               iconColor: colors.sidebarIconFamily,
               title: t('connectedApps.manageRow'),
               subtitle: t('connectedApps.manageRowSubtitle'),
-              onPress: () => router.push('/(tabs)/connected-apps'),
+              onPress: () => router.push('/(tabs)/family'),
               showChevron: true,
             },
           ]}

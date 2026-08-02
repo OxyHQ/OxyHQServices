@@ -1,13 +1,13 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView } from 'react-native';
+import { View, Text } from 'react-native';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Chip } from '@oxyhq/bloom/chip';
 import { useTheme } from '@oxyhq/bloom/theme';
-import type { ReputationRule, ReputationCategory } from '@oxyhq/core';
+import type { ReputationRule, ReputationCategory } from '@oxyhq/contracts';
 import type { BaseScreenProps } from '../../types/navigation';
-import Header from '../../components/Header';
-import LoadingState from '../../components/LoadingState';
+import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useI18n } from '../../hooks/useI18n';
 import { useOxy } from '../../context/OxyContext';
 
@@ -22,9 +22,14 @@ const CATEGORY_ORDER: ReputationCategory[] = [
     'other',
 ];
 
-const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
+const TrustRulesScreen: React.FC<BaseScreenProps> = () => {
     const { oxyServices } = useOxy();
     const { t } = useI18n();
+
+    useSurfaceHeader({
+        title: t('trust.rules.title') || 'Trust Rules',
+        subtitle: t('trust.rules.subtitle') || 'How to earn reputation',
+    });
     const bloomTheme = useTheme();
 
     const [rules, setRules] = useState<ReputationRule[]>([]);
@@ -61,15 +66,9 @@ const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     }, [rules]);
 
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('trust.rules.title') || 'Trust Rules'}
-                subtitle={t('trust.rules.subtitle') || 'How to earn reputation'}
-                onBack={goBack}
-                elevation="subtle"
-            />
+        <>
             {isLoading ? (
-                <LoadingState color={bloomTheme.colors.primary} />
+                <Loading size="large" color={bloomTheme.colors.primary} />
             ) : error ? (
                 <Text className="text-text-secondary text-base text-center px-screen-margin pt-space-40">
                     {error}
@@ -79,7 +78,6 @@ const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                     {t('trust.rules.empty') || 'No rules found.'}
                 </Text>
             ) : (
-                <ScrollView className="flex-1">
                     <View className="px-screen-margin pb-space-24 pt-space-12">
                         {groupedRules.map(({ category, items }) => (
                             <SettingsListGroup
@@ -106,9 +104,8 @@ const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
                             </SettingsListGroup>
                         ))}
                     </View>
-                </ScrollView>
             )}
-        </View>
+        </>
     );
 };
 

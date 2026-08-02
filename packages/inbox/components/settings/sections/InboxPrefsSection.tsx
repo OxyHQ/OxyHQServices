@@ -3,7 +3,10 @@
  *
  * Layout follows the Alia subsection pattern (small eyebrow header + visual
  * content block) rather than the iOS row-spam look. Toggles persist via
- * `useInboxPrefs` (local device); the list view reads them at render time.
+ * `useInboxPrefs` (local device) and are consumed live: `MessageRow` reads
+ * density/avatars/previews through `useInboxDisplayPrefs`, `InboxList` reads
+ * `conversationView` (thread grouping) and `markReadOnOpen`, and `SwipeableRow`
+ * reads the left/right swipe bindings.
  */
 
 import React, { useCallback } from 'react';
@@ -26,13 +29,13 @@ import {
   type SwipeAction,
 } from '@/contexts/inbox-prefs-context';
 
-const DENSITY_OPTIONS: ReadonlyArray<{ value: MessageDensity; label: string }> = [
+const DENSITY_OPTIONS: readonly { value: MessageDensity; label: string }[] = [
   { value: 'compact', label: 'Compact' },
   { value: 'comfortable', label: 'Comfortable' },
   { value: 'cozy', label: 'Cozy' },
 ];
 
-const SWIPE_OPTIONS: ReadonlyArray<{ value: SwipeAction; label: string }> = [
+const SWIPE_OPTIONS: readonly { value: SwipeAction; label: string }[] = [
   { value: 'archive', label: 'Archive' },
   { value: 'delete', label: 'Delete' },
   { value: 'mark-read', label: 'Mark read' },

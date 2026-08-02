@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, Link, useNavigate, Navigate } from "react-router-dom";
-import type { PublicApplication } from "@oxyhq/core";
+import type { PublicApplication, SwitchableAccount } from "@oxyhq/core";
+import { OxyConsentScreen, useOxy, useSwitchableAccounts } from "@oxyhq/services";
 
 import { Button } from "@oxyhq/bloom/button";
 import {
@@ -11,47 +12,53 @@ import {
   tryCloseChildWindow,
 } from "@/components/auth-form-layout";
 import { AccountChooser } from "@/components/account-chooser";
-import { ConsentCard } from "@/components/consent-card";
-import { useDeviceAccounts } from "@/lib/use-device-accounts";
-import { registerFedCMSession } from "@/lib/auth-utils";
+import { CommonsOAuthLane } from "@/components/commons-oauth-request";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import {
   sessionStatusSchema,
   safeParse,
   consentRequiredFromBody,
 } from "@/lib/schemas";
-import type { DeviceAccount } from "@/lib/types";
 import {
   buildRelativeUrl,
   buildAuthUrl,
   buildApiUrl,
+  getAvatarUrl,
 } from "@/lib/oxy-api-client";
+import { safeRedirectUrl } from "@/lib/oauth-redirect";
+import { deliverOAuthResult, type OAuthResult } from "@/lib/oauth-web-message";
+import {
+  buildCommonsOAuthBinding,
+  type CommonsOAuthOutcome,
+} from "@/lib/commons-oauth-request";
 
-type UserInfo = {
-  id: string;
-  username?: string;
-  email?: string;
-  avatar?: string;
-  displayName?: string;
-  name?: {
-    first?: string;
-    last?: string;
-  };
-};
-
+/**
+ * The requesting-application + auth-request resolution state. The signed-in
+ * USER, the access token, and the device session id come from the device-first
+ * SDK (`useOxy().user` / `oxyServices.getAccessToken()` / `useSwitchableAccounts`)
+ * — the IdP no longer resolves per-account bearers itself.
+ */
 type AuthorizeData = {
-  user: UserInfo | null;
-  sessionId: string | null;
-  accessToken: string | null;
   sessionStatus: string | null;
   application: PublicApplication | null;
   expiresAt: string | null;
   error: string | null;
-  redirected: boolean;
 };
+
+/**
+ * Terminal state of a popup ("web message") delivery: the result has already
+ * been posted to the opener and this window asked to close.
+ */
+type RelayOutcome = "approved" | "denied" | "failed";
 
 /** Error shown when the requesting application cannot be resolved. */
 const UNRESOLVED_APP_ERROR = "Unable to identify the requesting application.";
+
+/** Which terminal message a delivered popup result should leave on screen. */
+function relayOutcomeFor(result: OAuthResult): RelayOutcome {
+  if (result.kind === "code") return "approved";
+  return result.error === "access_denied" ? "denied" : "failed";
+}
 
 /**
  * Resolve a `client_id` to its public application identity via the unauthenticated
@@ -79,37 +86,6 @@ async function resolvePublicApplication(
   }
 }
 
-// Native app schemes that are allowed as redirect targets.
-// These correspond to registered Oxy client applications (e.g. Astro browser).
-const ALLOWED_NATIVE_SCHEMES = ["astro:"];
-
-function safeRedirectUrl(value?: string | null): string | null {
-  if (!value) return null;
-  try {
-    const parsed = new URL(value);
-    // Allow standard web protocols
-    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
-      // Block raw IP addresses for web redirects
-      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname))
-        return null;
-      return parsed.toString();
-    }
-    // Allow registered native app schemes (no IP check needed)
-    if (ALLOWED_NATIVE_SCHEMES.includes(parsed.protocol)) {
-      return parsed.toString();
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function parseAuthuser(value: string | null): number | null {
-  if (!value || !/^\d+$/.test(value)) return null;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
-}
-
 function parseRequestedScopes(
   scopeValue: string | null,
   fallbackScopes: string[] = []
@@ -120,7 +96,61 @@ function parseRequestedScopes(
   return Array.from(new Set(rawScopes));
 }
 
+/**
+ * Terminal surface for a refused `prompt=none` request. It is a plain statement
+ * to whoever is looking at the window: nothing was authorized, and nothing is
+ * pending. See {@link AuthorizePage} for why the request is refused at all.
+ */
+function SilentPromptRefused() {
+  const { t } = useTranslation();
+  return (
+    <AuthFormLayout>
+      <AuthFormHeader
+        title={t("authorize.silentUnsupportedTitle")}
+        description={t("authorize.silentUnsupportedDesc")}
+      />
+    </AuthFormLayout>
+  );
+}
+
+/**
+ * OIDC `prompt=none` (silent authentication) is NOT supported by this IdP, and a
+ * request that asks for it is refused before any of the authorization machinery
+ * runs.
+ *
+ * WHY IT IS ANSWERED AT ALL: every gesture-less lane was deleted, and
+ * `@oxyhq/core`'s `buildOAuthAuthorizeUrl` narrowed its `prompt` union to
+ * `'login' | 'consent'` so no first-party caller can construct such a request
+ * any more. But `prompt` is read off the query string, so an arbitrary caller
+ * can still send it. Ignoring it would be the accidental answer: a caller asking
+ * for silence is waiting in a surface it never intends to show, so it would get
+ * the visible consent screen rendered somewhere the user can neither see nor act
+ * on — a request that hangs until the caller times out.
+ *
+ * WHY THE REFUSAL IS LOCAL, and nothing is reported back to the relying party:
+ * bouncing the spec's `interaction_required` to `redirect_uri` would be the
+ * OAuth-shaped answer, but on this path the target has only passed
+ * `safeRedirectUrl`'s shape check — the exact match against the application's
+ * registered `redirectUris` is enforced server-side by `POST /auth/oauth/authorize`,
+ * which a refused request never reaches. Delivering there would make the page a
+ * zero-interaction redirector from auth.oxy.so to any https target the URL's
+ * author picks, i.e. exactly the gesture-less bounce this phase removed. So the
+ * request stops here: no code minted, nothing posted to an opener, no navigation.
+ *
+ * WHY IT IS DECIDED HERE, above every other hook: the refused request performs no
+ * work at all — no client lookup, no session read, no consent probe — so the
+ * answer is the same constant regardless of what is signed in on this origin. A
+ * third party learns nothing about this device from asking.
+ */
 export function AuthorizePage() {
+  const [searchParams] = useSearchParams();
+  if (searchParams.get("prompt") === "none") {
+    return <SilentPromptRefused />;
+  }
+  return <AuthorizeRequest />;
+}
+
+function AuthorizeRequest() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -137,53 +167,151 @@ export function AuthorizePage() {
   const codeChallenge = searchParams.get("code_challenge");
   const codeChallengeMethod = searchParams.get("code_challenge_method");
   const scope = searchParams.get("scope");
-  const requestedAuthuser = parseAuthuser(searchParams.get("authuser"));
   const statusParam = searchParams.get("status");
   const urlError = searchParams.get("error");
+  // Popup sign-in: `response_mode=web_message` asks us to post the result to
+  // `window.opener` instead of navigating this window to `redirect_uri`. It is a
+  // request, not a guarantee — with no opener we still redirect (see
+  // `lib/oauth-web-message.ts`).
+  const responseMode = searchParams.get("response_mode");
+
+  // Device-first SDK: the signed-in user + active bearer + device account set.
+  // The bearer for the OAuth authorize call is ALWAYS the SDK's active-account
+  // token; switching accounts (`switchToAccount`) re-plants it — there is no
+  // per-row bearer anymore.
+  const {
+    user,
+    oxyServices,
+    switchToAccount,
+    isAuthResolved,
+    isAuthenticated,
+  } = useOxy();
+  const {
+    accounts: deviceAccounts,
+    currentSessionId,
+    isLoading: deviceAccountsLoading,
+  } = useSwitchableAccounts();
 
   const [data, setData] = useState<AuthorizeData>({
-    user: null,
-    sessionId: null,
-    accessToken: null,
     sessionStatus: statusParam,
     application: null,
     expiresAt: null,
     error: urlError,
-    redirected: false,
   });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   // OAuth code path only: when the server says consent isn't required (trusted
   // app, or a stored grant already covers the requested scopes) we authorize
-  // and redirect WITHOUT rendering the ConsentCard. While that POST + redirect
+  // and redirect WITHOUT rendering the consent screen. While that POST + redirect
   // is in flight we show a neutral "Signing you in…" backdrop.
   const [autoApproving, setAutoApproving] = useState(false);
 
   // Google-style account chooser shown as an additive front screen before the
-  // consent UI. Detect accounts signed in on this device; selecting the active
-  // account mints+plants its token and reveals consent, while any other account
-  // re-routes to /login (the current cookie cannot mint another account's
-  // token). Dismissed once a choice is made.
-  const {
-    accounts: deviceAccounts,
-    currentSessionId: chooserSessionId,
-    isLoading: deviceAccountsLoading,
-  } = useDeviceAccounts();
+  // consent UI when MORE THAN ONE account is signed in on this device. Selecting
+  // a row switches into it (the uniform device-first switch), re-planting the
+  // active bearer, then reveals consent (or auto-approves). A single-account
+  // device skips the chooser and goes straight to consent for the active account.
   const [chooserDismissed, setChooserDismissed] = useState(false);
-  // The sessionId currently being switched-to via the cookie-mint path. Shown
-  // as a per-row busy state in `<AccountChooser>` and disables sibling rows so
-  // the user can't fire a second mint while one is in flight. Cleared on
-  // success (consent reveal) or on failure (re-auth fallback).
-  const [chooserPendingSessionId, setChooserPendingSessionId] = useState<
+  // The accountId currently being switched-to. Shown as a per-row busy state in
+  // `<AccountChooser>` and disables sibling rows so the user can't fire a second
+  // switch while one is in flight. Cleared on success (consent reveal) or on
+  // failure (re-auth fallback).
+  const [chooserPendingAccountId, setChooserPendingAccountId] = useState<
     string | null
   >(null);
+  // The auto-approve probe runs at most once per mount for the active account.
+  const autoApproveAttemptedRef = useRef(false);
+  // Set once a result has been posted to the opener in popup mode. The window is
+  // asked to close immediately after the post, so this only ever becomes visible
+  // when the browser refuses that close — it keeps the user from staring at a
+  // dead consent screen.
+  const [relayOutcome, setRelayOutcome] = useState<RelayOutcome | null>(null);
+
+  // A usable session for OAuth consent requires an active bearer — switchable
+  // device rows alone are not enough (stale accounts after a failed mint).
+  const hasUsableBearer =
+    isAuthenticated ||
+    !!currentSessionId ||
+    !!oxyServices.getAccessToken();
+
+  // The additional no-session lane (issue #691). A request that carries a full
+  // PKCE binding can be created with its OAuth context already attached, be
+  // approved directly in Commons, and be finalized into an authorization code
+  // HERE — so a visitor with no session on this origin never has to sign in on
+  // it first. `null` means the lane does not apply to this request at all and
+  // the session-bearing path below stays exactly as it was.
+  const commonsBinding = useMemo(
+    () =>
+      buildCommonsOAuthBinding({
+        clientId,
+        safeRedirectUri: safeRedirectUrl(redirectUri),
+        codeChallenge,
+        codeChallengeMethod,
+        scope,
+      }),
+    [clientId, redirectUri, codeChallenge, codeChallengeMethod, scope]
+  );
+
+  /**
+   * Hand an authorization result (code or OAuth error) to the relying party.
+   * Popup mode (`response_mode=web_message` + a real opener) posts it to the
+   * opener at the redirect URI's exact origin and closes this window; every
+   * other request redirects to `redirect_uri` as before. The caller must not
+   * navigate afterwards — delivery is complete either way.
+   */
+  function deliverToRelyingParty(
+    result: OAuthResult,
+    safeRedirect: string
+  ): void {
+    const delivery = deliverOAuthResult({
+      result,
+      safeRedirectUri: safeRedirect,
+      responseMode,
+      window,
+    });
+    if (delivery.mode === "web_message") {
+      setRelayOutcome(relayOutcomeFor(result));
+    }
+  }
+
+  /**
+   * The Commons lane settled. Both outcomes go through the SAME delivery funnel
+   * the session-bearing path uses, so the popup relay and the redirect fallback
+   * stay ONE decision (`lib/oauth-web-message.ts`) — the code is never handed
+   * to the relying party by a second, parallel mechanism.
+   *
+   * A finalization FAILURE is deliberately not an outcome: the lane keeps it on
+   * its own surface so the user can start a fresh request, rather than ending
+   * the relying party's whole flow (and it is never retried against the spent
+   * request).
+   */
+  function handleCommonsOutcome(outcome: CommonsOAuthOutcome): void {
+    const safeRedirect = safeRedirectUrl(redirectUri);
+    if (!safeRedirect) {
+      // Unreachable in practice — the lane only exists once the binding built,
+      // which already required a usable redirect target — but a result is never
+      // delivered without one. Recording the error also retires the lane (its
+      // branch below requires `!data.error`), so the visitor falls back to
+      // signing in here rather than sitting on a surface that can never settle.
+      setData((prev) => ({ ...prev, error: "Authorization failed" }));
+      return;
+    }
+    if (outcome.kind === "code") {
+      deliverToRelyingParty(
+        { kind: "code", code: outcome.code, state },
+        safeRedirect
+      );
+      return;
+    }
+    deliverToRelyingParty(
+      { kind: "error", error: "access_denied", state },
+      safeRedirect
+    );
+  }
 
   useEffect(() => {
     async function loadData() {
       try {
-        let sessionId: string | null = null;
-        let user: UserInfo | null = null;
-
         // OAuth code flow: resolve the requesting application from its
         // `client_id`. This runs whenever a client_id is present (with or
         // without a device-flow token) and is the authoritative identity source
@@ -202,9 +330,6 @@ export function AuthorizePage() {
             if (!statusResponse.ok) {
               setData((prev) => ({
                 ...prev,
-                sessionId,
-                accessToken: null,
-                user,
                 error: "Unable to load authorization request.",
               }));
               return;
@@ -233,14 +358,10 @@ export function AuthorizePage() {
             // one, otherwise the explicit unresolved-application error.
             if (!sessionInfo) {
               setData({
-                sessionId,
-                accessToken: null,
-                user,
                 sessionStatus: null,
                 application,
                 expiresAt: null,
                 error: application ? null : UNRESOLVED_APP_ERROR,
-                redirected: false,
               });
               return;
             }
@@ -253,34 +374,23 @@ export function AuthorizePage() {
                     ? "Authorization was cancelled."
                     : "This authorization request is no longer active.";
               setData({
-                sessionId,
-                accessToken: null,
-                user,
                 sessionStatus: sessionInfo.status,
                 application,
                 expiresAt: null,
                 error: err,
-                redirected: false,
               });
               return;
             }
 
             setData({
-              sessionId: sessionId || sessionInfo.sessionId || null,
-              accessToken: null,
-              user,
               sessionStatus: sessionInfo.status,
               application,
               expiresAt: sessionInfo.expiresAt ?? null,
               error: application ? null : UNRESOLVED_APP_ERROR,
-              redirected: false,
             });
             return;
           } catch (err) {
             setData({
-              sessionId,
-              accessToken: null,
-              user,
               sessionStatus: null,
               application: oauthApplication,
               expiresAt: null,
@@ -288,7 +398,6 @@ export function AuthorizePage() {
                 err instanceof Error
                   ? err.message
                   : "Unable to load request.",
-              redirected: false,
             });
             return;
           }
@@ -303,14 +412,10 @@ export function AuthorizePage() {
             : null;
 
         setData({
-          sessionId,
-          accessToken: null,
-          user,
           sessionStatus: statusParam,
           application: oauthApplication,
           expiresAt: null,
           error: resolvedError,
-          redirected: false,
         });
       } catch {
         setData((prev) => ({ ...prev, error: "Unable to load request." }));
@@ -347,69 +452,53 @@ export function AuthorizePage() {
         code_challenge: codeChallenge || undefined,
         code_challenge_method: codeChallengeMethod || undefined,
         scope: scope || undefined,
+        response_mode: responseMode || undefined,
         login_hint: hint || undefined,
       })
     );
   }
 
-  function applyChosenAccount(entry: DeviceAccount): void {
-    setData((prev) => ({
-      ...prev,
-      sessionId: entry.sessionId,
-      accessToken: entry.accessToken,
-      expiresAt: entry.expiresAt ?? prev.expiresAt,
-      user: {
-        id: entry.account.id,
-        username: entry.account.username,
-        email: entry.account.email,
-        avatar: entry.account.avatar,
-        displayName: entry.account.displayName,
-      },
-    }));
-    setChooserDismissed(true);
-  }
-
-  async function handleChooseAccount(entry: DeviceAccount): Promise<void> {
-    setChooserPendingSessionId(entry.sessionId);
+  async function handleChooseAccount(entry: SwitchableAccount): Promise<void> {
+    setChooserPendingAccountId(entry.accountId);
     try {
-      applyChosenAccount(entry);
-      // Selecting an account plants its bearer; with a token in hand the OAuth
-      // path can skip the ConsentCard when consent isn't required.
-      await maybeAutoApprove(entry.accessToken);
+      // Switching into the account re-plants the active bearer; with a token in
+      // hand the OAuth path can skip the consent screen when consent isn't
+      // required. The active account needs no switch.
+      if (!entry.isCurrent) {
+        await switchToAccount(entry.accountId);
+      }
+      setChooserDismissed(true);
+      await maybeAutoApprove(oxyServices.getAccessToken());
     } catch {
-      gotoLoginWithHint(entry.account.username || entry.account.email);
+      gotoLoginWithHint(entry.user.username ?? undefined);
     } finally {
-      setChooserPendingSessionId(null);
+      setChooserPendingAccountId(null);
     }
   }
 
+  // Single-account device (or once the chooser is dismissed): probe consent for
+  // the active account and auto-approve when it isn't required. Runs at most once
+  // per mount. Multi-account devices go through the chooser first.
   useEffect(() => {
     if (
       deviceAccountsLoading ||
-      chooserDismissed ||
-      requestedAuthuser === null ||
+      autoApproveAttemptedRef.current ||
       data.error ||
-      (data.sessionStatus && data.sessionStatus !== "pending")
+      (data.sessionStatus && data.sessionStatus !== "pending") ||
+      !currentSessionId ||
+      deviceAccounts.length > 1
     ) {
       return;
     }
-
-    const target = deviceAccounts.find(
-      (entry) => entry.authuser === requestedAuthuser
-    );
-    if (target) {
-      applyChosenAccount(target);
-      // The `authuser` hint silently selects the account; mirror the chooser
-      // path and auto-approve when the OAuth request needs no consent.
-      void maybeAutoApprove(target.accessToken);
-    }
+    autoApproveAttemptedRef.current = true;
+    void maybeAutoApprove(oxyServices.getAccessToken());
   }, [
-    deviceAccounts,
+    deviceAccounts.length,
     deviceAccountsLoading,
-    chooserDismissed,
-    requestedAuthuser,
+    currentSessionId,
     data.error,
     data.sessionStatus,
+    oxyServices,
   ]);
 
   // Mint a single-use OAuth code and redirect to `redirect_uri` with
@@ -453,6 +542,7 @@ export function AuthorizePage() {
           code_challenge: codeChallenge || undefined,
           code_challenge_method: codeChallengeMethod || undefined,
           scope: scope || undefined,
+          response_mode: responseMode || undefined,
           error: "Session expired. Please sign in again.",
         })
       );
@@ -466,7 +556,7 @@ export function AuthorizePage() {
           ? errPayload.message
           : "Authorization failed";
       // Surface the error and drop both in-flight flags so the page falls back
-      // to the ConsentCard (auto-approve) or re-enables the button (manual).
+      // to the consent screen (auto-approve) or re-enables the button (manual).
       setAutoApproving(false);
       setSubmitting(false);
       setData((prev) => ({ ...prev, error: message }));
@@ -474,27 +564,36 @@ export function AuthorizePage() {
     }
 
     const codeResult = await codeResponse.json();
-    const codeData = codeResult.data || codeResult;
-    const url = new URL(safeRedirect);
-    url.searchParams.set("code", codeData.code);
-    if (state) url.searchParams.set("state", state);
-    window.location.href = url.toString();
+    const codeData = codeResult?.data ?? codeResult;
+    const code: unknown = codeData?.code;
+    if (typeof code !== "string" || code.length === 0) {
+      // A 2xx without a code violates the authorize contract — fail closed
+      // rather than handing the relying party an empty credential.
+      setAutoApproving(false);
+      setSubmitting(false);
+      setData((prev) => ({ ...prev, error: "Authorization failed" }));
+      return;
+    }
+
+    // Popup mode posts `{code, state}` to the opener and closes this window;
+    // every other request redirects to `redirect_uri?code=&state=` as before.
+    deliverToRelyingParty({ kind: "code", code, state }, safeRedirect);
   }
 
   // Ask the server whether the OAuth consent screen must be shown for this
   // (user, application, scope) tuple. A trusted app or a covering stored grant
   // returns `consentRequired: false` → we auto-approve and redirect, no
-  // ConsentCard. SECURITY: any transport/parse failure fails safe to "show the
-  // ConsentCard" (`consentRequiredFromBody`) — we never silently auto-approve
+  // consent screen. SECURITY: any transport/parse failure fails safe to "show the
+  // consent screen" (`consentRequiredFromBody`) — we never silently auto-approve
   // on an error. Only runs on the OAuth code path; the device-flow handoff
-  // (no client_id) always shows the ConsentCard.
+  // (no client_id) always shows the consent screen.
   async function maybeAutoApprove(accessToken: string | null): Promise<void> {
     const safeRedirect = safeRedirectUrl(redirectUri);
     if (!clientId || !safeRedirect || !accessToken) return;
 
-    // Show the neutral backdrop for the whole decision so the ConsentCard never
+    // Show the neutral backdrop for the whole decision so the consent screen never
     // flashes while the check is in flight. If consent turns out to be required
-    // we drop the backdrop below and render the ConsentCard instead.
+    // we drop the backdrop below and render the consent screen instead.
     setAutoApproving(true);
 
     let body: unknown = null;
@@ -510,9 +609,25 @@ export function AuthorizePage() {
           headers: { Authorization: `Bearer ${accessToken}` },
         }
       );
-      // A non-OK response leaves `body` null → `consentRequiredFromBody`
-      // fails safe to true (ConsentCard shown).
-      body = response.ok ? await response.json().catch(() => null) : null;
+      if (!response.ok) {
+        // Misconfigured redirect_uri (common prod drift) returns 403 before the
+        // trusted-app auto-approve branch runs. Fail closed with a visible error
+        // instead of falling through to the consent screen — official apps should
+        // never prompt here.
+        if (response.status === 403 || response.status === 400) {
+          const errPayload = await response.json().catch(() => ({}));
+          const message =
+            typeof errPayload?.message === "string"
+              ? errPayload.message
+              : "Authorization failed. Return to the app and try again.";
+          setAutoApproving(false);
+          setData((prev) => ({ ...prev, error: message }));
+          return;
+        }
+        body = null;
+      } else {
+        body = await response.json().catch(() => null);
+      }
     } catch {
       body = null;
     }
@@ -546,10 +661,13 @@ export function AuthorizePage() {
         }
       }
       if (safeRedirect) {
-        const url = new URL(safeRedirect);
-        url.searchParams.set("error", "access_denied");
-        if (state) url.searchParams.set("state", state);
-        window.location.href = url.toString();
+        // Same delivery contract as the approve path: popup mode posts
+        // `access_denied` to the opener and closes; otherwise we redirect to
+        // `redirect_uri?error=access_denied`.
+        deliverToRelyingParty(
+          { kind: "error", error: "access_denied", state },
+          safeRedirect
+        );
       } else {
         navigate(
           buildRelativeUrl("/authorize", {
@@ -569,8 +687,9 @@ export function AuthorizePage() {
     //     pending AuthSession via the Bearer-auth endpoint and notify the
     //     polling client via socket.io. No tokens ever appear in the URL.
     try {
-      const sessionId = data.sessionId;
-      const accessToken = data.accessToken;
+      // The bearer is ALWAYS the SDK's active-account token (planted at sign-in /
+      // account switch) — never a per-row bearer.
+      const accessToken = oxyServices.getAccessToken();
 
       if (!accessToken) {
         setData((prev) => ({
@@ -592,15 +711,6 @@ export function AuthorizePage() {
         setData((prev) => ({
           ...prev,
           error: "Missing authorization request token.",
-        }));
-        setSubmitting(false);
-        return;
-      }
-
-      if (!sessionId) {
-        setData((prev) => ({
-          ...prev,
-          error: "No session found. Please sign in again.",
         }));
         setSubmitting(false);
         return;
@@ -629,6 +739,7 @@ export function AuthorizePage() {
             code_challenge: codeChallenge || undefined,
             code_challenge_method: codeChallengeMethod || undefined,
             scope: scope || undefined,
+            response_mode: responseMode || undefined,
             error: "Session expired. Please sign in again.",
           })
         );
@@ -645,21 +756,6 @@ export function AuthorizePage() {
         setSubmitting(false);
         return;
       }
-
-      // Durability: the device-flow handoff mints the RP's bearer via the
-      // `claim` exchange, which establishes NO IdP browser session. On a
-      // cross-apex RP that bearer cannot survive a reload (its refresh cookie is
-      // host-scoped to the API and unreachable cross-site), so the RP's cold-boot
-      // restore depends on the central `fedcm_session` cookie. A returning user
-      // who reached consent via the account chooser never passed through
-      // `/login`, so that cookie was never planted. Plant it now using the
-      // approving user's OWN validated session id — same-origin to this IdP host
-      // (the existing `/fedcm/set-session` same-origin guard + server-side
-      // session validation still apply), so the RP's next reload restores via the
-      // standard `/sso` establish bounce. Best-effort: the handoff already
-      // succeeded server-side; `registerFedCMSession` never throws, and a failed
-      // cookie plant must not fail the approval.
-      await registerFedCMSession(sessionId);
 
       // The cross-app handoff completes server-side via socket emission to
       // the polling client; no tokens are returned to the auth UI and none
@@ -678,12 +774,33 @@ export function AuthorizePage() {
     }
   }
 
+  // Popup delivery is terminal: the result is already posted to the opener and
+  // this window asked to close. Rendering this state at all means the browser
+  // refused the close, so tell the user they can close it themselves rather than
+  // leaving a dead consent screen (or a spinner) on screen.
+  if (relayOutcome) {
+    return (
+      <AuthFormLayout>
+        <AuthFormHeader
+          title={
+            relayOutcome === "approved"
+              ? t("authorize.completeTitle")
+              : relayOutcome === "denied"
+                ? t("authorize.deniedTitle")
+                : t("authorize.relayFailedTitle")
+          }
+          description={t("authorize.completeDesc")}
+        />
+      </AuthFormLayout>
+    );
+  }
+
   if (loading || deviceAccountsLoading) {
     return <LoadingSpinner />;
   }
 
   // Trusted / already-granted OAuth request: authorizing + redirecting without
-  // ever showing the ConsentCard. Neutral backdrop while that completes.
+  // ever showing the consent screen. Neutral backdrop while that completes.
   if (autoApproving) {
     return (
       <AuthFormLayout>
@@ -707,8 +824,35 @@ export function AuthorizePage() {
     );
   }
 
-  if (!data.sessionId && !data.user && deviceAccounts.length === 0) {
-    // No session - redirect to login
+  // No session on this device (cold boot has resolved and found none).
+  if (isAuthResolved && !hasUsableBearer) {
+    // FIRST the additional lane (issue #691): when the request carries a full
+    // PKCE binding, its application resolved cleanly, and the request is still
+    // actionable, the authorization can be approved directly in Commons and
+    // finalized into a code right here — one continuous action, with no sign-in
+    // step on this origin. A request that fails ANY of those (no PKCE, an
+    // unknown or suspended application, an expired/cancelled request) falls
+    // through to the unchanged redirect below rather than creating a request
+    // the server would refuse.
+    if (
+      commonsBinding &&
+      !data.error &&
+      data.application &&
+      (!data.sessionStatus || data.sessionStatus === "pending")
+    ) {
+      return (
+        <CommonsOAuthLane
+          binding={commonsBinding}
+          client={oxyServices}
+          appName={data.application.name}
+          onOutcome={handleCommonsOutcome}
+          onSignInHere={() => gotoLoginWithHint()}
+        />
+      );
+    }
+
+    // Everything else redirects to /login carrying the full request context, so
+    // the user lands back on this consent screen after authenticating here.
     return (
       <Navigate
         to={buildRelativeUrl("/login", {
@@ -719,6 +863,7 @@ export function AuthorizePage() {
           code_challenge: codeChallenge || undefined,
           code_challenge_method: codeChallengeMethod || undefined,
           scope: scope || undefined,
+          response_mode: responseMode || undefined,
         })}
         replace
       />
@@ -728,35 +873,32 @@ export function AuthorizePage() {
   const effectiveStatus = data.sessionStatus;
   const pageError = data.error;
   const application = data.application;
-  const expiresAt = data.expiresAt;
-  const currentUser = data.user;
-  const showActions =
-    !pageError && (!effectiveStatus || effectiveStatus === "pending");
+  // Actionable = the request itself is still live (pending). A transient
+  // submit error (e.g. a 403/500 from the authorize POST) keeps the consent
+  // surface — with the application identity — visible, shown inline via the
+  // consent screen's `error` prop so the user can retry. Terminal states
+  // (expired/cancelled) fall through to the page status view instead.
+  const showActions = !effectiveStatus || effectiveStatus === "pending";
 
-  const loginUrl = buildRelativeUrl("/login", {
-    token: token || undefined,
-    redirect_uri: redirectUri || undefined,
-    state: state || undefined,
-    client_id: clientId || undefined,
-    code_challenge: codeChallenge || undefined,
-    code_challenge_method: codeChallengeMethod || undefined,
-    scope: scope || undefined,
-  });
-
-  // Additive front screen: when the consent request is still actionable and at
-  // least one account is signed in on this device, show the Google-style
-  // chooser first. Selecting an account keeps its bearer in memory and reveals
-  // the consent UI below. The chooser never intercepts a completed
-  // (approved/denied) state.
-  if (showActions && !chooserDismissed && chooserSessionId && deviceAccounts.length > 0) {
+  // Additive front screen: when the consent request is still actionable and MORE
+  // THAN ONE account is signed in on this device, show the Google-style chooser
+  // first. Selecting an account switches into it and reveals the consent UI. A
+  // single-account device skips straight to consent for the active account. The
+  // chooser never intercepts a completed (approved/denied) state.
+  if (
+    showActions &&
+    !chooserDismissed &&
+    currentSessionId &&
+    deviceAccounts.length > 1
+  ) {
     return (
       <AccountChooser
         accounts={deviceAccounts}
         appName={application?.name}
         onSelectAccount={handleChooseAccount}
         onUseAnother={() => gotoLoginWithHint()}
-        pendingSessionId={chooserPendingSessionId}
-        isLoading={submitting || chooserPendingSessionId !== null}
+        pendingAccountId={chooserPendingAccountId}
+        isLoading={submitting || chooserPendingAccountId !== null}
       />
     );
   }
@@ -782,24 +924,53 @@ export function AuthorizePage() {
             }
           />
         </>
-      ) : application ? (
-        /* Resolved requesting-application identity → redesigned consent card.
-           Rendered only when the application resolved — there is no generic
-           "This app" fallback. An unresolved request surfaces as the error
-           view below instead. The card delegates every decision back to the
-           unchanged IdP `handleDecision` flow. */
-        <ConsentCard
-          application={application}
-          requestedScopes={parseRequestedScopes(scope, application.scopes)}
-          user={currentUser}
-          showActions={showActions}
-          error={pageError}
-          expiresAt={expiresAt}
-          submitting={submitting}
-          onDecision={handleDecision}
-          loginUrl={loginUrl}
-        />
+      ) : application && showActions ? (
+        /* Resolved requesting-application identity AND an actionable request →
+           the shared services `OxyConsentScreen` (the RN/Bloom consent surface,
+           bundled for web via react-native-web). It is purely presentational;
+           every decision is delegated back to the unchanged IdP `handleDecision`
+           flow. The block wrapper keeps the RN `ScrollView` (flex:1) at content
+           height inside the centered auth card instead of collapsing to zero.
+
+           Gated on `showActions` so a non-actionable request (expired /
+           cancelled, or a transient decision error) never renders a consent
+           surface with dead Allow/Deny buttons — those fall through to the
+           page's status view below. `showActions` already implies `!pageError`,
+           so the consent surface is only ever shown error-free (no `error` prop
+           needed). */
+        <div className="w-full">
+          <OxyConsentScreen
+            application={{
+              name: application.name,
+              iconUrl: application.icon ? getAvatarUrl(application.icon) : undefined,
+              websiteUrl: application.websiteUrl,
+              privacyPolicyUrl: application.privacyPolicyUrl,
+              termsUrl: application.termsUrl,
+              developerName: application.developerName,
+              isOfficial: application.isOfficial,
+            }}
+            scopes={parseRequestedScopes(scope, application.scopes)}
+            user={
+              user
+                ? {
+                    displayName: user.name?.displayName,
+                    handle: user.username,
+                    avatarUri: user.avatar
+                      ? getAvatarUrl(user.avatar)
+                      : undefined,
+                  }
+                : undefined
+            }
+            onAllow={() => handleDecision("approve")}
+            onDeny={() => handleDecision("deny")}
+            busy={submitting}
+            error={pageError}
+          />
+        </div>
       ) : (
+        /* Either no resolved application, or a resolved application whose request
+           is no longer actionable (expired / cancelled / errored). Render the
+           page's status view — message + error — never a consent surface. */
         <>
           <AuthFormHeader
             title={t("authorize.requestTitle")}

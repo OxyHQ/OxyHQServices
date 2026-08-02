@@ -44,16 +44,12 @@ const es: LocaleDict = {
   },
 
   tabs: {
-    home: 'Inicio',
     inbox: 'Bandeja',
     search: 'Buscar',
     settings: 'Ajustes',
-    forYou: 'Para ti',
   },
 
   drawer: {
-    home: 'Inicio',
-    forYou: 'Para ti',
     starred: 'Destacados',
     snoozed: 'Pospuestos',
     subscriptions: 'Suscripciones',
@@ -124,6 +120,11 @@ const es: LocaleDict = {
       analyzing: 'Alia está analizando tu bandeja…',
       unavailable: 'No se pudo generar el resumen ahora.',
       empty: 'Aún no hay correos para resumir.',
+      writing: 'Escribiendo tu resumen…',
+      preparing: 'Preparando tu resumen…',
+      failed: 'No se pudo escribir el resumen de hoy.',
+      nothingNew: 'Nada nuevo hoy.',
+      tapRetry: 'Toca para reintentar.',
     },
     feedEmpty: {
       title: 'Todo al día',
@@ -135,25 +136,6 @@ const es: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'Para ti',
-    starred: 'Destacados',
-    unread: 'Sin leer',
-    attachments: 'Adjuntos',
-    empty: {
-      title: 'Todo al día',
-      subtitle: 'No hay nada destacado para ti ahora mismo.',
-    },
-    summary: {
-      fromOne: 'De {{a}}',
-      fromTwo: 'De {{a}} y {{b}}',
-      fromManyOne: 'De {{a}}, {{b}} y {{count}} más',
-      fromManyOther: 'De {{a}}, {{b}} y {{count}} más',
-      aboutOne: ' — sobre {{topic}}',
-      aboutTwo: ' — sobre {{a}}, {{b}}',
-      aboutMore: ' y más',
-    },
-  },
 
   inbox: {
     title: 'Bandeja',
@@ -389,6 +371,7 @@ const es: LocaleDict = {
     keyPoints: 'Puntos clave',
     actionItems: 'Acciones pendientes',
     due: 'Para: {{date}}',
+    unavailable: 'No se pudo resumir esta conversación ahora.',
   },
 
   staleThread: {
@@ -599,6 +582,15 @@ const es: LocaleDict = {
       title: 'Inicia sesión para acceder a tu inbox',
       subtitle: 'Conecta tu identidad Oxy para sincronizar mensajes, etiquetas y preferencias en todos tus dispositivos.',
       footer: 'Al iniciar sesión aceptas nuestros Términos y reconoces nuestra Política de Privacidad.',
+    },
+  },
+
+  notifications: {
+    push: {
+      channel: {
+        name: 'Correo',
+        description: 'Notificaciones de correo nuevo',
+      },
     },
   },
 };

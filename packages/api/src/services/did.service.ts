@@ -22,10 +22,21 @@ import { getNormalizedUserHandle } from '@oxyhq/core';
 import {
   didDocumentSchema,
   type DidDocument,
+  type SignedRecordEnvelope,
   type VerificationMethod,
   type DidService,
 } from '@oxyhq/contracts';
 import { OXY_NODE_SERVICE_TYPE, OXY_NODE_SERVICE_FRAGMENT } from '../utils/nodes.constants';
+import {
+  ATPROTO_BRIDGE_ENABLED,
+  ATPROTO_PDS_ENDPOINT_ENV,
+  ATPROTO_PDS_SERVICE_FRAGMENT,
+  ATPROTO_PDS_SERVICE_TYPE,
+  ATPROTO_VERIFICATION_METHOD_FRAGMENT,
+  ATPROTO_MULTIKEY_VM_TYPE,
+} from '../utils/atproto.constants';
+import { secp256k1PublicKeyToMultikey } from '../utils/multikey';
+import { logger } from '../utils/logger';
 
 /**
  * The federation/identity domain — drives webfinger handles, profile URLs, and
@@ -58,6 +69,24 @@ const DID_CONTEXT = [
 const SECP256K1_VM_TYPE = 'EcdsaSecp256k1VerificationKey2019' as const;
 
 /**
+ * The HTTPS base URL of the atproto bridge PDS, or `null` when the seam is not
+ * fully configured. The seam is live ONLY when the bridge is enabled
+ * (`ATPROTO_BRIDGE_ENABLED`) AND a real endpoint is set — a PDS service entry
+ * with no endpoint is worse than none, so it FAILS CLOSED. Both inputs are read
+ * at call time (not module load) so a test or a hot-reconfigured task observes
+ * the current env. {@link ATPROTO_BRIDGE_ENABLED} is the canonical exported gate;
+ * it is re-derived here from the same env var so the check stays call-time-exact.
+ */
+function atprotoPdsEndpoint(): string | null {
+  const enabled = ATPROTO_BRIDGE_ENABLED || process.env.ATPROTO_BRIDGE_ENABLED === 'true';
+  if (!enabled) {
+    return null;
+  }
+  const endpoint = process.env[ATPROTO_PDS_ENDPOINT_ENV]?.trim();
+  return endpoint && endpoint.length > 0 ? endpoint : null;
+}
+
+/**
  * The minimal identity-bearing shape of a user the DID builder reads. Accepts a
  * lean Mongoose document or any structurally-compatible object.
  */
@@ -88,22 +117,62 @@ export function buildUserDid(userId: string): string {
 }
 
 /**
- * Parse the stable account id out of a canonical user DID
- * (`did:web:<domain>:u:<userId>`). Returns the `<userId>` segment, or `null`
- * when the input is not a well-formed user DID for THIS issuer's domain. The
- * caller still validates the id (e.g. `isValidObjectId`) before use.
+ * The canonical identity apex — the domain the shipped SDK hardcodes into every
+ * CLIENT-signed user DID (`@oxyhq/core` `OXY_IDENTITY_APEX`, i.e. the federation
+ * apex). When `DID_WEB_DOMAIN` re-anchors the EMITTED `did:web` ids at the API
+ * host for zero-proxy web resolution (prod: `api.oxy.so`), client envelopes keep
+ * arriving spelled at this apex — both spellings name the SAME account namespace
+ * owned by this server, so parsing accepts both.
+ */
+const CANONICAL_IDENTITY_APEX = FEDERATION_DOMAIN.replace(/:/g, '%3A');
+
+/**
+ * Every `did:web:…:u:` prefix this server accepts as one of ITS OWN user DIDs:
+ * the emitted anchor (`DID_DOMAIN`) plus the canonical identity apex the SDK
+ * signs with. Collapses to a single prefix when `DID_WEB_DOMAIN` is unset.
+ */
+const USER_DID_PREFIXES: readonly string[] = [
+  ...new Set([`did:web:${DID_DOMAIN}:u:`, `did:web:${CANONICAL_IDENTITY_APEX}:u:`]),
+];
+
+/**
+ * Parse the stable account id out of a user DID (`did:web:<domain>:u:<userId>`).
+ * Accepts EITHER of this server's own anchors (see {@link USER_DID_PREFIXES}) —
+ * identity comparisons must happen in ACCOUNT-id space, never by DID string
+ * equality, or client-signed envelopes (SDK apex) stop matching server-derived
+ * DIDs whenever `DID_WEB_DOMAIN` re-anchors web resolution. Returns the
+ * `<userId>` segment, or `null` when the input is not a well-formed user DID for
+ * this issuer. The caller still validates the id (e.g. `isValidObjectId`).
  */
 export function parseUserDid(did: string): string | null {
-  const prefix = `did:web:${DID_DOMAIN}:u:`;
-  if (!did.startsWith(prefix)) {
-    return null;
+  for (const prefix of USER_DID_PREFIXES) {
+    if (!did.startsWith(prefix)) {
+      continue;
+    }
+    const userId = did.slice(prefix.length);
+    // A user DID has exactly one id segment after `:u:` (no further `:`).
+    if (userId.length === 0 || userId.includes(':')) {
+      return null;
+    }
+    return userId;
   }
-  const userId = did.slice(prefix.length);
-  // A user DID has exactly one id segment after `:u:` (no further `:`).
-  if (userId.length === 0 || userId.includes(':')) {
-    return null;
-  }
-  return userId;
+  return null;
+}
+
+/**
+ * True when `envelope` is SELF-ISSUED by the given account: its `subject`
+ * resolves to `userId` under one of this server's accepted anchors AND its
+ * `issuer` is exactly its `subject` (the same self-issuance equality the
+ * protocol engine's authorization branch applies). This is the ONE gate every
+ * self-issued civic/identity write goes through — account-based, so the SDK's
+ * `did:web:oxy.so` spelling and the server's `DID_WEB_DOMAIN` spelling both
+ * pass for the caller's OWN account and nobody else's.
+ */
+export function isSelfIssuedByUser(
+  envelope: Pick<SignedRecordEnvelope, 'subject' | 'issuer'>,
+  userId: string,
+): boolean {
+  return parseUserDid(envelope.subject) === userId && envelope.issuer === envelope.subject;
 }
 
 /**
@@ -205,6 +274,41 @@ export function buildDidDocument(user: DidUserInput): DidDocument {
       type: OXY_NODE_SERVICE_TYPE,
       serviceEndpoint: user.node.endpoint,
     });
+  }
+
+  // C4 atproto BE-DISCOVERED seam: when the bridge is enabled and a self-sovereign
+  // account holds an own identity key, additively announce the bridge PDS service
+  // and an atproto `Multikey` verification method (the same secp256k1 key, encoded
+  // the way a Bluesky AppView expects). Custodial accounts have no own key, so
+  // they never gain an atproto VM. Derived on demand; the document stays
+  // byte-identical for everyone when the seam is off.
+  const pdsEndpoint = atprotoPdsEndpoint();
+  if (pdsEndpoint && isSelfSovereign) {
+    const atprotoVmId = `${did}${ATPROTO_VERIFICATION_METHOD_FRAGMENT}`;
+    try {
+      // The primary identity key is the atproto signing key (matches `#key-1`).
+      const publicKeyMultibase = secp256k1PublicKeyToMultikey(identityKeys[0]);
+      verificationMethod.push({
+        id: atprotoVmId,
+        type: ATPROTO_MULTIKEY_VM_TYPE,
+        controller: did,
+        publicKeyMultibase,
+      });
+      activeVerificationMethodIds.push(atprotoVmId);
+      service.push({
+        id: `${did}${ATPROTO_PDS_SERVICE_FRAGMENT}`,
+        type: ATPROTO_PDS_SERVICE_TYPE,
+        serviceEndpoint: pdsEndpoint,
+      });
+    } catch (err) {
+      // A malformed stored key must never break the canonical document: skip the
+      // atproto seam for this user and serve the standard document.
+      logger.warn('Skipping atproto DID seam: identity key is not a valid secp256k1 public key', {
+        component: 'did',
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   const document: DidDocument = {

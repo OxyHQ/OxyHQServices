@@ -44,16 +44,12 @@ const fr: LocaleDict = {
   },
 
   tabs: {
-    home: 'Accueil',
     inbox: 'Boîte',
     search: 'Recherche',
     settings: 'Paramètres',
-    forYou: 'Pour toi',
   },
 
   drawer: {
-    home: 'Accueil',
-    forYou: 'Pour toi',
     starred: 'Favoris',
     snoozed: 'Reportés',
     subscriptions: 'Abonnements',
@@ -123,6 +119,11 @@ const fr: LocaleDict = {
       analyzing: 'Alia analyse ta boîte…',
       unavailable: 'Impossible de générer le résumé pour le moment.',
       empty: 'Aucun courriel à résumer pour le moment.',
+      writing: 'Rédaction de ton résumé…',
+      preparing: 'Préparation de ton résumé…',
+      failed: "Impossible d'écrire le résumé d'aujourd'hui.",
+      nothingNew: "Rien de nouveau aujourd'hui.",
+      tapRetry: 'Appuie pour réessayer.',
     },
     feedEmpty: {
       title: 'Tout est à jour',
@@ -134,25 +135,6 @@ const fr: LocaleDict = {
     },
   },
 
-  forYou: {
-    title: 'Pour toi',
-    starred: 'Favoris',
-    unread: 'Non lus',
-    attachments: 'Pièces jointes',
-    empty: {
-      title: 'Tout est à jour',
-      subtitle: "Rien n'est mis en avant pour toi pour l'instant.",
-    },
-    summary: {
-      fromOne: 'De {{a}}',
-      fromTwo: 'De {{a}} et {{b}}',
-      fromManyOne: 'De {{a}}, {{b}} et {{count}} autre',
-      fromManyOther: 'De {{a}}, {{b}} et {{count}} autres',
-      aboutOne: ' — à propos de {{topic}}',
-      aboutTwo: ' — à propos de {{a}}, {{b}}',
-      aboutMore: ' et plus',
-    },
-  },
 
   inbox: {
     title: 'Boîte',
@@ -385,6 +367,7 @@ const fr: LocaleDict = {
     keyPoints: 'Points clés',
     actionItems: 'Actions à faire',
     due: 'Échéance : {{date}}',
+    unavailable: 'Impossible de résumer cette conversation pour le moment.',
   },
 
   staleThread: {

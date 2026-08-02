@@ -1,12 +1,12 @@
 import React, { useState, useCallback } from 'react';
-import { View, ScrollView, Linking } from 'react-native';
-import { toast } from '@oxyhq/bloom';
+import { View, Linking } from 'react-native';
+import { toast } from '@oxyhq/bloom/toast';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { logger } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
-import LoadingState from '../components/LoadingState';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
+import { Loading } from '@oxyhq/bloom/loading';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 
@@ -104,36 +104,24 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
         return titles[key];
     };
 
+    useSurfaceHeader({
+        title: documentType ? getPolicyTitle(documentType) : (t('legal.title') || 'Legal Documents'),
+    });
+
     // Deep-link entry: show loading state while the document opens.
     if (documentType) {
         return (
-            <View className="flex-1 bg-bg">
-                <Header
-                    title={getPolicyTitle(documentType)}
-                    onBack={goBack || onClose}
-                    variant="minimal"
-                    elevation="subtle"
-                />
-                <LoadingState
-                    message={t('legal.opening') || 'Opening document...'}
+                <Loading
+                    size="large"
                     color={bloomTheme.colors.text}
+                    text={t('legal.opening') || 'Opening document...'}
                 />
-            </View>
         );
     }
 
     // Default: show the full list of policies & guidelines.
     return (
-        <View className="flex-1 bg-bg">
-            <Header
-                title={t('legal.title') || 'Legal Documents'}
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
-
-            <ScrollView className="flex-1">
-                <View className="px-screen-margin py-space-16">
+            <View className="px-screen-margin py-space-16">
                     <SettingsListGroup title={t('legal.policies') || 'Policies & Guidelines'}>
                         <SettingsListItem
                             icon={
@@ -240,8 +228,6 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                         />
                     </SettingsListGroup>
                 </View>
-            </ScrollView>
-        </View>
     );
 };
 

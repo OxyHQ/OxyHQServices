@@ -2,26 +2,24 @@ import type React from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import {
   View,
-  ScrollView,
   ActivityIndicator,
-  Platform,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast, Dialog, useDialogControl } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
+import { surfaces } from '@oxyhq/bloom/surfaces';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { H1, Text } from '@oxyhq/bloom/typography';
+import { Text } from '@oxyhq/bloom/typography';
 import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
-import type { UpdateAccountInput } from '@oxyhq/core';
+import { DISPLAY_NAME_INVALID_MESSAGE, getNormalizedUserHandle, isValidDisplayName, MAX_DISPLAY_NAME_LENGTH, type UpdateAccountInput } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
-import Header from '../components/Header';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
+import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
 
-const DISPLAY_NAME_MAX = 50;
+const DISPLAY_NAME_MAX = MAX_DISPLAY_NAME_LENGTH;
 const BIO_MAX = 160;
 
 const errorMessage = (error: unknown, fallback: string): string =>
@@ -38,6 +36,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
   const bloomTheme = useTheme();
   const colors = bloomTheme.colors;
   const { t } = useI18n();
+
   const { oxyServices, canUsePrivateApi, user, accounts, switchToAccount } = useOxy();
   const queryClient = useQueryClient();
 
@@ -63,14 +62,15 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
   // Editable fields, seeded lazily from the loaded account once.
   const [seeded, setSeeded] = useState(false);
   const [displayName, setDisplayName] = useState('');
+  const [displayNameError, setDisplayNameError] = useState('');
   const [bio, setBio] = useState('');
 
   // Seed the form from the account during render (no useEffect): the first time
   // the query resolves we capture its values into local edit state.
   if (node && !seeded) {
-    const first = node.account?.name?.first ?? '';
-    const last = node.account?.name?.last ?? '';
-    setDisplayName([first, last].filter(Boolean).join(' '));
+    setDisplayName(
+      node.account?.name?.displayName ?? getNormalizedUserHandle(node.account) ?? '',
+    );
     setBio(node.account?.bio ?? '');
     setSeeded(true);
   }
@@ -109,10 +109,40 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
     },
   });
 
-  const archiveDialog = useDialogControl();
+  const handleArchive = useCallback(async () => {
+    const confirmed = await surfaces.confirm({
+      title: t('accounts.settings.archive.confirmTitle') || 'Archive account',
+      message:
+        t('accounts.settings.archive.confirmDescription')
+        || 'Archive this account? It will be deactivated and its members will lose access.',
+      confirmLabel: t('accounts.settings.archive.title') || 'Archive account',
+      cancelLabel: t('common.cancel') || 'Cancel',
+      destructive: true,
+    });
+    if (confirmed) archiveMutation.mutate();
+  }, [archiveMutation, t]);
+
+  const handleDisplayNameChange = useCallback((value: string) => {
+    setDisplayName(value);
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setDisplayNameError('');
+      return;
+    }
+    const nameParts = trimmed.split(/\s+/).filter(Boolean);
+    const first = nameParts[0] || '';
+    const last = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+    const invalidPart = [first, last].find((part) => part && !isValidDisplayName(part));
+    setDisplayNameError(
+      invalidPart
+        ? (t('accounts.settings.displayName.invalidChars') || DISPLAY_NAME_INVALID_MESSAGE)
+        : '',
+    );
+  }, [t]);
 
   const handleSave = useCallback(() => {
     const trimmed = displayName.trim();
+    if (!trimmed || displayNameError) return;
     const nameParts = trimmed.split(/\s+/).filter(Boolean);
     const first = nameParts[0] || '';
     const last = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
@@ -120,7 +150,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
       name: { first, last },
       bio: bio.trim() ? bio.trim() : null,
     });
-  }, [displayName, bio, updateMutation]);
+  }, [displayName, displayNameError, bio, updateMutation]);
 
   const title = t('accounts.settings.title') || 'Account settings';
 
@@ -129,61 +159,55 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
     return username ? `@${username}` : '';
   }, [node?.account?.username]);
 
+  // The nav large title is the account's handle once loaded (falls back to the
+  // generic screen title before the account resolves).
+  useSurfaceHeader({
+    title: accountHandle || title,
+    subtitle: t('accounts.settings.subtitle') || 'Manage this account’s profile, members, and access.',
+  });
+
   if (!id) {
     return (
-      <View className="flex-1 bg-bg">
-        <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
-        <View className="flex-1 items-center justify-center px-screen-margin">
+      <>
+        <View className="items-center justify-center px-screen-margin py-space-40">
           <Text className="text-body font-body text-text-secondary text-center">
             {t('accounts.settings.errors.missingAccount') || 'No account selected.'}
           </Text>
         </View>
-      </View>
+      </>
     );
   }
 
   return (
-    <View className="flex-1 bg-bg">
-      <Header title={title} onBack={goBack} onClose={onClose} showBackButton showCloseButton elevation="subtle" />
+    <>
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
-      >
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="px-screen-margin pt-space-24 pb-space-32 gap-space-24"
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+      <View className="px-screen-margin pt-space-24 pb-space-32 gap-space-24">
           {accountQuery.isLoading ? (
             <View className="items-center py-space-32">
               <ActivityIndicator color={colors.primary} />
             </View>
           ) : (
             <>
-              <View className="gap-space-8">
-                <H1 className="text-headerBold font-headerBold text-text" numberOfLines={1}>
-                  {accountHandle || title}
-                </H1>
-                <Text className="text-body font-body text-text-secondary">
-                  {t('accounts.settings.subtitle') || 'Manage this account’s profile, members, and access.'}
-                </Text>
-              </View>
-
               {/* Profile edit */}
               {canUpdate ? (
                 <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
-                  <TextField>
-                    <TextFieldInput
-                      floatingLabel
-                      label={t('accounts.settings.displayName.label') || 'Display name'}
-                      value={displayName}
-                      onChangeText={setDisplayName}
-                      maxLength={DISPLAY_NAME_MAX}
-                    />
-                  </TextField>
+                  <View className="gap-space-4">
+                    <TextField isInvalid={Boolean(displayNameError)}>
+                      <TextFieldInput
+                        floatingLabel
+                        label={t('accounts.settings.displayName.label') || 'Display name'}
+                        value={displayName}
+                        onChangeText={handleDisplayNameChange}
+                        isInvalid={Boolean(displayNameError)}
+                        maxLength={DISPLAY_NAME_MAX}
+                      />
+                    </TextField>
+                    {displayNameError ? (
+                      <Text className="text-caption font-caption text-negative px-space-4">
+                        {displayNameError}
+                      </Text>
+                    ) : null}
+                  </View>
                   <View className="gap-space-4">
                     <TextField>
                       <TextFieldInput
@@ -204,7 +228,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
                   <Button
                     variant="primary"
                     onPress={handleSave}
-                    disabled={updateMutation.isPending || !displayName.trim()}
+                    disabled={updateMutation.isPending || !displayName.trim() || Boolean(displayNameError)}
                     loading={updateMutation.isPending}
                     accessibilityLabel={t('accounts.settings.save') || 'Save changes'}
                     className="w-full"
@@ -233,32 +257,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
                     icon={<SettingsIcon name="archive-arrow-down" color={colors.error} />}
                     title={t('accounts.settings.archive.title') || 'Archive account'}
                     description={t('accounts.settings.archive.subtitle') || 'Deactivate this account'}
-                    onPress={() => archiveDialog.open()}
+                    onPress={handleArchive}
                   />
                 </SettingsListGroup>
               ) : null}
             </>
           )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-
-      <Dialog
-        control={archiveDialog}
-        title={t('accounts.settings.archive.confirmTitle') || 'Archive account'}
-        description={
-          t('accounts.settings.archive.confirmDescription')
-          || 'Archive this account? It will be deactivated and its members will lose access.'
-        }
-        actions={[
-          {
-            label: t('accounts.settings.archive.title') || 'Archive account',
-            color: 'destructive',
-            onPress: () => archiveMutation.mutate(),
-          },
-          { label: t('common.cancel') || 'Cancel', color: 'cancel' },
-        ]}
-      />
-    </View>
+      </View>
+    </>
   );
 };
 
