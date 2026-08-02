@@ -7,6 +7,21 @@ on:
     branches: [main, develop]
 
 jobs:
+  # Gates the rollout logic that deploy-aws.yml runs against production. Mirrors
+  # Mention's "Verify deployment transaction safeguards" step -- the two repos
+  # share this script, so they share its test.
+  deploy-script-test:
+    name: Deploy Script Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Verify deployment transaction safeguards
+        run: |
+          bash -n .github/scripts/*.sh
+          bash .github/scripts/test-deploy-ecs-image.sh
+
   # API Package Tests
   api-test:
     name: API Tests
