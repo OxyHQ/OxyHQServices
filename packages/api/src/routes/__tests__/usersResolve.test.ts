@@ -390,6 +390,36 @@ describe('PUT /users/resolve (C4)', () => {
     );
   });
 
+  it('allows bare actor host when domain is registered with www. prefix', async () => {
+    const leanResult = jest.fn().mockResolvedValue(null);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const newUserDoc = { _id: 'threads-user', username: 'mosseri@www.threads.net', type: 'federated' };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'mosseri@www.threads.net',
+      actorUri: 'https://threads.net/ap/users/mosseri/',
+      domain: 'www.threads.net',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': 'https://threads.net/ap/users/mosseri/' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          username: 'mosseri@threads.net',
+          'federation.domain': 'threads.net',
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
   it('allows non-www actor hosts only when WebFinger loops back to the actor URI', async () => {
     const actorUri = 'https://ap.example.com/users/alice';
     mockSafeFetch.mockResolvedValue(

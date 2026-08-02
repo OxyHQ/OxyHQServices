@@ -13,6 +13,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import { isSameFederationHost } from '../apUri';
 import type { UrlBuilders } from '../urls';
 import { normalizeActorUsername } from '../urls';
 
@@ -90,9 +91,9 @@ export function createWebfingerRouter(config: WebfingerRouterConfig): Router {
     }
 
     const username = normalizeActorUsername(acct.substring(0, atIndex));
-    const acctDomain = acct.substring(atIndex + 1);
+    const acctDomain = acct.substring(atIndex + 1).trim();
 
-    if (acctDomain.toLowerCase() !== domain.toLowerCase()) {
+    if (!isSameFederationHost(acctDomain, domain)) {
       return res.status(404).json({ error: 'Unknown domain' });
     }
 

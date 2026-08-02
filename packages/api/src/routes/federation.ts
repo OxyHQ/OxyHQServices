@@ -1,4 +1,5 @@
 import { Router, type Response } from 'express';
+import { canonicalFederationHost } from '@oxyhq/federation';
 import { serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { validate } from '../middleware/validate';
@@ -56,7 +57,7 @@ async function loadAllowedDomains(appId: string): Promise<string[]> {
   for (const uri of app.redirectUris ?? []) {
     if (typeof uri !== 'string' || uri.length === 0) continue;
     try {
-      hosts.add(new URL(uri).hostname.toLowerCase());
+      hosts.add(canonicalFederationHost(new URL(uri).hostname));
     } catch {
       // Skip malformed redirectUris — they contribute no authorisation.
     }
@@ -107,7 +108,7 @@ router.get(
     const { domain } = req.query as unknown as PublicKeyQuery;
 
     const allowed = await getAllowedDomainsForRequest(req);
-    if (!allowed.has(domain)) {
+    if (!allowed.has(canonicalFederationHost(domain))) {
       logger.warn('federation/public-key: domain not authorised for credential', {
         appId: req.serviceApp?.appId,
         credentialId: req.serviceApp?.credentialId,
@@ -152,7 +153,7 @@ router.post(
     // is unambiguous.
     let keyIdHost: string;
     try {
-      keyIdHost = new URL(keyId).hostname.toLowerCase();
+      keyIdHost = canonicalFederationHost(new URL(keyId).hostname);
     } catch {
       throw new ForbiddenError('keyId host is not authorised for this application');
     }

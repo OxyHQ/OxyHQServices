@@ -1,3 +1,4 @@
+import { createDomainPolicy } from '../apUri';
 import { createActorResolver, type ActorResolverConfig, type FederatedActorRecordBase } from '../node/actorResolver';
 
 /**
@@ -24,7 +25,11 @@ function makeResolver(
     blockedHosts?: string[];
   } = {},
 ) {
-  const blockedHosts = new Set(overrides.blockedHosts ?? ['spam.example']);
+  const blockedHosts = overrides.blockedHosts ?? ['spam.example'];
+  const domainPolicy = createDomainPolicy({
+    domain: 'mention.earth',
+    blockedDomains: blockedHosts,
+  });
   const findActorByUriCalls: string[] = [];
   const signedFetchCalls: string[] = [];
 
@@ -37,7 +42,7 @@ function makeResolver(
       return new Response(null, { status: 404 });
     },
     fetchWebFinger: async () => null,
-    isBlockedDomain: (domain) => blockedHosts.has(domain.toLowerCase()),
+    isBlockedDomain: domainPolicy.isBlockedDomain,
     normalizeFederatedAcct: (acct) => acct,
     domainFromAcct: (acct) => acct.split('@')[1],
     firstStringUrl: () => undefined,

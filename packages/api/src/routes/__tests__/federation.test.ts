@@ -286,6 +286,16 @@ describe('POST /federation/sign', () => {
     expect(res.status).toBe(400);
     expect(mockSignWithKeyId).not.toHaveBeenCalled();
   });
+
+  it('accepts a www. keyId host when the credential is registered for the bare domain', async () => {
+    const res = await requestJson(server, 'POST', '/federation/sign', {
+      keyId: `https://www.${MENTION_DOMAIN}/ap/users/bob#main-key`,
+      signingString,
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockSignWithKeyId).toHaveBeenCalled();
+  });
 });
 
 describe('GET /federation/public-key/:username', () => {
@@ -339,5 +349,16 @@ describe('GET /federation/public-key/:username', () => {
     expect(res.status).toBe(403);
     expect(res.body.message).toMatch(/federation:write/i);
     expect(mockGetUserPublicKey).not.toHaveBeenCalled();
+  });
+
+  it('accepts a www. domain query when the credential is registered for the bare domain', async () => {
+    const res = await requestJson(
+      server,
+      'GET',
+      `/federation/public-key/bob?domain=www.${MENTION_DOMAIN}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockGetUserPublicKey).toHaveBeenCalledWith('bob', `www.${MENTION_DOMAIN}`);
   });
 });

@@ -19,6 +19,7 @@
  * document.
  */
 
+import { canonicalFederationHost, isSameFederationHost } from '../apUri';
 import type { NormalizedExternalActor } from '../index';
 import type { SignedFetch } from './signedFetch';
 import type { ReportActorGoneOutcome } from './identityBridge';
@@ -191,7 +192,11 @@ function asString(value: unknown): string | undefined {
 
 function sameOriginUrl(a: string, b: string): boolean {
   try {
-    return new URL(a).origin.toLowerCase() === new URL(b).origin.toLowerCase();
+    const urlA = new URL(a);
+    const urlB = new URL(b);
+    return urlA.protocol === urlB.protocol
+      && urlA.port === urlB.port
+      && isSameFederationHost(urlA.hostname, urlB.hostname);
   } catch {
     return false;
   }
@@ -239,10 +244,9 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
 
   private acctMatchesActorHost(acct: string | undefined, actorHost: string): acct is string {
     if (!acct) return false;
-    const domain = this.config.domainFromAcct(acct)?.toLowerCase();
+    const domain = this.config.domainFromAcct(acct);
     if (!domain) return false;
-    const normalizedActorHost = actorHost.toLowerCase();
-    return domain === normalizedActorHost || normalizedActorHost === `www.${domain}`;
+    return isSameFederationHost(domain, actorHost);
   }
 
   /**

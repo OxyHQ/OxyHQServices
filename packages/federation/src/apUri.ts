@@ -153,7 +153,7 @@ export function createDomainPolicy(config: DomainPolicyConfig): DomainPolicy {
       } catch {
         return null;
       }
-      if (!localDomains.has(canonicalFederationHost(parsed.host))) return null;
+      if (!localDomains.has(canonicalFederationHost(parsed.hostname))) return null;
       const match = parsed.pathname.match(/^\/ap\/users\/[^/]+\/posts\/([^/]+)\/?$/);
       return match ? match[1] : null;
     },

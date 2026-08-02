@@ -128,6 +128,14 @@ describe('webfinger router', () => {
     expect(res.status).toBe(404);
   });
 
+  it('accepts acct domain with www. prefix when config.domain is bare', async () => {
+    const res = await request(makeWebfingerApp())
+      .get('/.well-known/webfinger')
+      .query({ resource: 'acct:alice@www.mention.earth' });
+    expect(res.status).toBe(200);
+    expect(res.body.links[0].href).toBe(urls.actor('alice'));
+  });
+
   it('404s a sharing-disabled user indistinguishably', async () => {
     const app = makeWebfingerApp({
       consent: { isSharingEnabledFromUser: () => false, getSharingStateByUsername: async () => 'disabled' },
