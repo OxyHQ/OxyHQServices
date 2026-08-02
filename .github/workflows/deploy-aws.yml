@@ -15,6 +15,10 @@ on:
       - 'bun.lock'
       - 'package.json'
       - '.github/workflows/deploy-aws.yml'
+      # The rollout logic now lives in a script. Without this, editing it
+      # would change how every deploy behaves and trigger no deploy to
+      # exercise the change.
+      - '.github/scripts/deploy-ecs-image.sh'
   workflow_dispatch:
 
 permissions:
