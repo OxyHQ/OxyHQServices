@@ -39,7 +39,7 @@ import User from '../src/models/User';
 import { closeRedis } from '../src/config/redis';
 import { sanitizePlainText } from '../src/utils/sanitize';
 import { logger } from '../src/utils/logger';
-import { userCache } from '../src/utils/userCache';
+import userCache from '../src/utils/userCache';
 
 dotenv.config();
 
