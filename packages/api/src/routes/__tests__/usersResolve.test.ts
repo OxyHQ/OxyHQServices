@@ -340,6 +340,29 @@ describe('PUT /users/resolve — actor-URI host binding', () => {
     expect(stored.federationDomain).toBe('mastodon.social');
   });
 
+  it('accepts the SAME pair with www. on the domain side instead of the actor side', async () => {
+    const handle = `alice${token()}`;
+    const actorUri = `https://mastodon.social/users/${handle}`;
+
+    const res = await resolveUser({
+      type: 'federated',
+      username: `${handle}@www.mastodon.social`,
+      actorUri,
+      domain: 'www.mastodon.social',
+    });
+
+    // The binding is a comparison, so it has to answer the same regardless of
+    // which side carries the `www.`. A rule applied to only one side (the shape
+    // this route shipped with) rejects this pair while accepting the mirrored
+    // one above — so the two cases have to be asserted together or the
+    // asymmetry reads as passing.
+    expect(res.status).toBe(200);
+    expect(mockSafeFetch).not.toHaveBeenCalled();
+    const stored = await storedByActorUri(actorUri);
+    expect(stored.username).toBe(`${handle}@mastodon.social`);
+    expect(stored.federationDomain).toBe('mastodon.social');
+  });
+
   it('accepts a foreign actor host when WebFinger loops the handle back to it', async () => {
     const handle = `alice${token()}`;
     const actorUri = `https://ap.mastodon.example/users/${handle}`;

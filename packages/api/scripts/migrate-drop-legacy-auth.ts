@@ -43,11 +43,30 @@ const REMOVED_AUTH_TYPES = ['password', 'google', 'apple', 'github'] as const;
  */
 const LOCKOUT_HALT_THRESHOLD = 20;
 
+/**
+ * The subset of a raw `users` document this migration reads or writes.
+ *
+ * Typing the collection instead of leaving it `Collection<Document>` is what
+ * lets the driver resolve `$pull` against a known array field: against the
+ * catch-all `Document`, `authMethods` falls into `PullOperator`'s
+ * `NotAcceptedFields` branch and is required to be `undefined`.
+ *
+ * A `type` alias rather than an `interface` — only aliases get the implicit
+ * index signature the driver's `Document` constraint requires.
+ */
+type LegacyAuthUserDoc = {
+  password?: string;
+  twoFactorAuth?: unknown;
+  backupCodes?: unknown;
+  publicKey?: string | null;
+  authMethods?: Array<{ type: string }>;
+};
+
 async function migrate(): Promise<void> {
   const dryRun = isDryRun();
   if (dryRun) logger.info('DRY RUN — no writes will be performed');
 
-  const users = rawDb().collection('users');
+  const users = rawDb().collection<LegacyAuthUserDoc>('users');
 
   // 1. Safety count — POST-MIGRATION USABILITY, not just the shape of the
   //    `authMethods[]` array. An account is locked out by this migration iff,
@@ -121,7 +140,10 @@ async function migrate(): Promise<void> {
   // 4. Apply — drop the removed auth-method entries, keeping identity/webauthn.
   const pullResult = await users.updateMany(
     { 'authMethods.type': { $in: REMOVED_AUTH_TYPES } },
-    { $pull: { authMethods: { type: { $in: REMOVED_AUTH_TYPES } } } },
+    // Spread to a mutable array: the driver's `PullOperator` rejects the
+    // readonly tuple that `as const` gives REMOVED_AUTH_TYPES (the plain
+    // filter positions above accept it fine).
+    { $pull: { authMethods: { type: { $in: [...REMOVED_AUTH_TYPES] } } } },
   );
 
   logger.info('Fase C apply summary', {

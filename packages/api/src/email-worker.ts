@@ -34,6 +34,7 @@ import { logger } from './utils/logger';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { closePostgres } from './config/postgres';
+import { closeRedis } from './config/redis';
 import { waitForDatabaseConnection } from './utils/dbConnection';
 
 dotenv.config();
@@ -83,6 +84,7 @@ async function shutdown(): Promise<void> {
   await stopSmtpInbound();
   smtpOutbound.shutdown();
   await closePostgres();
+  await closeRedis();
   logger.info('Email Worker stopped');
   process.exit(0);
 }

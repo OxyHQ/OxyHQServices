@@ -373,10 +373,9 @@ export class HttpService {
    *
    * Why we explicitly reject `URLSearchParams`:
    *  - `URLSearchParams` ALSO exposes `append` / `get` / `has`, so the
-   *    duck-type fallback below would have misidentified it as FormData.
-   *  - We want urlencoded payloads to take the JSON-stringify path so the
-   *    server receives them as `application/x-www-form-urlencoded` instead
-   *    of an empty multipart body.
+   *    duck-type fallback below would have misidentified it as FormData and
+   *    sent an empty multipart body.
+   *  - It has its own encoding path instead — see {@link isUrlSearchParams}.
    */
   private isFormData(data: unknown): data is FormDataLike {
     if (!data || typeof data !== 'object') {
@@ -415,6 +414,19 @@ export class HttpService {
       typeof candidate.getAll === 'function' &&
       typeof candidate.delete === 'function'
     );
+  }
+
+  /**
+   * True for an `application/x-www-form-urlencoded` payload.
+   *
+   * Needed because a handful of endpoints are defined by a standard that fixes
+   * their request encoding rather than by our own JSON conventions — today
+   * `POST /auth/oauth/token`, whose encoding RFC 6749 §4.1.3 mandates. Passing
+   * a `URLSearchParams` as `data` selects that encoding; everything else is
+   * still JSON.
+   */
+  private isUrlSearchParams(data: unknown): data is URLSearchParams {
+    return typeof URLSearchParams !== 'undefined' && data instanceof URLSearchParams;
   }
 
   /**
@@ -482,6 +494,7 @@ export class HttpService {
 
         // Determine if data is FormData using robust detection
         const isFormData = this.isFormData(data);
+        const isUrlEncoded = this.isUrlSearchParams(data);
 
         // Make fetch request
         const controller = new AbortController();
@@ -497,7 +510,9 @@ export class HttpService {
         };
 
         // Only set Content-Type for non-FormData requests (FormData sets it automatically with boundary)
-        if (!isFormData) {
+        if (isUrlEncoded) {
+          headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
+        } else if (!isFormData) {
           headers['Content-Type'] = 'application/json';
         }
 
@@ -545,8 +560,11 @@ export class HttpService {
           });
         }
 
+        // `URLSearchParams` is serialised explicitly rather than handed to
+        // `fetch` as-is: RN's fetch does not consistently encode it, and doing
+        // it here keeps the body identical across every platform.
         const bodyValue = method !== 'GET' && data
-            ? (isFormData ? data : JSON.stringify(data))
+            ? (isFormData ? data : isUrlEncoded ? data.toString() : JSON.stringify(data))
             : undefined;
 
         // React Native FormData workaround:
@@ -619,10 +637,17 @@ export class HttpService {
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
             try {
-              const errorData = await response.json() as { message?: string; error?: string } | null;
+              const errorData = await response.json() as {
+                message?: string;
+                error?: string;
+                error_description?: string;
+              } | null;
               // Accept either structured error field from API responses.
               if (errorData?.message) {
                 errorMessage = errorData.message;
+              } else if (errorData?.error_description) {
+                // RFC 6749 §5.2 / RFC 6750 §3 — OAuth endpoints surface human text here.
+                errorMessage = errorData.error_description;
               } else if (errorData?.error) {
                 errorMessage = errorData.error;
               }

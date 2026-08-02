@@ -50,6 +50,7 @@ export function startSnoozeCron(): void {
   timer = setInterval(() => {
     void runEmailMaintenance();
   }, EMAIL_MAINTENANCE_INTERVAL_MS);
+  timer.unref?.();
 
   logger.info('Snooze, reminder & scheduled send cron started (in-process fallback, 60s interval)');
 }

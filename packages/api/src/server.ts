@@ -98,6 +98,7 @@ import { refreshOriginRegistry } from './config/dynamicOriginRegistry';
 import { reconcileOfficialRedirectUris } from './config/reconcileOfficialRedirectUris';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedisClient, closeRedis } from './config/redis';
+import { startUserCacheInvalidationSubscriber } from './utils/userCacheInvalidationSubscriber';
 import { initializeIO, socketRoomsFor } from './utils/socket';
 import { resolveSocketIdentity } from './utils/socketAuth';
 import performanceMiddleware, { getMemoryStats, getDatabaseStats } from './middleware/performance';
@@ -234,11 +235,13 @@ initializeIO(io);
 
 // Attach Redis adapter for multi-instance broadcast (if Redis available)
 const redis = getRedisClient();
+let userCacheInvalidationSubscriber: { stop: () => Promise<void> } | null = null;
 if (redis) {
   const pubClient = redis.duplicate();
   const subClient = redis.duplicate();
   io.adapter(createAdapter(pubClient, subClient));
   logger.info('Socket.IO Redis adapter enabled');
+  userCacheInvalidationSubscriber = startUserCacheInvalidationSubscriber(redis);
 }
 
 // Store io instance in app for use in controllers
@@ -438,6 +441,10 @@ async function gracefulShutdown(signal: string) {
   await stopSubscriptionExpiryJobs();
   await stopSmtpInbound();
   smtpOutbound.shutdown();
+  if (userCacheInvalidationSubscriber) {
+    await userCacheInvalidationSubscriber.stop();
+    userCacheInvalidationSubscriber = null;
+  }
   await closeRedis();
   await closePostgres();
 

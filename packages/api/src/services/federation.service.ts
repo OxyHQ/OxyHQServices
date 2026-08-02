@@ -9,7 +9,7 @@
 import crypto from 'crypto';
 import type { IncomingMessage } from 'http';
 import { and, eq, sql } from 'drizzle-orm';
-import { signRequest } from '@oxyhq/federation';
+import { signRequest, canonicalFederationHost } from '@oxyhq/federation';
 import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
 import { getDb } from '../config/postgres';
 import { federationKeyPairs } from '../db/schema/federationKeyPairs';
@@ -51,7 +51,7 @@ const USER_AGENT = 'OxyHQ/1.0 (ActivityPub)';
  */
 export const OWN_FEDERATION_DOMAINS: ReadonlySet<string> = new Set(
   [AP_DOMAIN, ...(process.env.FEDERATION_OWN_DOMAINS ?? '').split(',')]
-    .map((domain) => domain.trim().toLowerCase())
+    .map((domain) => canonicalFederationHost(domain))
     .filter((domain) => domain.length > 0),
 );
 
@@ -62,9 +62,7 @@ export const OWN_FEDERATION_DOMAINS: ReadonlySet<string> = new Set(
  * 400) so they never mint a `type:'federated'` shadow row.
  */
 export function isOwnFederationDomain(domain: string): boolean {
-  const normalized = domain.trim().toLowerCase();
-  const canonical = normalized.startsWith('www.') ? normalized.slice(4) : normalized;
-  return OWN_FEDERATION_DOMAINS.has(canonical);
+  return OWN_FEDERATION_DOMAINS.has(canonicalFederationHost(domain));
 }
 
 /**

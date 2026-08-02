@@ -43,6 +43,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import User from '../models/User.js';
+import { closeRedis } from '../config/redis.js';
 import userCache from '../utils/userCache.js';
 import { OWN_FEDERATION_DOMAINS } from '../services/federation.service.js';
 import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier.js';
@@ -171,12 +172,14 @@ async function main(): Promise<void> {
   } finally {
     await mongoose.connection.close();
     logger.info('MongoDB connection closed', { component: COMPONENT });
+    // `userCache.invalidate()` lazily opens the shared Redis client; close it so
+    // this one-shot task can exit. No-op when REDIS_URL is unset.
+    await closeRedis();
+    logger.info('Redis client closed', { component: COMPONENT });
   }
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
+main().catch((error) => {
     logger.error(
       'dedupe-own-domain-federated-users failed',
       error instanceof Error ? error : new Error(String(error)),

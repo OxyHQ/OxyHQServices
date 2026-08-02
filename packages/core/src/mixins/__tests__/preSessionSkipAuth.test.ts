@@ -124,12 +124,14 @@ describe('pre-session public endpoints use skipAuth', () => {
     );
   });
 
-  it('exchangeOAuthCode skips auth preflight', async () => {
+  it('exchangeOAuthCode skips auth preflight and sends an RFC 6749 form request', async () => {
     makeRequest.mockResolvedValueOnce({
-      sessionId: 's1',
+      access_token: 'tok',
+      token_type: 'Bearer',
+      expires_in: 900,
+      session_id: 's1',
       deviceId: 'd1',
       deviceSecret: 'ds_secret',
-      accessToken: 'tok',
       user: { id: 'u1' },
     });
     await oxy.exchangeOAuthCode({
@@ -141,21 +143,28 @@ describe('pre-session public endpoints use skipAuth', () => {
     expect(makeRequest).toHaveBeenCalledWith(
       'POST',
       '/auth/oauth/token',
-      {
-        code: 'code-1',
-        clientId: 'oxy_dk_test',
-        redirectUri: 'https://app.example/callback',
-        codeVerifier: 'verifier',
-      },
+      expect.any(URLSearchParams),
       expect.objectContaining({ skipAuth: true }),
     );
+    // The body is the standard §4.1.3 request: snake_case names, an explicit
+    // grant type, and nothing camelCase that only Oxy's old endpoint understood.
+    const body = makeRequest.mock.calls[0][2] as URLSearchParams;
+    expect(Object.fromEntries(body.entries())).toEqual({
+      grant_type: 'authorization_code',
+      code: 'code-1',
+      redirect_uri: 'https://app.example/callback',
+      client_id: 'oxy_dk_test',
+      code_verifier: 'verifier',
+    });
   });
 
   it('exchangeOAuthCode rejects a response without deviceSecret', async () => {
     makeRequest.mockResolvedValueOnce({
-      sessionId: 's1',
+      access_token: 'tok',
+      token_type: 'Bearer',
+      expires_in: 900,
+      session_id: 's1',
       deviceId: 'd1',
-      accessToken: 'tok',
       user: { id: 'u1' },
     });
     await expect(
@@ -166,5 +175,57 @@ describe('pre-session public endpoints use skipAuth', () => {
         codeVerifier: 'verifier',
       }),
     ).rejects.toThrow(/incomplete session payload/i);
+  });
+
+  it('exchangeOAuthCode reads the FLAT RFC 6749 §5.1 response', async () => {
+    makeRequest.mockResolvedValueOnce({
+      access_token: 'tok',
+      token_type: 'Bearer',
+      expires_in: 900,
+      scope: 'profile:read',
+      session_id: 's1',
+      deviceId: 'd1',
+      deviceSecret: 'ds_secret',
+      user: { id: 'u1', username: 'alice', avatar: 'file-1' },
+    });
+
+    const result = await oxy.exchangeOAuthCode({
+      code: 'code-1',
+      clientId: 'oxy_dk_test',
+      redirectUri: 'https://app.example/callback',
+      codeVerifier: 'verifier',
+    });
+
+    expect(result).toMatchObject({
+      sessionId: 's1',
+      deviceId: 'd1',
+      deviceSecret: 'ds_secret',
+      accessToken: 'tok',
+      user: { id: 'u1', username: 'alice', avatar: 'file-1' },
+    });
+  });
+
+  it('getOAuthUserInfo reads the flat OIDC userinfo response', async () => {
+    makeRequest.mockResolvedValueOnce({
+      sub: '507f1f77bcf86cd799439011',
+      preferred_username: 'alice',
+      name: 'Alice Example',
+      picture: 'https://api.oxy.so/assets/file-1/stream',
+    });
+
+    const result = await oxy.getOAuthUserInfo();
+
+    expect(makeRequest).toHaveBeenCalledWith(
+      'GET',
+      '/auth/oauth/userinfo',
+      undefined,
+      expect.objectContaining({ cache: false }),
+    );
+    expect(result).toEqual({
+      sub: '507f1f77bcf86cd799439011',
+      preferred_username: 'alice',
+      name: 'Alice Example',
+      picture: 'https://api.oxy.so/assets/file-1/stream',
+    });
   });
 });

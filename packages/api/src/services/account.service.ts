@@ -55,6 +55,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../utils/error';
+import { DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName } from '@oxyhq/core';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
 import type { ApplicationScope } from '../utils/applicationScopes';
@@ -68,6 +69,23 @@ const SECRET_RANDOM_BYTES = 32;
  * matching the Application credential rotation semantics.
  */
 const CREDENTIAL_ROTATION_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Reject a name half that the display-name policy would not allow.
+ *
+ * Account create/update is a second write path onto the same `users` columns
+ * `updateUserProfile` guards, so it has to run the same policy — otherwise the
+ * policy is only enforced on whichever path the caller happens to pick.
+ */
+function assertValidAccountName(name: { first?: string; last?: string } | undefined): void {
+  if (!name || typeof name !== 'object') return;
+  for (const part of ['first', 'last'] as const) {
+    const value = name[part];
+    if (typeof value === 'string' && !isValidDisplayName(value)) {
+      throw new BadRequestError(DISPLAY_NAME_INVALID_MESSAGE);
+    }
+  }
+}
 
 /** Account kinds that may be CREATED as children (personal accounts are roots). */
 const CHILD_ACCOUNT_KINDS: readonly AccountKind[] = ['organization', 'project', 'bot'];
@@ -318,6 +336,9 @@ export class AccountService {
     }
 
     const username = await this.resolveUniqueUsername(input.username);
+
+    assertValidAccountName(input.name);
+
     const ancestors = childAncestorsOf(parent);
     const rootAccountId = childRootOf(parent);
 
@@ -507,6 +528,7 @@ export class AccountService {
       set.username = await this.resolveUniqueUsername(input.username, accountId);
     }
     if (input.name !== undefined) {
+      assertValidAccountName(input.name);
       // Mongo merged the supplied halves over the stored subdocument; the two
       // columns are independent, so only the supplied half is written.
       if (input.name.first !== undefined) set.nameFirst = input.name.first;

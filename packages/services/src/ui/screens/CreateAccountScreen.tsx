@@ -3,7 +3,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { AccountKind, CreateAccountInput, OrganizationCategory } from '@oxyhq/core';
-import { ORGANIZATION_CATEGORIES } from '@oxyhq/core';
+import { DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName, MAX_DISPLAY_NAME_LENGTH, ORGANIZATION_CATEGORIES } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
@@ -23,7 +23,7 @@ type CreatableAccountKind = Exclude<AccountKind, 'personal'>;
 const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,30}$/;
 const DEBOUNCE_MS = 400;
 const USERNAME_MAX = 30;
-const DISPLAY_NAME_MAX = 50;
+const DISPLAY_NAME_MAX = MAX_DISPLAY_NAME_LENGTH;
 const BIO_MAX = 160;
 
 interface KindOption {
@@ -112,6 +112,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
   const [organizationCategory, setOrganizationCategory] = useState<OrganizationCategory>('agency');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [displayNameError, setDisplayNameError] = useState('');
   const [bio, setBio] = useState('');
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>('idle');
   const [usernameMessage, setUsernameMessage] = useState('');
@@ -180,7 +181,28 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
     checkUsername(cleaned);
   }, [checkUsername]);
 
-  const canCreate = usernameStatus === 'available' && displayName.trim().length > 0 && !isCreating;
+  const handleDisplayNameChange = useCallback((value: string) => {
+    setDisplayName(value);
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setDisplayNameError('');
+      return;
+    }
+    const nameParts = trimmed.split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+    const invalidPart = [firstName, lastName].find((part) => part && !isValidDisplayName(part));
+    setDisplayNameError(
+      invalidPart
+        ? (t('accounts.create.displayName.invalidChars') || DISPLAY_NAME_INVALID_MESSAGE)
+        : '',
+    );
+  }, [t]);
+
+  const canCreate = usernameStatus === 'available'
+    && displayName.trim().length > 0
+    && !displayNameError
+    && !isCreating;
 
   const handleCreate = useCallback(async () => {
     if (!canCreate) return;
@@ -320,15 +342,23 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
           </View>
 
           {/* Display Name */}
-          <TextField>
-            <TextFieldInput
-              floatingLabel
-              label={t('accounts.create.displayName.label') || 'Display name'}
-              value={displayName}
-              onChangeText={setDisplayName}
-              maxLength={DISPLAY_NAME_MAX}
-            />
-          </TextField>
+          <View className="gap-space-4">
+            <TextField isInvalid={Boolean(displayNameError)}>
+              <TextFieldInput
+                floatingLabel
+                label={t('accounts.create.displayName.label') || 'Display name'}
+                value={displayName}
+                onChangeText={handleDisplayNameChange}
+                isInvalid={Boolean(displayNameError)}
+                maxLength={DISPLAY_NAME_MAX}
+              />
+            </TextField>
+            {displayNameError ? (
+              <Text className="text-caption font-caption text-negative px-space-4">
+                {displayNameError}
+              </Text>
+            ) : null}
+          </View>
 
           {/* Bio */}
           <View className="gap-space-4">

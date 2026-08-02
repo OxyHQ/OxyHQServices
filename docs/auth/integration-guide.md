@@ -37,7 +37,7 @@ sequenceDiagram
     User->>IdP: Allow
   end
   IdP->>RP: Redirect {redirectUri}?code=…&state=…
-  RP->>API: POST /auth/oauth/token (code + codeVerifier or clientSecret)
+  RP->>API: POST /auth/oauth/token (grant_type=authorization_code, code + code_verifier or client_secret)
   API-->>RP: access_token, deviceId, deviceSecret, user
   RP->>User: Logged in
 ```
@@ -46,7 +46,7 @@ Key properties:
 
 - The diagram is the **redirect** transport — what Steps 2–4 build by hand. `@oxyhq/services`' default popup transport swaps the two `Redirect` arrows for a `window.open` + `postMessage` back to the opener; every other step, including the token exchange, is identical.
 - The flow only ever starts from a user gesture. Nothing in it runs on page load.
-- The authorization code is **single-use** and expires after ~60 seconds. Replay, expiry, or a `redirect_uri` mismatch returns `401` with no detail.
+- The authorization code is **single-use** and expires after ~60 seconds. Replay, expiry, or a `redirect_uri` mismatch all return the same `400 invalid_grant`, with one shared description that never says which check failed.
 - Tokens are **never in a URL** — only the short-lived `code` and your `state` cross the redirect.
 - The user's Oxy session lives on Oxy's own origins. Your app only ever holds the OAuth tokens it was issued.
 - Consent is recorded as an `AppGrant`. The user can revoke it at any time from their Oxy account, after which the next sign-in prompts for consent again.
@@ -106,19 +106,22 @@ async function startSignInWithOxy(): Promise<void> {
 **Handle the callback** at your registered `redirectUri`:
 
 ```typescript
+// The token endpoint is RFC 6749 compliant: the response is FLAT — every member
+// sits at the top level, with no `data` wrapper. `scope`, `session_id`,
+// `deviceId`, `deviceSecret` and `user` are additional parameters, which
+// RFC 6749 §5.1 explicitly permits.
 interface OxyTokenResponse {
-  data: {
-    access_token: string;
-    token_type: 'Bearer';
-    expires_in: number; // seconds (access token; currently 900)
-    session_id: string;
-    deviceId: string;
-    deviceSecret: string;
-    user: { id: string; username?: string; name?: { displayName?: string } };
-  };
+  access_token: string;
+  token_type: 'Bearer';
+  expires_in: number; // seconds (access token; currently 900)
+  scope?: string; // space-delimited granted scopes; omitted when the grant carries none
+  session_id: string;
+  deviceId: string;
+  deviceSecret: string;
+  user: { id: string; username?: string; name?: { displayName?: string } };
 }
 
-async function handleOAuthCallback(): Promise<OxyTokenResponse['data']> {
+async function handleOAuthCallback(): Promise<OxyTokenResponse> {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
   const returnedState = params.get('state');
@@ -132,27 +135,32 @@ async function handleOAuthCallback(): Promise<OxyTokenResponse['data']> {
     throw new Error('Sign in with Oxy: state validation failed');
   }
 
+  // A standard RFC 6749 §4.1.3 token request: form-urlencoded, snake_case
+  // parameter names, explicit `grant_type`. Any OAuth client library speaks it.
   const response = await fetch('https://api.oxy.so/auth/oauth/token', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
       code,
-      clientId: 'oxy_dk_your_client_id',
-      redirectUri: 'https://merchant.example/auth/callback',
-      codeVerifier,
+      redirect_uri: 'https://merchant.example/auth/callback',
+      client_id: 'oxy_dk_your_client_id',
+      code_verifier: codeVerifier,
     }),
   });
   if (!response.ok) {
-    throw new Error(`Sign in with Oxy: token exchange failed (${response.status})`);
+    // Errors are RFC 6749 §5.2: { error, error_description }.
+    const { error, error_description } = await response.json();
+    throw new Error(`Sign in with Oxy: token exchange failed (${error}: ${error_description})`);
   }
 
-  const { data } = (await response.json()) as OxyTokenResponse;
-  // Persist data.access_token plus the device credential pair
-  // (data.deviceId + data.deviceSecret) in your app's own storage
+  const tokens = (await response.json()) as OxyTokenResponse;
+  // Persist tokens.access_token plus the device credential pair
+  // (tokens.deviceId + tokens.deviceSecret) in your app's own storage
   // (localStorage, memory, etc.). Restore later via
   // POST /session/device/token and call your APIs with
   // `Authorization: Bearer <access_token>`.
-  return data;
+  return tokens;
 }
 ```
 
@@ -166,17 +174,18 @@ Same authorize redirect as Step 2 (state is still required; PKCE is optional for
 
 ```http
 POST https://api.oxy.so/auth/oauth/token
-Content-Type: application/json
+Content-Type: application/x-www-form-urlencoded
 
-{
-  "code": "…",
-  "clientId": "oxy_dk_your_client_id",
-  "redirectUri": "https://merchant.example/auth/callback",
-  "clientSecret": "<secret — server-side only>"
-}
+grant_type=authorization_code&code=…&redirect_uri=https%3A%2F%2Fmerchant.example%2Fauth%2Fcallback&client_id=oxy_dk_your_client_id&client_secret=<secret — server-side only>
 ```
 
-The `clientSecret` **never** reaches the browser. What your backend does with the resulting tokens (its own app session, its own JWT, …) is your responsibility, not Oxy's.
+HTTP Basic (`client_secret_basic`) works too, and is what most OAuth libraries
+send by default — put `client_id` and `client_secret` in an
+`Authorization: Basic` header and omit both from the body. Do not combine the
+two methods in one request: RFC 6749 §2.3 forbids it and the endpoint rejects it
+with `invalid_request`.
+
+The `client_secret` **never** reaches the browser. What your backend does with the resulting tokens (its own app session, its own JWT, …) is your responsibility, not Oxy's.
 
 ---
 
@@ -203,16 +212,17 @@ async function completeOAuth({ redirectUrl, state, codeVerifier }: OxyOAuthResul
 
   const response = await fetch('https://api.oxy.so/auth/oauth/token', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
       code,
-      clientId: 'oxy_dk_your_client_id',
-      redirectUri: 'myapp://oauth/callback',
-      codeVerifier,
+      redirect_uri: 'myapp://oauth/callback',
+      client_id: 'oxy_dk_your_client_id',
+      code_verifier: codeVerifier,
     }),
   });
-  const { data } = await response.json();
-  // Persist data.access_token plus data.deviceId / data.deviceSecret in SecureStore.
+  const tokens = await response.json();
+  // Persist tokens.access_token plus tokens.deviceId / tokens.deviceSecret in SecureStore.
 }
 
 export function App() {
@@ -353,7 +363,8 @@ Third-party integration is **standard OAuth only**. Do not expect — or try to 
 |--------|----------|------|---------|
 | GET | `https://auth.oxy.so/authorize` | — (browser) | Authorization + consent UI. Query: `client_id`, `redirect_uri`, `response_type=code`, `state`, `scope`, `code_challenge`, `code_challenge_method=S256`, optional `response_mode=web_message` to request popup delivery (issue #691 Phase 2 — falls back to a redirect with no opener). **`prompt=none` is refused** with a visible terminal screen, never a silent redirect back (Phase 7b); `buildOAuthAuthorizeUrl` no longer accepts the value either. `prompt` has no other effect — this IdP does not implement `login`/`consent`, so do not build a flow that depends on them |
 | GET | `api.oxy.so/auth/oauth/client/:clientId` | none | Public, sanitized application metadata (name, icon, type, scopes, legal URLs). Generic 404 for unknown/revoked clients |
-| POST | `api.oxy.so/auth/oauth/token` | none (code-bound) | Exchange `{ code, clientId, redirectUri, codeVerifier \| clientSecret }` → `{ data: { access_token, token_type, expires_in, session_id, deviceId, deviceSecret, user } }` |
+| POST | `api.oxy.so/auth/oauth/token` | none (code-bound), or client secret | RFC 6749 §4.1.3. Form-urlencoded `grant_type=authorization_code`, `code`, `redirect_uri`, `client_id`, plus `code_verifier` (public) or `client_secret` / HTTP Basic (confidential) → flat `{ access_token, token_type, expires_in, scope?, session_id, deviceId, deviceSecret, user }`. Errors are `{ error, error_description }` |
+| GET/POST | `api.oxy.so/auth/oauth/userinfo` | Bearer | OpenID Connect claims for the token's account: `{ sub, preferred_username?, name?, picture? }`. `sub` is the permanent account id, never the (mutable) username |
 | GET | `api.oxy.so/auth/grants` | Bearer | User's connected apps |
 | DELETE | `api.oxy.so/auth/grants/:applicationId` | Bearer | Revoke a grant (idempotent) |
 

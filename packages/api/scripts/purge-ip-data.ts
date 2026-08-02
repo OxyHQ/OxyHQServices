@@ -36,6 +36,8 @@ async function main(): Promise<void> {
     throw new Error('No database handle after connect');
   }
 
+  // Deliberately NOT `as const`: the driver's `Filter` type requires a mutable
+  // `$or` array, and a readonly tuple is not assignable to it.
   const targets = [
     { collection: 'securityactivities', filter: { ipAddress: { $exists: true } }, unset: { ipAddress: 1 } },
     {
@@ -44,7 +46,7 @@ async function main(): Promise<void> {
       unset: { 'deviceInfo.ipAddress': 1, 'deviceInfo.location': 1 },
     },
     { collection: 'apikeyusages', filter: { ipAddress: { $exists: true } }, unset: { ipAddress: 1 } },
-  ] as const;
+  ];
 
   for (const target of targets) {
     if (dryRun) {

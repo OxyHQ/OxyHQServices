@@ -49,9 +49,19 @@ export { createUrlBuilders, normalizeActorUsername, type UrlBuilders } from './u
  * The shared JSON-LD `@context` (load-bearing term declarations) and the
  * ActivityPub URI helpers (actor-uri extraction + the per-instance domain policy:
  * blocked-domain check + local-post-id extraction).
+ *
+ * `canonicalFederationHost` / `isSameFederationHost` are exported because the
+ * domain policy is not the only thing that has to decide whether two spellings
+ * are the same host: a moderation blocklist, a transparency page and a content
+ * purge all ask the same question about the same hosts, and any of them keeping
+ * its own copy of the rule is a second opinion waiting to diverge from the one
+ * the engine enforces. They are the very functions {@link createDomainPolicy} is
+ * built from — not a parallel implementation that agrees today.
  */
 export { AP_CONTEXT } from './apContext';
 export {
+  canonicalFederationHost,
+  isSameFederationHost,
   extractActorUriFromActivityId,
   createDomainPolicy,
   type DomainPolicy,

@@ -19,10 +19,11 @@ import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
 import { users } from '../../db/schema/users';
 import { BadRequestError } from '../../utils/error';
 import { userService } from '../user.service';
+import { DISPLAY_NAME_INVALID_MESSAGE } from '@oxyhq/core';
 
 const uniqueId = () => randomUUID().replace(/-/g, '');
 
-const INVALID_NAME_MESSAGE = 'Name may only contain letters, spaces and apostrophes.';
+const INVALID_NAME_MESSAGE = DISPLAY_NAME_INVALID_MESSAGE;
 
 /** The name this account starts with; every rejection must leave it intact. */
 const SEEDED = { first: 'Original', last: 'Name' } as const;

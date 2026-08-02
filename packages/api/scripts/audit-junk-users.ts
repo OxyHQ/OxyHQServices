@@ -21,10 +21,10 @@ import Follow from '../src/models/Follow';
 import Session from '../src/models/Session';
 import { ApplicationCredential } from '../src/models/ApplicationCredential';
 import AccountMember from '../src/models/AccountMember';
-import { RefreshToken } from '../src/models/RefreshToken';
 import Block from '../src/models/Block';
 import Restricted from '../src/models/Restricted';
 import Notification from '../src/models/Notification';
+import { rawDb } from './account-migration-lib';
 import { logger } from '../src/utils/logger';
 
 type ObjId = mongoose.Types.ObjectId;
@@ -192,7 +192,13 @@ async function linkageForCategory(ids: ObjId[]): Promise<Record<string, number>>
 
   const appCreds = await ApplicationCredential.countDocuments({ createdByUserId: { $in: ids } });
   const appMembers = await AccountMember.countDocuments({ memberUserId: { $in: ids } });
-  const refreshTokens = await RefreshToken.countDocuments({ userId: { $in: ids } });
+  // `refreshtokens` was orphaned by the zero-cookie cutover (the RefreshToken
+  // model was deleted with the refresh-token family), so it is read RAW — the
+  // same convention the migrate-accounts-* scripts use for legacy collections.
+  // `userId` was stored as an ObjectId, so the driver needs no extra casting.
+  const refreshTokens = await rawDb()
+    .collection('refreshtokens')
+    .countDocuments({ userId: { $in: ids } });
 
   const blocks = await Block.countDocuments({
     $or: [{ userId: { $in: ids } }, { blockedId: { $in: ids } }],

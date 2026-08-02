@@ -83,6 +83,9 @@ import dotenv from 'dotenv';
 import { normalizeMultilineText } from '@oxyhq/core';
 import { getDbName } from '../config/db.js';
 import { logger } from '../utils/logger.js';
+import { closeRedis } from '../config/redis.js';
+import userCache from '../utils/userCache.js';
+import { cleanDisplayName } from '../utils/displayNameSanitize.js';
 import {
   normalizeLinks,
   normalizeLinksMetadata,
@@ -195,20 +198,36 @@ function setIfChanged(update: UpdateSet, key: string, current: unknown, next: un
 }
 
 /**
- * The write path's `normalizeProfileName`, plus the one thing that is specific to
- * a STORED document: `name.full` is a schema virtual, so a persisted copy of it
- * (written by an older code path) goes stale the moment first/last change and is
- * dropped here. The write path never receives it — it only ever sees a client
- * payload — which is why this sits on top of the shared normalizer instead of
- * inside it.
+ * The write path's `normalizeProfileName`, plus the things that are specific to a
+ * STORED document:
+ *   - `name.full` is a schema virtual — any persisted copy goes stale the moment
+ *     first/last change and is dropped here.
+ *   - `name.displayName` is also a virtual, but legacy rows may still hold a
+ *     persisted override with script digits, bidi controls, etc. Those must be
+ *     re-cleaned with the same `cleanDisplayName` the write path uses; an override
+ *     that cleans away entirely is omitted so the virtual recomposes from
+ *     first/last.
+ *
+ * The write path never receives either field — it only ever sees a client payload —
+ * which is why this sits on top of the shared normalizer instead of inside it.
  */
 function normalizeStoredName(value: unknown): unknown {
   const normalized = normalizeProfileName(value);
-  if (!isPlainObject(normalized) || !('full' in normalized)) {
+  if (!isPlainObject(normalized)) {
     return normalized;
   }
   const withoutVirtual: UnknownRecord = { ...normalized };
   delete withoutVirtual.full;
+
+  if (typeof withoutVirtual.displayName === 'string') {
+    const cleaned = cleanDisplayName(withoutVirtual.displayName);
+    if (cleaned === '') {
+      delete withoutVirtual.displayName;
+    } else {
+      withoutVirtual.displayName = cleaned;
+    }
+  }
+
   return withoutVirtual;
 }
 
@@ -295,8 +314,12 @@ async function backfill(): Promise<void> {
 
   const flush = async (): Promise<void> => {
     if (batch.length === 0) return;
+    const userIds = batch.map((op) => op.updateOne.filter._id.toString());
     if (!dryRun) {
       await users.bulkWrite(batch, { ordered: false });
+      for (const userId of userIds) {
+        userCache.invalidate(userId);
+      }
     }
     updated += batch.length;
     batch = [];
@@ -355,21 +378,19 @@ async function main(): Promise<void> {
   } finally {
     await mongoose.disconnect();
     logger.info('MongoDB connection closed');
+    // `userCache.invalidate()` lazily opens the shared Redis client, whose live
+    // socket is a ref'd handle — without this the task sits RUNNING forever
+    // after the work is done. No-op when REDIS_URL is unset.
+    await closeRedis();
+    logger.info('Redis client closed');
   }
 }
 
 // Only auto-run when invoked directly as a script (bun run … / node dist/…), NOT
 // when imported — the unit test drives `buildUserTextUpdate` in isolation, with
 // no mongoose connection. Mirrors the guard in `set-seed-verifiers.ts`.
-//
-// The explicit `process.exit(0)`: imported singletons (Redis-backed caches,
-// BullMQ workers) keep the event loop alive, which would otherwise leave this
-// Fargate one-shot task running forever after the work is done.
 if (require.main === module) {
   main()
-    .then(() => {
-      process.exit(0);
-    })
     .catch((error) => {
       logger.error(
         'User text normalization failed',

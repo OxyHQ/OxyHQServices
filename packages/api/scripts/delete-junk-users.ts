@@ -32,8 +32,9 @@ import { emailService } from '../src/services/email.service';
 import { User } from '../src/models/User';
 import { Message } from '../src/models/Message';
 import { Mailbox } from '../src/models/Mailbox';
-import { RefreshToken } from '../src/models/RefreshToken';
 import Notification from '../src/models/Notification';
+import { rawDb } from './account-migration-lib';
+import { closeRedis } from '../src/config/redis';
 import { logger } from '../src/utils/logger';
 
 type ObjId = mongoose.Types.ObjectId;
@@ -176,7 +177,13 @@ interface PlanCounts {
 async function computePlanCounts(ids: ObjId[]): Promise<PlanCounts> {
   const mailboxes = await Mailbox.countDocuments({ userId: { $in: ids } });
   const messages = await Message.countDocuments({ userId: { $in: ids } });
-  const refreshTokens = await RefreshToken.countDocuments({ userId: { $in: ids } });
+  // `refreshtokens` was orphaned by the zero-cookie cutover (the RefreshToken
+  // model was deleted with the refresh-token family), so it is accessed RAW —
+  // the same convention the migrate-accounts-* scripts use for legacy
+  // collections. `userId` was stored as an ObjectId; no extra casting needed.
+  const refreshTokens = await rawDb()
+    .collection('refreshtokens')
+    .countDocuments({ userId: { $in: ids } });
   const notifications = await Notification.countDocuments({
     $or: [{ recipientId: { $in: ids } }, { actorId: { $in: ids } }],
   });
@@ -260,7 +267,9 @@ async function run(): Promise<number> {
     await User.findByIdAndDelete(userId);
 
     // (c) refresh tokens + notifications
-    const rt = await RefreshToken.deleteMany({ userId: g.objectId });
+    const rt = await rawDb()
+      .collection('refreshtokens')
+      .deleteMany({ userId: g.objectId });
     const notif = await Notification.deleteMany({
       $or: [{ recipientId: g.objectId }, { actorId: g.objectId }],
     });
@@ -341,6 +350,9 @@ async function main(): Promise<void> {
   } finally {
     await mongoose.connection.close();
     logger.info('MongoDB connection closed');
+    // `emailService.deleteAllUserData` invalidates userCache, which opens Redis.
+    await closeRedis();
+    logger.info('Redis client closed');
   }
   process.exit(code);
 }

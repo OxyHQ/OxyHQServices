@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import express, { type Express } from 'express';
 import request from 'supertest';
+import { createDomainPolicy } from '../apUri';
+import { createInboundDispatcher } from '../node/inboundDispatch';
 import { createWebfingerRouter, type WebfingerRouterConfig } from '../node/webfingerRouter';
 import { createActorRouter, type ActorRouterConfig } from '../node/actorRouter';
 import { createUrlBuilders } from '../urls';
@@ -126,6 +128,14 @@ describe('webfinger router', () => {
     expect(res.status).toBe(404);
   });
 
+  it('accepts acct domain with www. prefix when config.domain is bare', async () => {
+    const res = await request(makeWebfingerApp())
+      .get('/.well-known/webfinger')
+      .query({ resource: 'acct:alice@www.mention.earth' });
+    expect(res.status).toBe(200);
+    expect(res.body.links[0].href).toBe(urls.actor('alice'));
+  });
+
   it('404s a sharing-disabled user indistinguishably', async () => {
     const app = makeWebfingerApp({
       consent: { isSharingEnabledFromUser: () => false, getSharingStateByUsername: async () => 'disabled' },
@@ -204,6 +214,72 @@ describe('actor router — inbox POST', () => {
     expect(dispatched).toHaveLength(1);
     expect(dispatched[0].verifiedActorUri).toBe(REMOTE_ACTOR);
     expect(dispatched[0].activity.type).toBe('Follow');
+  });
+
+  it('accepts a signed POST from a blocked origin (202) but the real dispatcher drops it', async () => {
+    const domainPolicy = createDomainPolicy({ domain: DOMAIN, blockedDomains: ['remote.example'] });
+    const contentActivities: Array<{ type: unknown; verifiedActorUri: string }> = [];
+    const dispatcher = createInboundDispatcher({
+      isBlockedDomain: domainPolicy.isBlockedDomain,
+      validateActivity: (activity) => {
+        const type = typeof activity.type === 'string' ? activity.type : undefined;
+        return type ? { ok: true, type } : { ok: false, summary: 'no type' };
+      },
+      identity: {
+        resolveUserByUsername: async () => ({ _id: 'u-alice' }),
+        bridgeFollow: async () => {},
+        bridgeUnfollow: async () => {},
+      },
+      consent: { isSharingEnabledFromUser: () => true },
+      actorResolver: { getOrFetchActor: async () => ({ oxyUserId: 'u-bob' }) },
+      follows: {
+        upsertInboundAccepted: async () => {},
+        findInboundFollow: async () => null,
+        deleteFollowById: async () => {},
+        findActorOxyUserId: async () => null,
+        markOutboundAcceptedByActivityId: async () => true,
+        markOutboundAcceptedAnyPending: async () => true,
+        markOutboundRejected: async () => {},
+      },
+      delivery: { sendAccept: async () => {} },
+      onInboundFollowAccepted: async () => {},
+      onOutboundFollowAccepted: async () => {},
+      onContentActivity: async (activity, verifiedActorUri) => {
+        contentActivities.push({ type: activity.type, verifiedActorUri });
+      },
+      logger: { debug: () => {}, info: () => {}, warn: () => {} },
+    });
+
+    const app = makeActorApp({
+      actorConfig: {
+        inbound: {
+          fetchPublicKey: async (keyId) =>
+            keyId === REMOTE_KEY_ID ? { publicKeyPem: REMOTE_PUBLIC_PEM, actorUri: REMOTE_ACTOR } : null,
+          trustForwardedHost: true,
+          enqueueInboxActivity: async () => false,
+          processInboxActivity: dispatcher.processInboxActivity,
+        },
+      },
+    });
+
+    const activity = {
+      '@context': 'https://www.w3.org/ns/activitystreams',
+      id: 'https://remote.example/f/blocked',
+      type: 'Create',
+      actor: REMOTE_ACTOR,
+      object: { type: 'Note', content: 'blocked' },
+    };
+    const { body, headers } = await signedInbox('/ap/inbox', activity);
+
+    const res = await request(app)
+      .post('/ap/inbox')
+      .set('Content-Type', 'application/activity+json')
+      .set('X-Forwarded-Host', DOMAIN)
+      .set(headers)
+      .send(body);
+
+    expect(res.status).toBe(202);
+    expect(contentActivities).toHaveLength(0);
   });
 
   it('rejects an unsigned inbox POST with 401', async () => {

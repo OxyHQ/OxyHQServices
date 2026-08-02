@@ -65,7 +65,10 @@ interface OpenApiDocument {
   [key: string]: unknown;
 }
 
-const PACKAGE_ROOT = path.resolve(import.meta.dir, '..');
+// `__dirname`, not `import.meta.dir`: this package compiles as CommonJS
+// (`module: NodeNext`, no `"type": "module"`), where `import.meta` is a type
+// error. Bun populates `__dirname` identically when running this file.
+const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const BASE_YAML = path.join(PACKAGE_ROOT, 'openapi.base.yaml');
 const OUTPUT_JSON = path.join(PACKAGE_ROOT, 'openapi.json');
 const ROUTES_DIR = path.join(PACKAGE_ROOT, 'src', 'routes');

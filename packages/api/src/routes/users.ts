@@ -12,6 +12,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
+import { canonicalFederationHost, isSameFederationHost } from '@oxyhq/federation';
 import { readBoundedBody } from '../services/linkPreview/boundedBody';
 import { getDb } from '../config/postgres';
 import { identityBackups } from '../db/schema/identityBackups';
@@ -1569,25 +1570,16 @@ interface ResolveUserBody {
   forceAvatarRefresh?: unknown;
 }
 
-function normalizeFederatedResolveDomain(domain: string): string {
-  return domain.trim().toLowerCase();
-}
-
 function normalizeFederatedResolveUsername(username: string): string | null {
   const cleaned = username.trim().replace(/^acct:/i, '').replace(/^@/, '');
   const atIndex = cleaned.indexOf('@');
   if (atIndex <= 0 || atIndex === cleaned.length - 1) return null;
 
   const localPart = cleaned.substring(0, atIndex).toLowerCase();
-  const domain = normalizeFederatedResolveDomain(cleaned.substring(atIndex + 1));
+  const domain = canonicalFederationHost(cleaned.substring(atIndex + 1));
   if (!localPart || !domain) return null;
 
   return `${localPart}@${domain}`;
-}
-
-function actorHostnameMatchesFederatedDomain(actorHostname: string, domain: string): boolean {
-  const normalizedActorHostname = normalizeFederatedResolveDomain(actorHostname);
-  return normalizedActorHostname === domain || normalizedActorHostname === `www.${domain}`;
 }
 
 /**
@@ -1763,13 +1755,13 @@ router.put(
           throw new BadRequestError('actorUri must be a valid http(s) URL or a did: URI');
         }
       }
-      const normalisedDomain = normalizeFederatedResolveDomain(domain);
+      const normalisedDomain = canonicalFederationHost(domain);
       const normalisedUsername = normalizeFederatedResolveUsername(username);
       if (!normalisedUsername) {
         throw new BadRequestError('username must be a valid federated handle');
       }
       const usernameDomain = normalisedUsername.substring(normalisedUsername.indexOf('@') + 1);
-      if (usernameDomain !== normalisedDomain) {
+      if (!isSameFederationHost(usernameDomain, normalisedDomain)) {
         throw new BadRequestError('username domain does not match domain');
       }
 
@@ -1790,7 +1782,7 @@ router.put(
       // username↔domain binding above are the trust anchor for atproto actors.
       if (
         actorHostname !== null
-        && !actorHostnameMatchesFederatedDomain(actorHostname, normalisedDomain)
+        && !isSameFederationHost(actorHostname, normalisedDomain)
         && !(await verifyFederatedWebFingerBinding(normalisedUsername, actorUri))
       ) {
         throw new BadRequestError('actorUri hostname does not match domain');

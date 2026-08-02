@@ -21,6 +21,7 @@ import { and, eq } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
 import { userFollows } from '../../db/schema/userFollows';
 import { users } from '../../db/schema/users';
+import userCache from '../../utils/userCache';
 import { userService } from '../user.service';
 
 const uniqueId = () => randomUUID().replace(/-/g, '');
@@ -88,6 +89,31 @@ describe('bulkUnfollow removes exactly the edges that existed', () => {
 
     expect(await userService.getUserStats(viewer)).toEqual({ followers: 0, following: 1 });
     expect(await userService.getUserStats(followedA)).toEqual({ followers: 0, following: 0 });
+  });
+
+  it('invalidates only the ids whose edge moved, and tags every one `graph`', async () => {
+    const invalidate = jest.spyOn(userCache, 'invalidate');
+    try {
+      const viewer = await makeUser();
+      const followed = await makeUser();
+      const neverFollowed = await makeUser();
+      await follow(viewer, followed);
+
+      await userService.bulkUnfollow(viewer, [followed, neverFollowed]);
+
+      // Tagged `'graph'` so nothing goes on the cross-service invalidation
+      // channel: this call moves up to 200 edges and none of them touch
+      // identity. Asserting the TAG (not just the id) is what keeps a future
+      // edit from silently turning one bulk unfollow into a 200-message
+      // broadcast — `invalidate` defaults to `'profile'`, which publishes.
+      expect(invalidate).toHaveBeenCalledWith(viewer, 'graph');
+      expect(invalidate).toHaveBeenCalledWith(followed, 'graph');
+      // A target whose edge did not exist is not a change, so it is not evicted.
+      expect(invalidate).not.toHaveBeenCalledWith(neverFollowed, 'graph');
+      expect(invalidate.mock.calls.every(([, reason]) => reason === 'graph')).toBe(true);
+    } finally {
+      invalidate.mockRestore();
+    }
   });
 
   it('is idempotent — a second identical call removes nothing and counts nothing', async () => {

@@ -19,6 +19,7 @@
  * document.
  */
 
+import { canonicalFederationHost, isSameFederationHost } from '../apUri';
 import type { NormalizedExternalActor } from '../index';
 import type { SignedFetch } from './signedFetch';
 import type { ReportActorGoneOutcome } from './identityBridge';
@@ -191,7 +192,11 @@ function asString(value: unknown): string | undefined {
 
 function sameOriginUrl(a: string, b: string): boolean {
   try {
-    return new URL(a).origin.toLowerCase() === new URL(b).origin.toLowerCase();
+    const urlA = new URL(a);
+    const urlB = new URL(b);
+    return urlA.protocol === urlB.protocol
+      && urlA.port === urlB.port
+      && isSameFederationHost(urlA.hostname, urlB.hostname);
   } catch {
     return false;
   }
@@ -222,12 +227,26 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
 
   constructor(private readonly config: ActorResolverConfig<TActor>) {}
 
+  /**
+   * Whether an actor URI's host is refused by the instance domain policy. An
+   * unparseable URI has no host to check, so it is refused too — the policy is a
+   * safety gate and fails closed rather than letting a malformed URI slip past it.
+   */
+  private isBlockedActorUri(actorUri: string): boolean {
+    let host: string;
+    try {
+      host = new URL(actorUri).hostname.toLowerCase();
+    } catch {
+      return true;
+    }
+    return this.config.isBlockedDomain(host);
+  }
+
   private acctMatchesActorHost(acct: string | undefined, actorHost: string): acct is string {
     if (!acct) return false;
-    const domain = this.config.domainFromAcct(acct)?.toLowerCase();
+    const domain = this.config.domainFromAcct(acct);
     if (!domain) return false;
-    const normalizedActorHost = actorHost.toLowerCase();
-    return domain === normalizedActorHost || normalizedActorHost === `www.${domain}`;
+    return isSameFederationHost(domain, actorHost);
   }
 
   /**
@@ -542,6 +561,15 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
    * a completely missing actor triggers a blocking fetch.
    */
   async getOrFetchActor(actorUri: string): Promise<TActor | null> {
+    // The domain policy governs BOTH branches below, not just the fetching one.
+    // `fetchRemoteActor` refuses a blocked host, but the cache hit above it used to
+    // return early — so for any instance we had ever stored an actor for (i.e. every
+    // instance that has ever reached us), blocking its domain changed nothing. That
+    // made the blocklist inert for exactly the hosts it is added for.
+    if (this.isBlockedActorUri(actorUri)) {
+      this.config.logger.info(`[FedSync] getOrFetchActor refusing own/blocked domain for ${actorUri}`);
+      return null;
+    }
     const existing = await this.config.store.findActorByUri(actorUri);
     if (existing) {
       const isStale = !existing.lastFetchedAt || Date.now() - existing.lastFetchedAt.getTime() > ACTOR_STALE_MS;
@@ -597,7 +625,17 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
     return actor?.oxyUserId ?? null;
   }
 
-  /** Fetch a public key by keyId (used for HTTP signature verification). */
+  /**
+   * Fetch a public key by keyId (used for HTTP signature verification).
+   *
+   * Deliberately NOT domain-policy gated on the cached branch: this answers "what
+   * key signs for this keyId", a question about authenticity, not about whether we
+   * federate with the answer. Suspending an instance is enforced where the activity
+   * is dispatched (`createInboundDispatcher`), so a blocked instance's signature is
+   * still evaluated honestly and its activity is then dropped as policy, rather
+   * than being reported as a forged signature. The uncached branch still refuses,
+   * because resolving it would mean network I/O toward a blocked host.
+   */
   async fetchPublicKey(keyId: string): Promise<{ publicKeyPem: string; actorUri: string } | null> {
     // keyId is typically the actor URI with #main-key appended
     const actorUri = keyId.replace(/#.*$/, '');

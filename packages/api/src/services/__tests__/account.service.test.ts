@@ -241,6 +241,38 @@ describe('updateAccount', () => {
     // would silently erase the surname.
     expect(stored.nameLast).toBe('Lovelace');
   });
+
+  test('accepts name separators that join real names', async () => {
+    const account = await seedAccount({
+      kind: 'organization',
+      nameFirst: 'Acme',
+      nameLast: 'Corp',
+    });
+
+    await accountService.updateAccount(account.id, { name: { first: 'Codeur·euses' } });
+
+    const stored = await reload(account.id);
+    expect(stored.nameFirst).toBe('Codeur·euses');
+    expect(stored.nameLast).toBe('Corp');
+  });
+
+  test('rejects invalid display names before persisting', async () => {
+    const account = await seedAccount({
+      kind: 'organization',
+      nameFirst: 'Acme',
+      nameLast: 'Corp',
+    });
+
+    await expect(
+      accountService.updateAccount(account.id, { name: { first: 'Agent007' } }),
+    ).rejects.toThrow(/name separators/i);
+
+    // "before persisting" checked against the ROW, not against a call that did
+    // not happen: a rejection thrown after the UPDATE would leave 'Agent007' here.
+    const stored = await reload(account.id);
+    expect(stored.nameFirst).toBe('Acme');
+    expect(stored.nameLast).toBe('Corp');
+  });
 });
 
 // ===========================================================================
@@ -295,6 +327,26 @@ describe('createChildAccount', () => {
         organizationCategory: 'landlord',
       })
     ).rejects.toThrow(/organizationCategory/i);
+  });
+
+  test('rejects invalid display names on create', async () => {
+    const root = await seedAccount({ kind: 'personal' });
+    const username = uniqueUsername('proj');
+
+    await expect(
+      accountService.createChildAccount(root.id, root.id, {
+        kind: 'project',
+        username,
+        name: { first: 'Agent007' },
+      }),
+    ).rejects.toThrow(/name separators/i);
+
+    // Nothing was created: the username the call claimed is still free.
+    const [row] = await getDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.username, username));
+    expect(row).toBeUndefined();
   });
 
   test('suffixes the username on collision', async () => {

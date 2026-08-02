@@ -476,6 +476,18 @@ describe('POST /federation/sign', () => {
     expect(res.status).toBe(400);
     expect(mockSignWithKeyId).not.toHaveBeenCalled();
   });
+
+  it('accepts a www. keyId host when the credential is registered for the bare domain', async () => {
+    const keyId = `https://www.${MENTION_DOMAIN}/ap/users/bob#main-key`;
+
+    const res = await requestJson('POST', '/federation/sign', {
+      keyId,
+      signingString: SIGNING_STRING,
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockSignWithKeyId).toHaveBeenCalledWith(keyId, SIGNING_STRING);
+  });
 });
 
 describe('GET /federation/public-key/:username', () => {
@@ -513,5 +525,15 @@ describe('GET /federation/public-key/:username', () => {
       message: 'Missing required scope: federation:write',
     });
     expect(mockGetUserPublicKey).not.toHaveBeenCalled();
+  });
+
+  it('accepts a www. domain query when the credential is registered for the bare domain', async () => {
+    const res = await requestJson(
+      'GET',
+      `/federation/public-key/bob?domain=www.${MENTION_DOMAIN}`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockGetUserPublicKey).toHaveBeenCalledWith('bob', `www.${MENTION_DOMAIN}`);
   });
 });

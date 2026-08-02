@@ -97,20 +97,6 @@ jobs:
         run: bun run lint
         working-directory: ./packages/api
 
-      - name: Run tests
-        run: bun run test
-        working-directory: ./packages/api
-        env:
-          MONGODB_URI: mongodb://localhost:27017/oxyapi-test
-          DATABASE_URL: postgres://oxy:oxy@127.0.0.1:5432/oxy_test
-          ACCESS_TOKEN_SECRET: test_access_token_secret_minimum_32_characters
-          REFRESH_TOKEN_SECRET: test_refresh_token_secret_minimum_32_characters
-          AWS_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: test_aws_access_key
-          AWS_SECRET_ACCESS_KEY: test_aws_secret_key
-          AWS_S3_BUCKET: test-bucket
-          NODE_ENV: test
-
       - name: Run tests with coverage
         run: bun run test:coverage
         working-directory: ./packages/api
@@ -166,6 +152,18 @@ jobs:
 
       - name: Build TypeScript
         run: bun run build
+        working-directory: ./packages/api
+
+      # `packages/api/scripts/**` (one-shot backfill/migration/audit scripts) is
+      # NOT part of the build program: `tsconfig.json` pins `rootDir` to `src` so
+      # `dist/` mirrors `src/`, which leaves those ~22 files with zero type
+      # coverage. `tsconfig.scripts.json` typechecks them (noEmit) against the
+      # same settings. It runs here, after `bun run build`, because that script
+      # already builds all four workspace deps the program needs — @oxyhq/contracts,
+      # @oxyhq/protocol, @oxyhq/core AND @oxyhq/federation (src/services/
+      # federation.service.ts imports it; without its dist this fails TS2307).
+      - name: Typecheck one-shot scripts
+        run: bun run typecheck:scripts
         working-directory: ./packages/api
 
   # bun.lock must match the package.json files (see scripts/check-lockfile-sync.mjs).

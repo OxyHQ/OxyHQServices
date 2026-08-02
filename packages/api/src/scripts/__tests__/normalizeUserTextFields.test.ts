@@ -57,6 +57,24 @@ describe('buildUserTextUpdate', () => {
     expect(update).toEqual({ name: { first: 'Ana', last: 'Gómez' } });
   });
 
+  it('cleans a persisted `displayName` override with script digits and drops stale `full`', () => {
+    const update = buildUserTextUpdate(
+      storedUser({
+        name: { first: 'Ada', last: 'Lovelace', displayName: 'Ada\u0665', full: 'Ada Lovelace' },
+      })
+    );
+
+    expect(update).toEqual({ name: { first: 'Ada', last: 'Lovelace', displayName: 'Ada' } });
+  });
+
+  it('drops a persisted `displayName` that cleans away entirely', () => {
+    const update = buildUserTextUpdate(
+      storedUser({ name: { first: 'Ada', last: 'Lovelace', displayName: '\u0665' } })
+    );
+
+    expect(update).toEqual({ name: { first: 'Ada', last: 'Lovelace' } });
+  });
+
   it('collapses blank lines made of spaces in a stored bio, keeping real paragraphs', () => {
     const update = buildUserTextUpdate(
       storedUser({ bio: 'Primera\n   \n   \nSegunda\n\nTercera' })

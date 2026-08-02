@@ -49,7 +49,7 @@ export type {
     CommonsDeliveryPlatform,
     CommonsDeliveryRoute,
 } from './utils/commonsDelivery';
-export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
+export type { ServiceTokenResponse, OAuthUserInfoResponse } from './mixins/OxyServices.auth';
 // "Sign in with Oxy" — handoff (Workstream C)
 export type {
     CommonsSignInHandle,
@@ -479,6 +479,8 @@ export {
     EMAIL_REGEX,
     USERNAME_REGEX,
     PASSWORD_REGEX,
+    MAX_DISPLAY_NAME_LENGTH,
+    DISPLAY_NAME_INVALID_MESSAGE,
     isValidEmail,
     isValidUsername,
     isValidPassword,
@@ -486,6 +488,7 @@ export {
     DISPLAY_NAME_ALLOWED_SCRIPTS,
     DISPLAY_NAME_DISALLOWED_SOURCE,
     DISPLAY_NAME_ORPHANED_MARK_SOURCE,
+    DISPLAY_NAME_UNFLANKED_SEPARATOR_SOURCE,
     isRequiredString,
     isRequiredNumber,
     isRequiredBoolean,

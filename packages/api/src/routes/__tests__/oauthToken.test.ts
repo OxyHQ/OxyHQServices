@@ -1,15 +1,40 @@
 /**
- * `POST /auth/oauth/token`, against a REAL Postgres.
+ * `POST /auth/oauth/token` — RFC 6749 §4.1.3 authorization-code exchange,
+ * against a REAL Postgres.
  *
- * The code→token exchange. What is real here and what is mocked follows what the
- * port actually changed: the CLIENT resolution (credential row, usability,
- * constant-time secret check), the user read and the `applications.last_used_at`
- * write all run against Postgres; `exchangeAuthCode` (`auth_codes` is a separate
- * port), `session.service` and `deviceLogin.service` are mocked collaborators.
+ * Pins two contracts at once:
  *
- * The previous version mocked `models/ApplicationCredential` and
- * `models/Application` and therefore never exercised the secret comparison
- * against a stored hash at all.
+ *   1. THE STANDARD. A form-encoded request with `grant_type=authorization_code`,
+ *      client authentication by `client_secret_post` or `client_secret_basic`,
+ *      a FLAT §5.1 success body sent `no-store`, and §5.2 error documents with
+ *      the right status codes. These are what make the endpoint usable by an
+ *      off-the-shelf OAuth client.
+ *
+ *   2. THE SECURITY PROPERTIES the standardization must not cost us:
+ *        - the client secret is verified in constant time BEFORE the code is
+ *          exchanged, so a caller without it cannot reach the exchange at all;
+ *        - a caller with neither a secret nor a PKCE verifier is rejected
+ *          before any credential lookup;
+ *        - the PKCE verifier reaches `exchangeAuthCode` unaltered (the S256
+ *          comparison itself is pinned in
+ *          `services/__tests__/oauthCode.service.test.ts`);
+ *        - every code-binding failure collapses to ONE `invalid_grant` body, so
+ *          the endpoint cannot be used as an oracle for which check failed.
+ *
+ * What is real here and what is mocked follows what the port actually changed:
+ * the CLIENT resolution (credential row, usability, constant-time secret check),
+ * the user read and the `applications.last_used_at` write all run against
+ * Postgres; `exchangeAuthCode` (`auth_codes` is a separate port),
+ * `session.service` and `deviceLogin.service` are mocked collaborators. The
+ * previous version mocked `models/ApplicationCredential` and `models/Application`
+ * and therefore never exercised the secret comparison against a stored hash.
+ *
+ * ORDERING PROOFS. The Mongo version asserted "rejected before any lookup" by
+ * watching an `ApplicationCredential.findOne` mock. There is no such mock here,
+ * so those cases claim an UNREGISTERED client id instead: reaching the lookup
+ * would answer `invalid_client`, so an `invalid_request` verdict is only
+ * reachable when the request-shape check ran first. That is an observable of
+ * the wire rather than of a collaborator, and it fails if the order is swapped.
  */
 
 import express from 'express';
@@ -32,7 +57,9 @@ jest.mock('../../middleware/rateLimiter', () => ({
 }));
 jest.mock('../../middleware/authUtils', () => ({
   extractTokenFromRequest: () => null,
+  extractOAuthUserinfoToken: () => null,
   decodeToken: () => null,
+  validateSessionToken: jest.fn(),
 }));
 jest.mock('../../services/oauthCode.service', () => {
   const actual = jest.requireActual<typeof import('../../services/oauthCode.service')>(
@@ -79,20 +106,40 @@ import { users } from '../../db/schema/users';
 import { errorHandler } from '../../middleware/errorHandler';
 import authRouter from '../auth';
 
-interface JsonResponse {
+interface TokenResponse {
   status: number;
+  headers: http.IncomingHttpHeaders;
   body: Record<string, unknown>;
 }
 
 const REDIRECT_URI = 'https://acme.example/oauth/callback';
 /** A well-formed PKCE verifier — `oauthTokenSchema` enforces 43–128 chars. */
-const PKCE_VERIFIER = 'v'.repeat(43);
+const CODE_VERIFIER = 'a'.repeat(64);
+
+/**
+ * A client id no `application_credentials` row carries. Used by the ordering
+ * proofs described in the file header: if the route reached the lookup, the
+ * answer would be `invalid_client`.
+ */
+const UNREGISTERED_CLIENT_ID = 'oxy_dk_unregistered_client';
+
+/** The single description every code-binding failure must report (no oracle). */
+const INVALID_GRANT_DESCRIPTION =
+  'The authorization code is invalid, expired, already used, or was not issued for this client and redirect URI.';
 
 let server: http.Server;
+/** An active public client, seeded once — the default subject of these tests. */
+let defaultClientId: string;
+let defaultApplicationId: string;
+/** A real `users` row the default exchange result resolves to. */
+let defaultSubjectId: string;
 
-function post(body: unknown): Promise<JsonResponse> {
+function requestRaw(
+  body: string,
+  contentType: string,
+  headers: Record<string, string> = {},
+): Promise<TokenResponse> {
   const address = server.address() as AddressInfo;
-  const payload = JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -101,8 +148,9 @@ function post(body: unknown): Promise<JsonResponse> {
         port: address.port,
         path: '/auth/oauth/token',
         headers: {
-          'content-type': 'application/json',
-          'content-length': Buffer.byteLength(payload),
+          'content-type': contentType,
+          'content-length': Buffer.byteLength(body),
+          ...headers,
         },
       },
       (res) => {
@@ -110,15 +158,57 @@ function post(body: unknown): Promise<JsonResponse> {
         res.on('data', (chunk) => {
           raw += chunk;
         });
-        res.on('end', () =>
-          resolve({ status: res.statusCode ?? 0, body: raw.length ? JSON.parse(raw) : {} }),
-        );
+        res.on('end', () => {
+          try {
+            resolve({
+              status: res.statusCode ?? 0,
+              headers: res.headers,
+              body: raw.length > 0 ? JSON.parse(raw) : {},
+            });
+          } catch (err) {
+            reject(err);
+          }
+        });
       },
     );
     req.on('error', reject);
-    req.write(payload);
+    req.write(body);
     req.end();
   });
+}
+
+/**
+ * POST an RFC-shaped token request: `application/x-www-form-urlencoded`, the
+ * only encoding §4.1.3 allows.
+ */
+function requestForm(
+  params: Record<string, string>,
+  headers: Record<string, string> = {},
+): Promise<TokenResponse> {
+  return requestRaw(
+    new URLSearchParams(params).toString(),
+    'application/x-www-form-urlencoded',
+    headers,
+  );
+}
+
+function basicHeader(clientId: string, clientSecret: string): Record<string, string> {
+  const encoded = Buffer.from(
+    `${encodeURIComponent(clientId)}:${encodeURIComponent(clientSecret)}`,
+  ).toString('base64');
+  return { authorization: `Basic ${encoded}` };
+}
+
+/** The minimal valid public-client (PKCE) request against the default client. */
+function pkceParams(overrides: Record<string, string> = {}): Record<string, string> {
+  return {
+    grant_type: 'authorization_code',
+    code: 'auth-code-1',
+    redirect_uri: REDIRECT_URI,
+    client_id: defaultClientId,
+    code_verifier: CODE_VERIFIER,
+    ...overrides,
+  };
 }
 
 const sha256 = (value: string) => nodeCrypto.createHash('sha256').update(value).digest('hex');
@@ -158,10 +248,32 @@ async function subject(fields: Partial<typeof users.$inferInsert> = {}): Promise
   return row.id;
 }
 
+/** The exchange result the route receives for a successful code redemption. */
+function grant(overrides: Record<string, unknown> = {}) {
+  return {
+    ok: true,
+    code: {
+      userId: defaultSubjectId,
+      deviceId: null,
+      operatedByUserId: null,
+      scopes: [],
+      ...overrides,
+    },
+  };
+}
+
 beforeAll(async () => {
   await connectPostgres();
+  const seeded = await client();
+  defaultClientId = seeded.clientId;
+  defaultApplicationId = seeded.applicationId;
+  defaultSubjectId = await subject({ nameFirst: 'Ada', nameLast: 'Lovelace' });
+
   const app = express();
   app.use(express.json());
+  // Mirrors `server.ts`: the token endpoint is reachable only because the app
+  // parses urlencoded bodies.
+  app.use(express.urlencoded({ extended: true }));
   app.use('/auth', authRouter);
   app.use(errorHandler);
   await new Promise<void>((resolve) => {
@@ -178,6 +290,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockExchangeAuthCode.mockResolvedValue(grant());
   mockCreateSession.mockResolvedValue({
     sessionId: 'sess-1',
     deviceId: 'device-1',
@@ -186,43 +299,69 @@ beforeEach(() => {
   mockFinalizeDeviceLogin.mockResolvedValue({ deviceSecret: 'device-secret-1' });
 });
 
-describe('POST /auth/oauth/token — the happy path', () => {
-  it('returns the device-first session fields on a PKCE public-client exchange', async () => {
-    const { clientId, applicationId } = await client();
-    const userId = await subject({ nameFirst: 'Ada', nameLast: 'Lovelace' });
-    mockExchangeAuthCode.mockResolvedValueOnce({
-      ok: true,
-      code: { userId, deviceId: null, operatedByUserId: null },
-    });
-
-    const res = await post({
-      code: 'auth-code-1',
-      clientId,
-      redirectUri: REDIRECT_URI,
-      codeVerifier: PKCE_VERIFIER,
-    });
+describe('POST /auth/oauth/token — RFC 6749 §5.1 success response', () => {
+  it('returns a FLAT token document (no `data` wrapper) for a PKCE public client', async () => {
+    const res = await requestForm(pkceParams());
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toMatchObject({
+    // The point of the change: the standard members sit at the TOP LEVEL.
+    expect(res.body).toMatchObject({
       access_token: 'access-token-1',
       token_type: 'Bearer',
+      expires_in: 900,
       session_id: 'sess-1',
       deviceId: 'device-1',
       deviceSecret: 'device-secret-1',
     });
+    expect(res.body).not.toHaveProperty('data');
     // The zero-cookie transport hands out no refresh token.
-    expect(res.body.data).not.toHaveProperty('refresh_token');
-    const user = (res.body.data as { user: { id: string; name: { displayName?: string } } }).user;
-    expect(user.id).toBe(userId);
-    expect(user.name.displayName).toBe('Ada Lovelace');
+    expect(res.body).not.toHaveProperty('refresh_token');
 
+    const user = res.body.user as { id: string; name: { displayName?: string } };
+    expect(user.id).toBe(defaultSubjectId);
+    expect(user.name.displayName).toBe('Ada Lovelace');
+  });
+
+  it('sends the credentials with `Cache-Control: no-store` (§5.1)', async () => {
+    const res = await requestForm(pkceParams());
+
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.headers['pragma']).toBe('no-cache');
+  });
+
+  it('reports the granted scope as a space-delimited string', async () => {
+    mockExchangeAuthCode.mockResolvedValueOnce(
+      grant({ scopes: ['profile:read', 'email:read'] }),
+    );
+
+    const res = await requestForm(pkceParams());
+
+    expect(res.status).toBe(200);
+    expect(res.body.scope).toBe('profile:read email:read');
+  });
+
+  it('omits `scope` entirely when the grant carries none', async () => {
+    const res = await requestForm(pkceParams());
+
+    expect(res.status).toBe(200);
+    expect(res.body).not.toHaveProperty('scope');
+  });
+
+  it('forwards the exchange the app id, redirect URI and PKCE verifier', async () => {
+    const res = await requestForm(pkceParams());
+
+    expect(res.status).toBe(200);
     expect(mockExchangeAuthCode).toHaveBeenCalledWith(
       expect.objectContaining({
         rawCode: 'auth-code-1',
-        appId: applicationId,
+        appId: defaultApplicationId,
         redirectUri: REDIRECT_URI,
         clientSecretProvided: false,
-        codeVerifier: PKCE_VERIFIER,
+        // Dropping or rewriting the verifier here would disable PKCE for every
+        // public client; the S256 comparison itself is pinned in
+        // `services/__tests__/oauthCode.service.test.ts`.
+        codeVerifier: CODE_VERIFIER,
       }),
     );
   });
@@ -233,12 +372,8 @@ describe('POST /auth/oauth/token — the happy path', () => {
       .update(applications)
       .set({ lastUsedAt: null })
       .where(eq(applications.id, applicationId));
-    mockExchangeAuthCode.mockResolvedValueOnce({
-      ok: true,
-      code: { userId: await subject(), deviceId: null, operatedByUserId: null },
-    });
 
-    await post({ code: 'c', clientId, redirectUri: REDIRECT_URI, codeVerifier: PKCE_VERIFIER });
+    await requestForm(pkceParams({ client_id: clientId }));
 
     const [app] = await getDb()
       .select({ lastUsedAt: applications.lastUsedAt })
@@ -249,15 +384,13 @@ describe('POST /auth/oauth/token — the happy path', () => {
   });
 
   it('threads the originating device and the delegated operator onto the session', async () => {
-    const { clientId } = await client();
     const org = await subject({ kind: 'organization' });
     const operator = await subject();
-    mockExchangeAuthCode.mockResolvedValueOnce({
-      ok: true,
-      code: { userId: org, deviceId: '  dev-shared  ', operatedByUserId: operator },
-    });
+    mockExchangeAuthCode.mockResolvedValueOnce(
+      grant({ userId: org, deviceId: '  dev-shared  ', operatedByUserId: operator }),
+    );
 
-    await post({ code: 'c', clientId, redirectUri: REDIRECT_URI, codeVerifier: PKCE_VERIFIER });
+    await requestForm(pkceParams());
 
     expect(mockCreateSession).toHaveBeenCalledWith(
       org,
@@ -267,14 +400,10 @@ describe('POST /auth/oauth/token — the happy path', () => {
   });
 
   it('never serializes a protected user column into the token response', async () => {
-    const { clientId } = await client();
     const userId = await subject({ phone: '+15550001111', refreshToken: 'user-refresh-token' });
-    mockExchangeAuthCode.mockResolvedValueOnce({
-      ok: true,
-      code: { userId, deviceId: null, operatedByUserId: null },
-    });
+    mockExchangeAuthCode.mockResolvedValueOnce(grant({ userId }));
 
-    const res = await post({ code: 'c', clientId, redirectUri: REDIRECT_URI, codeVerifier: PKCE_VERIFIER });
+    const res = await requestForm(pkceParams());
 
     expect(res.status).toBe(200);
     const serialized = JSON.stringify(res.body);
@@ -283,20 +412,106 @@ describe('POST /auth/oauth/token — the happy path', () => {
   });
 });
 
-describe('POST /auth/oauth/token — the confidential-client secret', () => {
-  it('accepts the correct secret and reports it to the exchange', async () => {
+describe('POST /auth/oauth/token — request validation (RFC 6749 §5.2)', () => {
+  it('rejects a request with no grant_type as unsupported_grant_type', async () => {
+    const params = pkceParams();
+    delete params.grant_type;
+
+    const res = await requestForm(params);
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: 'unsupported_grant_type',
+      error_description: expect.any(String),
+    });
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a grant_type this endpoint does not implement', async () => {
+    const res = await requestForm(pkceParams({ grant_type: 'refresh_token' }));
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('unsupported_grant_type');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a JSON body — §4.1.3 fixes the encoding as form-urlencoded', async () => {
+    const res = await requestRaw(
+      JSON.stringify(pkceParams({ client_id: UNREGISTERED_CLIENT_ID })),
+      'application/json',
+    );
+
+    // `invalid_request`, not `invalid_client`: the encoding is refused before
+    // the unregistered client id is ever looked up.
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a request missing `code`', async () => {
+    const params = pkceParams();
+    delete params.code;
+
+    const res = await requestForm(params);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a request missing `redirect_uri`', async () => {
+    const params = pkceParams();
+    delete params.redirect_uri;
+
+    const res = await requestForm(params);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a request that names no client at all', async () => {
+    const params = pkceParams();
+    delete params.client_id;
+
+    const res = await requestForm(params);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /auth/oauth/token — client authentication (RFC 6749 §2.3)', () => {
+  it('accepts client_secret_basic and exchanges as a confidential client', async () => {
     const secret = randomUUID();
-    const { clientId } = await client({ type: 'confidential', secretHash: sha256(secret) });
-    mockExchangeAuthCode.mockResolvedValueOnce({
-      ok: true,
-      code: { userId: await subject(), deviceId: null, operatedByUserId: null },
+    const { clientId, applicationId } = await client({
+      type: 'confidential',
+      secretHash: sha256(secret),
     });
 
-    const res = await post({
-      code: 'c',
-      clientId,
-      redirectUri: REDIRECT_URI,
-      clientSecret: secret,
+    const res = await requestForm(
+      { grant_type: 'authorization_code', code: 'auth-code-1', redirect_uri: REDIRECT_URI },
+      basicHeader(clientId, secret),
+    );
+
+    expect(res.status).toBe(200);
+    // The client id came from the Basic header, not the body.
+    expect(mockExchangeAuthCode).toHaveBeenCalledWith(
+      expect.objectContaining({ appId: applicationId, clientSecretProvided: true }),
+    );
+  });
+
+  it('accepts client_secret_post', async () => {
+    const secret = randomUUID();
+    const { clientId } = await client({ type: 'confidential', secretHash: sha256(secret) });
+
+    const res = await requestForm({
+      grant_type: 'authorization_code',
+      code: 'auth-code-1',
+      redirect_uri: REDIRECT_URI,
+      client_id: clientId,
+      client_secret: secret,
     });
 
     expect(res.status).toBe(200);
@@ -305,106 +520,193 @@ describe('POST /auth/oauth/token — the confidential-client secret', () => {
     );
   });
 
-  it('rejects a WRONG secret before the code is ever exchanged', async () => {
+  it('rejects using Basic AND a body client_secret at once (§2.3)', async () => {
+    const res = await requestForm(
+      {
+        grant_type: 'authorization_code',
+        code: 'auth-code-1',
+        redirect_uri: REDIRECT_URI,
+        client_secret: 'some-secret',
+      },
+      basicHeader(UNREGISTERED_CLIENT_ID, 'some-secret'),
+    );
+
+    // Self-contradictory request → `invalid_request`, decided before the
+    // unregistered client id could yield `invalid_client`.
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a body client_id that contradicts the Basic header', async () => {
+    const res = await requestForm(
+      {
+        grant_type: 'authorization_code',
+        code: 'auth-code-1',
+        redirect_uri: REDIRECT_URI,
+        client_id: 'oxy_dk_someone_else',
+      },
+      basicHeader(UNREGISTERED_CLIENT_ID, 'some-secret'),
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects an Authorization scheme other than Basic, with a challenge', async () => {
+    const res = await requestForm(pkceParams(), { authorization: 'Bearer some-token' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_client');
+    expect(res.headers['www-authenticate']).toContain('Basic');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('answers an unknown client with 401 invalid_client and a Basic challenge', async () => {
+    const res = await requestForm(pkceParams({ client_id: UNREGISTERED_CLIENT_ID }));
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({
+      error: 'invalid_client',
+      error_description: expect.any(String),
+    });
+    expect(res.headers['www-authenticate']).toContain('Basic');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('answers 401 invalid_client for a REVOKED credential', async () => {
+    const { clientId } = await client({ status: 'revoked' });
+
+    const res = await requestForm(pkceParams({ client_id: clientId }));
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_client');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('answers 401 invalid_client when the application is no longer active', async () => {
+    const { clientId } = await client({}, { status: 'suspended' });
+
+    const res = await requestForm(pkceParams({ client_id: clientId }));
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_client');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /auth/oauth/token — security properties', () => {
+  it('verifies the client secret BEFORE the code exchange: a wrong secret never reaches it', async () => {
     const { clientId } = await client({
       type: 'confidential',
       secretHash: sha256(randomUUID()),
     });
 
-    const res = await post({
-      code: 'c',
-      clientId,
-      redirectUri: REDIRECT_URI,
-      clientSecret: 'not-the-secret',
+    const res = await requestForm({
+      grant_type: 'authorization_code',
+      code: 'auth-code-1',
+      redirect_uri: REDIRECT_URI,
+      client_id: clientId,
+      client_secret: 'wrong-secret',
     });
 
     expect(res.status).toBe(401);
-    expect(res.body).toMatchObject({ message: 'invalid_client' });
-    // The probe never reaches the code-binding outcomes.
+    expect(res.body.error).toBe('invalid_client');
+    // The load-bearing assertion: an attacker without the secret cannot probe
+    // the code-binding outcomes, because the exchange never runs.
     expect(mockExchangeAuthCode).not.toHaveBeenCalled();
-  });
-
-  it('rejects an asserted secret against a credential that holds none', async () => {
-    const { clientId } = await client();
-
-    const res = await post({
-      code: 'c',
-      clientId,
-      redirectUri: REDIRECT_URI,
-      clientSecret: 'anything',
-    });
-
-    expect(res.status).toBe(401);
-    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
-  });
-});
-
-describe('POST /auth/oauth/token — rejections', () => {
-  it('returns 401 invalid_client for an unknown clientId', async () => {
-    const res = await post({
-      code: 'c',
-      clientId: 'oxy_dk_unknown',
-      redirectUri: REDIRECT_URI,
-      codeVerifier: PKCE_VERIFIER,
-    });
-
-    expect(res.status).toBe(401);
-    expect(res.body).toMatchObject({ message: 'invalid_client' });
-  });
-
-  it('returns 401 invalid_client for a REVOKED credential', async () => {
-    const { clientId } = await client({ status: 'revoked' });
-
-    const res = await post({ code: 'c', clientId, redirectUri: REDIRECT_URI, codeVerifier: PKCE_VERIFIER });
-
-    expect(res.status).toBe(401);
-    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
-  });
-
-  it('returns 401 invalid_client when the application is no longer active', async () => {
-    const { clientId } = await client({}, { status: 'suspended' });
-
-    const res = await post({ code: 'c', clientId, redirectUri: REDIRECT_URI, codeVerifier: PKCE_VERIFIER });
-
-    expect(res.status).toBe(401);
-    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
-  });
-
-  it('returns 401 invalid_grant when the exchange fails, minting no session', async () => {
-    const { clientId } = await client();
-    mockExchangeAuthCode.mockResolvedValueOnce({ ok: false, reason: 'invalid_grant' });
-
-    const res = await post({ code: 'bad', clientId, redirectUri: REDIRECT_URI, codeVerifier: PKCE_VERIFIER });
-
-    expect(res.status).toBe(401);
-    expect(res.body).toMatchObject({ message: 'invalid_grant' });
     expect(mockCreateSession).not.toHaveBeenCalled();
   });
 
-  it('returns 401 invalid_grant when the code subject no longer exists', async () => {
-    const { clientId } = await client();
-    mockExchangeAuthCode.mockResolvedValueOnce({
-      ok: true,
-      code: { userId: randomUUID(), deviceId: null, operatedByUserId: null },
+  it('rejects a secret asserted against a credential that has none', async () => {
+    const res = await requestForm({
+      grant_type: 'authorization_code',
+      code: 'auth-code-1',
+      redirect_uri: REDIRECT_URI,
+      client_id: defaultClientId,
+      client_secret: 'anything',
     });
 
-    const res = await post({ code: 'c', clientId, redirectUri: REDIRECT_URI, codeVerifier: PKCE_VERIFIER });
-
     expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_client');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a caller that presents neither a client secret nor a PKCE verifier', async () => {
+    const params = pkceParams({ client_id: UNREGISTERED_CLIENT_ID });
+    delete params.code_verifier;
+
+    const res = await requestForm(params);
+
+    // Again `invalid_request` and not `invalid_client`: rejected before any
+    // credential lookup, so the code is never touched.
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a PKCE verifier shorter than the RFC 7636 minimum', async () => {
+    const res = await requestForm(pkceParams({ code_verifier: 'too-short' }));
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_request');
+    expect(mockExchangeAuthCode).not.toHaveBeenCalled();
+  });
+
+  it('collapses every code-binding failure into one indistinguishable invalid_grant', async () => {
+    mockExchangeAuthCode.mockResolvedValue({ ok: false, reason: 'invalid_grant' });
+
+    const unknownCode = await requestForm(pkceParams({ code: 'never-issued' }));
+    const replayedCode = await requestForm(pkceParams({ code: 'already-used' }));
+    const otherRedirect = await requestForm(
+      pkceParams({ redirect_uri: 'https://acme.example/other' }),
+    );
+
+    for (const res of [unknownCode, replayedCode, otherRedirect]) {
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({
+        error: 'invalid_grant',
+        error_description: INVALID_GRANT_DESCRIPTION,
+      });
+    }
+    // Byte-identical bodies: the response cannot tell the causes apart.
+    expect(replayedCode.body).toEqual(unknownCode.body);
+    expect(otherRedirect.body).toEqual(unknownCode.body);
     expect(mockCreateSession).not.toHaveBeenCalled();
   });
 
-  it('fails CLOSED with 500 when the deviceSecret mint produced nothing', async () => {
-    const { clientId } = await client();
-    mockExchangeAuthCode.mockResolvedValueOnce({
-      ok: true,
-      code: { userId: await subject(), deviceId: null, operatedByUserId: null },
-    });
+  it('reports a code with neither PKCE nor client secret as invalid_client', async () => {
+    mockExchangeAuthCode.mockResolvedValueOnce({ ok: false, reason: 'invalid_client' });
+
+    const res = await requestForm(pkceParams());
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_client');
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it('returns invalid_grant when the code resolves to a user that no longer exists', async () => {
+    mockExchangeAuthCode.mockResolvedValueOnce(grant({ userId: randomUUID() }));
+
+    const res = await requestForm(pkceParams());
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_grant');
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
+  it('fails closed with server_error when deviceSecret minting fails', async () => {
     mockFinalizeDeviceLogin.mockResolvedValueOnce({});
 
-    const res = await post({ code: 'c', clientId, redirectUri: REDIRECT_URI, codeVerifier: PKCE_VERIFIER });
+    const res = await requestForm(pkceParams());
 
     expect(res.status).toBe(500);
-    expect(res.body.data).toBeUndefined();
+    // Still RFC-shaped, and still says nothing about what broke internally.
+    expect(res.body).toEqual({
+      error: 'server_error',
+      error_description: expect.any(String),
+    });
+    expect(res.body).not.toHaveProperty('access_token');
   });
 });
