@@ -13,7 +13,6 @@
  * that module, and the barrel exports both — while the package declared it in
  * neither `dependencies`, `devDependencies` nor `peerDependencies`.
  */
-import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
