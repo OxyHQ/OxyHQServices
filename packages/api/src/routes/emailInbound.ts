@@ -228,8 +228,27 @@ export function verifyEmailInboundWebhookSecret(req: Request, res: Response, nex
 router.post(
   '/',
   asyncHandler(async (req: Request, res: Response) => {
-    const rawMessage = req.body as Buffer;
-    if (!rawMessage || rawMessage.length === 0) {
+    // `req.body` is a Buffer only because `server.ts` mounts `express.raw` on
+    // this path AHEAD of the global JSON parser. That is configuration, not a
+    // type guarantee, so the runtime shape is checked here rather than asserted
+    // with a cast:
+    //   - body-parser's `raw` assigns `{}`, not an empty Buffer, for a request
+    //     that carries no body at all — a shape reachable TODAY, on which
+    //     `.length` is `undefined` and the empty-body guard silently passes.
+    //   - if the parser ordering ever drifts (AGENTS.md calls this out), the
+    //     JSON parser wins and hands this handler a parsed object or array.
+    //     An array even has a plausible `.length`, so the message would flow on
+    //     to the spam check and `simpleParser` as a non-Buffer.
+    const rawMessage: unknown = req.body;
+    if (!Buffer.isBuffer(rawMessage)) {
+      // Loud, because the silent-failure mode this replaces is exactly the one
+      // AGENTS.md warns about: inbound mail disappearing with a 400 nobody reads.
+      logger.error('Inbound webhook: body is not a Buffer — raw body parser did not run', undefined, {
+        bodyType: Array.isArray(rawMessage) ? 'array' : typeof rawMessage,
+      });
+      return res.status(400).json({ error: 'Empty message body' });
+    }
+    if (rawMessage.length === 0) {
       return res.status(400).json({ error: 'Empty message body' });
     }
 

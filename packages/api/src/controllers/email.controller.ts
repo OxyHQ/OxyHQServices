@@ -1044,9 +1044,14 @@ export async function exportMessage(req: AuthRequest, res: Response): Promise<vo
 
 export async function importMessages(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
-  const files = req.files as Express.Multer.File[] | undefined;
+  // multer's `.array()` middleware assigns an array here, but `req.files` is
+  // typed — and, under `.fields()`/`.any()`, populated — as a field-keyed
+  // record. Narrowing on the real runtime shape keeps that arm from being cast
+  // away: `.length` on a record is `undefined`, which would slip past the
+  // emptiness guard below and then iterate nothing.
+  const files: Express.Multer.File[] = Array.isArray(req.files) ? req.files : [];
 
-  if (!files || files.length === 0) {
+  if (files.length === 0) {
     throw new BadRequestError('At least one .eml file is required');
   }
 
