@@ -56,13 +56,10 @@ import {
   type Translate,
 } from './types';
 
-type AnimatedCssViewProps = React.ComponentProps<typeof Animated.View> & {
-  className?: string;
-};
-
-const AnimatedCssView = styled(
-  Animated.View as React.ComponentType<AnimatedCssViewProps>,
-);
+// `styled(Animated.View)` breaks bob's type emit (react-native-css `styled` does not
+// accept Reanimated's animated props). Compose from the css View instead.
+const CssView = styled(View);
+const AnimatedCssView = Animated.createAnimatedComponent(CssView);
 
 /**
  * Leading glyph for the rows that live in a Bloom grouped section (the MENU
