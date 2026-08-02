@@ -105,6 +105,8 @@ export interface AuthActions {
 export interface UseAuthReturn extends AuthState, AuthActions {
   /** Access to full OxyServices instance for advanced usage */
   oxyServices: ReturnType<typeof useOxy>['oxyServices'];
+  /** Switch the device session to another account on this device */
+  switchToAccount: ReturnType<typeof useOxy>['switchToAccount'];
   /** Open a bottom sheet screen (e.g. 'ManageAccount', 'FileManagement') */
   showBottomSheet: ReturnType<typeof useOxy>['showBottomSheet'];
   /** Open the avatar picker bottom sheet */
@@ -137,6 +139,7 @@ export function useAuth(): UseAuthReturn {
     logoutAll,
     refreshSessions,
     oxyServices,
+    switchToAccount,
     hasIdentity,
     getPublicKey,
     showBottomSheet,
@@ -201,6 +204,7 @@ export function useAuth(): UseAuthReturn {
 
     // Advanced
     oxyServices,
+    switchToAccount,
     showBottomSheet,
     openAvatarPicker,
   };
