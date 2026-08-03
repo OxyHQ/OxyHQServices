@@ -29,6 +29,7 @@ import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
 import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
 import { evictOxyIdentityCache } from '../utils/identityCacheSweep';
+import { evictOxyAccountForestCache } from '../utils/accountCacheSweep';
 import { logger } from '../logger';
 import { extractErrorStatus } from '../utils/errorUtils';
 
@@ -540,8 +541,11 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      * a new identity read is added in one place instead of to each writer
      * separately (this method's own hand-written copy had already drifted from
      * the server-side one, missing `GET /auth/lookup/*` and
-     * `GET /profiles/resolve`). The account forest (`GET /accounts`, detail) is
-     * swept too — a personal account embeds the same profile on those reads.
+     * `GET /profiles/resolve`). The account forest (`GET /accounts` and the
+     * caller's own detail row) is swept too — a personal account IS this user,
+     * and `AccountNode.account` embeds the whole profile — from the list that
+     * {@link evictOxyAccountForestCache} owns, for the same reason: the accounts
+     * mixin writes those keys as well, and two hand-written copies drift.
      *
      * TanStack Query handles offline queuing automatically.
      */
@@ -552,12 +556,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         );
 
         evictOxyIdentityCache(this, result?.id);
-        // A personal account is a row in the account forest; profile edits change
-        // the embedded profile on list/detail reads, not only identity endpoints.
-        this._invalidateAccountLists();
-        if (result?.id) {
-          this.clearCacheEntry(`GET:/accounts/${encodeURIComponent(result.id)}`);
-        }
+        evictOxyAccountForestCache(this, result?.id);
 
         return result;
       } catch (error) {
