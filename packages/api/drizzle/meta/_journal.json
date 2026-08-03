@@ -99,6 +99,13 @@
       "when": 1785760203479,
       "tag": "0013_users_account_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785763616556,
+      "tag": "0014_account_member_permission_overrides",
+      "breakpoints": true
     }
   ]
 }

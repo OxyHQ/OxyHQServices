@@ -20,7 +20,10 @@
  *   the Mongo array carried implicitly is now stated (`db/schema/userAncestors.ts`).
  * - **`account_members.permissions` does not travel.** Every write site set it
  *   to exactly `permissionsForAccountRole(role)`; it is a derivation of `role`,
- *   not data, and the serializer keeps emitting it from the role.
+ *   not data, and the serializer keeps emitting it. What the table stores
+ *   instead is the per-member ADJUSTMENT — `permission_grants` /
+ *   `permission_revokes` — which a role name genuinely cannot express;
+ *   `effectivePermissionsForMember` combines the three.
  * - **The session-less transaction fallback is DELETED, not translated.** The
  *   Mongoose helper string-matched a "no replica set" error and re-ran the work
  *   WITHOUT a transaction, so a subtree move on a standalone deployment ran
@@ -51,8 +54,9 @@ import {
   type AccountCategoryId,
 } from '@oxyhq/contracts';
 import {
+  effectivePermissionsForMember,
   permissionsForAccountRole,
-  roleCanActAs,
+  type AccountPermission,
   type AccountRole,
 } from '../utils/accountRoles';
 import { isCredentialUsable } from '../utils/credentialUsability';
@@ -149,7 +153,14 @@ export interface MembershipLike {
 /** Resolved effective access of a caller over an account. */
 export interface EffectiveAccess {
   role: AccountRole;
-  permissions: string[];
+  /**
+   * What the caller may actually do: the role's baseline adjusted by the
+   * membership row's own grants and revokes. Typed as the permission union
+   * rather than `string[]` so a gate cannot be written against a string that is
+   * not in the vocabulary — a typo in `requireAccountPermission('acount:read')`
+   * would otherwise be a permanently-false check that reads as a working gate.
+   */
+  permissions: AccountPermission[];
   /** `self` = implicit ownership of one's own personal account. */
   source: 'self' | 'direct' | 'inherited';
   /** The concrete membership row, when the access came from one. */
@@ -756,9 +767,7 @@ export class AccountService {
 
     return {
       role: resolved.row.role,
-      // Derived from the role, always. Mongo stored an array beside it that
-      // every write site set to exactly this; it is not data and does not travel.
-      permissions: permissionsForAccountRole(resolved.row.role),
+      permissions: effectivePermissionsForMember(resolved.row),
       source: resolved.source,
       membership: resolved.row,
     };
@@ -766,16 +775,27 @@ export class AccountService {
 
   /**
    * Authorise `userId` to switch INTO `accountId` (`POST /accounts/:id/switch`).
-   * Authorised iff the caller's effective role carries `account:act_as`. Returns
-   * the role on success, null otherwise. Also re-run to keep a managed-account
-   * session bound to its operator's membership (revocation kills the session).
+   * Authorised iff the caller's EFFECTIVE permissions carry `account:act_as`.
+   * Returns the role on success, null otherwise. Also re-run to keep a
+   * managed-account session bound to its operator's membership (revocation kills
+   * the session).
+   *
+   * Read off the permission set, never off the role. The two agreed for as long
+   * as permissions were a pure function of the role, but a per-member revoke of
+   * `account:act_as` is precisely the grant an operator most wants to be able to
+   * withdraw — a ghostwriter who may edit a channel but may not become it — and a
+   * role check would silently ignore it. It would ALSO disagree with the copy of
+   * this decision consumers already make: they read `account:act_as` out of the
+   * `permissions` array this service serialises, so gating the session mint on
+   * the role would let an app publish under an identity Oxy refuses to mint a
+   * session for, and vice versa.
    */
   async verifyActingAs(userId: string, accountId: string): Promise<AccountRole | null> {
     const access = await this.resolveEffectiveAccess(userId, accountId);
     if (!access) {
       return null;
     }
-    return roleCanActAs(access.role) ? access.role : null;
+    return access.permissions.includes('account:act_as') ? access.role : null;
   }
 
   /**
@@ -973,12 +993,21 @@ export class AccountService {
       throw new BadRequestError('User is already a member of this account');
     }
 
+    // Both delta columns are RESET on the conflict path, not just left to their
+    // insert default. A `removed` row is reactivated rather than replaced, so
+    // without this a member removed while holding a grant of `credentials:create`
+    // would silently carry it back in on re-invitation as a `viewer` — the
+    // permissions the invite is nominally handing out being a strict subset of
+    // what the row actually confers, with nothing in the request to hint at it.
+    // A re-invitation is a fresh grant.
     const [member] = await db
       .insert(accountMembers)
       .values({
         accountId,
         memberUserId: targetUserId,
         role,
+        permissionGrants: [],
+        permissionRevokes: [],
         inherit,
         status: 'active',
         invitedByUserId: callerUserId,
@@ -988,6 +1017,8 @@ export class AccountService {
         target: [accountMembers.accountId, accountMembers.memberUserId],
         set: {
           role,
+          permissionGrants: [],
+          permissionRevokes: [],
           inherit,
           status: 'active',
           invitedByUserId: callerUserId,
@@ -1007,27 +1038,63 @@ export class AccountService {
   }
 
   /**
-   * Change a member's role and/or inheritance. An owner's role can only be
-   * changed via {@link transferOwnership}.
+   * Change a member's role, inheritance and/or per-member permission deltas.
+   *
+   * An OWNER row is refused outright — not just its `role`, but its permissions
+   * too. Ownership is absolute and is granted only through
+   * {@link transferOwnership}; an editable owner row would let anyone holding
+   * `members:update` revoke `account:delete` from the account's owner, and there
+   * would then be no endpoint able to give it back.
+   *
+   * The caller is responsible for the escalation guard (an actor may not confer
+   * a permission they do not themselves hold). It lives at the route, where the
+   * actor's own effective access has already been resolved, rather than here,
+   * where it would need to resolve that access a second time — the route is the
+   * only caller and the guard is exercised through it.
    */
-  async updateMemberRole(
+  async updateMember(
     accountId: string,
     memberId: string,
-    role: Exclude<AccountRole, 'owner'>,
-    inherit?: boolean
+    patch: {
+      role?: Exclude<AccountRole, 'owner'>;
+      inherit?: boolean;
+      permissionGrants?: AccountPermission[];
+      permissionRevokes?: AccountPermission[];
+    }
   ): Promise<AccountMemberRow> {
     const member = await this.requireDirectMember(accountId, memberId);
     if (member.role === 'owner') {
-      throw new ForbiddenError("An owner's role can only be changed via transfer-ownership");
+      throw new ForbiddenError(
+        "An owner's membership can only be changed via transfer-ownership"
+      );
+    }
+
+    const set: Partial<typeof accountMembers.$inferInsert> = {};
+    if (patch.role !== undefined) set.role = patch.role;
+    if (patch.inherit !== undefined) set.inherit = patch.inherit;
+    // Each delta list is assigned WHOLE, so sending `[]` is how a caller clears
+    // one. That is why the route's schema treats "absent" and "empty" as
+    // different requests rather than normalising them together.
+    if (patch.permissionGrants !== undefined) set.permissionGrants = patch.permissionGrants;
+    if (patch.permissionRevokes !== undefined) set.permissionRevokes = patch.permissionRevokes;
+
+    if (Object.keys(set).length === 0) {
+      return member;
     }
 
     const [updated] = await getDb()
       .update(accountMembers)
-      .set(inherit === undefined ? { role } : { role, inherit })
+      .set(set)
       .where(eq(accountMembers.id, memberId))
       .returning();
 
-    logger.info('Account member role updated', { accountId, memberId, role });
+    logger.info('Account member updated', {
+      accountId,
+      memberId,
+      role: updated.role,
+      grants: updated.permissionGrants.length,
+      revokes: updated.permissionRevokes.length,
+    });
     return updated;
   }
 
@@ -1101,9 +1168,14 @@ export class AccountService {
     }
 
     await db.transaction(async (tx) => {
+      // The promoted row's per-member deltas are CLEARED, because an owner row
+      // can never be edited again (`updateMember` refuses one). Carrying an
+      // admin-era revoke of `account:delete` into ownership would mint an owner
+      // permanently missing a permission with no endpoint able to restore it —
+      // the one shape of lockout this graph has no answer for.
       const promoted = await tx
         .update(accountMembers)
-        .set({ role: 'owner' })
+        .set({ role: 'owner', permissionGrants: [], permissionRevokes: [] })
         .where(
           and(
             eq(accountMembers.accountId, accountId),
@@ -1311,8 +1383,15 @@ export class AccountService {
   // Internal helpers
   // -------------------------------------------------------------------------
 
-  /** Fetch a direct, non-removed membership row or throw 404. */
-  private async requireDirectMember(
+  /**
+   * Fetch a direct, non-removed membership row or throw 404.
+   *
+   * Public because the member-permission editor's escalation guards run at the
+   * route (where the ACTOR's effective access is already resolved) and need the
+   * target row to compare against — with the same 404 for a member of another
+   * account that every other member operation gives.
+   */
+  async requireDirectMember(
     accountId: string,
     memberId: string
   ): Promise<AccountMemberRow> {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { accountCategoriesSchema, createAccountRequestSchema } from '@oxyhq/contracts';
-import { ACCOUNT_ROLES } from '../utils/accountRoles';
+import { ACCOUNT_PERMISSIONS, ACCOUNT_ROLES } from '../utils/accountRoles';
 import { ACCOUNT_CREDENTIAL_ENVIRONMENTS } from '../db/schema/accountCredentials';
 import { APPLICATION_SCOPES } from '../utils/applicationScopes';
 
@@ -107,13 +107,51 @@ export const inviteAccountMemberSchema = z.object({
   inherit: z.boolean().optional(),
 });
 
-/** PATCH /accounts/:id/members/:memberId — change a member role / inheritance. */
+/**
+ * A per-member permission delta list.
+ *
+ * The vocabulary is enforced HERE, at the write boundary, and nowhere else — no
+ * SQL `CHECK` lists it (see `db/schema/accountMembers.ts` for the measurement
+ * that rules that out), and the read path filters rather than validates. So a
+ * string outside `ACCOUNT_PERMISSIONS` is a 400 naming the offending value,
+ * while a string that WAS valid when it was stored and has since been retired
+ * simply stops counting.
+ *
+ * Capped at the size of the vocabulary itself: a longer list can only be
+ * duplicates or padding, and an unbounded array on a write endpoint is a free
+ * row-size amplifier.
+ */
+const permissionListSchema = z
+  .array(z.enum(ACCOUNT_PERMISSIONS))
+  .max(ACCOUNT_PERMISSIONS.length);
+
+/**
+ * PATCH /accounts/:id/members/:memberId — change a member's role, inheritance
+ * and/or per-member permission deltas.
+ *
+ * Every field is optional and the body must name at least one: permissions are
+ * editable WITHOUT restating the role, which is the whole point of the endpoint,
+ * and a caller forced to re-send `role` to adjust a permission would be
+ * re-asserting a value it may have read before someone else changed it.
+ *
+ * An empty array is a meaningful value — it CLEARS that delta list — so the
+ * "at least one field" check counts keys present in the parsed object rather
+ * than truthy ones.
+ */
 export const updateAccountMemberSchema = z
   .object({
-    role: z.enum(assignableRoles as [typeof assignableRoles[number], ...typeof assignableRoles]),
+    role: z
+      .enum(assignableRoles as [typeof assignableRoles[number], ...typeof assignableRoles])
+      .optional(),
     inherit: z.boolean().optional(),
+    permissionGrants: permissionListSchema.optional(),
+    permissionRevokes: permissionListSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine((body) => Object.keys(body).length > 0, {
+    message:
+      'Provide at least one of: role, inherit, permissionGrants, permissionRevokes',
+  });
 
 /** POST /accounts/:id/transfer-ownership. */
 export const transferAccountOwnershipSchema = z.object({
