@@ -86,14 +86,17 @@ export { verifySecret } from './verifySecret';
 // changes, every consuming backend sweeps its caches instead of waiting out a TTL.
 export {
   createOxyUserInvalidationHandler,
-  evictOxyIdentityCache,
   publishOxyUserInvalidation,
 } from './userInvalidation';
 export type {
-  OxyIdentityCacheEvictor,
   OxyInvalidationPublisher,
   OxyUserInvalidationHandlerOptions,
 } from './userInvalidation';
+// The identity-key enumeration itself is platform-neutral (`src/utils/`) so the
+// client mixins and this Node-only subscriber sweep the SAME list — a second
+// copy is what let `updateAccount` and `updateProfile` drift apart.
+export { evictOxyIdentityCache, oxyUserByIdCacheKey, OXY_IDENTITY_CACHE_PREFIXES } from '../utils/identityCacheSweep';
+export type { OxyIdentityCacheEvictor } from '../utils/identityCacheSweep';
 
 // Registrable-apex (eTLD+1) derivation via the Public Suffix List — the SINGLE
 // SOURCE OF TRUTH shared with the IdP worker and the client FAPI auto-detect.

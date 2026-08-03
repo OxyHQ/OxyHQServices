@@ -173,9 +173,19 @@ export {
 // SDK's user query cache under both keys it owns (by-id + viewer-scoped
 // by-username). Consumers route ALL cache seeds (feed / list / search / profile
 // hydration) through this so a sparse source can never strip a field an
-// authoritative fetch already stored.
-export { upsertCachedUser, upsertCachedUsers } from './ui/hooks/queries/userCache';
-export type { CacheableUser } from './ui/hooks/queries/userCache';
+// authoritative fetch already stored. A write that DELIBERATELY empties a field
+// ("remove my picture") says so with `{ cleared: [...] }` — the payload cannot
+// express it, see the module docs.
+export {
+    upsertCachedUser,
+    upsertCachedUsers,
+    CLEARABLE_USER_FIELDS,
+} from './ui/hooks/queries/userCache';
+export type {
+    CacheableUser,
+    ClearableUserField,
+    UpsertCachedUserOptions,
+} from './ui/hooks/queries/userCache';
 
 // Mutation status aggregator (for "Syncing..." indicators)
 export { useMutationStatus } from './ui/hooks/useMutationStatus';

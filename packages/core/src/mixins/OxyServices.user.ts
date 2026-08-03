@@ -28,6 +28,7 @@ import {
 import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
 import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
+import { evictOxyIdentityCache } from '../utils/identityCacheSweep';
 import { logger } from '../logger';
 import { extractErrorStatus } from '../utils/errorUtils';
 
@@ -534,13 +535,15 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     /**
      * Update user profile.
      *
-     * Invalidates the SDK-side response cache for every endpoint that
-     * returns the current user (`GET /users/me`, `GET /session/user/*`,
-     * `GET /users/<id>`, `GET /profiles/username/*`) so the next read
-     * doesn't return a stale snapshot. Without this, a follow-up
-     * `getUserBySession` call inside the 2-minute cache window can return
-     * the pre-update user — most visibly during onboarding, where it
-     * causes the username step to flicker back as if nothing was saved.
+     * Invalidates the SDK-side response cache for every endpoint that can
+     * return this user — the list is owned by {@link evictOxyIdentityCache}, so
+     * a new identity read is added in one place instead of to each writer
+     * separately (this method's own hand-written copy had already drifted from
+     * the server-side one, missing `GET /auth/lookup/*` and
+     * `GET /profiles/resolve`). Without the sweep a follow-up
+     * `getUserBySession` inside the cache window returns the pre-update user —
+     * most visibly during onboarding, where the username step flickers back as
+     * if nothing was saved.
      *
      * TanStack Query handles offline queuing automatically.
      */
@@ -550,15 +553,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           await this.makeRequest<User>('PUT', '/users/me', updates, { cache: false }),
         );
 
-        // Bust every cached representation of the current user. We use a
-        // prefix sweep rather than an enumeration because the SDK never
-        // tracks the set of active session IDs centrally.
-        this.clearCacheByPrefix('GET:/session/user/');
-        this.clearCacheByPrefix('GET:/users/me');
-        this.clearCacheByPrefix('GET:/profiles/username/');
-        if (result?.id) {
-          this.clearCacheEntry(`GET:/users/${result.id}`);
-        }
+        evictOxyIdentityCache(this, result?.id);
 
         return result;
       } catch (error) {
@@ -615,10 +610,9 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         const result = await this.makeRequest<PrivacySettings>('PATCH', `/privacy/${id}/privacy`, settings, {
           cache: false,
         });
-        this.clearCacheByPrefix('GET:/session/user/');
-        this.clearCacheByPrefix('GET:/users/me');
-        this.clearCacheByPrefix('GET:/profiles/username/');
-        this.clearCacheEntry(`GET:/users/${id}`);
+        // Privacy settings ride the user DTO, so every identity read goes stale
+        // too — same key list as any other profile write.
+        evictOxyIdentityCache(this, id);
         this.clearCacheEntry(`GET:/privacy/${id}/privacy`);
         return result;
       } catch (error) {
