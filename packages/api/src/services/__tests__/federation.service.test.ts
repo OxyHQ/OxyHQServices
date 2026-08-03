@@ -694,6 +694,41 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     expect((await storedUser(userId))?.avatar).toBe('stored-file-id');
   });
 
+  it('returns a relabelled identity resolved by bridge handle without clobbering username/domain', async () => {
+    actorCounter += 1;
+    const bridgeDomain = 'bird.makeup';
+    const networkDomain = 'x.com';
+    const local = `wired${actorCounter}`;
+    const bridgeHandle = `${local}@${bridgeDomain}`;
+    const relabelledHandle = `${local}@${networkDomain}`;
+    const actorUri = `https://${bridgeDomain}/users/${local}`;
+
+    webfingerSpy.mockResolvedValue({ actorUri, subjectAcct: bridgeHandle });
+    actorSpy.mockResolvedValue({
+      actorUri,
+      domain: bridgeDomain,
+      username: bridgeHandle,
+      displayName: 'Wired',
+      bio: 'bridge bio',
+    });
+
+    const userId = await seedFederatedUser(
+      { handle: relabelledHandle, actorUri, domain: networkDomain },
+      FRESH_AGE_MS,
+    );
+
+    const result = await federationService.resolveAndUpsert(bridgeHandle);
+    await flushMicrotasks();
+
+    expect(result?._id).toBe(userId);
+    expect(result?.username).toBe(relabelledHandle);
+    expect(actorSpy).not.toHaveBeenCalled();
+
+    const row = await storedUser(userId);
+    expect(row?.username).toBe(relabelledHandle);
+    expect(row?.domain).toBe(networkDomain);
+  });
+
   // ----------------------------------------------------------------------
   // Own-domain guard: `<localpart>@oxy.so` is a NON-ENTITY. On Oxy's own apex
   // the only valid identity is the bare local handle (`nate`); the

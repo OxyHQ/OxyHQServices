@@ -89,6 +89,15 @@ describe('getUserActor', () => {
     expect(actor).toMatchObject({ name: 'henry' });
   });
 
+  it('uses an intentionally cleared bio instead of falling back to legacy description', async () => {
+    const actor = await getUserActor(
+      { username: 'cleared-bio', bio: '', description: 'legacy text', kind: 'personal' },
+      DOMAIN,
+    );
+
+    expect(actor).toMatchObject({ summary: '' });
+  });
+
   it('returns null without touching the key store when there is no username', async () => {
     expect(await getUserActor({ kind: 'personal' }, DOMAIN)).toBeNull();
   });

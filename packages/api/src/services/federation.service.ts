@@ -726,7 +726,7 @@ export async function getUserActor(user: ActorSourceUser, domain: string = AP_DO
     publicKeyPem: keyPair.publicKeyPem,
     keyId: keyPair.keyId,
     name: displayName,
-    summary: user.bio || user.description || '',
+    summary: user.bio ?? user.description ?? '',
     avatar,
     // A row's `kind` is NOT NULL, but `ActorSourceUser` accepts null so a
     // caller reading through a nullable projection needs no laundering of its
@@ -1128,6 +1128,36 @@ class FederationService {
    *    WebFinger → fetch actor profile (HTTP Signature) → download avatar →
    *    upsert as type=federated → return.
    */
+  /**
+   * Hand back a cached federated row without blocking on remote I/O. Schedules a
+   * background refresh when the record is stale or its avatar still needs work.
+   */
+  private async returnCachedFederatedRow(
+    existing: AccountDocument,
+    handleForRefresh: string,
+  ): Promise<AccountDocument> {
+    // Archived actors (410-Gone tombstones) stay cached for follow-graph /
+    // audit continuity but must not be refreshed or re-surfaced as live.
+    if (existing.accountStatus === 'archived') {
+      return existing;
+    }
+
+    const updatedAt = existing.updatedAt;
+    const isStale = !(updatedAt instanceof Date)
+      || Date.now() - updatedAt.getTime() >= STALE_MS;
+    const avatarNeedsDownload = typeof existing.avatar === 'string'
+      && existing.avatar.startsWith('http');
+    const avatarFileMissing = !isStale && !avatarNeedsDownload
+      ? !(await this.storedAvatarExists(existing.avatar))
+      : false;
+
+    if (isStale || avatarNeedsDownload || avatarFileMissing) {
+      this.scheduleBackgroundRefresh(existing, handleForRefresh);
+    }
+
+    return existing;
+  }
+
   async resolveAndUpsert(handle: string): Promise<AccountDocument | null> {
     const cleaned = normalizeFediverseHandle(handle);
     if (!cleaned) return null;
@@ -1171,35 +1201,35 @@ class FederationService {
     const existing = existingRow ? await userService.readAccountDocument(existingRow.id) : null;
 
     if (existing) {
-      // Archived actors (410-Gone tombstones) stay cached for follow-graph /
-      // audit continuity but must not be refreshed or re-surfaced as live.
-      if (existing.accountStatus === 'archived') {
-        return existing;
-      }
-
-      // We have a row — never block the caller on remote I/O. Decide whether a
-      // background refresh is warranted: either the record is stale, or its
-      // avatar is still a raw http URL (e.g. set by PUT /users/resolve) that
-      // hasn't been downloaded into an Oxy file yet.
-      const updatedAt = existing.updatedAt;
-      const isStale = !(updatedAt instanceof Date)
-        || Date.now() - updatedAt.getTime() >= STALE_MS;
-      const avatarNeedsDownload = typeof existing.avatar === 'string'
-        && existing.avatar.startsWith('http');
-      const avatarFileMissing = !isStale && !avatarNeedsDownload
-        ? !(await this.storedAvatarExists(existing.avatar))
-        : false;
-
-      if (isStale || avatarNeedsDownload || avatarFileMissing) {
-        this.scheduleBackgroundRefresh(existing, cleaned);
-      }
-
-      return existing;
+      return this.returnCachedFederatedRow(existing, cleaned);
     }
 
     // No cached row — first-time blocking fetch (the only allowed blocking case).
     const webfinger = await this.resolveWebFingerResource(cleaned);
     if (!webfinger) return null;
+
+    // A relabelled bridge identity (e.g. `wired@x.com` stored via
+    // `PUT /users/resolve`) shares the bridge actor URI but not the bridge
+    // handle. A lookup keyed only on `(federationDomain, username)` would miss
+    // it and the upsert below would clobber the relabelled username/domain.
+    const [existingByActorUriRow] = await getDb()
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.type, 'federated'),
+          eq(users.federationActorUri, webfinger.actorUri),
+        ),
+      )
+      .limit(1);
+
+    const existingByActorUri = existingByActorUriRow
+      ? await userService.readAccountDocument(existingByActorUriRow.id)
+      : null;
+
+    if (existingByActorUri) {
+      return this.returnCachedFederatedRow(existingByActorUri, cleaned);
+    }
 
     const verifiedAcct = await this.verifiedAccountForResolution(cleaned, webfinger);
     const profile = await this.fetchActorProfile(webfinger.actorUri, verifiedAcct);
