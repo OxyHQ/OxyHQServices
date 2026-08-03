@@ -51,9 +51,9 @@ const BACKGROUND_TOKEN_LOCKOUT_SCOPE = 'background-token';
  * `nextDeviceSecret`: the secret is a stable device credential, so several
  * official apps/origins sharing one device can refresh concurrently without
  * invalidating one another. A dead/absent active session returns
- * `no_active_session` WITHOUT changing the credential.
- * — the client must re-authenticate and keeps its still-valid secret. Per-device
- * lockout + rate limiting blunt online secret-guessing.
+ * `no_active_session` WITHOUT changing the credential — the client must
+ * re-authenticate and keeps its still-valid secret. Per-device lockout + rate
+ * limiting blunt online secret-guessing.
  *
  * An optional `accountId` PINS the mint to one account of that device instead of
  * whichever one is currently active. It exists for identity-bound clients

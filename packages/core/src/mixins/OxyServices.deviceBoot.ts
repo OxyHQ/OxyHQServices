@@ -70,8 +70,9 @@ export function OxyServicesDeviceBootMixin<T extends typeof OxyServicesBase>(Bas
      * Zero-cookie mint. Present the first-party `deviceId` + `deviceSecret` to
      * `POST /session/device/token` — NO bearer, NO cookies: possession of the
      * secret IS the device-ownership proof. Returns a fresh short access token
-     * for the device's active account plus `nextDeviceSecret` (rotation-in-use)
-     * and the projected device-session `state`.
+     * for the device's active account plus `nextDeviceSecret` (on mint, the same
+     * proven secret echoed back — rotation happens on sign-in, not mint) and
+     * the projected device-session `state`.
      *
      * `skipAuth`: this call carries no bearer, so a 401 must surface DIRECTLY —
      * never trigger `HttpService`'s 401→refresh→retry dance. The cold boot / re-

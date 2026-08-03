@@ -18,14 +18,14 @@
  *
  * Safety:
  *   - Never creates an Application — it must already exist and be `active`.
- *   - No deletes, no drops, no modification of unrelated documents.
+ *   - No deletes, no drops, no modification of unrelated rows.
  *   - DRY_RUN=true reports the plan without writing and without emitting a secret.
  *
  * Run (inside the oxy-api image, working dir /app):
  *   bun run packages/api/scripts/create-service-credential.ts
  *
  * Env:
- *   MONGODB_URI            required (injected by ECS from SSM)
+ *   DATABASE_URL           required (injected by ECS from SSM)
  *   APP_NAME               required, e.g. "Mention"
  *   OWNER_USERNAME         owner username to resolve (default 'oxy')
  *   SCOPES                 required, comma-separated, e.g. "federation:write,user:read"
@@ -35,12 +35,13 @@
  */
 
 import crypto from 'crypto';
-import mongoose from 'mongoose';
-import { Application } from '../src/models/Application';
-import { ApplicationCredential } from '../src/models/ApplicationCredential';
+import { and, eq, ne } from 'drizzle-orm';
+import { closePostgres, connectPostgres, getDb } from '../src/config/postgres';
+import { applicationCredentials } from '../src/db/schema/applicationCredentials';
+import { applications } from '../src/db/schema/applications';
+import { users } from '../src/db/schema/users';
 import { APPLICATION_SCOPES } from '../src/utils/applicationScopes';
 import { isCredentialUsable } from '../src/utils/credentialUsability';
-import { User } from '../src/models/User';
 import { logger } from '../src/utils/logger';
 
 // ── Mirror routes/applications.ts credential generation EXACTLY ──────────────
@@ -154,23 +155,37 @@ async function run(): Promise<void> {
   const scopes = parseAndValidateScopes(process.env.SCOPES);
   logger.info('Validated requested scopes', { scopes });
 
+  const db = getDb();
+
   // ── 1. Resolve owner user ──
-  const owner = await User.findOne({ username: ownerUsername }).select('_id username').lean();
-  if (!owner?._id) {
+  const [owner] = await db
+    .select({ id: users.id, username: users.username })
+    .from(users)
+    .where(eq(users.username, ownerUsername))
+    .limit(1);
+  if (!owner) {
     throw new Error(
       `Owner user "${ownerUsername}" not found — refusing to proceed. ` +
         `Set OWNER_USERNAME to the correct platform owner username.`,
     );
   }
-  const ownerId = owner._id as mongoose.Types.ObjectId;
-  logger.info('Resolved owner user', { username: ownerUsername, ownerId: ownerId.toString() });
+  logger.info('Resolved owner user', { username: ownerUsername, ownerId: owner.id });
 
   // ── 2. Resolve the EXISTING Application (must already exist + be active) ──
-  const application = await Application.findOne({
-    name: appName,
-    createdByUserId: ownerId,
-    status: { $ne: 'deleted' },
-  });
+  const [application] = await db
+    .select({
+      id: applications.id,
+      status: applications.status,
+    })
+    .from(applications)
+    .where(
+      and(
+        eq(applications.name, appName),
+        eq(applications.createdByUserId, owner.id),
+        ne(applications.status, 'deleted'),
+      ),
+    )
+    .limit(1);
 
   if (!application) {
     throw new Error(`Active Application "${appName}" not found for owner "${ownerUsername}".`);
@@ -179,7 +194,7 @@ async function run(): Promise<void> {
   if (application.status !== 'active') {
     logger.warn('Application is not active', {
       app: appName,
-      applicationId: application._id.toString(),
+      applicationId: application.id,
       status: application.status,
     });
     throw new Error(
@@ -188,24 +203,36 @@ async function run(): Promise<void> {
     );
   }
 
-  const applicationId = application._id;
   logger.info('Resolved active Application', {
     app: appName,
-    applicationId: applicationId.toString(),
+    applicationId: application.id,
   });
 
   // ── 3. Idempotency: reuse an existing usable service production credential ──
-  const existing = await ApplicationCredential.findOne({
-    applicationId,
-    type: 'service',
-    environment: 'production',
-    status: { $ne: 'revoked' },
-  });
+  const existingRows = await db
+    .select({
+      id: applicationCredentials.id,
+      publicKey: applicationCredentials.publicKey,
+      scopes: applicationCredentials.scopes,
+      status: applicationCredentials.status,
+      expiresAt: applicationCredentials.expiresAt,
+    })
+    .from(applicationCredentials)
+    .where(
+      and(
+        eq(applicationCredentials.applicationId, application.id),
+        eq(applicationCredentials.type, 'service'),
+        eq(applicationCredentials.environment, 'production'),
+        ne(applicationCredentials.status, 'revoked'),
+      ),
+    )
+    .limit(1);
 
+  const existing = existingRows[0];
   if (existing && isCredentialUsable(existing)) {
     logger.info('Reusing existing usable service credential — NOT minting a new one', {
-      applicationId: applicationId.toString(),
-      credentialId: existing._id.toString(),
+      applicationId: application.id,
+      credentialId: existing.id,
       publicKey: existing.publicKey,
     });
     logger.info(
@@ -215,10 +242,10 @@ async function run(): Promise<void> {
 
     const reusedResult: ResultRow = {
       app: appName,
-      applicationId: applicationId.toString(),
+      applicationId: application.id,
       ownerUsername,
-      ownerId: ownerId.toString(),
-      credentialId: existing._id.toString(),
+      ownerId: owner.id,
+      credentialId: existing.id,
       publicKey: existing.publicKey,
       type: 'service',
       environment: 'production',
@@ -235,16 +262,16 @@ async function run(): Promise<void> {
   if (dryRun) {
     logger.info('DRY RUN — would mint a new service credential', {
       app: appName,
-      applicationId: applicationId.toString(),
+      applicationId: application.id,
       credentialName,
       scopes,
     });
 
     const planResult: ResultRow = {
       app: appName,
-      applicationId: applicationId.toString(),
+      applicationId: application.id,
       ownerUsername,
-      ownerId: ownerId.toString(),
+      ownerId: owner.id,
       credentialId: null,
       publicKey: null,
       type: 'service',
@@ -260,22 +287,32 @@ async function run(): Promise<void> {
 
   const { publicKey, secret, secretHash } = generateCredentialMaterial();
 
-  const credential = await ApplicationCredential.create({
-    applicationId,
-    name: credentialName,
-    publicKey,
-    secretHash,
-    type: 'service',
-    environment: 'production',
-    scopes,
-    status: 'active',
-    createdByUserId: ownerId,
-  });
+  const [credential] = await db
+    .insert(applicationCredentials)
+    .values({
+      applicationId: application.id,
+      name: credentialName,
+      publicKey,
+      secretHash,
+      type: 'service',
+      environment: 'production',
+      scopes,
+      status: 'active',
+      createdByUserId: owner.id,
+    })
+    .returning({
+      id: applicationCredentials.id,
+      publicKey: applicationCredentials.publicKey,
+    });
+
+  if (!credential) {
+    throw new Error('Failed to insert service credential');
+  }
 
   logger.info('Service credential created', {
     app: appName,
-    applicationId: applicationId.toString(),
-    credentialId: credential._id.toString(),
+    applicationId: application.id,
+    credentialId: credential.id,
     publicKey: credential.publicKey,
     scopes,
   });
@@ -285,10 +322,10 @@ async function run(): Promise<void> {
 
   const result: ResultRow = {
     app: appName,
-    applicationId: applicationId.toString(),
+    applicationId: application.id,
     ownerUsername,
-    ownerId: ownerId.toString(),
-    credentialId: credential._id.toString(),
+    ownerId: owner.id,
+    credentialId: credential.id,
     publicKey: credential.publicKey,
     type: 'service',
     environment: 'production',
@@ -301,20 +338,19 @@ async function run(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    logger.error('MONGODB_URI is required');
+  if (!process.env.DATABASE_URL) {
+    logger.error('DATABASE_URL is required');
     process.exit(1);
   }
 
-  await mongoose.connect(uri);
-  logger.info('Connected to MongoDB');
+  await connectPostgres();
+  logger.info('Connected to Postgres');
 
   try {
     await run();
   } finally {
-    await mongoose.connection.close();
-    logger.info('MongoDB connection closed');
+    await closePostgres();
+    logger.info('Postgres connection closed');
   }
 }
 

@@ -227,10 +227,9 @@ export async function runSessionColdBoot(
   //    origin persisted a deviceId + deviceSecret, mint a short access token with
   //    a single bearer-less POST (no cookie, no navigation). The mint itself runs
   //    through `refreshDeviceSecretArm`, which acquires the client's PROCESS-WIDE
-  //    single-flight, persists the rotated `nextDeviceSecret` BEFORE planting the
-  //    token, and returns a classified outcome — so this step can never
-  //    double-rotate the server against the scheduler/transport/401 lanes, and
-  //    the durable store always converges on the true `current` secret.
+  //    single-flight, persists `nextDeviceSecret` BEFORE planting the token, and
+  //    returns a classified outcome — so concurrent mint lanes share one in-flight
+  //    request and the durable store always converges on the server's credential.
   steps.push({
     id: 'device-secret-mint',
     // Network step — skip entirely when the caller reports the device offline so
@@ -249,7 +248,7 @@ export async function runSessionColdBoot(
       const result = await refreshDeviceSecretArm({ oxy, store, pin });
       switch (result.status) {
         case 'ok':
-          // The arm persisted the rotated secret and planted the token.
+          // The arm persisted nextDeviceSecret and planted the token.
           return {
             kind: 'session',
             session: {

@@ -57,10 +57,11 @@ export const deviceTokenMintRequestSchema = z.object({
 
 /**
  * Wire shape of a successful `POST /session/device/token`: the freshly-minted
- * short access token for the active account, its expiry, the NEXT rotating
- * device secret the client must persist (rotation-in-use — the presented secret
- * stays valid for a short grace so multi-tab races don't lock out), and the
- * projected device-session state.
+ * short access token for the active account, its expiry, the device secret the
+ * client must persist (`nextDeviceSecret` — on mint this echoes the presented
+ * secret unchanged so concurrent refreshes from multiple origins do not race),
+ * and the projected device-session state. Sign-in rotates the secret via
+ * `issueDeviceSecret`; mint does not.
  */
 export const deviceTokenMintResponseSchema = z.object({
   accessToken: z.string(),
