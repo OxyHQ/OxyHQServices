@@ -38,6 +38,7 @@ import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { normalizeUserIdentity } from '../utils/userIdentity';
 import { evictOxyIdentityCache } from '../utils/identityCacheSweep';
+import { evictOxyAccountForestCache, oxyAccountDetailCacheKey } from '../utils/accountCacheSweep';
 import { CACHE_TIMES } from './mixinHelpers';
 
 // ---------------------------------------------------------------------------
@@ -709,7 +710,7 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
         );
         // A new account changes the accessible forest — bust every cached list
         // (flat + tree) so it appears on the next `listAccounts()` read.
-        this._invalidateAccountLists();
+        evictOxyAccountForestCache(this);
         return res.account;
       } catch (error) {
         throw this.handleError(error);
@@ -800,8 +801,7 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
         );
         // Bust the cached detail and every list (which embeds account profile
         // data) so neither serves the pre-update snapshot.
-        this.clearCacheEntry(`GET:/accounts/${encodeURIComponent(accountId)}`);
-        this._invalidateAccountLists();
+        evictOxyAccountForestCache(this, accountId);
         // The parent's children list embeds this account's profile and is keyed
         // by the PARENT id, so it is reachable only from the response node.
         const parentAccountId = res.account?.parentAccountId;
@@ -833,10 +833,9 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
           { cache: false },
         );
         // Bust every cached representation of the archived account.
-        this.clearCacheEntry(`GET:/accounts/${encodeURIComponent(accountId)}`);
         this.clearCacheEntry(`GET:/accounts/${encodeURIComponent(accountId)}/members`);
         this.clearCacheEntry(`GET:/accounts/${encodeURIComponent(accountId)}/credentials`);
-        this._invalidateAccountLists();
+        evictOxyAccountForestCache(this, accountId);
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -975,7 +974,7 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
         // Ownership change alters roles in the member list AND the detail, and
         // can change which accounts the caller "owns" in the list view.
         this._invalidateAccountMembership(accountId);
-        this._invalidateAccountLists();
+        evictOxyAccountForestCache(this);
         return result;
       } catch (error) {
         throw this.handleError(error);
@@ -1317,36 +1316,22 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
     // =========================================================================
 
     /**
-     * Bust every cached account list. `listAccounts({tree?})` keys the flat list
-     * as `GET:/accounts` and the tree variant as `GET:/accounts?tree=true` (the
-     * query string is part of the URL path). A change to the accessible forest
-     * (create/archive/ownership transfer) invalidates both, so we clear the
-     * unscoped entry plus every `?`-query variant via a prefix sweep. The prefix
-     * `GET:/accounts?` matches only the query-string list variants, never the
-     * `GET:/accounts/<id>…` detail/sub-resource keys.
-     *
-     * Internal helper (leading underscore); not part of the supported public
-     * surface. Public rather than `private` because mixins compose into an
-     * exported anonymous class, where TypeScript cannot represent a private
-     * member in the emitted declaration file (TS4094).
-     */
-    _invalidateAccountLists(): void {
-      this.clearCacheEntry('GET:/accounts');
-      this.clearCacheByPrefix('GET:/accounts?');
-    }
-
-    /**
      * Bust the cached member list and detail for an account after a membership
      * mutation. The member list (`listAccountMembers`) and the detail
      * (`getAccount`, which can embed the caller's membership) both go stale when
      * the member set or a member's role changes.
      *
-     * Internal helper (leading underscore); see `_invalidateAccountLists` for why
-     * this is public rather than `private`.
+     * Internal helper (leading underscore); not part of the supported public
+     * surface. Public rather than `private` because mixins compose into an
+     * exported anonymous class, where TypeScript cannot represent a private
+     * member in the emitted declaration file (TS4094).
+     *
+     * The forest keys themselves are NOT owned here — see
+     * `utils/accountCacheSweep`, which the user mixin has to reach as well.
      */
     _invalidateAccountMembership(accountId: string): void {
       this.clearCacheEntry(`GET:/accounts/${encodeURIComponent(accountId)}/members`);
-      this.clearCacheEntry(`GET:/accounts/${encodeURIComponent(accountId)}`);
+      this.clearCacheEntry(oxyAccountDetailCacheKey(accountId));
     }
 
     /**
@@ -1358,8 +1343,8 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
      * query-string list variants, never the `GET:/applications/<id>…`
      * detail/sub-resource keys.
      *
-     * Internal helper (leading underscore); see `_invalidateAccountLists` for why
-     * this is public rather than `private`.
+     * Internal helper (leading underscore); see `_invalidateAccountMembership`
+     * for why this is public rather than `private`.
      */
     _invalidateAppLists(): void {
       this.clearCacheEntry('GET:/applications');
