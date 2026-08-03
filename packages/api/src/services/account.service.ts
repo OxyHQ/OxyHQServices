@@ -49,6 +49,7 @@ import type { AccountKind } from '../db/schema/users';
 import {
   CHILD_ACCOUNT_KINDS,
   RETIRED_ACCOUNT_CATEGORY_IDS,
+  isActAsEligibleKind,
   kindAcceptsAccountCategories,
   newlyAddedRetiredCategories,
   type AccountCategoryId,
@@ -70,6 +71,18 @@ import { DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName } from '@oxyhq/core';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
 import type { ApplicationScope } from '../utils/applicationScopes';
+
+/**
+ * The permission that authorises assuming an account's identity — what
+ * `POST /accounts/:id/switch` gates on, and therefore what operating an account
+ * gates on too.
+ *
+ * Typed as an {@link AccountPermission} so renaming or dropping it in
+ * `utils/accountRoles.ts` fails this file's typecheck, rather than leaving a
+ * string literal here that quietly matches nothing and reads as "no operator has
+ * ever held this".
+ */
+const ACT_AS_PERMISSION: AccountPermission = 'account:act_as';
 
 const CREDENTIAL_PUBLIC_KEY_PREFIX = 'oxy_dk_';
 const PUBLIC_KEY_RANDOM_BYTES = 24;
@@ -796,6 +809,102 @@ export class AccountService {
       return null;
     }
     return access.permissions.includes('account:act_as') ? access.role : null;
+  }
+
+  /**
+   * Whether `userId` OPERATES `accountId` — speaks with that account's voice.
+   *
+   * The question every self-directed moderation refusal actually wants to ask.
+   * The one those routes asked was "is this account me?", which is the whole
+   * truth only for a personal login: a channel, organization, project or bot is
+   * never the caller's own id, and yet the caller may act for it. So an id
+   * comparison answers "no" for all four and lets somebody block or restrict an
+   * account they themselves operate. Being the account is ONE CASE of operating
+   * it, which is why the self branch is here rather than a second rule beside
+   * every caller.
+   *
+   * TWO FAMILIES, TWO AUTHORITIES — collapsing them into one membership test is
+   * the easy way to get this wrong, in both directions at once:
+   *
+   *  - a **channel** can never be acted as ({@link isActAsEligibleKind} refuses
+   *    it: it is a content identity, not a seat). No session can be minted whose
+   *    subject is a channel, so there is no stronger right than membership to ask
+   *    for — acting for a channel simply IS being one of its active members;
+   *  - an **act-as-eligible** account (organization / project / bot) CAN be
+   *    switched into, and `account:act_as` is the right that governs that switch.
+   *    Bare membership is NOT enough: an account's `billing`, `developer` and
+   *    `viewer` members are deliberately members who may not act as it, so they
+   *    keep every affordance a stranger has over it, this one included;
+   *  - a **personal** account that is not the caller is never operated, whoever
+   *    asks, and neither is a kind added after this was written — the kinds are
+   *    admitted positively, not by excluding `personal`.
+   *
+   * ONE MEMBERSHIP READER. It resolves through
+   * {@link AccountService.resolveEffectiveAccess}, the same call
+   * {@link AccountService.verifyActingAs} and the account RBAC middleware use, so
+   * this cannot come to a different answer about the same person than the switch
+   * endpoint does. That also means an INHERITED membership counts, exactly as it
+   * does everywhere else here.
+   *
+   * The permission is READ off the resolved access rather than inferred from a
+   * role list: a list of role names at a call site is a second copy of
+   * `ROLE_PERMISSIONS`, and the copy is what goes stale the day a role is added
+   * or its grants change.
+   *
+   * ## It answers `false` for everything it cannot positively confirm
+   *
+   * A missing account row, no membership, an archived account, a member without
+   * the permission, a kind in neither family — all `false`, meaning the caller is
+   * not confirmed as an operator and the protective action goes ahead. The
+   * guarantee is deliberately the narrow one: you cannot act against an account
+   * we can POSITIVELY CONFIRM you operate.
+   *
+   * That is the opposite direction from `verifyActingAs`, which fails closed, and
+   * the two errors are not comparable in the same way. Acting AS an account is a
+   * capability — granting one that cannot be verified puts words in somebody
+   * else's mouth. Block and restrict are PROTECTIVE, and the caller is usually
+   * the person needing protection: wrongly deciding "operates" takes away the
+   * only tool they have for getting away from an account that is abusing them,
+   * with nothing on screen to say why, while wrongly deciding "does not operate"
+   * lets an operator do something pointless to their own account which the UI
+   * never offered them and which they can undo.
+   *
+   * Note what is NOT in that list: a database fault. Unlike a consumer asking
+   * Oxy over HTTP, this reads the same database the write it guards is about to
+   * use, so there is no state where the question is unanswerable but the action
+   * could still succeed. Swallowing that into `false` would convert a real outage
+   * into a silent allow for a write that is itself about to fail; it propagates.
+   */
+  async operatesAccount(userId: string, accountId: string): Promise<boolean> {
+    if (!userId || !accountId) {
+      return false;
+    }
+    if (userId === accountId) {
+      return true;
+    }
+
+    const db = getDb();
+    const [account] = await db
+      .select({ kind: users.kind })
+      .from(users)
+      .where(eq(users.id, accountId))
+      .limit(1);
+    if (!account) {
+      return false;
+    }
+
+    // Ordered so the dominant case — an ordinary personal target — costs this
+    // one indexed lookup and no membership read at all.
+    if (account.kind !== 'channel' && !isActAsEligibleKind(account.kind)) {
+      return false;
+    }
+
+    const access = await this.resolveEffectiveAccess(userId, accountId);
+    if (!access) {
+      return false;
+    }
+
+    return account.kind === 'channel' || access.permissions.includes(ACT_AS_PERMISSION);
   }
 
   /**
