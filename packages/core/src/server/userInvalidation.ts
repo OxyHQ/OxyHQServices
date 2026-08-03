@@ -6,10 +6,10 @@
  * Every Oxy backend caches Oxy identity, and none of them find out when it
  * changes. The `OxyServices` GET response cache holds `GET /users/:id` and
  * `GET /profiles/username/:name` for five minutes; it is swept when THIS process
- * writes the profile (see the `clearCacheEntry` calls in the user mixin) and
- * never when somebody else does — which is the normal case, since profiles are
- * edited in Oxy's own apps. So an avatar or display-name change is invisible to
- * every consuming backend for up to five minutes, per process.
+ * writes the profile (the `evictOxyIdentityCache` calls in the user and accounts
+ * mixins) and never when somebody else does — which is the normal case, since
+ * profiles are edited in Oxy's own apps. So an avatar or display-name change is
+ * invisible to every consuming backend for up to five minutes, per process.
  *
  * oxy-api broadcasts {@link OXY_USER_INVALIDATION_CHANNEL} on the shared Valkey
  * when a user's identity changes. This module is the consumer half: it parses
@@ -58,6 +58,10 @@ import {
   type OxyUserChangeReason,
   type OxyUserInvalidationEvent,
 } from '@oxyhq/contracts';
+import {
+  evictOxyIdentityCache,
+  type OxyIdentityCacheEvictor,
+} from '../utils/identityCacheSweep';
 
 /**
  * The publish surface of a Redis client. Both `ioredis` and `node-redis`
@@ -65,15 +69,6 @@ import {
  */
 export interface OxyInvalidationPublisher {
   publish(channel: string, message: string): unknown;
-}
-
-/**
- * The cache-eviction surface of an {@link OxyServices} instance. Declared
- * structurally so this Node-only module does not pull in the client.
- */
-export interface OxyIdentityCacheEvictor {
-  clearCacheEntry(key: string): void;
-  clearCacheByPrefix(prefix: string): number;
 }
 
 /**
@@ -201,27 +196,4 @@ export function createOxyUserInvalidationHandler(
       onError?.(error, raw);
     }
   };
-}
-
-/**
- * Sweep an `OxyServices` GET response cache of everything that could carry the
- * given user's identity.
- *
- * The by-id entry is exact. The by-username and resolve entries are keyed by
- * HANDLE, which cannot be derived from an id without the very lookup we are
- * invalidating, so those are swept by prefix — the same imprecision the SDK
- * already accepts when it sweeps its own cache after a local profile write, and
- * bounded by the fact that over-eviction costs a refetch and can never serve
- * wrong data.
- */
-export function evictOxyIdentityCache(oxy: OxyIdentityCacheEvictor, userId: string): void {
-  // Match the sweep the user mixin runs after a local profile write — session-
-  // bound and /users/me entries are keyed without the user id, so they must be
-  // prefix-swept on cross-service invalidation too.
-  oxy.clearCacheByPrefix('GET:/session/user/');
-  oxy.clearCacheByPrefix('GET:/users/me');
-  oxy.clearCacheByPrefix('GET:/auth/lookup/');
-  oxy.clearCacheEntry(`GET:/users/${userId}`);
-  oxy.clearCacheByPrefix('GET:/profiles/username/');
-  oxy.clearCacheByPrefix('GET:/profiles/resolve');
 }

@@ -37,6 +37,7 @@ import type { AccountKind, OrganizationCategory, ChildAccountKind } from '@oxyhq
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { normalizeUserIdentity } from '../utils/userIdentity';
+import { evictOxyIdentityCache } from '../utils/identityCacheSweep';
 import { CACHE_TIMES } from './mixinHelpers';
 
 // ---------------------------------------------------------------------------
@@ -736,6 +737,18 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
     /**
      * Update an account's mutable profile fields. Tree placement changes
      * (reparenting) go through the dedicated move endpoint, not here.
+     *
+     * An account IS a user, so this write changes identity — and a profile
+     * screen never reads `/accounts/<id>`. It reads `GET /users/<id>` and
+     * `GET /profiles/username/<handle>`, both cached for 5 minutes in the
+     * CALLER'S OWN process, so busting only the account-graph keys left every
+     * profile surface serving the pre-edit avatar and name for the full TTL
+     * with a perfectly healthy server (the cross-service `oxy:user:invalidate`
+     * signal does not help: it evicts BACKEND caches, and cannot reach a cache
+     * living in a browser tab). {@link evictOxyIdentityCache} owns that key
+     * list — see its docs for why the handle-keyed entries are prefix-swept
+     * (a RENAME leaves the old handle's entry unreachable by any targeted key).
+     *
      * @param accountId - The account's Mongo `_id`.
      * @param data - Subset of updatable profile fields.
      */
@@ -754,6 +767,16 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
         // data) so neither serves the pre-update snapshot.
         this.clearCacheEntry(`GET:/accounts/${encodeURIComponent(accountId)}`);
         this._invalidateAccountLists();
+        // The parent's children list embeds this account's profile and is keyed
+        // by the PARENT id, so it is reachable only from the response node.
+        const parentAccountId = res.account?.parentAccountId;
+        if (parentAccountId) {
+          this.clearCacheEntry(
+            `GET:/accounts/${encodeURIComponent(parentAccountId)}/children`,
+          );
+        }
+        // Every identity read of this account, whichever key it lands under.
+        evictOxyIdentityCache(this, accountId);
         return res.account;
       } catch (error) {
         throw this.handleError(error);

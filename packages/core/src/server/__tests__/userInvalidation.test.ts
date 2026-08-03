@@ -2,10 +2,11 @@ import { OXY_USER_INVALIDATION_CHANNEL } from '@oxyhq/contracts';
 
 import {
   createOxyUserInvalidationHandler,
-  evictOxyIdentityCache,
   publishOxyUserInvalidation,
-  type OxyIdentityCacheEvictor,
 } from '../userInvalidation';
+// The key enumeration this subscriber sweeps is platform-neutral and shared
+// with the client mixins — see `utils/identityCacheSweep` and its own suite.
+import type { OxyIdentityCacheEvictor } from '../../utils/identityCacheSweep';
 
 function makePublisher() {
   const calls: Array<{ channel: string; message: string }> = [];
@@ -198,23 +199,5 @@ describe('@oxyhq/core/server createOxyUserInvalidationHandler', () => {
 
   it('is a no-op with no options configured', () => {
     expect(() => createOxyUserInvalidationHandler()(validMessage)).not.toThrow();
-  });
-});
-
-describe('@oxyhq/core/server evictOxyIdentityCache', () => {
-  it('clears the exact by-id entry and the handle-keyed prefixes', () => {
-    // The by-id key is exact. The handle-keyed ones cannot be derived from an
-    // id without the lookup being invalidated, so they are swept by prefix.
-    const { evictor, entries, prefixes } = makeEvictor();
-    evictOxyIdentityCache(evictor, 'abc123');
-
-    expect(entries).toEqual(['GET:/users/abc123']);
-    expect(prefixes).toEqual([
-      'GET:/session/user/',
-      'GET:/users/me',
-      'GET:/auth/lookup/',
-      'GET:/profiles/username/',
-      'GET:/profiles/resolve',
-    ]);
   });
 });
