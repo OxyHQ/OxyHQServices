@@ -118,12 +118,18 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
   // would make a child that has no owner of its own look like it has exactly
   // one, and silently disable removing anybody.
   const ownerCount = useMemo(
-    () => members.filter((m) => m.role === 'owner' && m.source === 'direct').length,
+    () =>
+      members.filter(
+        (m) => m.role === 'owner' && (m.source ?? 'direct') === 'direct',
+      ).length,
     [members],
   );
 
   const invalidateMembers = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['accounts', 'members', id] });
+    // Inherited rows on descendant rosters derive from ancestor membership
+    // tables — mirror the SDK's per-account prefix sweep so every cached member
+    // list refetches, not only the account that was mutated.
+    queryClient.invalidateQueries({ queryKey: ['accounts', 'members'] });
     queryClient.invalidateQueries({ queryKey: ['accounts', 'detail', id] });
   }, [queryClient, id]);
 
@@ -348,7 +354,7 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
                     // be offering a request the server answers 404. The row is
                     // changed where it lives, on that ancestor's own member
                     // screen.
-                    const isEditableHere = member.source === 'direct';
+                    const isEditableHere = (member.source ?? 'direct') === 'direct';
                     const canEditThisRole = canUpdate && isEditableHere && !isOwner;
                     const canRemoveThisMember =
                       canRemove && isEditableHere && !isLastOwner && (!isOwner || canTransfer);

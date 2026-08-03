@@ -98,6 +98,7 @@ const CURRENT_ACCOUNT_KEY = 'oxy-current-account-id';
 const accountQueryKeys = {
   all: ['accounts'] as const,
   members: (accountId: string) => ['account-members', accountId] as const,
+  membersAll: ['account-members'] as const,
 };
 
 function readStoredAccountId(): string | null {
@@ -348,8 +349,8 @@ export function useInviteAccountMember() {
       role: AssignableAccountRole;
     }): Promise<AccountMember> =>
       oxyServices.inviteAccountMember(accountId, { usernameOrEmail, role }),
-    onSuccess: (member) => {
-      queryClient.invalidateQueries({ queryKey: accountQueryKeys.members(member.accountId) });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountQueryKeys.membersAll });
     },
   });
 }
@@ -368,8 +369,8 @@ export function useUpdateAccountMember() {
       memberId: string;
       role: AssignableAccountRole;
     }): Promise<AccountMember> => oxyServices.updateAccountMember(accountId, memberId, { role }),
-    onSuccess: (member) => {
-      queryClient.invalidateQueries({ queryKey: accountQueryKeys.members(member.accountId) });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountQueryKeys.membersAll });
     },
   });
 }
@@ -389,8 +390,8 @@ export function useRemoveAccountMember() {
       await oxyServices.removeAccountMember(accountId, memberId);
       return { accountId, memberId };
     },
-    onSuccess: ({ accountId }) => {
-      queryClient.invalidateQueries({ queryKey: accountQueryKeys.members(accountId) });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountQueryKeys.membersAll });
     },
   });
 }
@@ -408,8 +409,8 @@ export function useTransferAccountOwnership() {
       userId: string;
     }): Promise<AccountSuccessResult> =>
       oxyServices.transferAccountOwnership(accountId, { userId }),
-    onSuccess: (_data, { accountId }) => {
-      queryClient.invalidateQueries({ queryKey: accountQueryKeys.members(accountId) });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: accountQueryKeys.membersAll });
       queryClient.invalidateQueries({ queryKey: accountQueryKeys.all });
     },
   });

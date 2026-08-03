@@ -14,10 +14,11 @@ import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
 import type { GroupedItem } from '@/components/sections/types';
 
-// Roles that may manage membership + sharing of the account.
-const MANAGE_MEMBER_ROLES: readonly AccountRole[] = ['owner', 'admin'];
-// Roles that may edit the account's profile.
-const EDIT_ROLES: readonly AccountRole[] = ['owner', 'admin', 'editor'];
+function hasCallerPermission(node: AccountNode, permissions: string[]): boolean {
+  const granted = node.callerMembership?.permissions;
+  if (!granted) return false;
+  return permissions.some((permission) => granted.includes(permission));
+}
 
 function getRoleBadgeColor(role: AccountRole, colors: AppColors): string {
   switch (role) {
@@ -89,9 +90,13 @@ function AccountRowContent({
   // must include `account:act_as` (grants/revokes may override the role baseline),
   // and the ACCOUNT must be something anybody can become at all.
   const canSwitchInto = callerCanActAs(node) && isSwitchTargetAccount(node);
-  const canManageMembers = MANAGE_MEMBER_ROLES.includes(role);
-  const canEdit = EDIT_ROLES.includes(role);
-  const canArchive = role === 'owner';
+  const canManageMembers = hasCallerPermission(node, [
+    'members:invite',
+    'members:update',
+    'members:remove',
+  ]);
+  const canEdit = hasCallerPermission(node, ['account:update']);
+  const canArchive = hasCallerPermission(node, ['account:delete']);
 
   return (
     <View style={styles.accountActions}>
@@ -211,7 +216,6 @@ export function useAccountRowBuilder({
     // a truncated `publicKey` handle so the row still reads as identifiable
     // rather than showing "No username set".
     const fallbackHandle = getAccountFallbackHandle(node.account ?? null);
-    const role = getNodeRole(node);
     // "Current" = the account the app is currently signed in as. The personal/
     // self account is not listed here.
     const isCurrent = currentAccountId === node.accountId;
@@ -222,7 +226,11 @@ export function useAccountRowBuilder({
     // Same two conditions as `AccountRowContent`'s switch button above — the
     // whole row is that button's larger tap target, so the two must agree.
     const canSwitchInto = callerCanActAs(node) && isSwitchTargetAccount(node);
-    const canManageMembers = MANAGE_MEMBER_ROLES.includes(role);
+    const canManageMembers = hasCallerPermission(node, [
+      'members:invite',
+      'members:update',
+      'members:remove',
+    ]);
 
     return {
       id: node.accountId,
