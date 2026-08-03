@@ -14,10 +14,6 @@ import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
 import type { GroupedItem } from '@/components/sections/types';
 
-// Roles whose membership carries the `account:act_as` capability — the only
-// roles that can SWITCH INTO the account (selecting it makes the whole app
-// become that account). Mirrors the account role set (owner/admin/editor).
-const SWITCHABLE_ROLES: readonly AccountRole[] = ['owner', 'admin', 'editor'];
 // Roles that may manage membership + sharing of the account.
 const MANAGE_MEMBER_ROLES: readonly AccountRole[] = ['owner', 'admin'];
 // Roles that may edit the account's profile.
@@ -48,6 +44,12 @@ function getRoleBadgeColor(role: AccountRole, colors: AppColors): string {
 function getNodeRole(node: AccountNode): AccountRole {
   if (node.callerMembership?.role) return node.callerMembership.role;
   return node.relationship === 'member' ? 'viewer' : 'owner';
+}
+
+/** Effective `account:act_as` from resolved membership permissions (not role alone). */
+function callerCanActAs(node: AccountNode): boolean {
+  const permissions = node.callerMembership?.permissions;
+  return permissions?.includes('account:act_as') ?? false;
 }
 
 interface AccountRowContentProps {
@@ -83,12 +85,10 @@ function AccountRowContent({
 
   const role = getNodeRole(node);
   const badgeColor = getRoleBadgeColor(role, colors);
-  // Two independent conditions, both required: the caller's ROLE must carry
-  // `account:act_as`, and the ACCOUNT must be something anybody can become at
-  // all. `isSwitchTargetAccount` answers the second — the same rule the account
-  // switcher uses — rather than a `kind !== 'channel'` literal, which would
-  // silently admit the next kind nobody may act as.
-  const canSwitchInto = SWITCHABLE_ROLES.includes(role) && isSwitchTargetAccount(node);
+  // Two independent conditions, both required: the caller's effective permissions
+  // must include `account:act_as` (grants/revokes may override the role baseline),
+  // and the ACCOUNT must be something anybody can become at all.
+  const canSwitchInto = callerCanActAs(node) && isSwitchTargetAccount(node);
   const canManageMembers = MANAGE_MEMBER_ROLES.includes(role);
   const canEdit = EDIT_ROLES.includes(role);
   const canArchive = role === 'owner';
@@ -221,7 +221,7 @@ export function useAccountRowBuilder({
       : undefined;
     // Same two conditions as `AccountRowContent`'s switch button above — the
     // whole row is that button's larger tap target, so the two must agree.
-    const canSwitchInto = SWITCHABLE_ROLES.includes(role) && isSwitchTargetAccount(node);
+    const canSwitchInto = callerCanActAs(node) && isSwitchTargetAccount(node);
     const canManageMembers = MANAGE_MEMBER_ROLES.includes(role);
 
     return {

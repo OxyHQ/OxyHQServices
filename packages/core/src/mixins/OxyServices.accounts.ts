@@ -87,8 +87,8 @@ export type AccountMemberStatus = 'active' | 'invited' | 'removed';
 export type AccountMemberSource = 'direct' | 'inherited';
 
 /**
- * Client-facing AccountMember shape. `permissions` is derived from `role` on the
- * server at write time.
+ * Client-facing AccountMember shape. `permissions` is the effective permission
+ * set (role baseline plus `permissionGrants` minus `permissionRevokes`).
  */
 export interface AccountMember {
   _id: string;
@@ -98,6 +98,10 @@ export interface AccountMember {
   memberUserId: string;
   role: AccountRole;
   permissions: string[];
+  /** Permissions granted beyond the role baseline. */
+  permissionGrants?: string[];
+  /** Permissions revoked from the role baseline. */
+  permissionRevokes?: string[];
   /**
    * Whether this membership cascades to the account's subtree. `true` (default)
    * lets descendants inherit this role unless a nearer row overrides it; `false`
@@ -264,7 +268,10 @@ export interface InviteAccountMemberInput {
 
 /** Input accepted by `updateAccountMember`. The owner role cannot be assigned. */
 export interface UpdateAccountMemberInput {
-  role: Exclude<AccountRole, 'owner'>;
+  role?: Exclude<AccountRole, 'owner'>;
+  inherit?: boolean;
+  permissionGrants?: string[];
+  permissionRevokes?: string[];
 }
 
 /** Input accepted by `transferAccountOwnership`. */

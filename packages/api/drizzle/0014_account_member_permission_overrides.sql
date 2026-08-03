@@ -1,3 +1,4 @@
+-- oxy:deploy-phase=pre
 -- account_members.permission_grants / permission_revokes — the per-member
 -- adjustment to the role's baseline permission set.
 --
