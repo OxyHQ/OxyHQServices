@@ -544,3 +544,57 @@ jobs:
 
       - name: Run npm audit
         run: npm audit --audit-level=high || true
+
+  # THE one status check `main` requires. Everything above it reports here.
+  #
+  # Requiring the test jobs by name cannot work: a required check that never
+  # reports blocks the pull request forever, so every required name has to be a
+  # job that runs on every pull request for all time — and the list would live in
+  # a repository setting nothing in this tree can see, so a job added later would
+  # be required by nothing with no signal in the diff.
+  #
+  # `if: always()` is what makes this reachable when something above it failed,
+  # was cancelled, or skipped. Without it this job inherits their skip and — as a
+  # required check reporting `skipped` — never becomes satisfied.
+  #
+  # The verdict logic, the coverage check that catches a job added later, and
+  # every guard against this passing vacuously live in scripts/check-ci-complete.mjs.
+  ci-complete:
+    name: CI complete
+    needs:
+      - deploy-script-test
+      - api-test
+      - api-backfill-test
+      - api-build
+      - lockfile-sync
+      - deploy-secrets-sync
+      - migration-phases
+      - contracts-test
+      - protocol-test
+      - federation-test
+      - core-test
+      - ship-test
+      - node-test
+      - services-test
+      - auth-test
+      - commons-test
+      - inbox-test
+      - accounts-test
+      - security-audit
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      # The gate's own fixture tests, run before the gate itself — same shape as
+      # lockfile-sync, deploy-secrets-sync and migration-phases beside it. No
+      # install: both files read YAML through Bun's built-in parser and shell out
+      # to nothing.
+      - run: bun scripts/test-check-ci-complete.mjs
+      - name: Require every CI job to have passed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: bun scripts/check-ci-complete.mjs
