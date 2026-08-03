@@ -79,7 +79,11 @@ const ALL_BOILERPLATE_ACTOR = {
     + 'If you find this service useful, please consider supporting us via our Patreon.',
 };
 
-function makeResolver(deriveNetworkIdentity?: DeriveNetworkIdentity, actorDocument = BRIDGED_ACTOR) {
+function makeResolver(
+  deriveNetworkIdentity?: DeriveNetworkIdentity,
+  actorDocument = BRIDGED_ACTOR,
+  textOverrides: Partial<ActorResolverConfig<TestActor>['text']> = {},
+) {
   const upserts: Array<{ uri: string; update: Record<string, unknown> }> = [];
   const resolved: NormalizedExternalActor[] = [];
   const warnings: string[] = [];
@@ -122,6 +126,8 @@ function makeResolver(deriveNetworkIdentity?: DeriveNetworkIdentity, actorDocume
       inlineDisplayName: (raw) => raw,
       sanitizeFieldValue: (html) => html,
       htmlToPlainText: (html) => html,
+    
+      ...textOverrides,
     },
     logger: { info: () => {}, warn: (message) => { warnings.push(message); } },
   };
@@ -236,5 +242,56 @@ describe('deriveNetworkIdentity — results the engine refuses', () => {
     expect(rig.resolved[0].federatedUsername).toBe('wired@x.com');
     expect(rig.resolved[0].instanceDomain).toBe('x.com');
     expect(rig.warnings.some((w) => w.includes('not bindable'))).toBe(false);
+  });
+});
+
+/**
+ * A handle an actor wrote in its own bio only means something beside the network
+ * it was written on. Copied across verbatim, `@openai` reads on the receiving
+ * server as a LOCAL name — so a reader is pointed at whoever holds that name
+ * here. Seen live: Mira Murati's synced bio read "Now building @thinkymachines.
+ * Previously CTO @openai", both accounts on X, both rendered as if local.
+ *
+ * The engine owns WHERE the hook applies; the app owns what a handle is.
+ */
+describe('bio handle qualification', () => {
+  /** A stand-in for the app's rule — the real one is Mention's entity scanner. */
+  const qualifyHandles = (text: string, domain: string): string =>
+    text.replace(/@([A-Za-z0-9_]+)(?!@)/g, `@$1@${domain}`);
+
+  it('qualifies against the NETWORK domain for a relabelled actor', async () => {
+    const rig = makeResolver(deriveBridgedNetworkIdentity, {
+      ...BRIDGED_ACTOR,
+      summary: 'Now building @thinkymachines'
+        + "\nThis account is a replica from Twitter. Its author can't see your replies. "
+        + 'If you find this service useful, please consider supporting us via our Patreon.',
+    }, { qualifyHandles });
+    await rig.resolver.fetchRemoteActor(BRIDGED_ACTOR.id);
+
+    // x.com, NOT bird.makeup: the handle belongs to the network the account is
+    // on, never to the bridge the copy happened to arrive through.
+    expect(rig.resolved[0].bio).toBe('Now building @thinkymachines@x.com');
+  });
+
+  it('writes the SAME qualified text to the stored row and to Oxy', async () => {
+    const rig = makeResolver(deriveBridgedNetworkIdentity, {
+      ...BRIDGED_ACTOR,
+      summary: 'CTO @openai',
+    }, { qualifyHandles });
+    await rig.resolver.fetchRemoteActor(BRIDGED_ACTOR.id);
+
+    // The point of applying it once: two writes that could disagree, cannot.
+    expect(rig.upserts[0].update.summary).toBe('CTO @openai@x.com');
+    expect(rig.resolved[0].bio).toBe(rig.upserts[0].update.summary);
+  });
+
+  it('changes nothing at all for an app that supplies no rule', async () => {
+    const rig = makeResolver(deriveBridgedNetworkIdentity, {
+      ...BRIDGED_ACTOR,
+      summary: 'CTO @openai',
+    });
+    await rig.resolver.fetchRemoteActor(BRIDGED_ACTOR.id);
+
+    expect(rig.resolved[0].bio).toBe('CTO @openai');
   });
 });

@@ -152,6 +152,25 @@ export interface ActorTextAdapter {
   sanitizeFieldValue(html: string): string;
   /** Multiline HTML → plain text (the actor bio/summary). */
   htmlToPlainText(html: string): string;
+  /**
+   * Qualify the bare `@handle`s an actor wrote in its own bio with the network
+   * they belong to — `@openai` on an X-relabelled actor means `@openai@x.com`.
+   *
+   * A handle is only meaningful beside the network it was written on, and that
+   * context is exactly what is lost when the text crosses over: copied verbatim,
+   * `@openai` reads on the receiving server as a LOCAL name, pointing readers at
+   * whoever holds it there.
+   *
+   * OPTIONAL, and the engine does not care whether an app supplies it: the rule
+   * for what may be a handle is the app's (Mention scans with the same entity
+   * scanner its composer and renderer use, so a URL's `@handle`, an email and an
+   * already-qualified handle are all left alone by construction). An app that
+   * omits it gets the previous behaviour exactly.
+   *
+   * Applied ONCE, where the bio is settled — so the stored actor row and the Oxy
+   * profile cannot disagree, and no renderer is left to re-derive it.
+   */
+  qualifyHandles?(text: string, instanceDomain: string): string;
 }
 
 /** A parsed WebFinger JRD (only the `links` we read). */
@@ -486,7 +505,13 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
       });
       const identityUsername = networkIdentity?.federatedUsername ?? acct;
       const identityDomain = networkIdentity?.instanceDomain ?? domain;
-      const identityBio = networkIdentity?.bio ?? summary;
+      // Qualified HERE, at the one point both writes below read from: the stored
+      // row's `summary` and the Oxy profile's `bio` are the same value, so they
+      // cannot drift into disagreeing about what the actor said.
+      const resolvedBio = networkIdentity?.bio ?? summary;
+      const identityBio = this.config.text.qualifyHandles
+        ? this.config.text.qualifyHandles(resolvedBio, identityDomain)
+        : resolvedBio;
 
       const update: FederatedActorUpsert = {
         protocol: 'activitypub',
