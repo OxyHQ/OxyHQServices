@@ -1,3 +1,6 @@
+-- oxy:deploy-phase=pre
+-- Additive; safe while the previous image serves. See src/db/migrationPhases.ts.
+
 -- Transparency-checkpoint immutability.
 --
 -- HAND-WRITTEN, not generated. drizzle-kit emits tables, constraints and

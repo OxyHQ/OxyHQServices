@@ -1,3 +1,6 @@
+-- oxy:deploy-phase=pre
+-- Additive; safe while the previous image serves. See src/db/migrationPhases.ts.
+
 CREATE TABLE "app_affinity_seen_events" (
 	"id" text PRIMARY KEY NOT NULL,
 	"application_id" text NOT NULL,

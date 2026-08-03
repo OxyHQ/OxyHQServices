@@ -1,3 +1,6 @@
+-- oxy:deploy-phase=pre
+-- Additive; safe while the previous image serves. See src/db/migrationPhases.ts.
+
 CREATE TABLE "auth_codes" (
 	"id" text PRIMARY KEY NOT NULL,
 	"code_hash" text NOT NULL,

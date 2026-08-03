@@ -512,9 +512,17 @@ if [[ "$RUN_MIGRATIONS" == "true" || -n "$POST_DEPLOY_TASK_COMMAND_JSON" ]]; the
 fi
 
 if [[ "$RUN_MIGRATIONS" == "true" ]]; then
+  # --phase=pre, because at this point the PREVIOUS image is still serving every
+  # request. The migrator applies additive migrations only and stops at the first
+  # one that takes something away; the post-deploy slot below picks those up once
+  # the new image is live. See packages/api/src/db/migrationPhases.ts.
+  #
+  # This runs BEFORE update-service on purpose: a migration that fails leaves the
+  # previous image serving and the deploy red, which is the outcome that costs
+  # nothing. A migration that never runs is the outage this whole path exists for.
   if ! run_one_shot_command \
     "Migration" \
-    '["node","packages/api/dist/db/migrate.js"]'; then
+    '["node","packages/api/dist/db/migrate.js","--phase=pre"]'; then
     exit 1
   fi
 fi
