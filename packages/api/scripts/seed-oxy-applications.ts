@@ -173,9 +173,9 @@ const SEED_APPS: SeedAppSpec[] = [
   {
     name: 'Allo',
     description: 'Official Oxy encrypted messaging app.',
-    websiteUrl: 'https://allo.oxy.so',
+    websiteUrl: 'https://allo.you',
     type: 'first_party',
-    redirectUris: ['https://allo.oxy.so'],
+    redirectUris: ['https://allo.you', 'https://allo.oxy.so'],
   },
   {
     name: 'Alia',
@@ -187,9 +187,9 @@ const SEED_APPS: SeedAppSpec[] = [
   {
     name: 'Syra',
     description: 'Official Oxy app.',
-    websiteUrl: 'https://syra.oxy.so',
+    websiteUrl: 'https://syra.fm',
     type: 'first_party',
-    redirectUris: ['https://syra.oxy.so'],
+    redirectUris: ['https://syra.fm'],
   },
   {
     name: 'TNP',
