@@ -92,6 +92,7 @@
     }
   },
   "dependencies": {
+    "@oxyhq/contracts": "workspace:^",
     "@oxyhq/core": "workspace:^"
   },
   "peerDependencies": {

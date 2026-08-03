@@ -510,6 +510,7 @@
       "name": "@oxyhq/federation",
       "version": "0.11.0",
       "dependencies": {
+        "@oxyhq/contracts": "workspace:^",
         "@oxyhq/core": "workspace:^",
       },
       "devDependencies": {
