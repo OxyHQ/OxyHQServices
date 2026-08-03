@@ -1222,7 +1222,7 @@ class FederationService {
       federationUnavailableReason: null,
     };
 
-    if (profile.bio) {
+    if (typeof profile.bio === 'string') {
       const safeBio = sanitizePlainText(profile.bio);
       setFields.bio = safeBio;
       setFields.description = safeBio;
@@ -1501,7 +1501,7 @@ class FederationService {
         setFields.nameFirst = cleanDisplayName(profile.displayName);
       }
       setFields.federationLastResolvedAt = new Date();
-      if (profile.bio) {
+      if (typeof profile.bio === 'string') {
         const safeBio = sanitizePlainText(profile.bio);
         setFields.bio = safeBio;
         setFields.description = safeBio;
