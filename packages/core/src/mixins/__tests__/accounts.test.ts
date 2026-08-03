@@ -47,6 +47,7 @@ const memberFixture: AccountMember = {
   permissions: ['account:read', 'apps:read'],
   inherit: true,
   status: 'active',
+  source: 'direct',
   createdAt: '2026-06-29T00:00:00.000Z',
   updatedAt: '2026-06-29T00:00:00.000Z',
 };
@@ -385,6 +386,7 @@ describe('OxyServices.accounts', () => {
       );
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/accounts/acc1/members');
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/accounts/acc1');
+      expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/accounts/');
     });
   });
 
@@ -403,6 +405,7 @@ describe('OxyServices.accounts', () => {
       );
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/accounts/acc1/members');
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/accounts/acc1');
+      expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/accounts/');
     });
   });
 
@@ -421,6 +424,7 @@ describe('OxyServices.accounts', () => {
       );
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/accounts/acc1/members');
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/accounts/acc1');
+      expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/accounts/');
     });
   });
 
@@ -439,6 +443,7 @@ describe('OxyServices.accounts', () => {
       );
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/accounts/acc1/members');
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/accounts/acc1');
+      expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/accounts/');
       expect(clearEntrySpy).toHaveBeenCalledWith('GET:/accounts');
       expect(clearPrefixSpy).toHaveBeenCalledWith('GET:/accounts?');
     });

@@ -55,6 +55,17 @@ export const OXY_ACCOUNT_LIST_CACHE_KEY = 'GET:/accounts';
 export const OXY_ACCOUNT_LIST_CACHE_QUERY_PREFIX = 'GET:/accounts?';
 
 /**
+ * Prefix covering every per-account sub-resource cache key
+ * (`GET:/accounts/<id>`, `…/members`, `…/credentials`, `…/children`). A
+ * membership mutation on an ancestor must sweep ALL of these, not only the
+ * account named in the path: descendant member rosters embed inherited rows
+ * resolved from that ancestor, and the writer cannot enumerate which descendant
+ * ids a caller has already read. The trailing slash deliberately excludes the
+ * forest list keys (`GET:/accounts`, `GET:/accounts?…`) documented above.
+ */
+export const OXY_ACCOUNT_PER_ACCOUNT_CACHE_PREFIX = 'GET:/accounts/';
+
+/**
  * Build the exact cache key `getAccount(accountId)` reads under.
  */
 export function oxyAccountDetailCacheKey(accountId: string): string {

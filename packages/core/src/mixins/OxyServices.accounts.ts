@@ -38,7 +38,7 @@ import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { normalizeUserIdentity } from '../utils/userIdentity';
 import { evictOxyIdentityCache } from '../utils/identityCacheSweep';
-import { evictOxyAccountForestCache, oxyAccountDetailCacheKey } from '../utils/accountCacheSweep';
+import { evictOxyAccountForestCache, oxyAccountDetailCacheKey, OXY_ACCOUNT_PER_ACCOUNT_CACHE_PREFIX } from '../utils/accountCacheSweep';
 import { CACHE_TIMES } from './mixinHelpers';
 
 // ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ export interface AccountMember {
    * remove or transfer to a member**, and count owners for a last-owner check
    * over direct entries only.
    */
-  source?: AccountMemberSource;
+  source: AccountMemberSource;
   invitedByUserId?: string | null;
   joinedAt?: string | null;
   createdAt: string;
@@ -1360,6 +1360,13 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
     _invalidateAccountMembership(accountId: string): void {
       this.clearCacheEntry(`GET:/accounts/${encodeURIComponent(accountId)}/members`);
       this.clearCacheEntry(oxyAccountDetailCacheKey(accountId));
+      // Inherited rows on descendant rosters are derived from this account's
+      // membership table — a targeted clear of only the mutated account's keys
+      // leaves every other cached `…/members` list serving stale inherited
+      // roles until MEDIUM TTL. Sweep all per-account sub-resource keys instead;
+      // the forest list keys (`GET:/accounts`, `GET:/accounts?…`) are excluded
+      // by the trailing slash on the prefix (see accountCacheSweep).
+      this.clearCacheByPrefix(OXY_ACCOUNT_PER_ACCOUNT_CACHE_PREFIX);
     }
 
     /**

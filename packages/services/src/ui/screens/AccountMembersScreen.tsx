@@ -15,6 +15,7 @@ import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { Divider } from '@oxyhq/bloom/divider';
 import type { AccountMember, AccountRole } from '@oxyhq/core';
+import { getNormalizedUserHandle } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
@@ -86,13 +87,34 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
     enabled: canUsePrivateApi && id.length > 0 && canRead,
   });
   const members = useMemo<AccountMember[]>(() => membersQuery.data ?? [], [membersQuery.data]);
+  const memberUserIds = useMemo(
+    () => [...new Set(members.map((member) => member.memberUserId).filter((id) => id.length > 0))],
+    [members],
+  );
+  const memberProfilesQuery = useQuery({
+    queryKey: ['users', 'by-ids', memberUserIds],
+    queryFn: () => oxyServices.getUsersByIds(memberUserIds),
+    enabled: canUsePrivateApi && memberUserIds.length > 0,
+  });
+  const memberLabelByUserId = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const profile of memberProfilesQuery.data ?? []) {
+      labels.set(profile.id, getNormalizedUserHandle(profile));
+    }
+    return labels;
+  }, [memberProfilesQuery.data]);
+  const memberDisplayLabel = useCallback(
+    (memberUserId: string): string =>
+      memberLabelByUserId.get(memberUserId) ?? memberUserId,
+    [memberLabelByUserId],
+  );
   // DIRECT owners only. The list also carries members whose row lives on an
   // ancestor, and the last-owner rule this count feeds is about the rows on THIS
   // account — the server's guard counts those. Including an inherited owner
   // would make a child that has no owner of its own look like it has exactly
   // one, and silently disable removing anybody.
   const ownerCount = useMemo(
-    () => members.filter((m) => m.role === 'owner' && m.source !== 'inherited').length,
+    () => members.filter((m) => m.role === 'owner' && m.source === 'direct').length,
     [members],
   );
 
@@ -322,7 +344,7 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
                     // be offering a request the server answers 404. The row is
                     // changed where it lives, on that ancestor's own member
                     // screen.
-                    const isEditableHere = member.source !== 'inherited';
+                    const isEditableHere = member.source === 'direct';
                     const canEditThisRole = canUpdate && isEditableHere && !isOwner;
                     const canRemoveThisMember =
                       canRemove && isEditableHere && !isLastOwner && (!isOwner || canTransfer);
@@ -334,7 +356,7 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
                         <View className="p-space-16 gap-space-8">
                           <View className="flex-row items-center gap-space-8">
                             <Text className="text-body font-bodyBold text-text flex-1" numberOfLines={1}>
-                              {member.memberUserId}
+                              {memberDisplayLabel(member.memberUserId)}
                             </Text>
                             {isOwner ? (
                               <View className="px-space-8 py-space-4 rounded-radius-full" style={{ backgroundColor: colors.primarySubtle }}>

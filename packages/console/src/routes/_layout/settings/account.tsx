@@ -151,7 +151,7 @@ function AccountSettingsPage() {
   // inherited owner would make a child with no owner of its own look like it has
   // exactly one, and silently disable removing anybody.
   const ownerCount = activeMembers.filter(
-    (m) => m.role === 'owner' && m.source !== 'inherited',
+    (m) => m.role === 'owner' && m.source === 'direct',
   ).length;
 
   const inviteMemberMutation = useInviteAccountMember();
@@ -493,7 +493,7 @@ function AccountSettingsPage() {
                 // offering to edit, remove or promote one would be offering a
                 // request the server answers 404. It is changed where it lives, on
                 // that ancestor's own members screen.
-                const isEditableHere = member.source !== 'inherited';
+                const isEditableHere = member.source === 'direct';
                 const canEditThisRole = canManage && isEditableHere && !isOwner;
                 const canRemoveThisMember =
                   canManage && isEditableHere && !isOwner && !isLastOwner;
