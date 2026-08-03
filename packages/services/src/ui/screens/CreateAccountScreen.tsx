@@ -21,12 +21,18 @@ type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
  * Kind of account this screen can create.
  *
  * A strict subset of what `POST /accounts` accepts, not `Exclude<AccountKind,
- * 'personal'>`: this screen SWITCHES INTO the account it just created, so it can
- * only offer kinds an operator may act as. `personal` is a signup-minted root,
- * and a `channel` is a content identity nobody occupies — creating one is
- * Mention's job, through the API. Spelling the subset out here is what keeps a
- * newly-added kind from silently inheriting the `project` label in
- * {@link kindLabel}'s fallback.
+ * 'personal'>`: this screen CREATES AND ENTERS in one gesture, so it can only
+ * offer kinds an operator may act as — `isActAsEligibleKind` is the same
+ * predicate the server enforces on `POST /accounts/:id/switch`.
+ *
+ * So `channel` is absent here even though `POST /accounts` accepts it from any
+ * signed-in caller: a channel is a content identity nobody occupies, and
+ * offering it would create the account and then fail the switch. The reason is
+ * this screen's own shape, NOT a rule about who may create a channel — that rule
+ * changed once already, and a comment tied to it would now be false.
+ *
+ * Spelling the subset out here is what keeps a newly-added kind from silently
+ * inheriting the `project` label in {@link kindLabel}'s fallback.
  */
 type CreatableAccountKind = Extract<AccountKind, 'organization' | 'project' | 'bot'>;
 
