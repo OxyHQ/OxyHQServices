@@ -367,4 +367,41 @@ describe('updateProfile identity-cache invalidation (real cache)', () => {
       expect(fetchMock).toHaveBeenCalledTimes(++calls);
     }
   });
+
+  it('evicts the account forest list and detail after a self-profile edit', async () => {
+    const selfNode: AccountNode = {
+      accountId: SELF_ID,
+      kind: 'personal',
+      parentAccountId: null,
+      account: {
+        id: SELF_ID,
+        publicKey: 'pk-me',
+        username: 'alice',
+        name: { displayName: 'Alice' },
+        avatar: 'old',
+      },
+      relationship: 'self',
+      callerMembership: null,
+    };
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([selfNode]));
+    await oxy.listAccounts();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ account: selfNode }));
+    await oxy.getAccount(SELF_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: SELF_ID, avatar: 'new' }));
+    await oxy.updateProfile({ avatar: 'new' });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ ...selfNode, account: { ...selfNode.account!, avatar: 'new' } }]));
+    await oxy.listAccounts();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ account: { ...selfNode, account: { ...selfNode.account!, avatar: 'new' } } }),
+    );
+    await oxy.getAccount(SELF_ID);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
 });

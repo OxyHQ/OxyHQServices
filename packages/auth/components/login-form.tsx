@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
-import { toast } from "@oxyhq/bloom"
+import { toast } from "@oxyhq/bloom/toast"
 import { ArrowLeft, KeyRound, QrCode, Usb } from "lucide-react"
 import { isOxyRpOrigin, type SwitchableAccount } from "@oxyhq/core"
 import { useOxy, useSwitchableAccounts } from "@oxyhq/services"

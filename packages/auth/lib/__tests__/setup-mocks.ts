@@ -10,8 +10,8 @@ import React from "react"
 
 // The barrel re-exports toast from the RN graph (`react-native` condition), which
 // bun cannot parse in a node test env. login-form / sign-up-form import toast
-// from here after the Sonner removal (3dd6aba4).
-mock.module("@oxyhq/bloom", () => {
+// from the subpath after the maintenance pass (avoid rolldown-vite barrel co-import).
+const bloomToastStub = () => {
     const noop = () => undefined
     const toast = Object.assign(noop, {
         success: noop,
@@ -23,7 +23,10 @@ mock.module("@oxyhq/bloom", () => {
         dismiss: noop,
     })
     return { toast }
-})
+}
+
+mock.module("@oxyhq/bloom", bloomToastStub)
+mock.module("@oxyhq/bloom/toast", bloomToastStub)
 
 mock.module("@oxyhq/bloom/avatar", () => ({
     Avatar: ({ source }: { source?: string }) =>

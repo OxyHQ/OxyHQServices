@@ -540,10 +540,8 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      * a new identity read is added in one place instead of to each writer
      * separately (this method's own hand-written copy had already drifted from
      * the server-side one, missing `GET /auth/lookup/*` and
-     * `GET /profiles/resolve`). Without the sweep a follow-up
-     * `getUserBySession` inside the cache window returns the pre-update user —
-     * most visibly during onboarding, where the username step flickers back as
-     * if nothing was saved.
+     * `GET /profiles/resolve`). The account forest (`GET /accounts`, detail) is
+     * swept too — a personal account embeds the same profile on those reads.
      *
      * TanStack Query handles offline queuing automatically.
      */
@@ -554,6 +552,12 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         );
 
         evictOxyIdentityCache(this, result?.id);
+        // A personal account is a row in the account forest; profile edits change
+        // the embedded profile on list/detail reads, not only identity endpoints.
+        this._invalidateAccountLists();
+        if (result?.id) {
+          this.clearCacheEntry(`GET:/accounts/${encodeURIComponent(result.id)}`);
+        }
 
         return result;
       } catch (error) {
