@@ -18,6 +18,11 @@
  */
 
 import { and, eq } from 'drizzle-orm';
+import {
+  ACCOUNT_CATEGORY_IDS,
+  CHILD_ACCOUNT_KINDS,
+  type AccountCategoryId,
+} from '@oxyhq/contracts';
 import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
 import { accountCredentials } from '../../db/schema/accountCredentials';
 import { accountMembers } from '../../db/schema/accountMembers';
@@ -343,17 +348,6 @@ describe('createChildAccount', () => {
     expect(methods).toEqual([]);
   });
 
-  test('rejects organizationCategory on channel accounts', async () => {
-    const root = await seedAccount();
-    await expect(
-      accountService.createChildAccount(root.id, root.id, {
-        kind: 'channel',
-        username: uniqueUsername('chan'),
-        organizationCategory: 'agency',
-      })
-    ).rejects.toThrow(/organizationCategory/i);
-  });
-
   test('rejects a channel parenting another channel', async () => {
     const root = await seedAccount();
     const parentChannel = await accountService.createChildAccount(root.id, root.id, {
@@ -369,25 +363,123 @@ describe('createChildAccount', () => {
     ).rejects.toThrow(/channel cannot own another channel/i);
   });
 
-  test('persists organizationCategory on organization accounts', async () => {
+  /**
+   * The ORDER the caller gave has to reach the column unchanged, because index
+   * 0 is the primary category. The fixture is three long and its primary is
+   * neither alphabetically first nor first in the declared vocabulary, so a
+   * sort on either key would be visible here.
+   */
+  test('persists account categories in the caller\'s order', async () => {
     const root = await seedAccount();
+    const chosen: AccountCategoryId[] = ['news', 'art', 'film'];
+    expect([...chosen].sort()).not.toEqual(chosen);
+    expect(
+      [...chosen].sort(
+        (a, b) => ACCOUNT_CATEGORY_IDS.indexOf(a) - ACCOUNT_CATEGORY_IDS.indexOf(b)
+      )
+    ).not.toEqual(chosen);
+
     const { account } = await accountService.createChildAccount(root.id, root.id, {
       kind: 'organization',
       username: uniqueUsername('acme'),
-      organizationCategory: 'agency',
+      accountCategories: chosen,
     });
-    expect(account.organizationCategory).toBe('agency');
+    expect(account.accountCategories).toEqual(chosen);
+
+    // Read back from the database rather than trusting `returning()`, so the
+    // round trip through the `text[]` column is what is asserted.
+    const [stored] = await getDb()
+      .select({ categories: users.accountCategories })
+      .from(users)
+      .where(eq(users.id, account.id));
+    expect(stored.categories).toEqual(chosen);
   });
 
-  test('rejects organizationCategory on non-organization kinds', async () => {
+  test('accepts categories on every non-personal kind', async () => {
     const root = await seedAccount();
-    await expect(
-      accountService.createChildAccount(root.id, root.id, {
-        kind: 'project',
-        username: uniqueUsername('proj'),
-        organizationCategory: 'landlord',
-      })
-    ).rejects.toThrow(/organizationCategory/i);
+    for (const kind of CHILD_ACCOUNT_KINDS) {
+      const { account } = await accountService.createChildAccount(root.id, root.id, {
+        kind,
+        username: uniqueUsername(`cat-${kind}`),
+        accountCategories: ['technology'],
+      });
+      expect(account.accountCategories).toEqual(['technology']);
+    }
+  });
+
+  test('defaults to no categories rather than null', async () => {
+    const root = await seedAccount();
+    const { account } = await accountService.createChildAccount(root.id, root.id, {
+      kind: 'project',
+      username: uniqueUsername('bare'),
+    });
+    expect(account.accountCategories).toEqual([]);
+  });
+
+  describe('updateAccount categories', () => {
+    test('refuses them on a PERSONAL account', async () => {
+      const person = await seedAccount({ kind: 'personal' });
+
+      await expect(
+        accountService.updateAccount(person.id, { accountCategories: ['news'] })
+      ).rejects.toThrow(/personal.*cannot carry categories/i);
+
+      // The refusal must be about the KIND and nothing else: the SAME call on a
+      // non-personal account has to succeed, or this test would also pass
+      // against a rule that refused everyone.
+      const org = await accountService.createChildAccount(person.id, person.id, {
+        kind: 'organization',
+        username: uniqueUsername('org'),
+      });
+      const updated = await accountService.updateAccount(org.account.id, {
+        accountCategories: ['news'],
+      });
+      expect(updated.accountCategories).toEqual(['news']);
+    });
+
+    test('leaves categories alone when the field is absent', async () => {
+      const root = await seedAccount();
+      const { account } = await accountService.createChildAccount(root.id, root.id, {
+        kind: 'channel',
+        username: uniqueUsername('chan'),
+        accountCategories: ['news', 'politics'],
+      });
+
+      // The `bio: null` failure with another face: an update that never
+      // mentions categories must not disturb them.
+      const updated = await accountService.updateAccount(account.id, { bio: 'hello' });
+      expect(updated.bio).toBe('hello');
+      expect(updated.accountCategories).toEqual(['news', 'politics']);
+    });
+
+    test('replaces the whole list, preserving the new order', async () => {
+      const root = await seedAccount();
+      const { account } = await accountService.createChildAccount(root.id, root.id, {
+        kind: 'channel',
+        username: uniqueUsername('chan'),
+        accountCategories: ['news', 'art', 'film'],
+      });
+
+      // Promoting `film` to primary is expressed as a re-ordering, which is
+      // the only reason the update replaces the list rather than patching it.
+      const updated = await accountService.updateAccount(account.id, {
+        accountCategories: ['film', 'news', 'art'],
+      });
+      expect(updated.accountCategories).toEqual(['film', 'news', 'art']);
+    });
+
+    test('clears them with an empty list', async () => {
+      const root = await seedAccount();
+      const { account } = await accountService.createChildAccount(root.id, root.id, {
+        kind: 'channel',
+        username: uniqueUsername('chan'),
+        accountCategories: ['news'],
+      });
+      const updated = await accountService.updateAccount(account.id, {
+        accountCategories: [],
+      });
+      expect(updated.accountCategories).toEqual([]);
+    });
   });
 
   test('rejects invalid display names on create', async () => {

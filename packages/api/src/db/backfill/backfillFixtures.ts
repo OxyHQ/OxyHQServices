@@ -193,7 +193,7 @@ export function cleanFixtures(): FixtureSet {
         email: 'hello@oxy.so',
         name: { first: 'Oxy' },
         kind: 'organization',
-        organizationCategory: 'other',
+        organizationCategory: 'other',   // carried across as ['other']
         accountStatus: 'active',
         type: 'local',
         color: 'blue',

@@ -1,10 +1,10 @@
 import mongoose, { Document, Schema } from "mongoose";
 import {
+  ACCOUNT_CATEGORY_IDS,
   ACCOUNT_KINDS,
-  ORGANIZATION_CATEGORIES,
   TRUST_TIERS,
+  type AccountCategoryId,
   type AccountKind,
-  type OrganizationCategory,
   type TrustTier,
 } from "@oxyhq/contracts";
 import { maybeHashEmail, maybeHashPhone } from "../utils/contactHash";
@@ -98,7 +98,7 @@ export function buildAuthMethod(type: AuthMethodType, metadata?: AuthMethod['met
  *
  * Re-export — single source of truth is `@oxyhq/contracts`.
  */
-export { ACCOUNT_KINDS, ORGANIZATION_CATEGORIES, type AccountKind, type OrganizationCategory };
+export { ACCOUNT_CATEGORY_IDS, ACCOUNT_KINDS, type AccountCategoryId, type AccountKind };
 
 /** Account-graph lifecycle state (additive — non-personal accounts only). */
 export const ACCOUNT_STATUSES = ['active', 'archived'] as const;
@@ -157,11 +157,11 @@ export interface IUser extends Document {
    */
   kind?: AccountKind;
   /**
-   * Real-estate / team taxonomy for `kind: 'organization'` accounts only
-   * (agency, cooperative, landlord, other). Orthogonal to `kind` — never use
-   * `kind` for Homiio-specific profile types.
+   * What this account is about, for any NON-personal account. ORDERED — the
+   * first element is the primary category. Stable opaque ids; the visible label
+   * lives in each client's locales. Orthogonal to `kind`.
    */
-  organizationCategory?: OrganizationCategory;
+  accountCategories?: AccountCategoryId[];
   /** Adjacency edge: the immediate parent account in the tree (null for roots). */
   parentAccountId?: mongoose.Types.ObjectId | null;
   /** Materialised path of ancestor account ids, ordered root → immediate parent. */
@@ -712,9 +712,15 @@ const UserSchema: Schema = new Schema(
       default: 'personal',
       index: true,
     },
-    organizationCategory: {
-      type: String,
-      enum: ORGANIZATION_CATEGORIES,
+    // Mongoose preserves array order, which is the whole contract: index 0 is
+    // the primary category. The cap and the kind restriction are enforced by
+    // Postgres (`users_account_categories_max_check` /
+    // `users_account_categories_kind_check`) and by the wire schema — this model
+    // is a read-side artifact of the unfinished Mongo port, not a write path.
+    accountCategories: {
+      type: [String],
+      enum: ACCOUNT_CATEGORY_IDS,
+      default: undefined,
       required: false,
     },
     parentAccountId: {

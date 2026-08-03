@@ -4,7 +4,12 @@
  */
 
 import { getUserLanguages } from '@oxyhq/core';
-import { isAccountKind, type ThemePreference } from '@oxyhq/contracts';
+import {
+  ACCOUNT_CATEGORY_IDS,
+  isAccountKind,
+  type AccountCategoryId,
+  type ThemePreference,
+} from '@oxyhq/contracts';
 import { formatUserNameResponse, type NameParts, type NameResponse } from './displayName';
 
 type StringableId = string | { toString(): string };
@@ -17,7 +22,7 @@ export type UserLike = {
   avatar?: string | null;
   color?: string | null;
   name?: NameParts;
-  organizationCategory?: string;
+  accountCategories?: unknown;
   privacySettings?: unknown;
   verified?: boolean;
   languages?: string[];
@@ -52,6 +57,25 @@ function toVerifiedDomains(value: unknown): VerifiedDomainDto[] | undefined {
     domains.push({ domain, verifiedAt, method });
   }
   return domains;
+}
+
+/**
+ * Ordered account categories, filtered to ids the vocabulary still defines.
+ *
+ * ORDER IS PRESERVED — `filter` keeps it, and nothing here sorts or
+ * de-duplicates, because index 0 is the primary category and any rewrite would
+ * change which one that is. An unknown id is dropped rather than emitted: the
+ * DTO is parsed against `accountCategoriesSchema` by consumers, so passing one
+ * through would fail the whole payload over a value no client could render
+ * anyway (its label key would not exist).
+ */
+function toAccountCategories(value: unknown): AccountCategoryId[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const known = new Set<string>(ACCOUNT_CATEGORY_IDS);
+  const ids = value.filter((entry): entry is AccountCategoryId =>
+    typeof entry === 'string' && known.has(entry)
+  );
+  return ids.length > 0 ? ids : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -251,7 +275,11 @@ export function formatUserResponse(user: unknown) {
     // WHAT the account is (person / organization / channel …), `type` says where
     // it lives and how it is driven. Both ride every user DTO.
     kind: isAccountKind(user.kind) ? user.kind : undefined,
-    organizationCategory: stringValue(user.organizationCategory),
+    // What the account is about, ORDERED — index 0 is the primary category.
+    // Ids only; the label is the reader's to render. `undefined` rather than
+    // `[]` when there are none, matching every other optional field here, so a
+    // personal account's DTO does not grow an empty array on every bulk fetch.
+    accountCategories: toAccountCategories(user.accountCategories),
     // Portable theme preference — rides this self/session payload (login, device
     // sessions, getUserBySession) so account switches carry the theme too.
     themePreference: toThemePreference(user.themePreference),

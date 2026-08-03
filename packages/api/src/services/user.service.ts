@@ -681,7 +681,8 @@ export class UserService {
         displayName: row.nameDisplay ?? undefined,
       },
       kind: row.kind,
-      organizationCategory: row.organizationCategory ?? undefined,
+      // Ordered, primary first — never reordered on the way out.
+      accountCategories: row.accountCategories,
       parentAccountId: row.parentAccountId ?? undefined,
       rootAccountId: row.rootAccountId ?? undefined,
       ancestors: ancestorRows.map((ancestor) => ancestor.ancestorId),

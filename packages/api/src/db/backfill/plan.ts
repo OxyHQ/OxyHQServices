@@ -57,6 +57,17 @@ export interface EnumAudit {
   /** The Postgres column the value lands in. */
   readonly column: PgColumn;
   /**
+   * The allowed values, for an ARRAY column only.
+   *
+   * drizzle DROPS `enumValues` when `.array()` wraps a `text({ enum })` column —
+   * measured — so an array-valued closed set has nothing for
+   * {@link allowedValues} to read and would otherwise be un-auditable. Pass the
+   * SAME `const` tuple the column's `<@ array[…]` CHECK is rendered from, by
+   * identifier and never re-typed, so the audit still cannot drift from the
+   * constraint it predicts.
+   */
+  readonly allowed?: readonly string[];
+  /**
    * The value an ABSENT field maps to, when the transform supplies a default.
    *
    * Declaring it means the audit does not report `null` as an illegal value for
@@ -238,4 +249,18 @@ export function allowedValues(column: PgColumn): readonly string[] {
     );
   }
   return values;
+}
+
+/**
+ * The value set ONE audit checks against: the plan's `allowed` tuple when it
+ * declares one, otherwise the column's own `enumValues`.
+ *
+ * Both branches end at {@link allowedValues}' vacuity guard — an `allowed` that
+ * is present but empty falls through to it rather than silently checking
+ * nothing.
+ */
+export function auditAllowedValues(audit: EnumAudit): readonly string[] {
+  const declared = audit.allowed;
+  if (declared && declared.length > 0) return declared;
+  return allowedValues(audit.column);
 }

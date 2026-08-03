@@ -53,7 +53,7 @@
  */
 
 import type { CollectionPlan, EnumAudit, UniquenessNormalization } from './plan';
-import { allowedValues } from './plan';
+import { auditAllowedValues } from './plan';
 import type { MongoSource } from './mongoSource';
 import type { ResolutionContext, ResolutionRule } from './resolutions';
 
@@ -113,7 +113,7 @@ export async function auditEnums(
 ): Promise<AuditFinding[]> {
   const findings: AuditFinding[] = [];
   for (const audit of plan.enumAudits ?? []) {
-    const allowed = new Set(allowedValues(audit.column));
+    const allowed = new Set(auditAllowedValues(audit));
     const collection = source.collection(plan.collection);
     const observed = await collection.distinct(audit.path, {});
 

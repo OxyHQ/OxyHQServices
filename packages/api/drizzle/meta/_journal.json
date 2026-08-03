@@ -92,6 +92,13 @@
       "when": 1785701517753,
       "tag": "0012_users_name_display",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785760203479,
+      "tag": "0013_users_account_categories",
+      "breakpoints": true
     }
   ]
 }

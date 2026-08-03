@@ -78,6 +78,7 @@ import {
   userVerifiedDomains,
   users,
 } from '../../schema';
+import { ACCOUNT_CATEGORY_IDS } from '../../schema/users';
 import { INFLUENCE_MIN } from '../../../utils/reputation.constants';
 import type { CollectionPlan } from '../plan';
 import { buildRow } from '../rowBuilder';
@@ -132,6 +133,18 @@ function subdocumentId(
   return childRowId(entry, parentId, path, ordinal);
 }
 
+/**
+ * The `account_categories` value for one user document.
+ *
+ * `[]` rather than `null` when the field is absent: the column is
+ * `NOT NULL DEFAULT '{}'`, and "no category" has exactly one representation
+ * there — see `CONVENTIONS.md` on choosing at the call site.
+ */
+function categoryList(doc: MongoDocument): string[] {
+  const category = str(doc, 'organizationCategory');
+  return category === null ? [] : [category];
+}
+
 export const USERS_SOCIAL_PLANS: readonly CollectionPlan[] = [
   // ---------------------------------------------------------------------------
   // users — 81 emitted columns plus five child tables
@@ -148,9 +161,19 @@ export const USERS_SOCIAL_PLANS: readonly CollectionPlan[] = [
     ],
     enumAudits: [
       { path: 'kind', column: users.kind, absentAs: 'personal' },
-      // Nullable in both schemas: an absent value stays NULL rather than being
-      // defaulted, so there is no substitute value to declare.
-      { path: 'organizationCategory', column: users.organizationCategory },
+      // The Mongo field is the SINGLE-valued predecessor of the multi-valued
+      // `account_categories` column, so the audit checks Mongo's distinct
+      // values against the NEW vocabulary — which is a superset of the old
+      // four, so the expected finding count is zero. `allowed` is declared
+      // because drizzle drops `enumValues` on an `.array()` column; the tuple
+      // passed is the same identifier the column's CHECK is rendered from.
+      // Absent stays absent (the transform emits `[]`, the column default), so
+      // there is no `absentAs` to declare.
+      {
+        path: 'organizationCategory',
+        column: users.accountCategories,
+        allowed: ACCOUNT_CATEGORY_IDS,
+      },
       { path: 'accountStatus', column: users.accountStatus, absentAs: 'active' },
       { path: 'type', column: users.type, absentAs: 'local' },
       { path: 'reputationTier', column: users.reputationTier, absentAs: 'new' },
@@ -235,7 +258,21 @@ export const USERS_SOCIAL_PLANS: readonly CollectionPlan[] = [
 
             // ---- account graph ----------------------------------------------
             kind: str(doc, 'kind') ?? 'personal',
-            organizationCategory: str(doc, 'organizationCategory'),
+            // The single value becomes a ONE-ELEMENT list, and by being first
+            // it becomes the account's PRIMARY category — the same carry
+            // migration `0013` performs for rows already in Postgres. Only one
+            // of the two ever sees a given account, so they cannot disagree.
+            //
+            // Unlike `0013` this does NOT skip a `personal` document carrying a
+            // category: `users_account_categories_kind_check` refuses the row
+            // and names it, which is the outcome this path wants. The migration
+            // runs unattended in a deploy window and has the old column to fall
+            // back on; the backfill runs behind `auditEnums` and a dry run, so
+            // it can afford to stop and be looked at. Every write path has
+            // always refused that combination, so the expected count is zero —
+            // which is exactly why a silent skip here would never be noticed if
+            // it were wrong.
+            accountCategories: categoryList(doc),
             parentAccountId: id(doc, 'parentAccountId'),
             rootAccountId: id(doc, 'rootAccountId'),
             accountStatus: str(doc, 'accountStatus') ?? 'active',

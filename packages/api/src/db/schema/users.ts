@@ -23,6 +23,19 @@
  * - `name.full`, `name.displayName` and `did` were VIRTUALS. They stay derived —
  *   `composeDisplayName` / `buildUserDid` at the serializer.
  *
+ * ## One column exists in the database and NOT in this file
+ *
+ * `organization_category` — the single-valued predecessor of
+ * `account_categories` — is still a nullable column in Postgres. Migration
+ * `0013` adds `account_categories` and COPIES the value across; it deliberately
+ * does not drop the old column, because a migration is applied BEFORE the image
+ * that stops reading it is deployed, and drizzle selects columns by name, so
+ * dropping it in the same step 500s every user read served by the running
+ * image. The drop is its own migration, dispatched after the deploy, and it is
+ * exactly what `bun run db:generate` emits from this file today. Until then the
+ * column sits unreferenced and NULL-filling — nothing reads or writes it, and a
+ * `text` column that is NULL satisfies its own `is null or in (…)` CHECK.
+ *
  * ## Case-insensitive unique on the three identifiers
  *
  * `email` and `public_key` were `lowercase: true` in Mongoose, so their stored
@@ -69,14 +82,17 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import {
+  ACCOUNT_CATEGORY_IDS as CONTRACT_ACCOUNT_CATEGORY_IDS,
+  ACCOUNT_CATEGORY_KINDS as CONTRACT_ACCOUNT_CATEGORY_KINDS,
   ACCOUNT_KINDS as CONTRACT_ACCOUNT_KINDS,
-  ORGANIZATION_CATEGORIES as CONTRACT_ORGANIZATION_CATEGORIES,
+  MAX_ACCOUNT_CATEGORIES,
   TRUST_TIERS as CONTRACT_TRUST_TIERS,
+  type AccountCategoryId,
+  type AccountCategoryKind,
   type AccountKind as ContractAccountKind,
-  type OrganizationCategory,
   type TrustTier,
 } from '@oxyhq/contracts';
-import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, textArrayLiteral, timestamptz, updatedAt } from './columns';
 
 /**
  * Named color presets a user may pick. `oxy` is premium-gated at the service
@@ -140,19 +156,39 @@ export const ACCOUNT_STATUSES = ['active', 'archived'] as const;
 export const THEME_MODES = ['light', 'dark', 'system'] as const;
 
 /**
- * Real-estate / team taxonomy, meaningful only for `kind: 'organization'`.
- * `satisfies` proves every value is a valid contract category; the `Gap` type
- * below proves the reverse, so adding one in contracts fails THIS file's
- * typecheck rather than silently producing a value the CHECK rejects.
+ * What a non-personal account is about. `satisfies` proves every value is a
+ * valid contract id; the `Gap` type below proves the reverse, so adding one in
+ * contracts fails THIS file's typecheck rather than silently producing a value
+ * the CHECK rejects.
+ *
+ * **This list is APPEND-ONLY, and removing an id here is a data-loss bug, not a
+ * cleanup.** A CHECK constraint is re-evaluated on every UPDATE of a row, not
+ * only on writes that touch the constrained column — so narrowing it makes
+ * `update users set bio = … where id = …` fail on any account that had picked
+ * the removed value, forever, with an error naming a column the caller never
+ * mentioned. Measured on a real Postgres 17, `NOT VALID` included (which exempts
+ * the initial scan and nothing else). Withdrawing a category is
+ * `RETIRED_ACCOUNT_CATEGORY_IDS` in `@oxyhq/contracts`; it never touches this.
  */
-export const ORGANIZATION_CATEGORIES = [
-  ...CONTRACT_ORGANIZATION_CATEGORIES,
-] as const satisfies readonly OrganizationCategory[];
+export const ACCOUNT_CATEGORY_IDS = [
+  ...CONTRACT_ACCOUNT_CATEGORY_IDS,
+] as const satisfies readonly AccountCategoryId[];
 
-/** `never` while `ORGANIZATION_CATEGORIES` covers the contract union. */
-export type OrganizationCategoryGap = Exclude<
-  OrganizationCategory,
-  (typeof ORGANIZATION_CATEGORIES)[number]
+/** `never` while `ACCOUNT_CATEGORY_IDS` covers the contract union. */
+export type AccountCategoryIdGap = Exclude<
+  AccountCategoryId,
+  (typeof ACCOUNT_CATEGORY_IDS)[number]
+>;
+
+/** Kinds allowed to carry categories — every kind except `personal`. */
+export const ACCOUNT_CATEGORY_KINDS = [
+  ...CONTRACT_ACCOUNT_CATEGORY_KINDS,
+] as const satisfies readonly AccountCategoryKind[];
+
+/** `never` while `ACCOUNT_CATEGORY_KINDS` covers the contract union. */
+export type AccountCategoryKindGap = Exclude<
+  AccountCategoryKind,
+  (typeof ACCOUNT_CATEGORY_KINDS)[number]
 >;
 
 /** Denormalized mirror of `ReputationBalance.trustTier`. Same `satisfies` guard. */
@@ -273,8 +309,36 @@ export const users = pgTable(
 
     // ---- account graph -----------------------------------------------------
     kind: text({ enum: ACCOUNT_KINDS }).notNull().default('personal'),
-    /** Meaningful only when `kind = 'organization'`. */
-    organizationCategory: text({ enum: ORGANIZATION_CATEGORIES }),
+    /**
+     * What this account is about — ORDERED, and the FIRST element is the
+     * primary category.
+     *
+     * A native array rather than a child table, for the same reason
+     * `applications.redirect_uris` is one and a stronger one besides: it is
+     * short, read whole, never filtered by element, and ORDER-SENSITIVE. A child
+     * table would need an explicit ordinal column purely to preserve what the
+     * array gives for free — and here that ordinal would BE the primary marker,
+     * so an ordering bug would silently change which category an account leads
+     * with rather than merely shuffling a list.
+     *
+     * Elements are stable opaque ids; the visible label lives in each client's
+     * locales, keyed by the id, and never in this column (see
+     * `@oxyhq/contracts` `accountGraph.ts`).
+     *
+     * NOT NULL with an empty default: absent and "chose none" are the same
+     * state, and `<@` is satisfied by `{}` trivially, so a nullable column would
+     * add a third case for every reader with nothing to say.
+     *
+     * DUPLICATES ARE NOT CONSTRAINED HERE and cannot be: a CHECK may not contain
+     * a subquery (`cannot use subquery in check constraint`, measured), and
+     * every distinctness expression over an array needs one. `cardinality`
+     * counts duplicates, so the cap below does not catch them either. The write
+     * path validates it — `accountCategoriesSchema`.
+     */
+    accountCategories: text({ enum: ACCOUNT_CATEGORY_IDS })
+      .array()
+      .notNull()
+      .default([]),
     /**
      * Immediate parent in the ownership tree; NULL means "root".
      *
@@ -507,6 +571,15 @@ export const users = pgTable(
       .where(sql`${t.automationOwnerId} is not null`),
 
     // ---- recommendation surface -------------------------------------------
+    // `account_categories` gets NO index, and the omission is a decision.
+    // Nothing filters by category today — the column is written by the owner and
+    // read whole on a profile, never searched. The moment a discovery query
+    // exists ("organizations in real estate"), it is `account_categories @>
+    // array['real_estate']`, which wants exactly one line —
+    // `index('users_account_categories_idx').using('gin', t.accountCategories)`
+    // — in its own migration, the same way `applications.capabilities` earned
+    // its GIN index by having a query that reads it by element. Adding it now
+    // would be an index maintained for a query nobody wrote.
     index('users_reputation_rank_weight_idx').on(t.reputationRankWeight),
     index('users_reputation_tier_idx').on(t.reputationTier),
     index('users_is_sensitive_idx').on(t.isSensitive),
@@ -516,9 +589,28 @@ export const users = pgTable(
     // would hard-code a SQL name this file never chose (drizzle derives it from
     // the casing setting), so only the value lists are raw.
     check('users_kind_check', sql`${t.kind} in (${sql.raw(inList(ACCOUNT_KINDS))})`),
+    // The array analogue of a closed value set. `<@` is containment, so `{}`
+    // satisfies it trivially — and a NULL ELEMENT does not, which is how
+    // `{news,NULL}` is refused without a clause of its own (measured).
     check(
-      'users_organization_category_check',
-      sql`${t.organizationCategory} is null or ${t.organizationCategory} in (${sql.raw(inList(ORGANIZATION_CATEGORIES))})`
+      'users_account_categories_check',
+      sql`${t.accountCategories} <@ ${sql.raw(textArrayLiteral(ACCOUNT_CATEGORY_IDS))}`
+    ),
+    // `cardinality`, not `array_length`: the latter returns NULL for an empty
+    // array, and `NULL <= 4` is NULL, which a CHECK accepts — so the two agree
+    // on every row that matters and disagree on nothing, but only one of them
+    // says what it means.
+    check(
+      'users_account_categories_max_check',
+      sql`cardinality(${t.accountCategories}) <= ${sql.raw(String(MAX_ACCOUNT_CATEGORIES))}`
+    ),
+    // A person has interests, not a sector. Stated here rather than left to the
+    // service so it is UNREPRESENTABLE — a backfill, a psql session and a route
+    // that forgets the check all hit the same wall. Derived from the same
+    // contract tuple the API's `kindAcceptsAccountCategories` reads.
+    check(
+      'users_account_categories_kind_check',
+      sql`${t.kind} in (${sql.raw(inList(ACCOUNT_CATEGORY_KINDS))}) or cardinality(${t.accountCategories}) = 0`
     ),
     check(
       'users_account_status_check',

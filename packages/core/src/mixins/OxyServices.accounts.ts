@@ -33,7 +33,7 @@
  * registers the switched session into the operator's device-set directly).
  */
 import type { User } from '../models/interfaces';
-import type { AccountKind, OrganizationCategory, ChildAccountKind } from '@oxyhq/contracts';
+import type { AccountCategoryId, AccountKind, ChildAccountKind } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { normalizeUserIdentity } from '../utils/userIdentity';
@@ -53,8 +53,16 @@ import { CACHE_TIMES } from './mixinHelpers';
  *
  * Single source of truth is `@oxyhq/contracts`.
  */
-export type { AccountKind, OrganizationCategory } from '@oxyhq/contracts';
-export { ACCOUNT_KINDS, ORGANIZATION_CATEGORIES, isActAsEligibleKind } from '@oxyhq/contracts';
+export type { AccountCategoryId, AccountKind } from '@oxyhq/contracts';
+export {
+  ACCOUNT_CATEGORY_IDS,
+  ACCOUNT_KINDS,
+  MAX_ACCOUNT_CATEGORIES,
+  SELECTABLE_ACCOUNT_CATEGORY_IDS,
+  isActAsEligibleKind,
+  isSelectableAccountCategoryId,
+  kindAcceptsAccountCategories,
+} from '@oxyhq/contracts';
 
 /**
  * The calling user's relationship to an account node, as resolved by the API:
@@ -180,8 +188,17 @@ export interface CreateAccountInput {
   name?: { first?: string; last?: string; displayName?: string };
   bio?: string;
   avatar?: string;
-  /** Meaningful only when `kind` is `organization`. */
-  organizationCategory?: OrganizationCategory;
+  /**
+   * What the account is about. ORDERED — the FIRST element is the primary
+   * category, so a picker must submit them in the order the user arranged them
+   * and must not sort. Stable ids, never labels: render each one through the
+   * `accounts.accountCategory.<id>` translation key.
+   *
+   * Offer `SELECTABLE_ACCOUNT_CATEGORY_IDS`, not `ACCOUNT_CATEGORY_IDS` — the
+   * latter still contains withdrawn ids so that accounts already carrying one
+   * keep working. At most `MAX_ACCOUNT_CATEGORIES`, no duplicates.
+   */
+  accountCategories?: AccountCategoryId[];
 }
 
 /** Input accepted by `updateAccount`. Tree placement changes go through `/move`. */
@@ -196,8 +213,19 @@ export interface UpdateAccountInput {
   name?: { first?: string; last?: string; displayName?: string };
   bio?: string | null;
   avatar?: string | null;
-  /** Clears the category when `null`; only valid on `kind: 'organization'`. */
-  organizationCategory?: OrganizationCategory | null;
+  /**
+   * Replaces the WHOLE list, in the order given — there is no add/remove verb,
+   * because a partial edit cannot express a re-ordering and the order is what
+   * names the primary category. `[]` clears it.
+   *
+   * Not nullable, unlike `bio` and `avatar`: the empty case already has a
+   * spelling of its own, so a second one could only ever disagree with it.
+   *
+   * Rejected for a `personal` account, and rejected when it ADDS a withdrawn
+   * id the account did not already carry — keeping or re-ordering one it has is
+   * always allowed.
+   */
+  accountCategories?: AccountCategoryId[];
 }
 
 /** Input accepted by `provisionChannelAccount` (service token + `accounts:provision`). */

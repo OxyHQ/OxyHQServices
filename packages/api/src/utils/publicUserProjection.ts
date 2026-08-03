@@ -39,7 +39,7 @@
  */
 
 import { sql, type SQL } from 'drizzle-orm';
-import type { AccountKind } from '@oxyhq/contracts';
+import type { AccountCategoryId, AccountKind } from '@oxyhq/contracts';
 import { qualified } from '../db/casing';
 import { userFollows } from '../db/schema/userFollows';
 import { userLinkMetadata } from '../db/schema/userLinkMetadata';
@@ -88,6 +88,13 @@ export interface PublicUserView {
    * actor is a `Service`). Orthogonal to `type` — both are carried.
    */
   kind?: AccountKind;
+  /**
+   * What the account is about — ORDERED, primary first. PUBLIC and on every
+   * profile row, because the profile screen renders it: a channel's or an
+   * organization's categories are the first thing a visitor reads off the
+   * header. Ids only; the reader's own locale supplies the label.
+   */
+  accountCategories?: AccountCategoryId[];
   federation?: { actorUri?: string; domain?: string };
   /** Only the two leaves a public row may carry — see the module header. */
   privacySettings?: { fediverseSharing?: boolean; isPrivateAccount?: boolean };
@@ -137,6 +144,7 @@ export const publicUserColumns = {
   nameLast: users.nameLast,
   nameDisplay: users.nameDisplay,
   kind: users.kind,
+  accountCategories: users.accountCategories,
   avatar: users.avatar,
   color: users.color,
   bio: users.bio,
@@ -163,6 +171,7 @@ export interface PublicUserRow {
   nameLast: string | null;
   nameDisplay: string | null;
   kind: AccountKind;
+  accountCategories: AccountCategoryId[];
   avatar: string | null;
   color: string;
   bio: string | null;
@@ -225,6 +234,11 @@ export function toPublicUserView(row: PublicUserRow): PublicUserView {
       displayName: optional(row.nameDisplay),
     },
     kind: row.kind,
+    // Passed through UNTOUCHED. Not sorted, not de-duplicated, not filtered —
+    // index 0 is the primary category, so a rewrite here would silently change
+    // which one a profile leads with. Empty stays empty; the serializer decides
+    // whether an empty list reaches the wire.
+    accountCategories: row.accountCategories,
     avatar: optional(row.avatar),
     color: row.color,
     bio: optional(row.bio),

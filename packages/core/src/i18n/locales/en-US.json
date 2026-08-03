@@ -1748,11 +1748,53 @@
         "description": "A programmatic account with service credentials"
       }
     },
-    "organizationCategory": {
+    "accountCategory": {
+      "news": "News",
+      "politics": "Politics & policy",
+      "business": "Business",
+      "startup": "Startups & entrepreneurship",
+      "finance": "Finance & investing",
+      "crypto": "Crypto & web3",
+      "marketplace": "Marketplace & classifieds",
+      "retail": "Retail & ecommerce",
+      "real_estate": "Real estate",
       "agency": "Real estate agency",
+      "landlord": "Landlord & property management",
       "cooperative": "Housing cooperative",
-      "landlord": "Landlord / property manager",
-      "other": "Other organization"
+      "architecture": "Architecture & construction",
+      "technology": "Technology",
+      "software": "Software & development",
+      "ai": "AI & machine learning",
+      "security": "Security & privacy",
+      "automation": "Automation & tools",
+      "science": "Science & research",
+      "education": "Education & training",
+      "books": "Books & writing",
+      "health": "Health & medicine",
+      "fitness": "Fitness & wellbeing",
+      "sports": "Sports",
+      "gaming": "Gaming & esports",
+      "music": "Music",
+      "film": "Film & TV",
+      "podcast": "Podcasts & audio",
+      "art": "Art & design",
+      "photography": "Photography",
+      "comedy": "Comedy",
+      "food": "Food & drink",
+      "travel": "Travel & places",
+      "fashion": "Fashion & beauty",
+      "home_garden": "Home & garden",
+      "diy": "DIY & making",
+      "automotive": "Cars & motoring",
+      "animals": "Animals & pets",
+      "family": "Family & parenting",
+      "nonprofit": "Non-profit & charity",
+      "government": "Government & public sector",
+      "community": "Local community",
+      "activism": "Activism & advocacy",
+      "environment": "Environment & sustainability",
+      "religion": "Religion & spirituality",
+      "other": "Other"
     },
     "create": {
       "title": "Create account",
@@ -1772,8 +1814,9 @@
         "invalidChars": "Only letters, numbers, hyphens, and underscores",
         "checkFailed": "Could not check availability"
       },
-      "organizationCategory": {
-        "label": "Organization type"
+      "accountCategory": {
+        "label": "Categories",
+        "hint": "Pick up to {{max}}. The first one is your main category."
       },
       "toasts": {
         "success": "Account created",

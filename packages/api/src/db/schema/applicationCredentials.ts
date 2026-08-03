@@ -19,8 +19,8 @@
 import { sql } from 'drizzle-orm';
 import { check, foreignKey, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { APPLICATION_SCOPES } from '../../utils/applicationScopes';
-import { applications, textArrayLiteral } from './applications';
-import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
+import { applications } from './applications';
+import { createdAt, generatedId, textArrayLiteral, timestamptz, updatedAt } from './columns';
 import { users } from './users';
 
 /**

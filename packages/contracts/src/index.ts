@@ -17,15 +17,24 @@ export {
     childAccountKindSchema,
     isAccountKind,
     isActAsEligibleKind,
-    ORGANIZATION_CATEGORIES,
-    organizationCategorySchema,
+    ACCOUNT_CATEGORY_IDS,
+    ACCOUNT_CATEGORY_KINDS,
+    accountCategoriesSchema,
+    accountCategoryIdSchema,
+    isSelectableAccountCategoryId,
+    kindAcceptsAccountCategories,
+    MAX_ACCOUNT_CATEGORIES,
+    newlyAddedRetiredCategories,
+    RETIRED_ACCOUNT_CATEGORY_IDS,
+    SELECTABLE_ACCOUNT_CATEGORY_IDS,
     createAccountRequestSchema,
 } from './accountGraph';
 
 export type {
     AccountKind,
+    AccountCategoryId,
+    AccountCategoryKind,
     ChildAccountKind,
-    OrganizationCategory,
     CreateAccountRequest,
 } from './accountGraph';
 
