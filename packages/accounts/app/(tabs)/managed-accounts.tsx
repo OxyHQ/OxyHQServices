@@ -12,7 +12,7 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
 import type { AccountNode } from '@oxyhq/core';
-import { getAccountDisplayName, getNormalizedUserHandle } from '@oxyhq/core';
+import { getAccountDisplayName, getNormalizedUserHandle, isSwitchTargetAccount } from '@oxyhq/core';
 import { useAccountRowBuilder } from '@/components/managed-accounts/account-row';
 import { useManagedAccountGroups } from '@/hooks/managed-accounts/useManagedAccountGroups';
 
@@ -69,9 +69,12 @@ export default function ManagedAccountsScreen() {
 
   const handleEditProfile = useCallback((accountId: string) => {
     const node = accounts.find((entry) => entry.accountId === accountId);
-    // Channels are content identities — nobody switches into them. Edit via the
-    // per-account settings sheet, which PATCHes by id without a session switch.
-    if (node?.kind === 'channel') {
+    // An account nobody can become — a channel, a content identity — cannot be
+    // edited by switching into it first. Edit via the per-account settings
+    // sheet, which PATCHes by id without a session switch. Asking
+    // `isSwitchTargetAccount` rather than testing the kind keeps this branch
+    // correct for the next kind that is manageable but not occupiable.
+    if (!node || !isSwitchTargetAccount(node)) {
       showBottomSheet?.({ screen: 'AccountSettings', props: { accountId } });
       return;
     }
