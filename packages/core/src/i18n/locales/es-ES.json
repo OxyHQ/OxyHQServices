@@ -1839,6 +1839,7 @@
       "title": "Miembros",
       "subtitle": "Personas con acceso a esta cuenta.",
       "empty": "Aún no hay miembros.",
+      "inherited": "Heredado",
       "actions": {
         "remove": "Eliminar miembro",
         "transfer": "Transferir propiedad"

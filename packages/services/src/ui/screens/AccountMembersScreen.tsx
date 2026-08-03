@@ -86,7 +86,15 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
     enabled: canUsePrivateApi && id.length > 0 && canRead,
   });
   const members = useMemo<AccountMember[]>(() => membersQuery.data ?? [], [membersQuery.data]);
-  const ownerCount = useMemo(() => members.filter((m) => m.role === 'owner').length, [members]);
+  // DIRECT owners only. The list also carries members whose row lives on an
+  // ancestor, and the last-owner rule this count feeds is about the rows on THIS
+  // account — the server's guard counts those. Including an inherited owner
+  // would make a child that has no owner of its own look like it has exactly
+  // one, and silently disable removing anybody.
+  const ownerCount = useMemo(
+    () => members.filter((m) => m.role === 'owner' && m.source !== 'inherited').length,
+    [members],
+  );
 
   const invalidateMembers = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['accounts', 'members', id] });
@@ -308,9 +316,18 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
                   {members.map((member, index) => {
                     const isOwner = member.role === 'owner';
                     const isLastOwner = isOwner && ownerCount <= 1;
-                    const canEditThisRole = canUpdate && !isOwner;
-                    const canRemoveThisMember = canRemove && !isLastOwner && (!isOwner || canTransfer);
-                    const canTransferToThis = canTransfer && !isOwner && member.status === 'active';
+                    // An INHERITED entry's row lives on an ancestor account, and
+                    // every member mutation is scoped to rows on the account in
+                    // the path — so offering to edit, remove or promote one would
+                    // be offering a request the server answers 404. The row is
+                    // changed where it lives, on that ancestor's own member
+                    // screen.
+                    const isEditableHere = member.source !== 'inherited';
+                    const canEditThisRole = canUpdate && isEditableHere && !isOwner;
+                    const canRemoveThisMember =
+                      canRemove && isEditableHere && !isLastOwner && (!isOwner || canTransfer);
+                    const canTransferToThis =
+                      canTransfer && isEditableHere && !isOwner && member.status === 'active';
                     return (
                       <View key={member._id}>
                         {index > 0 ? <Divider color={colors.border} spacing={0} /> : null}
@@ -323,6 +340,13 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
                               <View className="px-space-8 py-space-4 rounded-radius-full" style={{ backgroundColor: colors.primarySubtle }}>
                                 <Text className="text-caption font-bodyBold" style={{ color: colors.primary }}>
                                   {roleLabel('owner')}
+                                </Text>
+                              </View>
+                            ) : null}
+                            {!isEditableHere ? (
+                              <View className="px-space-8 py-space-4 rounded-radius-full" style={{ backgroundColor: colors.card }}>
+                                <Text className="text-caption font-caption text-text-secondary">
+                                  {t('accounts.members.inherited') || 'Inherited'}
                                 </Text>
                               </View>
                             ) : null}
