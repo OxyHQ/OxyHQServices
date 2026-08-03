@@ -1,7 +1,9 @@
 import type { DeviceSessionState } from '@oxyhq/contracts';
+import { ACCOUNT_KINDS } from '@oxyhq/contracts';
 import type { User } from '../../models/interfaces';
 import type { AccountNode } from '../../mixins/OxyServices.accounts';
 import {
+  isSwitchTargetAccount,
   projectSwitchableAccounts,
   switchableAccountIds,
 } from '../accountProjection';
@@ -48,6 +50,57 @@ const mapOf = (...users: User[]): Map<string, User> => {
 };
 
 const noAvatar = (): undefined => undefined;
+
+describe('isSwitchTargetAccount', () => {
+  /**
+   * EXHAUSTIVE over `ACCOUNT_KINDS`, as one object equality rather than a
+   * per-kind assertion, for two reasons that a `channel → false` spot-check
+   * cannot give:
+   *
+   *  - It distinguishes "excludes channels" from "excludes everything". Three
+   *    kinds must come back `true` here, so a predicate that answered `false`
+   *    unconditionally — the shape that empties a switcher instead of filtering
+   *    it — fails on those three, not on the channel.
+   *  - Adding a sixth kind fails this test with a missing key, forcing the
+   *    decision to be made HERE rather than inherited silently from whichever
+   *    literal comparison happened to be written first.
+   */
+  it('answers by kind for an account the caller merely owns or is a member of', () => {
+    expect(
+      Object.fromEntries(
+        ACCOUNT_KINDS.map((kind) => [kind, isSwitchTargetAccount({ kind, relationship: 'owner' })]),
+      ),
+    ).toEqual({
+      personal: false,
+      organization: true,
+      project: true,
+      bot: true,
+      channel: false,
+    });
+  });
+
+  /**
+   * The `self` ground, and the reason this predicate is not `isActAsEligibleKind`.
+   *
+   * `personal` is act-as INELIGIBLE — assuming somebody's human login would be
+   * impersonation — so a switcher gated on that predicate alone would drop the
+   * caller's OWN account and render an empty list. `GET /accounts` resolves its
+   * caller through `resolveOperatorId`, so a `self` node is always the human
+   * operator's own personal account, even while they operate an org.
+   */
+  it('admits the caller’s own personal account, which is act-as ineligible', () => {
+    expect(isSwitchTargetAccount({ kind: 'personal', relationship: 'self' })).toBe(true);
+    // Same kind, not the caller's own → refused. The `relationship` is doing the
+    // work, so neither half of the predicate can be deleted without a failure.
+    expect(isSwitchTargetAccount({ kind: 'personal', relationship: 'member' })).toBe(false);
+  });
+
+  it('refuses an account with no kind information rather than assuming', () => {
+    expect(isSwitchTargetAccount({})).toBe(false);
+    expect(isSwitchTargetAccount({ kind: null })).toBe(false);
+    expect(isSwitchTargetAccount({ kind: undefined, relationship: 'owner' })).toBe(false);
+  });
+});
 
 describe('projectSwitchableAccounts', () => {
   it('returns [] for null state and empty graph', () => {
@@ -136,6 +189,50 @@ describe('projectSwitchableAccounts', () => {
 
     expect(rows.map((r) => r.accountId)).toEqual(['a1', 'org1']);
     expect(rows.some((r) => r.kind === 'channel')).toBe(false);
+  });
+
+  /**
+   * The same rule as the `isSwitchTargetAccount` matrix above, asserted through
+   * the projection so the WIRING is covered and not just the predicate.
+   *
+   * The fixture deliberately carries one graph-only node of every kind, and
+   * FOUR of the five must survive: a fixture list of channels alone could not
+   * tell "omits channels" from "omits every graph-only row", which is the
+   * failure mode that would silently empty an operator's switcher of the orgs
+   * they actually work in. `a1` is a device row and is asserted separately, so
+   * the graph lane's output is never confused with the device lane's.
+   */
+  it('keeps every switchable kind while dropping the channel (graph lane)', () => {
+    const rows = projectSwitchableAccounts({
+      state: state([{ accountId: 'a1', sessionId: 's1' }], 'a1'),
+      graph: [
+        graphNode('self1', { kind: 'personal', relationship: 'self' }),
+        graphNode('org1', { kind: 'organization' }),
+        graphNode('proj1', { kind: 'project' }),
+        graphNode('bot1', { kind: 'bot' }),
+        graphNode('chan1', { kind: 'channel' }),
+      ],
+      profilesById: mapOf(
+        user('a1'),
+        user('self1'),
+        user('org1'),
+        user('proj1'),
+        user('bot1'),
+        user('chan1'),
+      ),
+      resolveAvatarUrl: noAvatar,
+    });
+
+    expect(rows.map((r) => r.accountId)).toEqual(['a1', 'self1', 'org1', 'proj1', 'bot1']);
+    // Stated the other way round too, so a fixture that stopped reaching the
+    // graph lane at all could not pass this as a vacuous "no channels found".
+    expect(rows.map((r) => r.kind)).toEqual([
+      undefined,
+      'personal',
+      'organization',
+      'project',
+      'bot',
+    ]);
   });
 
   it('dedups an account present as BOTH device session and graph node into ONE enriched row', () => {
@@ -232,11 +329,21 @@ describe('switchableAccountIds', () => {
     expect(switchableAccountIds(null, [])).toEqual([]);
   });
 
-  it('omits a graph-only channel, so no profile is fetched for a dropped row', () => {
+  /**
+   * Must stay in lockstep with the projection's own filter in BOTH directions:
+   * an id fetched for a dropped row is wasted work, but an id NOT fetched for a
+   * row the projection keeps is worse — that row has no profile, so the
+   * projection's device lane skips it and it silently never renders.
+   */
+  it('applies the same switch-target filter as the projection', () => {
     const ids = switchableAccountIds(null, [
+      graphNode('self1', { kind: 'personal', relationship: 'self' }),
       graphNode('org1', { kind: 'organization' }),
+      graphNode('proj1', { kind: 'project' }),
+      graphNode('bot1', { kind: 'bot' }),
       graphNode('chan1', { kind: 'channel' }),
+      graphNode('other1', { kind: 'personal', relationship: 'member' }),
     ]);
-    expect(ids).toEqual(['org1']);
+    expect(ids).toEqual(['bot1', 'org1', 'proj1', 'self1']);
   });
 });

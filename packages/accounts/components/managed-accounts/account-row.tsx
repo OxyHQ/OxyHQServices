@@ -3,7 +3,12 @@ import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'rea
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Avatar } from '@oxyhq/bloom/avatar';
 import type { AccountNode, AccountRole, OxyServices } from '@oxyhq/core';
-import { getAccountFallbackHandle, getAccountDisplayName, getNormalizedUserHandle } from '@oxyhq/core';
+import {
+  getAccountFallbackHandle,
+  getAccountDisplayName,
+  getNormalizedUserHandle,
+  isSwitchTargetAccount,
+} from '@oxyhq/core';
 import { useColors, type AppColors } from '@/hooks/useColors';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
@@ -78,7 +83,12 @@ function AccountRowContent({
 
   const role = getNodeRole(node);
   const badgeColor = getRoleBadgeColor(role, colors);
-  const canSwitchInto = SWITCHABLE_ROLES.includes(role) && node.kind !== 'channel';
+  // Two independent conditions, both required: the caller's ROLE must carry
+  // `account:act_as`, and the ACCOUNT must be something anybody can become at
+  // all. `isSwitchTargetAccount` answers the second — the same rule the account
+  // switcher uses — rather than a `kind !== 'channel'` literal, which would
+  // silently admit the next kind nobody may act as.
+  const canSwitchInto = SWITCHABLE_ROLES.includes(role) && isSwitchTargetAccount(node);
   const canManageMembers = MANAGE_MEMBER_ROLES.includes(role);
   const canEdit = EDIT_ROLES.includes(role);
   const canArchive = role === 'owner';
@@ -209,7 +219,9 @@ export function useAccountRowBuilder({
     const avatarUri = node.account?.avatar
       ? oxyServices.getFileDownloadUrl(node.account.avatar, 'thumb')
       : undefined;
-    const canSwitchInto = SWITCHABLE_ROLES.includes(role) && node.kind !== 'channel';
+    // Same two conditions as `AccountRowContent`'s switch button above — the
+    // whole row is that button's larger tap target, so the two must agree.
+    const canSwitchInto = SWITCHABLE_ROLES.includes(role) && isSwitchTargetAccount(node);
     const canManageMembers = MANAGE_MEMBER_ROLES.includes(role);
 
     return {

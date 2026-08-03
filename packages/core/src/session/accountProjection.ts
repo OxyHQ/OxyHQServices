@@ -103,6 +103,38 @@ export interface SwitchableAccount {
   user: SwitchableAccountUser;
 }
 
+/**
+ * Whether the caller can BECOME this account — the one question every account
+ * switcher asks, answered here so no surface has to re-derive it.
+ *
+ * Two independent grounds, either of which suffices:
+ *
+ *  - **It is already the caller's own identity** (`relationship: 'self'`).
+ *    `GET /accounts` resolves its caller through `resolveOperatorId`, so `self`
+ *    is the HUMAN operator's personal account even while they are operating an
+ *    org — never the operated account. Kind is irrelevant on this ground: the
+ *    caller IS that account, so returning to it asks the server for nothing.
+ *  - **The server will mint a session for it** — `isActAsEligibleKind(kind)` is
+ *    the exact predicate `POST /accounts/:id/switch` enforces, so a row offered
+ *    on this ground is never a dead button.
+ *
+ * `isActAsEligibleKind` ALONE is not this question, and reaching for it
+ * directly is the mistake this function exists to prevent: it is false for
+ * `personal` as well as `channel`, so a switcher gated on it alone renders an
+ * empty list rather than a filtered one. Equally, `kind !== 'channel'` is not
+ * this question either — it silently admits every kind invented after it was
+ * written, which is the same trap `isActAsEligibleKind` was introduced to close
+ * on the server.
+ *
+ * Takes a structural subset rather than a whole {@link AccountNode} so a caller
+ * holding a projected {@link SwitchableAccount} can ask it too.
+ */
+export function isSwitchTargetAccount(
+  node: { kind?: AccountKind | null; relationship?: AccountRelationship },
+): boolean {
+  return node.relationship === 'self' || isActAsEligibleKind(node.kind);
+}
+
 /** Input to {@link projectSwitchableAccounts}. */
 export interface ProjectSwitchableAccountsInput {
   /**
@@ -144,8 +176,9 @@ export interface ProjectSwitchableAccountsInput {
  * and a graph node is deduped into ONE device row enriched with the graph
  * metadata (relationship / kind / parent / membership).
  *
- * Graph nodes of a kind nobody may act as (`channel`) are omitted — see the
- * filter below.
+ * Graph nodes that are not switch targets — a `channel`, which nobody may act
+ * as — are omitted. {@link isSwitchTargetAccount} is the rule; see the filter
+ * below.
  */
 export function projectSwitchableAccounts(input: ProjectSwitchableAccountsInput): SwitchableAccount[] {
   const { state, graph, profilesById, activeUser, locale, resolveAvatarUrl } = input;
@@ -236,10 +269,12 @@ export function projectSwitchableAccounts(input: ProjectSwitchableAccountsInput)
     // construction": the graph contributes accounts that have no device session
     // and no credentials at all, which is exactly how an org first becomes
     // switchable. So a kind that must never be switched into has to be filtered
-    // HERE, and `isActAsEligibleKind` is the same predicate the server enforces
-    // on `POST /accounts/:id/switch` — offering a row the server would 403 is a
-    // dead button.
-    if (!isActAsEligibleKind(node.kind)) {
+    // HERE — offering a row the server would 403 is a dead button.
+    //
+    // An account already on the device skipped this check via the branch above,
+    // and correctly: whatever its kind, the caller is signed into it, so
+    // switching is a local activation that asks the server for nothing.
+    if (!isSwitchTargetAccount(node)) {
       continue;
     }
     remember(toRow(node.account, {
@@ -263,8 +298,11 @@ export function projectSwitchableAccounts(input: ProjectSwitchableAccountsInput)
  * document, but including their ids lets the caller pass one id set and lets the
  * projection prefer freshly-fetched profiles uniformly.
  *
- * Applies the SAME act-as filter as {@link projectSwitchableAccounts} to graph
- * nodes, so this never fetches a profile for a row the projection will drop.
+ * Applies the SAME {@link isSwitchTargetAccount} filter as
+ * {@link projectSwitchableAccounts} to graph nodes, so this never fetches a
+ * profile for a row the projection will drop — and, just as importantly, never
+ * SKIPS one the projection will keep, which would leave that row unrendered
+ * until some later fetch happened to resolve it.
  */
 export function switchableAccountIds(
   state: DeviceSessionState | null,
@@ -277,7 +315,7 @@ export function switchableAccountIds(
     }
   }
   for (const node of graph) {
-    if (node.accountId && isActAsEligibleKind(node.kind)) {
+    if (node.accountId && isSwitchTargetAccount(node)) {
       ids.add(node.accountId);
     }
   }
