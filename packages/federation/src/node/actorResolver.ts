@@ -542,7 +542,15 @@ export class ActorResolver<TActor extends FederatedActorRecordBase> {
             displayName,
             avatarUrl,
             bannerUrl: headerUrl,
-            bio: identityBio || undefined,
+            // Sent even when EMPTY, and that is the whole point. oxy-api writes
+            // this field only when it receives a string, so omitting it means
+            // "keep whatever you already stored" — which is exactly wrong for the
+            // two ways a bio legitimately becomes empty: a bridged actor whose
+            // bio was nothing but the bridge's boilerplate (stripped above), and
+            // any actor who simply deleted theirs upstream. Coalescing the empty
+            // string away made both of those unrepresentable, so the stale text
+            // survived every later refresh with nothing in the logs.
+            bio: identityBio,
             followersCount,
             followingCount,
             postsCount,

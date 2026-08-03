@@ -62,7 +62,24 @@ const BRIDGED_ACTOR = {
   ],
 };
 
-function makeResolver(deriveNetworkIdentity?: DeriveNetworkIdentity) {
+/**
+ * An actor whose ENTIRE bio is the bridge's boilerplate, so stripping it leaves
+ * the empty string. Every other fixture here keeps a sentence of its own, and
+ * that is the shape that hid a real production bug: an empty result is falsy, so
+ * a `bio || undefined` coalesce discarded it and oxy-api — which only writes the
+ * field when it is sent a string — kept the boilerplate it had stored months
+ * earlier. Fixtures that all strip to something non-empty cannot tell the two
+ * readings apart. Seen live on `@elonmusk@x.com`, whose bio is nothing but the
+ * notice.
+ */
+const ALL_BOILERPLATE_ACTOR = {
+  ...BRIDGED_ACTOR,
+  summary:
+    "This account is a replica from Twitter. Its author can't see your replies. "
+    + 'If you find this service useful, please consider supporting us via our Patreon.',
+};
+
+function makeResolver(deriveNetworkIdentity?: DeriveNetworkIdentity, actorDocument = BRIDGED_ACTOR) {
   const upserts: Array<{ uri: string; update: Record<string, unknown> }> = [];
   const resolved: NormalizedExternalActor[] = [];
   const warnings: string[] = [];
@@ -71,8 +88,8 @@ function makeResolver(deriveNetworkIdentity?: DeriveNetworkIdentity) {
     federationEnabled: true,
     signedFetch: async (url) => {
       // Collection counts are fetched too; only the actor URL returns a document.
-      if (url !== BRIDGED_ACTOR.id) return new Response(null, { status: 404 });
-      return new Response(JSON.stringify(BRIDGED_ACTOR), {
+      if (url !== actorDocument.id) return new Response(null, { status: 404 });
+      return new Response(JSON.stringify(actorDocument), {
         status: 200,
         headers: { 'content-type': 'application/activity+json' },
       });
@@ -141,6 +158,34 @@ describe('deriveNetworkIdentity — the identity moves, the address does not', (
 
     expect(rig.upserts[0].update.summary).toBe('The latest in tech.');
     expect(rig.resolved[0].bio).toBe('The latest in tech.');
+  });
+
+  /**
+   * The empty string must SURVIVE as far as the identity bridge. It is the whole
+   * instruction: oxy-api writes the bio only when it is sent a string, so
+   * dropping it means "leave whatever you stored" — and what it stored is the
+   * boilerplate. Asserting `toBe('')` rather than a falsy check on purpose;
+   * `undefined` is falsy too, and it is the wrong answer.
+   */
+  it('still sends a bio when stripping the boilerplate empties it', async () => {
+    const rig = makeResolver(deriveBridgedNetworkIdentity, ALL_BOILERPLATE_ACTOR);
+    await rig.resolver.fetchRemoteActor(ALL_BOILERPLATE_ACTOR.id);
+
+    expect(rig.upserts[0].update.summary).toBe('');
+    expect(rig.resolved[0].bio).toBe('');
+  });
+
+  /**
+   * Same mechanism, wider blast radius: an ordinary actor who DELETES their bio
+   * upstream sends `summary: ''`, which the same coalesce discarded — so a
+   * deletion never propagated and Oxy served the old text indefinitely. No
+   * bridge involved, which is why this case is here rather than only above.
+   */
+  it('propagates a bio that was cleared upstream, with no bridge involved', async () => {
+    const rig = makeResolver(undefined, { ...BRIDGED_ACTOR, summary: '' });
+    await rig.resolver.fetchRemoteActor(BRIDGED_ACTOR.id);
+
+    expect(rig.resolved[0].bio).toBe('');
   });
 
   it('changes nothing at all when no hook is configured', async () => {
