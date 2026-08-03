@@ -60,7 +60,7 @@ function seedFullEntry(qc: QueryClient, viewerId = ''): void {
     bio: 'old bio',
     description: 'old description',
     color: 'teal',
-    organizationCategory: 'agency',
+    accountCategories: ['agency'],
     _count: { followers: 10, following: 5 },
   };
   qc.setQueryData(queryKeys.users.detail('u1'), full);
@@ -292,10 +292,10 @@ describe('clearedFieldsFromAccountUpdate', () => {
       clearedFieldsFromAccountUpdate({
         avatar: null,
         bio: null,
-        organizationCategory: null,
+        accountCategories: [],
         name: { displayName: '' },
       }),
-    ).toEqual(['avatar', 'bio', 'organizationCategory', 'name.displayName']);
+    ).toEqual(['avatar', 'bio', 'accountCategories', 'name.displayName']);
     expect(clearedFieldsFromAccountUpdate({ bio: 'still here' })).toEqual([]);
   });
 });

@@ -119,15 +119,15 @@ const DEGRADED_DISPLAY_NAME = "Unknown user";
  *
  * Each entry is clearable through a shipped write path: `avatar`, `bio`,
  * `description` and `name.displayName` via `UserProfileUpdate` (`''` clears) and
- * `UpdateAccountInput` (`null` clears), `color` and `organizationCategory` via
- * their nullable fields.
+ * `UpdateAccountInput` (`null` clears avatar/bio; `accountCategories: []`
+ * clears the ordered category list), and `color` via its nullable field.
  */
 export const CLEARABLE_USER_FIELDS = [
 	"avatar",
 	"bio",
 	"description",
 	"color",
-	"organizationCategory",
+	"accountCategories",
 	"name.displayName",
 ] as const;
 
@@ -180,8 +180,12 @@ export function clearedFieldsFromAccountUpdate(
 	if ("bio" in input && !isMeaningful(input.bio)) {
 		cleared.push("bio");
 	}
-	if ("organizationCategory" in input && input.organizationCategory === null) {
-		cleared.push("organizationCategory");
+	if (
+		"accountCategories" in input &&
+		Array.isArray(input.accountCategories) &&
+		input.accountCategories.length === 0
+	) {
+		cleared.push("accountCategories");
 	}
 	if (
 		input.name !== undefined &&

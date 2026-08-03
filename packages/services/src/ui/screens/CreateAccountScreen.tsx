@@ -332,26 +332,31 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
           (they are all non-personal). The badge on a selected row is its
           POSITION, so the primary is legible as "1" rather than being a rule the
           user has to be told. */}
-      <SettingsListGroup title={t('accounts.create.accountCategory.label')}>
-        {ACCOUNT_CATEGORY_OPTIONS.map((option) => {
-          const position = accountCategories.indexOf(option);
-          const selected = position >= 0;
-          const label = accountCategoryLabel(t, option);
-          return (
-            <SettingsListItem
-              key={option}
-              title={label}
-              disabled={!selected && accountCategories.length >= MAX_ACCOUNT_CATEGORIES}
-              onPress={() => toggleAccountCategory(option)}
-              showChevron={false}
-              rightElement={selected ? (
-                <Text className="text-caption-1 font-semibold text-primary">{position + 1}</Text>
-              ) : undefined}
-              accessibilityLabel={label}
-            />
-          );
-        })}
-      </SettingsListGroup>
+      <View className="gap-space-4">
+        <SettingsListGroup title={t('accounts.create.accountCategory.label')}>
+          {ACCOUNT_CATEGORY_OPTIONS.map((option) => {
+            const position = accountCategories.indexOf(option);
+            const selected = position >= 0;
+            const label = accountCategoryLabel(t, option);
+            return (
+              <SettingsListItem
+                key={option}
+                title={label}
+                disabled={!selected && accountCategories.length >= MAX_ACCOUNT_CATEGORIES}
+                onPress={() => toggleAccountCategory(option)}
+                showChevron={false}
+                rightElement={selected ? (
+                  <Text className="text-caption-1 font-semibold text-primary">{position + 1}</Text>
+                ) : undefined}
+                accessibilityLabel={label}
+              />
+            );
+          })}
+        </SettingsListGroup>
+        <Text className="text-caption font-caption text-text-tertiary px-space-4">
+          {t('accounts.create.accountCategory.hint', { max: MAX_ACCOUNT_CATEGORIES })}
+        </Text>
+      </View>
 
       {/* Details — a grouped section card hosting the form fields */}
       <SettingsListGroup title={t('accounts.create.detailsSection') || 'Details'}>
