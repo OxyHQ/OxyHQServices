@@ -42,7 +42,7 @@
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, pgTable, text } from 'drizzle-orm/pg-core';
 import { APPLICATION_SCOPES } from '../../utils/applicationScopes';
-import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, textArrayLiteral, timestamptz, updatedAt } from './columns';
 import { users } from './users';
 
 /**
@@ -75,11 +75,6 @@ export const APPLICATION_STATUSES = [
 /** Renders a `const` tuple as a SQL `in (…)` list. */
 function inList(values: readonly string[]): string {
   return values.map((value) => `'${value}'`).join(', ');
-}
-
-/** Renders a `const` tuple as a SQL `array[…]::text[]` literal. */
-export function textArrayLiteral(values: readonly string[]): string {
-  return `array[${inList(values)}]::text[]`;
 }
 
 export const applications = pgTable(

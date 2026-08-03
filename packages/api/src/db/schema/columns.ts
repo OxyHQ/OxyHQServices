@@ -136,3 +136,18 @@ export const tsvector = customType<{ data: string; driverData: string }>({
 export function inList(values: readonly string[]): string {
   return values.map((value) => `'${value}'`).join(', ');
 }
+
+/**
+ * A `const` tuple rendered as a SQL `array[…]::text[]` literal — the ARRAY
+ * analogue of {@link inList}, for a `text[]` column whose elements come from a
+ * closed value set. The CHECK is written `<@` (containment), so an empty array
+ * trivially satisfies it.
+ *
+ * It lives here rather than beside its first caller because `users` needs it
+ * too, and `schema/applications.ts` — where it used to live — imports `users`.
+ * Same safety contract as {@link inList}: `const` tuples only, never a runtime
+ * value.
+ */
+export function textArrayLiteral(values: readonly string[]): string {
+  return `array[${inList(values)}]::text[]`;
+}

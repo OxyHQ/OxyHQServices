@@ -2,8 +2,8 @@ import type React from 'react';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { AccountKind, CreateAccountInput, OrganizationCategory } from '@oxyhq/core';
-import { DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName, MAX_DISPLAY_NAME_LENGTH, ORGANIZATION_CATEGORIES } from '@oxyhq/core';
+import type { AccountCategoryId, AccountKind, CreateAccountInput } from '@oxyhq/core';
+import { DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName, MAX_ACCOUNT_CATEGORIES, MAX_DISPLAY_NAME_LENGTH, SELECTABLE_ACCOUNT_CATEGORY_IDS } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
@@ -83,23 +83,25 @@ const kindDescription = (
   }
 };
 
-const organizationCategoryLabel = (
+/**
+ * The visible label for a category id.
+ *
+ * A lookup, deliberately not a `switch` with a `default`: a `default` would let
+ * an id with no translation render as some OTHER category's label, silently and
+ * only in the languages that are missing it. Falling back to the raw id is ugly
+ * and correct — it is visibly wrong, and it names the missing key.
+ */
+const accountCategoryLabel = (
   t: (key: string, vars?: Record<string, string | number>) => string,
-  category: OrganizationCategory,
-): string => {
-  switch (category) {
-    case 'agency':
-      return t('accounts.organizationCategory.agency');
-    case 'cooperative':
-      return t('accounts.organizationCategory.cooperative');
-    case 'landlord':
-      return t('accounts.organizationCategory.landlord');
-    default:
-      return t('accounts.organizationCategory.other');
-  }
-};
+  category: AccountCategoryId,
+): string => t(`accounts.accountCategory.${category}`) || category;
 
-const ORGANIZATION_CATEGORY_OPTIONS: OrganizationCategory[] = [...ORGANIZATION_CATEGORIES];
+/**
+ * Only the SELECTABLE ids are offered. The full `ACCOUNT_CATEGORY_IDS` still
+ * contains withdrawn ones so that accounts already carrying them keep working —
+ * offering them here would be how an account newly acquires one.
+ */
+const ACCOUNT_CATEGORY_OPTIONS: readonly AccountCategoryId[] = SELECTABLE_ACCOUNT_CATEGORY_IDS;
 
 /**
  * Create a new account in the unified account graph (an organization, project,
@@ -125,7 +127,12 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
   const parentId = typeof parentAccountId === 'string' ? parentAccountId : undefined;
 
   const [kind, setKind] = useState<CreatableAccountKind>('project');
-  const [organizationCategory, setOrganizationCategory] = useState<OrganizationCategory>('agency');
+  /**
+   * ORDER IS THE DATA: index 0 is the primary category. Selecting appends,
+   * de-selecting removes, and neither sorts — so the list the user assembles is
+   * the list that is sent, and the first one they picked stays the primary.
+   */
+  const [accountCategories, setAccountCategories] = useState<AccountCategoryId[]>([]);
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [displayNameError, setDisplayNameError] = useState('');
@@ -215,6 +222,23 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
     );
   }, [t]);
 
+  /**
+   * Append on select, splice out on de-select. Never sorts — appending is what
+   * makes the FIRST category the user chose the primary one, and a sort would
+   * silently reassign that. De-selecting the primary promotes whatever the user
+   * picked next, which is the only interpretation that does not invent a choice
+   * on their behalf.
+   */
+  const toggleAccountCategory = useCallback((category: AccountCategoryId) => {
+    setAccountCategories((current) => {
+      if (current.includes(category)) {
+        return current.filter((entry) => entry !== category);
+      }
+      if (current.length >= MAX_ACCOUNT_CATEGORIES) return current;
+      return [...current, category];
+    });
+  }, []);
+
   const canCreate = usernameStatus === 'available'
     && displayName.trim().length > 0
     && !displayNameError
@@ -230,7 +254,9 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
         username,
         name: { displayName: displayName.trim() },
         bio: bio.trim() || undefined,
-        ...(kind === 'organization' ? { organizationCategory } : null),
+        // Sent in the user's own order, or omitted entirely when empty — the
+        // API distinguishes "no categories" from "not stated" only by absence.
+        ...(accountCategories.length > 0 ? { accountCategories } : null),
         ...(parentId ? { parentAccountId: parentId } : null),
       };
       const account = await createAccount(input);
@@ -260,7 +286,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
     } finally {
       setIsCreating(false);
     }
-  }, [canCreate, kind, organizationCategory, username, displayName, bio, parentId, createAccount, switchToAccount, onClose, t]);
+  }, [canCreate, kind, accountCategories, username, displayName, bio, parentId, createAccount, switchToAccount, onClose, t]);
 
   // Status icon + color shown alongside the username field message
   const usernameIsInvalid = usernameStatus === 'taken' || usernameStatus === 'invalid';
@@ -302,26 +328,30 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
         })}
       </SettingsListGroup>
 
-      {/* Organization category — grouped selection rows, shown only for organizations */}
-      {kind === 'organization' ? (
-        <SettingsListGroup title={t('accounts.create.organizationCategory.label')}>
-          {ORGANIZATION_CATEGORY_OPTIONS.map((option) => {
-            const selected = option === organizationCategory;
-            return (
-              <SettingsListItem
-                key={option}
-                title={organizationCategoryLabel(t, option)}
-                onPress={() => setOrganizationCategory(option)}
-                showChevron={false}
-                rightElement={selected ? (
-                  <Ionicons name="checkmark-circle" size={20} color={bloomTheme.colors.primary} />
-                ) : undefined}
-                accessibilityLabel={organizationCategoryLabel(t, option)}
-              />
-            );
-          })}
-        </SettingsListGroup>
-      ) : null}
+      {/* Categories — multi-select, shown for every kind this screen can create
+          (they are all non-personal). The badge on a selected row is its
+          POSITION, so the primary is legible as "1" rather than being a rule the
+          user has to be told. */}
+      <SettingsListGroup title={t('accounts.create.accountCategory.label')}>
+        {ACCOUNT_CATEGORY_OPTIONS.map((option) => {
+          const position = accountCategories.indexOf(option);
+          const selected = position >= 0;
+          const label = accountCategoryLabel(t, option);
+          return (
+            <SettingsListItem
+              key={option}
+              title={label}
+              disabled={!selected && accountCategories.length >= MAX_ACCOUNT_CATEGORIES}
+              onPress={() => toggleAccountCategory(option)}
+              showChevron={false}
+              rightElement={selected ? (
+                <Text className="text-caption-1 font-semibold text-primary">{position + 1}</Text>
+              ) : undefined}
+              accessibilityLabel={label}
+            />
+          );
+        })}
+      </SettingsListGroup>
 
       {/* Details — a grouped section card hosting the form fields */}
       <SettingsListGroup title={t('accounts.create.detailsSection') || 'Details'}>

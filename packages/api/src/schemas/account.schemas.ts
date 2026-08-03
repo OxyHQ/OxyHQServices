@@ -1,8 +1,5 @@
 import { z } from 'zod';
-import {
-  createAccountRequestSchema,
-  organizationCategorySchema,
-} from '@oxyhq/contracts';
+import { accountCategoriesSchema, createAccountRequestSchema } from '@oxyhq/contracts';
 import { ACCOUNT_ROLES } from '../utils/accountRoles';
 import { ACCOUNT_CREDENTIAL_ENVIRONMENTS } from '../db/schema/accountCredentials';
 import { APPLICATION_SCOPES } from '../utils/applicationScopes';
@@ -68,7 +65,24 @@ export const updateAccountSchema = z
     description: z.string().trim().max(1000).optional(),
     color: z.string().trim().max(32).optional(),
     links: z.array(z.string()).optional(),
-    organizationCategory: organizationCategorySchema.nullable().optional(),
+    /**
+     * The WHOLE list, replaced — there is no add/remove verb, because the order
+     * is the primary marker and a partial edit cannot express a re-ordering.
+     * Ordered, primary first.
+     *
+     * `[]` clears. `null` is NOT accepted and does not need to be: unlike `bio`
+     * and `avatar`, the empty case here has a representation of its own, so
+     * offering two spellings of "none" would only create a way for them to
+     * disagree.
+     *
+     * The vocabulary this accepts includes WITHDRAWN ids on purpose (see
+     * `RETIRED_ACCOUNT_CATEGORY_IDS`). Rejecting them here would 400 a client
+     * that round-trips what it was served, taking every other field in the same
+     * request down with it — the failure the nullable `bio` fix above describes.
+     * Whether a withdrawn id may be newly ADDED is a question about the account's
+     * previous value, so the service answers it, not this schema.
+     */
+    accountCategories: accountCategoriesSchema.optional(),
   })
   .strict();
 

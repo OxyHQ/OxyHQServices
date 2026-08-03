@@ -43,7 +43,13 @@ import {
   USERS_PROTECTED_COLUMNS,
 } from '../db/schema/protectedColumns';
 import type { AccountKind } from '../db/schema/users';
-import { CHILD_ACCOUNT_KINDS, type OrganizationCategory } from '@oxyhq/contracts';
+import {
+  CHILD_ACCOUNT_KINDS,
+  RETIRED_ACCOUNT_CATEGORY_IDS,
+  kindAcceptsAccountCategories,
+  newlyAddedRetiredCategories,
+  type AccountCategoryId,
+} from '@oxyhq/contracts';
 import {
   permissionsForAccountRole,
   roleCanActAs,
@@ -172,8 +178,11 @@ export interface CreateChildAccountInput {
   bio?: string;
   avatar?: string;
   description?: string;
-  /** Meaningful only when `kind` is `organization`. */
-  organizationCategory?: OrganizationCategory;
+  /**
+   * Ordered, PRIMARY FIRST. Every child kind may carry these, so there is no
+   * kind check on this path — see `createAccountRequestSchema`.
+   */
+  accountCategories?: AccountCategoryId[];
 }
 
 // ===========================================================================
@@ -334,10 +343,11 @@ export class AccountService {
         `A child account kind must be one of: ${CHILD_ACCOUNT_KINDS.join(', ')}`
       );
     }
-    if (input.organizationCategory !== undefined && input.kind !== 'organization') {
-      throw new BadRequestError('organizationCategory applies only to organization accounts');
-    }
-
+    // No kind check for `accountCategories` here: `CHILD_ACCOUNT_KINDS` is
+    // checked immediately above, and every child kind accepts categories
+    // (`ACCOUNT_CATEGORY_KINDS`). A child kind that did not would make this
+    // silently permissive, which is why the two lists are asserted equal in
+    // `@oxyhq/contracts`' own test rather than left to agree by luck.
     const db = getDb();
     const parent = await loadAccount(db, parentAccountId);
     if (!parent) {
@@ -374,8 +384,7 @@ export class AccountService {
           verified: true,
           type: 'local',
           kind: input.kind,
-          organizationCategory:
-            input.kind === 'organization' ? input.organizationCategory : undefined,
+          accountCategories: input.accountCategories,
           parentAccountId: parent.account.id,
           rootAccountId,
           accountStatus: 'active',
@@ -528,7 +537,7 @@ export class AccountService {
       description?: string;
       color?: string;
       links?: string[];
-      organizationCategory?: OrganizationCategory | null;
+      accountCategories?: AccountCategoryId[];
     }
   ): Promise<AccountRow> {
     const db = getDb();
@@ -539,11 +548,35 @@ export class AccountService {
 
     const set: Partial<typeof users.$inferInsert> = {};
 
-    if (input.organizationCategory !== undefined) {
-      if (account.kind !== 'organization') {
-        throw new BadRequestError('organizationCategory applies only to organization accounts');
+    if (input.accountCategories !== undefined) {
+      // A person has interests, not a sector — and `users_account_categories_
+      // kind_check` refuses the row anyway, so this exists to answer with a 400
+      // that names the rule instead of a 500 from the driver.
+      if (!kindAcceptsAccountCategories(account.kind)) {
+        throw new BadRequestError(
+          `An account of kind "${account.kind}" cannot carry categories`
+        );
       }
-      set.organizationCategory = input.organizationCategory ?? null;
+      // A WITHDRAWN category may be kept, re-ordered or dropped, but not newly
+      // added — which is the whole difference between withdrawing a category
+      // and deleting it. Answered here rather than in the schema because it is
+      // a question about this account's PREVIOUS value: a schema that refused
+      // every withdrawn id would 400 the entire request whenever a client sent
+      // back what it had been served.
+      const newlyRetired = newlyAddedRetiredCategories(
+        input.accountCategories,
+        account.accountCategories,
+        RETIRED_ACCOUNT_CATEGORY_IDS
+      );
+      if (newlyRetired.length > 0) {
+        throw new BadRequestError(
+          `These account categories are no longer available: ${newlyRetired.join(', ')}`
+        );
+      }
+      // Assigned WHOLE and in the order given. Nothing sorts or de-duplicates
+      // it — index 0 is the primary category, so any rewrite here would change
+      // an editorial choice without erroring.
+      set.accountCategories = input.accountCategories;
     }
 
     if (input.username !== undefined) {

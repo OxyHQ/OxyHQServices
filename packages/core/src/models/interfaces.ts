@@ -1,6 +1,6 @@
 import type {
   AccountKind,
-  OrganizationCategory,
+  AccountCategoryId,
   UserNameResponse,
   UserRelationship,
   ThemePreference,
@@ -170,8 +170,16 @@ export interface User {
   // Managed account fields
   isManagedAccount?: boolean;
   managedBy?: string;
-  /** Real-estate taxonomy when this user is a `kind: 'organization'` account. */
-  organizationCategory?: OrganizationCategory;
+  /**
+   * What this account is about, for any NON-personal account. ORDERED — the
+   * first element is the primary category, and nothing may reorder it.
+   *
+   * Stable ids, not labels: render each through the
+   * `accounts.accountCategory.<id>` translation key so the reader sees their own
+   * language rather than the language of whoever chose it. Absent when the
+   * account has none.
+   */
+  accountCategories?: AccountCategoryId[];
   /**
    * The account's languages as full BCP-47 locales (`language-REGION`, e.g.
    * `en-US`, `es-MX`, `pt-BR`), ordered with the PRIMARY (UI) locale first.

@@ -3,8 +3,8 @@ import type { Request } from 'express';
 import { and, count, eq, ne } from 'drizzle-orm';
 import {
   isActAsEligibleKind,
+  type AccountCategoryId,
   type ChildAccountKind,
-  type OrganizationCategory,
 } from '@oxyhq/contracts';
 import {
   authMiddleware,
@@ -758,7 +758,7 @@ router.post(
       bio?: string;
       avatar?: string;
       description?: string;
-      organizationCategory?: OrganizationCategory;
+      accountCategories?: AccountCategoryId[];
     };
 
     const parentAccountId = body.parentAccountId ?? userId;
@@ -779,7 +779,7 @@ router.post(
       bio: body.bio,
       avatar: body.avatar ? stripSensitiveUrlQueryParams(body.avatar) : body.avatar,
       description: body.description,
-      organizationCategory: body.organizationCategory,
+      accountCategories: body.accountCategories,
     });
 
     const node: AccountNode = {
@@ -833,7 +833,7 @@ router.patch(
       description?: string;
       color?: string;
       links?: string[];
-      organizationCategory?: OrganizationCategory | null;
+      accountCategories?: AccountCategoryId[];
     };
 
     const updated = await accountService.updateAccount(account.id, {
