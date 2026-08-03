@@ -245,6 +245,13 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
       // Switch INTO the new account (real-session switch — the whole app becomes
       // it). Best-effort: creation already succeeded, so a switch hiccup should
       // not surface as a create failure.
+      //
+      // That trade holds for a TRANSIENT failure and only for one. A kind the
+      // server refuses outright fails DETERMINISTICALLY — `/switch` answers 403
+      // every time, never sometimes — and this swallow would turn it into a
+      // created account, no switch, and no error anywhere. Which is why
+      // `CreatableAccountKind` above is a subset of what `POST /accounts`
+      // accepts rather than of what it rejects.
       if (account.accountId) {
         await switchToAccount(account.accountId).catch(() => undefined);
       }
