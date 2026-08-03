@@ -23,6 +23,8 @@
 import { QueryClient } from '@tanstack/react-query';
 import {
   CLEARABLE_USER_FIELDS,
+  clearedFieldsFromAccountUpdate,
+  clearedFieldsFromProfileUpdate,
   upsertCachedUser,
   upsertCachedUsers,
 } from '../userCache';
@@ -271,5 +273,29 @@ describe('upsertCachedUsers — the batch path stays guarded', () => {
     upsertCachedUsers(qc, [{ id: 'u1', username: 'alice', avatar: null }], '');
 
     expect(readById(qc, 'u1')?.avatar).toBe('file_old');
+  });
+});
+
+describe('clearedFieldsFromProfileUpdate', () => {
+  it('names only fields the patch deliberately emptied', () => {
+    expect(
+      clearedFieldsFromProfileUpdate({ avatar: '', bio: '', name: { displayName: '' } }),
+    ).toEqual(['avatar', 'bio', 'name.displayName']);
+    expect(clearedFieldsFromProfileUpdate({ avatar: 'file_new', bio: 'hello' })).toEqual([]);
+    expect(clearedFieldsFromProfileUpdate({ color: null })).toEqual(['color']);
+  });
+});
+
+describe('clearedFieldsFromAccountUpdate', () => {
+  it('treats null clears on managed accounts like profile clears', () => {
+    expect(
+      clearedFieldsFromAccountUpdate({
+        avatar: null,
+        bio: null,
+        organizationCategory: null,
+        name: { displayName: '' },
+      }),
+    ).toEqual(['avatar', 'bio', 'organizationCategory', 'name.displayName']);
+    expect(clearedFieldsFromAccountUpdate({ bio: 'still here' })).toEqual([]);
   });
 });

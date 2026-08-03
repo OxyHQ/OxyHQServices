@@ -18,6 +18,10 @@ import { SettingsIcon } from '../components/SettingsIcon';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
+import {
+  clearedFieldsFromAccountUpdate,
+  upsertCachedUser,
+} from '../hooks/queries/userCache';
 
 const DISPLAY_NAME_MAX = MAX_DISPLAY_NAME_LENGTH;
 const BIO_MAX = 160;
@@ -78,7 +82,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, nav
   const updateMutation = useMutation({
     mutationKey: ['accounts', 'update', id],
     mutationFn: (input: UpdateAccountInput) => oxyServices.updateAccount(id, input),
-    onSuccess: () => {
+    onSuccess: (updatedNode, input) => {
+      const cleared = clearedFieldsFromAccountUpdate(input);
+      upsertCachedUser(queryClient, updatedNode.account, user?.id, {
+        cleared: cleared.length > 0 ? cleared : undefined,
+      });
       queryClient.invalidateQueries({ queryKey: ['accounts', 'detail', id] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       toast.success(t('accounts.settings.toasts.saved') || 'Account updated');

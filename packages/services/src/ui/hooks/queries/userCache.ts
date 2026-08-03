@@ -66,7 +66,8 @@
  * It is a cache write only — zero network, one `setQueryData` per key.
  */
 
-import type { UserNameResponse } from "@oxyhq/contracts";
+import type { UserNameResponse, UserProfileUpdate } from "@oxyhq/contracts";
+import type { UpdateAccountInput } from "@oxyhq/core";
 import type { QueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../stores/authStore";
 import { queryKeys } from "./queryKeys";
@@ -132,6 +133,65 @@ export const CLEARABLE_USER_FIELDS = [
 
 /** A field nameable in {@link UpsertCachedUserOptions.cleared}. */
 export type ClearableUserField = (typeof CLEARABLE_USER_FIELDS)[number];
+
+/**
+ * Fields the caller deliberately emptied in a `PUT /users/me` patch. The wire
+ * response omits cleared scalars, so the cache needs this list to drop stale
+ * values immediately instead of waiting for a refetch that merges the same
+ * sparse payload.
+ */
+export function clearedFieldsFromProfileUpdate(
+	updates: UserProfileUpdate,
+): ClearableUserField[] {
+	const cleared: ClearableUserField[] = [];
+	if ("avatar" in updates && !isMeaningful(updates.avatar)) {
+		cleared.push("avatar");
+	}
+	if ("bio" in updates && !isMeaningful(updates.bio)) {
+		cleared.push("bio");
+	}
+	if ("description" in updates && !isMeaningful(updates.description)) {
+		cleared.push("description");
+	}
+	if ("color" in updates && updates.color === null) {
+		cleared.push("color");
+	}
+	if (
+		updates.name !== undefined &&
+		"displayName" in updates.name &&
+		!isMeaningful(updates.name.displayName)
+	) {
+		cleared.push("name.displayName");
+	}
+	return cleared;
+}
+
+/**
+ * Same contract as {@link clearedFieldsFromProfileUpdate} for managed-account
+ * `PATCH /accounts/:id` writes (`null` clears avatar/bio/category).
+ */
+export function clearedFieldsFromAccountUpdate(
+	input: UpdateAccountInput,
+): ClearableUserField[] {
+	const cleared: ClearableUserField[] = [];
+	if ("avatar" in input && !isMeaningful(input.avatar)) {
+		cleared.push("avatar");
+	}
+	if ("bio" in input && !isMeaningful(input.bio)) {
+		cleared.push("bio");
+	}
+	if ("organizationCategory" in input && input.organizationCategory === null) {
+		cleared.push("organizationCategory");
+	}
+	if (
+		input.name !== undefined &&
+		"displayName" in input.name &&
+		!isMeaningful(input.name.displayName)
+	) {
+		cleared.push("name.displayName");
+	}
+	return cleared;
+}
 
 /** Options for {@link upsertCachedUser}. */
 export interface UpsertCachedUserOptions {

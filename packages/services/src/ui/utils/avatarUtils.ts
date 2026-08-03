@@ -5,6 +5,10 @@ import { useAccountStore } from '../stores/accountStore';
 import { useAuthStore } from '../stores/authStore';
 import type { QueryClient } from '@tanstack/react-query';
 import { queryKeys, invalidateUserQueries, invalidateAccountQueries } from '../hooks/queries/queryKeys';
+import {
+  clearedFieldsFromProfileUpdate,
+  upsertCachedUser,
+} from '../hooks/queries/userCache';
 
 /**
  * Refreshes avatar in accountStore with cache-busted URL to force image reload.
@@ -59,6 +63,11 @@ export async function updateProfileWithAvatar(
 
   // Update authStore so frontend components see the changes immediately
   useAuthStore.getState().setUser(data);
+
+  const cleared = clearedFieldsFromProfileUpdate(updates);
+  upsertCachedUser(queryClient, data, data.id, {
+    cleared: cleared.length > 0 ? cleared : undefined,
+  });
 
   // If avatar was updated, refresh accountStore with a cache-busted URL. An
   // EMPTY avatar is a removal: clear both fields so the switcher falls back to

@@ -180,6 +180,8 @@ export {
     upsertCachedUser,
     upsertCachedUsers,
     CLEARABLE_USER_FIELDS,
+    clearedFieldsFromProfileUpdate,
+    clearedFieldsFromAccountUpdate,
 } from './ui/hooks/queries/userCache';
 export type {
     CacheableUser,

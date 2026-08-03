@@ -20,6 +20,11 @@ import { useOxy } from '../../context/OxyContext';
 import { toast } from '@oxyhq/bloom/toast';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
 import { useAuthStore } from '../../stores/authStore';
+import { useAccountStore } from '../../stores/accountStore';
+import {
+  clearedFieldsFromProfileUpdate,
+  upsertCachedUser,
+} from '../queries/userCache';
 
 /**
  * Update user profile with optimistic updates and offline queue support
@@ -104,9 +109,21 @@ export const useUpdateProfile = () => {
       // Update authStore so frontend components see the changes immediately
       useAuthStore.getState().setUser(data);
 
-      // If avatar was updated, refresh accountStore with cache-busted URL
-      if (updates.avatar && activeSessionId && oxyServices) {
-        refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
+      const cleared = clearedFieldsFromProfileUpdate(updates);
+      upsertCachedUser(queryClient, data, data.id, {
+        cleared: cleared.length > 0 ? cleared : undefined,
+      });
+
+      // Avatar add/remove: keep the account switcher in sync with profile writes
+      if (typeof updates.avatar === 'string' && activeSessionId) {
+        if (updates.avatar && oxyServices) {
+          refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
+        } else {
+          useAccountStore.getState().updateAccount(activeSessionId, {
+            avatar: undefined,
+            avatarUrl: undefined,
+          });
+        }
       }
 
       // Invalidate all related queries so every consumer (the account dialog,
