@@ -136,7 +136,6 @@ export type {
     AccountCredentialWithSecret,
     RotateAccountCredentialResult,
     ListAccountsOptions,
-    UserCreatableAccountKind,
     CreateAccountInput,
     UpdateAccountInput,
     ProvisionChannelInput,

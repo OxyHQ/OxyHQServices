@@ -21,12 +21,18 @@ type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';
  * Kind of account this screen can create.
  *
  * A strict subset of what `POST /accounts` accepts, not `Exclude<AccountKind,
- * 'personal'>`: this screen SWITCHES INTO the account it just created, so it can
- * only offer kinds an operator may act as. `personal` is a signup-minted root,
- * and a `channel` is a content identity nobody occupies — creating one is
- * Mention's job, through the API. Spelling the subset out here is what keeps a
- * newly-added kind from silently inheriting the `project` label in
- * {@link kindLabel}'s fallback.
+ * 'personal'>`: this screen CREATES AND ENTERS in one gesture, so it can only
+ * offer kinds an operator may act as — `isActAsEligibleKind` is the same
+ * predicate the server enforces on `POST /accounts/:id/switch`.
+ *
+ * So `channel` is absent here even though `POST /accounts` accepts it from any
+ * signed-in caller: a channel is a content identity nobody occupies, and
+ * offering it would create the account and then fail the switch. The reason is
+ * this screen's own shape, NOT a rule about who may create a channel — that rule
+ * changed once already, and a comment tied to it would now be false.
+ *
+ * Spelling the subset out here is what keeps a newly-added kind from silently
+ * inheriting the `project` label in {@link kindLabel}'s fallback.
  */
 type CreatableAccountKind = Extract<AccountKind, 'organization' | 'project' | 'bot'>;
 
@@ -239,6 +245,13 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
       // Switch INTO the new account (real-session switch — the whole app becomes
       // it). Best-effort: creation already succeeded, so a switch hiccup should
       // not surface as a create failure.
+      //
+      // That trade holds for a TRANSIENT failure and only for one. A kind the
+      // server refuses outright fails DETERMINISTICALLY — `/switch` answers 403
+      // every time, never sometimes — and this swallow would turn it into a
+      // created account, no switch, and no error anywhere. Which is why
+      // `CreatableAccountKind` above is a subset of what `POST /accounts`
+      // accepts rather than of what it rejects.
       if (account.accountId) {
         await switchToAccount(account.accountId).catch(() => undefined);
       }

@@ -33,7 +33,7 @@
  * registers the switched session into the operator's device-set directly).
  */
 import type { User } from '../models/interfaces';
-import type { AccountKind, OrganizationCategory } from '@oxyhq/contracts';
+import type { AccountKind, OrganizationCategory, ChildAccountKind } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { normalizeUserIdentity } from '../utils/userIdentity';
@@ -146,13 +146,23 @@ export interface ListAccountsOptions {
   tree?: boolean;
 }
 
-/** Kinds a signed-in user may create via `POST /accounts`. Channels are service-provisioned only. */
-export type UserCreatableAccountKind = 'organization' | 'project' | 'bot';
-
 /** Input accepted by `createAccount`. */
 export interface CreateAccountInput {
-  /** Classification of the new account. `personal` and `channel` are not creatable here. */
-  kind: UserCreatableAccountKind;
+  /**
+   * Classification of the new account. Every CHILD kind is creatable here with
+   * the caller's own bearer, `channel` included: a signed-in person has already
+   * proven who they are, and minting a child under their own tree is the same
+   * operation whichever kind it is.
+   *
+   * `channel` used to be excluded, on the reasoning that channels are
+   * service-provisioned only. What actually makes a channel safe does not depend
+   * on who creates it: `createChildAccount` writes no auth method, so it is born
+   * with no login, and `POST /accounts/:id/switch` refuses it via
+   * `isActAsEligibleKind`, so no session can ever have a channel as its subject
+   * and therefore no bearer exists that could add one. `personal` is excluded
+   * because it is a human login, minted at signup.
+   */
+  kind: ChildAccountKind;
   /**
    * Parent account `_id` to nest the new account under. Omitted → the API roots
    * it under the caller's personal account.
