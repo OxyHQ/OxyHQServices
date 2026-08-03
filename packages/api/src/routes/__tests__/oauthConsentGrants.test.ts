@@ -457,3 +457,80 @@ describe('DELETE /auth/grants/:applicationId', () => {
     expect(res.body.data).toEqual({ revoked: true });
   });
 });
+
+/*
+ * The authority rule of the follow graph, as tests.
+ *
+ * The relationships are the USER's: other people can see them, and they outlive
+ * whatever app created them. So platform trust — which answers "may this app
+ * read its own files without asking?" — is not allowed to answer for them. An
+ * official app and a third-party one must reach exactly the same outcome for the
+ * same requested scopes, and the only thing that changes the outcome is what the
+ * user granted.
+ */
+describe('follow scopes are never auto-approved, for anybody', () => {
+  it('asks a TRUSTED app for consent, and names the scope that forced it', async () => {
+    const { clientId } = await client({ isOfficial: true });
+
+    const res = await send('GET', consentUrl(clientId, 'user:read follows:write'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({
+      consentRequired: true,
+      reason: 'new',
+      userConsentScopes: ['follows:write'],
+    });
+  });
+
+  it('still auto-approves that same trusted app for everything else', async () => {
+    // The bypass is narrowed, not removed: an app reading its own files should
+    // not start prompting because an unrelated scope family was added.
+    const { clientId } = await client({ isOfficial: true });
+
+    const res = await send('GET', consentUrl(clientId, 'user:read files:read'));
+
+    expect(res.body.data).toEqual({ consentRequired: false, reason: 'trusted' });
+  });
+
+  it('gives an official and a third-party app the SAME answer for the same scopes', async () => {
+    const official = await client({ isOfficial: true });
+    const thirdParty = await client();
+
+    const officialRes = await send('GET', consentUrl(official.clientId, 'follows:read'));
+    const thirdPartyRes = await send('GET', consentUrl(thirdParty.clientId, 'follows:read'));
+
+    expect(officialRes.body.data).toEqual(thirdPartyRes.body.data);
+    expect(officialRes.body.data.consentRequired).toBe(true);
+  });
+
+  it('lets the USER\u2019s grant do the authorizing, for a trusted app too', async () => {
+    // Once consented, the returning-user path applies as it does for anyone —
+    // the grant is what authorizes, which is the whole claim being made here.
+    const { clientId, applicationId } = await client({ isOfficial: true });
+    await getDb().insert(appGrants).values({
+      userId: authenticatedUser?._id ?? '',
+      applicationId,
+      scopes: ['follows:read'],
+    });
+
+    const res = await send('GET', consentUrl(clientId, 'follows:read'));
+
+    expect(res.body.data).toEqual({ consentRequired: false, reason: 'granted' });
+  });
+
+  it('records a REVOCABLE grant when a trusted app is consented a follow scope', async () => {
+    // A trusted app normally records none, because it never prompted. Here it
+    // did prompt, and a permission the user granted but cannot find or withdraw
+    // would be worse than one they were never asked for.
+    const { clientId, applicationId } = await client({ isOfficial: true });
+
+    await send('POST', '/auth/oauth/authorize', {
+      clientId,
+      redirectUri: REDIRECT,
+      scope: 'user:read follows:write',
+    });
+
+    const grant = await storedGrant(authenticatedUser?._id ?? '', applicationId);
+    expect(grant?.scopes).toEqual(['user:read', 'follows:write']);
+  });
+});
