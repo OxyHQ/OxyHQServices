@@ -145,7 +145,14 @@ function AccountSettingsPage() {
   const members = membersQuery.data ?? [];
   const activeMembers = members.filter((m) => m.status === 'active');
   const pendingInvites = members.filter((m) => m.status === 'invited');
-  const ownerCount = activeMembers.filter((m) => m.role === 'owner').length;
+  // DIRECT owners only. The list also carries members whose row lives on an
+  // ancestor account, and the last-owner rule this count feeds is about the rows
+  // on THIS account — which is what the server's own guard counts. Including an
+  // inherited owner would make a child with no owner of its own look like it has
+  // exactly one, and silently disable removing anybody.
+  const ownerCount = activeMembers.filter(
+    (m) => m.role === 'owner' && m.source !== 'inherited',
+  ).length;
 
   const inviteMemberMutation = useInviteAccountMember();
   const updateMemberMutation = useUpdateAccountMember();
@@ -481,9 +488,16 @@ function AccountSettingsPage() {
               {activeMembers.map((member) => {
                 const isOwner = member.role === 'owner';
                 const isLastOwner = isOwner && ownerCount <= 1;
-                const canEditThisRole = canManage && !isOwner;
-                const canRemoveThisMember = canManage && !isOwner && !isLastOwner;
-                const canTransferToThis = canTransfer && !isOwner;
+                // An INHERITED entry's row lives on an ancestor account, and every
+                // member mutation is scoped to rows on the account in the path — so
+                // offering to edit, remove or promote one would be offering a
+                // request the server answers 404. It is changed where it lives, on
+                // that ancestor's own members screen.
+                const isEditableHere = member.source !== 'inherited';
+                const canEditThisRole = canManage && isEditableHere && !isOwner;
+                const canRemoveThisMember =
+                  canManage && isEditableHere && !isOwner && !isLastOwner;
+                const canTransferToThis = canTransfer && isEditableHere && !isOwner;
 
                 return (
                   <div
@@ -504,6 +518,11 @@ function AccountSettingsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {!isEditableHere ? (
+                        <Badge variant="outline" title="Granted on a parent account">
+                          Inherited
+                        </Badge>
+                      ) : null}
                       {isOwner ? (
                         <Badge variant="secondary" className="gap-1">
                           <HugeiconsIcon icon={CrownIcon} size={12} />

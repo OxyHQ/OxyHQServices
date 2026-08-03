@@ -163,6 +163,20 @@ export interface MembershipLike {
   status: string;
 }
 
+/**
+ * One person's membership AS IT APPLIES TO a given account: the row that grants
+ * it, and whether that row lives on the account or on an ancestor of it.
+ *
+ * The pair is the unit rather than the row alone because the row cannot say
+ * which account it is being reported for — an inherited entry's `accountId` is
+ * the ANCESTOR's, and a caller that reads only the row has no way to tell that
+ * it may not edit it through the account it asked about.
+ */
+export interface EffectiveMember {
+  row: AccountMemberRow;
+  source: 'direct' | 'inherited';
+}
+
 /** Resolved effective access of a caller over an account. */
 export interface EffectiveAccess {
   role: AccountRole;
@@ -1060,15 +1074,121 @@ export class AccountService {
   // Members CRUD
   // -------------------------------------------------------------------------
 
-  /** Direct (non-removed) membership rows on an account. */
-  async listMembers(accountId: string): Promise<AccountMemberRow[]> {
-    return getDb()
+  /**
+   * The people who hold membership OVER an account — its direct rows plus the
+   * ancestor rows that cascade into it.
+   *
+   * ## Why this is not the direct rows alone
+   *
+   * It was, and the omission was silent. `resolveEffectiveAccess` has always
+   * honoured inheritance, so an ancestor row with `inherit: true` confers every
+   * account permission on the descendant, `account:act_as` included — the switch
+   * endpoint says so in as many words. A roster built from direct rows therefore
+   * answered `[]` for an account five people could act on, and it answered it to
+   * a reader those five included: measured on a real database, an inherited
+   * `editor` of a child account got `200 {"members":[]}` from
+   * `GET /accounts/:id/members`, having just been authorised to read it by
+   * `members:read` resolved from the very row the list omitted.
+   *
+   * That is not a stricter answer, it is a WRONG one, and it is wrong in the
+   * direction that is hardest to notice: a consumer looking itself up in this
+   * list to decide whether it may act (Mention's publish-as gate does exactly
+   * that) reads "not a member" for somebody Oxy would let switch INTO the
+   * account. Two doors, opposite answers, no error anywhere.
+   *
+   * ## What each entry is
+   *
+   * Every direct non-removed row is present, unchanged — including `invited`
+   * ones, because a pending invitation IS a member row here and the consoles
+   * render the pending list as `members.filter(m => m.status === 'invited')`.
+   *
+   * On top of that, each person with no ACTIVE direct row contributes their
+   * nearest cascading ancestor row, marked `inherited`. Keying the addition on
+   * the ACTIVE direct row rather than on any row is what keeps somebody who has
+   * both a pending invitation here and live inherited access from losing one of
+   * those two facts: they appear in the pending list AND in the active list,
+   * which is what is true of them.
+   *
+   * Resolution runs through {@link resolveEffectiveMembership}, once per person,
+   * rather than a rule of its own — the same function
+   * {@link AccountService.effectiveAccessForAccount} and
+   * {@link AccountService.annotateAccounts} resolve through. So this roster
+   * cannot come to a different conclusion about a person than the gate that
+   * admits them: an entry marked `active` here is exactly the row
+   * `resolveEffectiveAccess` would resolve for that person over this account.
+   *
+   * ## What it does NOT do
+   *
+   * It confers nothing. No access decision in this service reads it — the
+   * last-owner guard queries `account_members` directly, and every gate goes
+   * through `resolveEffectiveAccess` — so widening the roster changes what is
+   * DISCLOSED, not what is permitted. The disclosure it adds is the identity of
+   * people who can already act on the account, to readers who already hold
+   * `members:read` over it, which is the question a roster exists to answer.
+   *
+   * An entry's `accountId` is the account its ROW lives on, so an inherited
+   * entry names the ancestor — and `source` is what a caller must branch on
+   * before offering to edit it, since `requireDirectMember` scopes by
+   * `accountId` and will 404 an ancestor's row addressed through this account.
+   */
+  async listMembers(accountId: string): Promise<EffectiveMember[]> {
+    const db = getDb();
+    const ancestors = await loadAncestors(db, accountId);
+
+    const direct = await db
       .select()
       .from(accountMembers)
       .where(
         and(eq(accountMembers.accountId, accountId), ne(accountMembers.status, 'removed'))
       )
       .orderBy(asc(accountMembers.createdAt));
+
+    const entries: EffectiveMember[] = direct.map((row) => ({ row, source: 'direct' }));
+    if (ancestors.length === 0) {
+      return entries;
+    }
+
+    // Only rows that can actually cascade are worth loading: an ancestor row
+    // that is inactive or opted out of inheritance confers nothing here, and
+    // reading it would put a person in the roster the gate would refuse.
+    const cascading = await db
+      .select()
+      .from(accountMembers)
+      .where(
+        and(
+          inArray(accountMembers.accountId, ancestors),
+          eq(accountMembers.status, 'active'),
+          eq(accountMembers.inherit, true)
+        )
+      )
+      .orderBy(asc(accountMembers.createdAt));
+    if (cascading.length === 0) {
+      return entries;
+    }
+
+    const withActiveDirectRow = new Set(
+      direct.filter((row) => row.status === 'active').map((row) => row.memberUserId)
+    );
+
+    const byMember = new Map<string, AccountMemberRow[]>();
+    for (const row of cascading) {
+      if (withActiveDirectRow.has(row.memberUserId)) continue;
+      const rows = byMember.get(row.memberUserId) ?? [];
+      rows.push(row);
+      byMember.set(row.memberUserId, rows);
+    }
+
+    for (const rows of byMember.values()) {
+      // No direct row is passed, so this can only resolve to an ancestor — but
+      // it is the shared resolver that decides WHICH ancestor, so nearest-first
+      // precedence is the one rule rather than a second copy of it.
+      const resolved = resolveEffectiveMembership(rows, accountId, ancestors);
+      if (resolved) {
+        entries.push({ row: resolved.row, source: resolved.source });
+      }
+    }
+
+    return entries;
   }
 
   /**

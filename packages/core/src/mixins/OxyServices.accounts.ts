@@ -111,10 +111,18 @@ export interface AccountMember {
   inherit: boolean;
   status: AccountMemberStatus;
   /**
-   * Origin of the membership when the API resolves an effective role. Present on
-   * a resolved `callerMembership` to indicate whether the caller's access is
-   * `direct` on the account or `inherited` from an ancestor. Absent on plain
-   * member-list rows (which are always direct rows on the account).
+   * Where this membership COMES FROM relative to the account it is being
+   * reported for: `direct` when the row lives on that account, `inherited` when
+   * it lives on an ancestor whose `inherit` flag cascades it down.
+   *
+   * Present on every membership the API serialises — a resolved
+   * `callerMembership` and every entry of a member list alike. It is not
+   * decoration: an `inherited` entry's `accountId` is the ANCESTOR's, and the
+   * member-mutation endpoints are scoped to rows on the account named in the
+   * path, so `PATCH`/`DELETE .../members/<that row's _id>` against the
+   * descendant 404s. **Branch on `source === 'direct'` before offering to edit,
+   * remove or transfer to a member**, and count owners for a last-owner check
+   * over direct entries only.
    */
   source?: AccountMemberSource;
   invitedByUserId?: string | null;
@@ -865,7 +873,27 @@ export function OxyServicesAccountsMixin<T extends typeof OxyServicesBase>(Base:
     // =========================================================================
 
     /**
-     * List members of an account (direct membership rows on the account).
+     * List the members of an account: the membership rows ON it, plus the rows
+     * on its ancestors that cascade into it. Each entry carries `source`
+     * (`direct` | `inherited`) saying which it is.
+     *
+     * Inherited entries are members in every sense the server enforces — an
+     * ancestor row with `inherit: true` resolves through
+     * `resolveEffectiveAccess` and confers every account permission on the
+     * descendant, `account:act_as` included — so a roster that omitted them
+     * answered `[]` for accounts several people could act on.
+     *
+     * Two things follow for a caller. An entry's `accountId` is the account its
+     * ROW lives on, so an inherited entry names an ancestor rather than the
+     * account you asked about; and the member-mutation endpoints only accept
+     * rows on the account in the path, so gate any edit/remove/transfer
+     * affordance on `source === 'direct'`.
+     *
+     * Asking what the CALLER holds over an account is a different question, and
+     * scanning this list for yourself is the wrong way to answer it — use
+     * {@link OxyServicesAccountsMixin.getAccount}, whose `callerMembership` is
+     * the server's own resolution.
+     *
      * @param accountId - The account's Mongo `_id`.
      */
     async listAccountMembers(accountId: string): Promise<AccountMember[]> {

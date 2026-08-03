@@ -207,7 +207,8 @@ router.post(
 
     res.status(201).json({
       account: formatUserResponse(account),
-      membership: serializeMember(membership),
+      // A row this request just wrote on this account: direct by construction.
+      membership: serializeMember(membership, 'direct'),
     });
   })
 );
@@ -257,7 +258,8 @@ router.post(
       appId: req.serviceApp?.appId,
     });
 
-    res.status(201).json({ member: serializeMember(membership) });
+    // A row this request just wrote on this channel: direct by construction.
+    res.status(201).json({ member: serializeMember(membership, 'direct') });
   })
 );
 
@@ -412,11 +414,18 @@ const credentialsLimiter = rateLimit({
 /** Serialise an account (a User doc) for client responses. */
 /**
  * Serialise a membership row for client responses. `source` is the contextual
- * resolution origin — `'direct'` for a real row on the account (the default for
- * the members list), `'inherited'` when surfaced as a node's `callerMembership`
- * resolved from an ancestor.
+ * resolution origin — `'direct'` for a row that lives on the account being
+ * reported, `'inherited'` for one resolved from an ancestor of it.
+ *
+ * REQUIRED, with no default. It used to default to `'direct'`, which was
+ * correct at every call site that returns a row it just wrote and quietly wrong
+ * at the one that returns a roster: an inherited entry serialised as `direct`
+ * tells a client it may edit a row belonging to another account, and
+ * `requireDirectMember` scopes by `accountId`, so the edit 404s. A parameter
+ * every caller has to answer is the only version of this that a new call site
+ * cannot get wrong by saying nothing.
  */
-function serializeMember(member: AccountMemberRow, source: 'direct' | 'inherited' = 'direct') {
+function serializeMember(member: AccountMemberRow, source: 'direct' | 'inherited') {
   return {
     _id: member.id,
     accountId: member.accountId,
@@ -952,7 +961,13 @@ router.post(
 // Members
 // ============================================================================
 
-/** List direct members of an account (`members:read`). */
+/**
+ * List the members of an account (`members:read`) — its own rows plus the
+ * ancestor rows that cascade into it, each carrying the `source` that says
+ * which. See {@link AccountService.listMembers} for why an inherited holder
+ * belongs in this list and what changes by including them (disclosure, not
+ * permission).
+ */
 router.get(
   '/:id/members',
   membersLimiter,
@@ -964,7 +979,7 @@ router.get(
       throw new NotFoundError('Account not found');
     }
     const members = await accountService.listMembers(account.id);
-    res.json({ members: members.map((member) => serializeMember(member)) });
+    res.json({ members: members.map(({ row, source }) => serializeMember(row, source)) });
   })
 );
 
@@ -998,7 +1013,9 @@ router.post(
       inherit
     );
 
-    res.status(201).json({ member: serializeMember(member) });
+    // `addMember` writes on `account.id`, so the row is direct by construction —
+    // `inherit` governs whether it cascades to CHILDREN, not where it lives.
+    res.status(201).json({ member: serializeMember(member, 'direct') });
   })
 );
 
@@ -1085,7 +1102,9 @@ router.patch(
       ...(permissionGrants !== undefined ? { permissionGrants } : {}),
       ...(permissionRevokes !== undefined ? { permissionRevokes } : {}),
     });
-    res.json({ member: serializeMember(member) });
+    // `requireDirectMember` above already refused anything but a row on this
+    // account, so the edited row is direct by construction.
+    res.json({ member: serializeMember(member, 'direct') });
   })
 );
 
