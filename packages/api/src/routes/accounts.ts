@@ -828,8 +828,8 @@ router.patch(
     const body = req.body as {
       username?: string;
       name?: { first?: string; last?: string; displayName?: string };
-      bio?: string;
-      avatar?: string;
+      bio?: string | null;
+      avatar?: string | null;
       description?: string;
       color?: string;
       links?: string[];
@@ -838,7 +838,13 @@ router.patch(
 
     const updated = await accountService.updateAccount(account.id, {
       ...body,
-      avatar: body.avatar !== undefined ? stripSensitiveUrlQueryParams(body.avatar) : undefined,
+      // `null` clears and must survive as `null`; only a real string is
+      // sanitised. Collapsing the two here would turn "remove my picture" into
+      // "leave it alone", which is silent and unreportable from the client.
+      avatar:
+        typeof body.avatar === 'string'
+          ? stripSensitiveUrlQueryParams(body.avatar)
+          : body.avatar,
     });
 
     const access = req.access;

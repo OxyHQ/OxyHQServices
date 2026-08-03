@@ -58,8 +58,13 @@ export const updateAccountSchema = z
   .object({
     username: z.string().trim().min(1).max(100).optional(),
     name: nameSchema,
-    bio: z.string().trim().max(500).optional(),
-    avatar: z.string().optional(),
+    // `null` CLEARS, and it has to be accepted here because the SDK's
+    // `UpdateAccountInput` types both as `string | null` and documents exactly
+    // that. Without `.nullable()` the schema rejects the WHOLE request, so an
+    // account with no bio and no picture could not save its NAME either — the
+    // one field the caller did set went down with the two they left empty.
+    bio: z.string().trim().max(500).nullable().optional(),
+    avatar: z.string().nullable().optional(),
     description: z.string().trim().max(1000).optional(),
     color: z.string().trim().max(32).optional(),
     links: z.array(z.string()).optional(),

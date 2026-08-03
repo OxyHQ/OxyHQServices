@@ -523,8 +523,8 @@ export class AccountService {
     input: {
       username?: string;
       name?: { first?: string; last?: string; displayName?: string };
-      bio?: string;
-      avatar?: string;
+      bio?: string | null;
+      avatar?: string | null;
       description?: string;
       color?: string;
       links?: string[];
