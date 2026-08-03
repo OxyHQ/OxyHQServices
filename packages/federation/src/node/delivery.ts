@@ -24,6 +24,7 @@
  * call `deliverToFollowers` / `deliverActivity` / `queueDelivery` here.
  */
 
+import type { AccountKind } from '@oxyhq/contracts';
 import { AP_CONTEXT } from '../apContext';
 import { signRequest, type HttpSignatureSigner } from '../httpSignature';
 import type { UrlBuilders } from '../urls';
@@ -154,12 +155,21 @@ export interface DeliveryConsent {
   isSharingEnabled(oxyUserId: string): Promise<boolean>;
 }
 
-/** The Oxy profile fields the `Update(Person)` rebroadcast reads. */
+/** The Oxy profile fields the actor `Update` rebroadcast reads. */
 export interface DeliveryActorProfile {
   name?: { displayName?: string | null } | null;
   bio?: string | null;
   avatar?: string | null;
   createdAt?: string | null;
+  /**
+   * Account-graph classification — decides the actor `type`. It MUST travel with
+   * the rebroadcast: an `Update` carrying a different `type` from the one the GET
+   * route serves is exactly the drift the shared builder exists to prevent, and
+   * on a type change it is also the migration vehicle (a follower's instance
+   * adopts the new type from this push rather than waiting out its own actor
+   * staleness window).
+   */
+  kind?: AccountKind | null;
 }
 
 /** Resolve a local username to its Oxy profile (for the `Update(Person)` rebroadcast). */
@@ -672,6 +682,7 @@ export function createDeliveryService<TActor extends DeliveryActorFields>(
       const actorObject = config.buildLocalActorObject({
         username,
         displayName,
+        kind: user.kind,
         bio: user.bio,
         avatar: user.avatar,
         profileHeaderImage,

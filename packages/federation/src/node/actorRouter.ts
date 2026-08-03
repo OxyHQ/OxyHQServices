@@ -20,6 +20,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import type { AccountKind } from '@oxyhq/contracts';
 import type { User } from '@oxyhq/core';
 import { AP_CONTEXT } from '../apContext';
 import { verifyHttpSignature } from '../httpSignature';
@@ -38,6 +39,8 @@ export interface ActorRouteUser {
   bio?: string | null;
   avatar?: string | null;
   createdAt?: string | null;
+  /** Account-graph classification — decides the actor `type`. */
+  kind?: AccountKind | null;
   _count?: { followers?: number; following?: number } | null;
 }
 
@@ -376,6 +379,7 @@ export function createActorRouter(config: ActorRouterConfig): Router {
       const actorObject = config.buildLocalActorObject({
         username,
         displayName,
+        kind: user.kind,
         bio: user.bio,
         avatar: user.avatar,
         profileHeaderImage,

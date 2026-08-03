@@ -105,11 +105,18 @@ export {
 } from './apUri';
 
 /**
- * The single builder of a LOCAL user's ActivityPub `Person` actor document —
- * byte-identical across apps, with media resolution injected.
+ * The single builder of a LOCAL user's ActivityPub actor document —
+ * byte-identical across apps, with media resolution injected. The actor `type`
+ * follows the Oxy account kind ({@link LOCAL_ACTOR_TYPE_BY_ACCOUNT_KIND}).
  */
 export {
   createLocalActorBuilder,
+  localActorTypeForAccountKind,
+  isApActorType,
+  AP_ACTOR_TYPES,
+  LOCAL_ACTOR_TYPE_BY_ACCOUNT_KIND,
+  type ApActorType,
+  type LocalActorType,
   type LocalActorBuilder,
   type LocalActorBuilderConfig,
   type BuildLocalActorParams,
