@@ -185,13 +185,6 @@ router.post(
     if (!owner || owner.accountStatus === 'archived') {
       throw new NotFoundError('Owner account not found');
     }
-    // A channel has no administrator of its own — its operators are members. So
-    // parenting a channel under a channel would create a subtree whose root
-    // nobody can act as; `createChildAccount` has no opinion on this, so it is
-    // stated here.
-    if (owner.kind === 'channel') {
-      throw new BadRequestError('A channel cannot own another channel');
-    }
 
     const { account, membership } = await accountService.createChildAccount(
       owner.id,
@@ -241,11 +234,11 @@ router.post(
     const channel = await loadChannelAccount(req.params.id);
 
     const [member] = await getDb()
-      .select({ id: users.id })
+      .select({ id: users.id, accountStatus: users.accountStatus })
       .from(users)
       .where(eq(users.id, body.memberUserId))
       .limit(1);
-    if (!member) {
+    if (!member || member.accountStatus === 'archived') {
       throw new NotFoundError('Member account not found');
     }
 

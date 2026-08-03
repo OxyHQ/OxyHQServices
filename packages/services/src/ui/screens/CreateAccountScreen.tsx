@@ -225,15 +225,10 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
 
     setIsCreating(true);
     try {
-      // Split display name into first/last
-      const nameParts = displayName.trim().split(/\s+/);
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : undefined;
-
       const input: CreateAccountInput = {
         kind,
         username,
-        name: { first: firstName, last: lastName },
+        name: { displayName: displayName.trim() },
         bio: bio.trim() || undefined,
         ...(kind === 'organization' ? { organizationCategory } : null),
         ...(parentId ? { parentAccountId: parentId } : null),

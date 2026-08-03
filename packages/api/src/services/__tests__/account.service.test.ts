@@ -28,6 +28,7 @@ import {
   accountService,
   childAncestorsOf,
   childRootOf,
+  channelCannotParentChannel,
   resolveEffectiveMembership,
   rewriteDescendantAncestors,
   wouldCreateCycle,
@@ -55,7 +56,7 @@ function uniqueUsername(prefix: string): string {
 }
 
 interface SeedOptions {
-  kind?: 'personal' | 'organization' | 'project' | 'bot';
+  kind?: 'personal' | 'organization' | 'project' | 'bot' | 'channel';
   username?: string;
   nameFirst?: string;
   nameLast?: string;
@@ -172,6 +173,12 @@ describe('account tree pure helpers', () => {
   test('childRootOf inherits the parent root, or the parent itself for a root', () => {
     expect(childRootOf(node('child', [], 'the-root'))).toBe('the-root');
     expect(childRootOf(node('a-root', [], null))).toBe('a-root');
+  });
+
+  test('channelCannotParentChannel is true only when both parent and child are channels', () => {
+    expect(channelCannotParentChannel('channel', 'channel')).toBe(true);
+    expect(channelCannotParentChannel('channel', 'organization')).toBe(false);
+    expect(channelCannotParentChannel('personal', 'channel')).toBe(false);
   });
 
   test('wouldCreateCycle detects self-parenting and descendant-parenting', () => {
@@ -347,6 +354,21 @@ describe('createChildAccount', () => {
     ).rejects.toThrow(/organizationCategory/i);
   });
 
+  test('rejects a channel parenting another channel', async () => {
+    const root = await seedAccount();
+    const parentChannel = await accountService.createChildAccount(root.id, root.id, {
+      kind: 'channel',
+      username: uniqueUsername('parent-channel'),
+    });
+
+    await expect(
+      accountService.createChildAccount(parentChannel.account.id, root.id, {
+        kind: 'channel',
+        username: uniqueUsername('child-channel'),
+      })
+    ).rejects.toThrow(/channel cannot own another channel/i);
+  });
+
   test('persists organizationCategory on organization accounts', async () => {
     const root = await seedAccount();
     const { account } = await accountService.createChildAccount(root.id, root.id, {
@@ -484,6 +506,22 @@ describe('moveAccount', () => {
     await expect(accountService.moveAccount(personal.id, target.id)).rejects.toThrow(
       /always a root/i
     );
+  });
+
+  test('rejects moving a channel beneath another channel', async () => {
+    const root = await seedAccount();
+    const parentChannel = await accountService.createChildAccount(root.id, root.id, {
+      kind: 'channel',
+      username: uniqueUsername('parent-channel'),
+    });
+    const childChannel = await accountService.createChildAccount(root.id, root.id, {
+      kind: 'channel',
+      username: uniqueUsername('child-channel'),
+    });
+
+    await expect(
+      accountService.moveAccount(childChannel.account.id, parentChannel.account.id)
+    ).rejects.toThrow(/channel cannot own another channel/i);
   });
 });
 

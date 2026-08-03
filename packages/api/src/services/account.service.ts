@@ -191,6 +191,18 @@ export function childRootOf(parent: AccountWithAncestors): string {
 }
 
 /**
+ * A channel has no administrator of its own — only members — so it cannot parent
+ * another channel. Stated once here so service and user create/move paths share
+ * the same invariant.
+ */
+export function channelCannotParentChannel(
+  parentKind: AccountKind | string | null | undefined,
+  childKind: AccountKind | string | null | undefined
+): boolean {
+  return parentKind === 'channel' && childKind === 'channel';
+}
+
+/**
  * Would re-parenting `accountId` under `newParent` create a cycle? True when the
  * new parent IS the account itself, or the account is already an ancestor of the
  * new parent (i.e. the new parent is a descendant of the account).
@@ -337,6 +349,9 @@ export class AccountService {
         `Maximum account nesting depth (${MAX_ACCOUNT_DEPTH}) exceeded`
       );
     }
+    if (channelCannotParentChannel(parent.account.kind, input.kind)) {
+      throw new BadRequestError('A channel cannot own another channel');
+    }
 
     const username = await this.resolveUniqueUsername(input.username);
 
@@ -424,6 +439,9 @@ export class AccountService {
     }
     if (wouldCreateCycle(accountId, newParent)) {
       throw new BadRequestError('Cannot move an account beneath itself or one of its descendants');
+    }
+    if (channelCannotParentChannel(newParent.account.kind, account.account.kind)) {
+      throw new BadRequestError('A channel cannot own another channel');
     }
 
     const oldSelfAncestors = account.ancestors;
