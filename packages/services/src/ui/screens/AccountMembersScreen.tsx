@@ -99,7 +99,11 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
   const memberLabelByUserId = useMemo(() => {
     const labels = new Map<string, string>();
     for (const profile of memberProfilesQuery.data ?? []) {
-      labels.set(profile.id, getNormalizedUserHandle(profile));
+      // `getNormalizedUserHandle` answers null for an actor with no resolvable
+      // handle. Leaving that entry out is what lets `memberDisplayLabel`'s own
+      // fallback run, rather than storing a null the map is not typed to hold.
+      const handle = getNormalizedUserHandle(profile);
+      if (handle) labels.set(profile.id, handle);
     }
     return labels;
   }, [memberProfilesQuery.data]);
