@@ -9,6 +9,7 @@ import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, ConflictError, UnauthorizedError } from '../utils/error';
 import { resolveUserIdToObjectId } from '../utils/validation';
+import { accountService } from '../services/account.service';
 import { userService } from '../services/user.service';
 import blockCache, { restrictCache } from '../utils/blockCache';
 import graphCache from '../utils/graphCache';
@@ -151,6 +152,32 @@ const createUserListHandler = (relation: UserRelation) =>
     );
   });
 
+/**
+ * Take a relation out on `targetId`.
+ *
+ * ## Neither of these may be pointed at an account the caller operates
+ *
+ * The self-refusal below is the whole truth only for a personal login. A
+ * channel, organization, project or bot is never the caller's own id, so the id
+ * comparison answers "no" for all four and used to let an operator block or
+ * restrict an account they themselves speak with — an act with no coherent
+ * meaning (block is symmetric, so it half-severs the operator from their own
+ * account's audience) and one no client offers. Making it *impossible* rather
+ * than merely hidden is the point: `oxyServices.blockUser` reaches this route
+ * directly, so a guard anywhere else is bypassed by the request the app already
+ * makes.
+ *
+ * `accountService.operatesAccount` is the single authority for "operates" —
+ * shared with `POST /accounts/:id/switch` and with the consuming apps that ask
+ * the same question over the wire — and it answers `false` for everything it
+ * cannot positively confirm, so an unresolvable membership lets the protective
+ * action through rather than stranding somebody who needs it. See that method
+ * for why this direction is the opposite of the one `verifyActingAs` takes.
+ *
+ * BOTH actions, not just block. Restrict is the same shape of decision aimed at
+ * the same target — a self-directed moderation action against your own voice —
+ * and it costs the operator the same nothing to be refused.
+ */
 const createUserActionHandler = (relation: UserRelation, actionName: string) =>
   asyncHandler(async (req: Request, res: Response) => {
     const { targetId } = req.params;
@@ -158,6 +185,15 @@ const createUserActionHandler = (relation: UserRelation, actionName: string) =>
 
     if (!authUser?.id || authUser.id === targetId) {
       throw new BadRequestError(`Invalid ${actionName} request`);
+    }
+
+    // 400 and not 403, matching the self-refusal above: this is a request that
+    // does not mean anything, not a right the caller lacks. 403 would signal the
+    // opposite of the truth — they hold MORE authority over this account than a
+    // stranger does, not less. Naming the reason leaks nothing, since being told
+    // you operate an account you operate tells you what you already knew.
+    if (await accountService.operatesAccount(authUser.id, targetId)) {
+      throw new BadRequestError(`You cannot ${actionName} an account you operate`);
     }
 
     // The compound unique is the arbiter of "already flagged": a concurrent
@@ -368,6 +404,13 @@ router.get("/blocked", getBlockedUsers);
  *     responses:
  *       200:
  *         description: User blocked.
+ *       400:
+ *         description: >
+ *           The target is the caller, or an account the caller operates — an
+ *           active member of a channel, or a member of an organization /
+ *           project / bot holding `account:act_as`.
+ *       409:
+ *         description: Already blocked.
  */
 router.post("/blocked/:targetId", validate({ params: targetIdParams }), blockUser);
 
@@ -423,6 +466,12 @@ router.get("/restricted", getRestrictedUsers);
  *     responses:
  *       200:
  *         description: User restricted.
+ *       400:
+ *         description: >
+ *           The target is the caller, or an account the caller operates — same
+ *           rule as `POST /privacy/blocked/{targetId}`.
+ *       409:
+ *         description: Already restricted.
  */
 router.post("/restricted/:targetId", validate({ params: targetIdParams }), restrictUser);
 
