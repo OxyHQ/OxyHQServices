@@ -562,15 +562,6 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
 
     // One row, updated — never a second row for the same actor.
     expect(result?._id).toBe(userId);
-    // The rename is observed rather than assumed. This suite shares ONE
-    // throwaway database with every parallel worker, and the service can write
-    // the refreshed profile outside the awaited call, so a read taken on the
-    // same tick sees the seeded values under CI's timing and the new ones
-    // locally — the failure this test showed on `main`.
-    //
-    // Waiting cannot hide a genuine regression: the poll gives up after a
-    // second and the assertions below run against whatever is actually stored.
-    await waitForRow(userId, (row) => row.username === fx.handle);
     expect(await storedByActorUri(fx.actorUri)).toMatchObject({
       id: userId,
       username: fx.handle,
