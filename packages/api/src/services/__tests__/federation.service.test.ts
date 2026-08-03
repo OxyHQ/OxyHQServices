@@ -352,6 +352,28 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     expect(mockCacheInvalidate).toHaveBeenCalledWith(userId);
   });
 
+  it('clears a stale bio when the remote actor profile is legitimately empty', async () => {
+    const fx = nextFixture();
+    webfingerSpy.mockResolvedValue({ actorUri: fx.actorUri, subjectAcct: fx.handle });
+    actorSpy.mockResolvedValue({
+      actorUri: fx.actorUri,
+      domain: fx.domain,
+      username: fx.handle,
+      displayName: 'Alice Updated',
+      avatarUrl: undefined,
+      bio: '',
+    });
+
+    const userId = await seedFederatedUser(fx, STALE_AGE_MS, { bio: 'stale bridge boilerplate' });
+
+    await federationService.resolveAndUpsert(fx.handle);
+    await waitForRow(userId, (row) => row.bio === '');
+
+    const row = await storedUser(userId);
+    expect(row?.bio).toBe('');
+    expect(row?.description).toBe('');
+  });
+
   it('clears the unavailable tombstone on a successful background refresh', async () => {
     const fx = nextFixture();
     webfingerSpy.mockResolvedValue({ actorUri: fx.actorUri, subjectAcct: fx.handle });
