@@ -9,10 +9,10 @@
  */
 export const VERSIONS = {
   // --- Oxy SDK ---
-  oxyServices: '^26.0.0', // @oxyhq/services
-  oxyCore: '^18.0.0', // @oxyhq/core
+  oxyServices: '^27.0.0', // @oxyhq/services
+  oxyCore: '^19.0.0', // @oxyhq/core
   oxyBloom: '^0.67.0', // @oxyhq/bloom
-  oxyContracts: '^0.22.0', // @oxyhq/contracts
+  oxyContracts: '^0.23.0', // @oxyhq/contracts
   oxyAppPreset: '^0.1.0', // @oxyhq/app-preset
 
   // --- Expo SDK 57 core ---
