@@ -121,6 +121,11 @@ describe('POST /accounts', () => {
     // The route destructures `{ account, membership }` and builds an AccountNode
     // from it, so a bare `jest.fn()` returning undefined would throw before any
     // status could be asserted — a 500 that reads like a refusal.
+    //
+    // `membership` is serialised, so it has to carry the columns the serializer
+    // reads. It does NOT carry `permissions`: that is derived from the role plus
+    // the two delta columns (`effectivePermissionsForMember`), and a fixture
+    // supplying it would be asserting a field the service never returns.
     mockCreateChildAccount.mockImplementation(
       async (_parentId: string, _actorId: string, input: { kind: string; username: string }) => ({
         account: {
@@ -130,7 +135,11 @@ describe('POST /accounts', () => {
           parentAccountId: OPERATOR_ID,
           rootAccountId: OPERATOR_ID,
         },
-        membership: { role: 'owner', permissions: ['children:create'] },
+        membership: {
+          role: 'owner',
+          permissionGrants: [],
+          permissionRevokes: [],
+        },
       })
     );
   });

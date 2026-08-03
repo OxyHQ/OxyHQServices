@@ -7,20 +7,37 @@
  * `routes/applications.ts` resolves through: the NEAREST row over
  * `[accountId, ...account.ancestors]` wins, unless `inherit` is false.
  *
- * ## `permissions` does NOT travel
+ * ## `permissions` is DERIVED; the two delta columns are the stored part
  *
- * Mongo stored a `permissions[]` array beside `role`, and every write site sets
- * it to exactly `permissionsForAccountRole(role)` — `account.service.ts:283`,
- * `:726`, `:733`, `:766`, `:840`, `:850`. It is a derivation of `role`, not
- * data, and `resolveEffectiveRole` (`account.service.ts:549`) already falls back
- * to deriving it when the array is empty, a branch that exists only for rows
- * written before the field.
+ * Mongo stored a `permissions[]` array beside `role` that every write site set to
+ * exactly `permissionsForAccountRole(role)` — a derivation of `role`, not data,
+ * so it did not travel. `serializeMember` (`routes/accounts.ts`) keeps emitting
+ * `permissions` on the wire, computed rather than read.
  *
- * The wire contract is unchanged: `serializeMember` (`routes/accounts.ts:167`)
- * keeps emitting `permissions`, computed with the same
- * `permissionsForAccountRole(role)` the writes used. Same treatment as
- * `name.displayName` and `did` on `users` — derived at the serializer, and the
- * legacy empty-array branch does not travel with it.
+ * What IS data is the per-member ADJUSTMENT: `permission_grants` and
+ * `permission_revokes`. The role still picks the baseline; these two say what
+ * this one member holds beyond it or is denied out of it, which is the thing a
+ * role name cannot express. `resolveEffectivePermissions` (`utils/accountRoles.ts`)
+ * combines all three and is the only place that does.
+ *
+ * ## Neither delta column carries a vocabulary CHECK, deliberately
+ *
+ * The obvious shape — `check (permission_grants <@ array[…ACCOUNT_PERMISSIONS…])`,
+ * exactly like `users_account_categories_check` — is a trap here, because this
+ * vocabulary is expected to lose entries: six of its strings are already read by
+ * no code at all. Measured on Postgres 17.5: narrowing such an array makes every
+ * later `UPDATE` of a row holding a now-absent value fail, INCLUDING an update
+ * that names only `role`, and the error names a column the caller never
+ * mentioned. `NOT VALID` does not rescue it — that only skips the existing-row
+ * scan at `ALTER` time; the next update of such a row still fails.
+ *
+ * The vocabulary is enforced where it can be enforced without that hazard: the
+ * zod schema 400s an unknown permission on the way in, and
+ * `resolveEffectivePermissions` builds its result by filtering the vocabulary, so
+ * a retired string is structurally incapable of granting anything on the way out.
+ * The stored string is left in place rather than scrubbed — same reasoning as
+ * `users.organization_category` in migration 0013 — so re-instating a permission
+ * restores it rather than losing it.
  */
 
 import { sql } from 'drizzle-orm';
@@ -58,6 +75,21 @@ export const accountMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     role: text({ enum: ACCOUNT_ROLES }).notNull(),
+    /**
+     * Permissions this member holds IN ADDITION to their role's baseline.
+     *
+     * `text[]` rather than a join table: the value is a small unordered set read
+     * on every authorization decision alongside the row it belongs to, so a
+     * second table would add a join to the hottest path in the account graph to
+     * buy referential integrity against a vocabulary that lives in TypeScript
+     * and not in the database.
+     */
+    permissionGrants: text().array().notNull().default([]),
+    /**
+     * Permissions this member is denied even though their role's baseline
+     * carries them. Beats a grant naming the same permission.
+     */
+    permissionRevokes: text().array().notNull().default([]),
     /**
      * Whether the membership cascades to descendant accounts. `false` scopes it
      * to `account_id` alone — the member is NOT a member of its children.

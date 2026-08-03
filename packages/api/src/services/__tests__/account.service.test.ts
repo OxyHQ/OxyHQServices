@@ -98,7 +98,12 @@ async function seedMember(
   accountId: string,
   memberUserId: string,
   role: AccountMemberRow['role'],
-  extra: { inherit?: boolean; status?: AccountMemberRow['status'] } = {}
+  extra: {
+    inherit?: boolean;
+    status?: AccountMemberRow['status'];
+    permissionGrants?: string[];
+    permissionRevokes?: string[];
+  } = {}
 ): Promise<AccountMemberRow> {
   const [row] = await getDb()
     .insert(accountMembers)
@@ -108,6 +113,8 @@ async function seedMember(
       role,
       inherit: extra.inherit ?? true,
       status: extra.status ?? 'active',
+      permissionGrants: extra.permissionGrants ?? [],
+      permissionRevokes: extra.permissionRevokes ?? [],
     })
     .returning();
   return row;
@@ -687,6 +694,73 @@ describe('membership inheritance + verifyActingAs', () => {
     expect(access?.source).toBe('self');
     expect(access?.membership).toBeNull();
   });
+
+  test('a per-member GRANT reaches resolveEffectiveAccess', async () => {
+    const org = await seedAccount({ kind: 'organization' });
+    const bob = await seedAccount();
+    await seedMember(org.id, bob.id, 'developer', { permissionGrants: ['members:read'] });
+
+    const access = await accountService.resolveEffectiveAccess(bob.id, org.id);
+    expect(access?.role).toBe('developer');
+    expect(access?.permissions).toContain('members:read');
+  });
+
+  test('a per-member REVOKE reaches resolveEffectiveAccess', async () => {
+    const org = await seedAccount({ kind: 'organization' });
+    const bob = await seedAccount();
+    await seedMember(org.id, bob.id, 'admin', { permissionRevokes: ['members:remove'] });
+
+    const access = await accountService.resolveEffectiveAccess(bob.id, org.id);
+    expect(access?.role).toBe('admin');
+    expect(access?.permissions).not.toContain('members:remove');
+    // Narrowed, not emptied.
+    expect(access?.permissions).toContain('members:invite');
+  });
+
+  test('deltas travel through INHERITANCE with the row that carries them', async () => {
+    // Inheritance resolves to a ROW, and the row's adjustments are part of what
+    // it grants — an implementation that carried only the role down the tree
+    // would widen an intentionally-narrowed member on every descendant account.
+    const { org, project } = await seedOrgTree();
+    const bob = await seedAccount();
+    await seedMember(org.id, bob.id, 'admin', {
+      inherit: true,
+      permissionRevokes: ['account:act_as'],
+    });
+
+    const access = await accountService.resolveEffectiveAccess(bob.id, project.id);
+    expect(access?.source).toBe('inherited');
+    expect(access?.permissions).not.toContain('account:act_as');
+  });
+
+  test('verifyActingAs honours a revoke of account:act_as', async () => {
+    // The measurement that makes this endpoint's guarantee real: `admin` carries
+    // `account:act_as` in its baseline, so a role-driven check returns 'admin'
+    // here and only a permission-driven one returns null.
+    const org = await seedAccount({ kind: 'organization' });
+    const bob = await seedAccount();
+    await seedMember(org.id, bob.id, 'admin', { permissionRevokes: ['account:act_as'] });
+
+    expect(await accountService.verifyActingAs(bob.id, org.id)).toBeNull();
+  });
+
+  test('verifyActingAs honours a grant of account:act_as to a role without it', async () => {
+    const org = await seedAccount({ kind: 'organization' });
+    const bob = await seedAccount();
+    // `developer` has no `account:act_as` baseline — asserted, so the case
+    // cannot quietly become vacuous if the role map changes.
+    await seedMember(org.id, bob.id, 'developer');
+    expect(await accountService.verifyActingAs(bob.id, org.id)).toBeNull();
+
+    await getDb()
+      .update(accountMembers)
+      .set({ permissionGrants: ['account:act_as'] })
+      .where(
+        and(eq(accountMembers.accountId, org.id), eq(accountMembers.memberUserId, bob.id))
+      );
+
+    expect(await accountService.verifyActingAs(bob.id, org.id)).toBe('developer');
+  });
 });
 
 // ===========================================================================
@@ -759,14 +833,76 @@ describe('members CRUD', () => {
     expect(await memberRowsFor(org.id, charlie.id)).toHaveLength(1);
   });
 
-  test('updateMemberRole rejects changing an owner row', async () => {
+  test('updateMember rejects changing an owner row', async () => {
     const org = await seedAccount({ kind: 'organization' });
     const owner = await seedAccount();
     const ownerMember = await seedMember(org.id, owner.id, 'owner');
 
     await expect(
-      accountService.updateMemberRole(org.id, ownerMember.id, 'admin')
+      accountService.updateMember(org.id, ownerMember.id, { role: 'admin' })
     ).rejects.toThrow(/transfer-ownership/i);
+  });
+
+  test('updateMember refuses a PERMISSION edit on an owner row, not just a role edit', async () => {
+    // An owner row is uneditable through this endpoint, so a revoke landing on
+    // one would be irreversible: there is no way back short of transferring the
+    // account away and back again.
+    const org = await seedAccount({ kind: 'organization' });
+    const owner = await seedAccount();
+    const ownerMember = await seedMember(org.id, owner.id, 'owner');
+
+    await expect(
+      accountService.updateMember(org.id, ownerMember.id, {
+        permissionRevokes: ['account:delete'],
+      })
+    ).rejects.toThrow(/transfer-ownership/i);
+    expect((await memberRowById(ownerMember.id)).permissionRevokes).toEqual([]);
+  });
+
+  test('addMember RESETS the delta columns when it reactivates a removed row', async () => {
+    // A removed member carrying a grant must not carry it back in silently on
+    // re-invitation: the invite names a role, and the row has to mean what the
+    // invite said.
+    const org = await seedAccount({ kind: 'organization' });
+    const owner = await seedAccount();
+    const charlie = await seedAccount();
+    await seedMember(org.id, charlie.id, 'admin', {
+      status: 'removed',
+      permissionGrants: ['ownership:transfer'],
+      permissionRevokes: ['account:read'],
+    });
+
+    const member = await accountService.addMember(org.id, owner.id, charlie.id, 'viewer');
+
+    expect(member.permissionGrants).toEqual([]);
+    expect(member.permissionRevokes).toEqual([]);
+    expect(
+      (await accountService.resolveEffectiveAccess(charlie.id, org.id))?.permissions
+    ).not.toContain('ownership:transfer');
+  });
+
+  test('transferOwnership clears the promoted row deltas', async () => {
+    // An owner row can never be edited again, so an admin-era revoke carried
+    // into ownership would be a permanent, unfixable hole in that owner's
+    // authority.
+    const org = await seedAccount({ kind: 'organization' });
+    const alice = await seedAccount();
+    const bob = await seedAccount();
+    await seedMember(org.id, alice.id, 'owner');
+    const bobMember = await seedMember(org.id, bob.id, 'admin', {
+      permissionRevokes: ['account:update'],
+      permissionGrants: ['ownership:transfer'],
+    });
+
+    await accountService.transferOwnership(org.id, alice.id, bob.id);
+
+    const promoted = await memberRowById(bobMember.id);
+    expect(promoted.role).toBe('owner');
+    expect(promoted.permissionRevokes).toEqual([]);
+    expect(promoted.permissionGrants).toEqual([]);
+    expect(
+      (await accountService.resolveEffectiveAccess(bob.id, org.id))?.permissions
+    ).toContain('account:update');
   });
 
   test('removeMember refuses to remove the last owner', async () => {

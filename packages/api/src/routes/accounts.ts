@@ -41,7 +41,7 @@ import { accountMembers } from '../db/schema/accountMembers';
 import { stripSensitiveUrlQueryParams } from '../utils/sanitizeUrl';
 import { formatUserResponse } from '../utils/userTransform';
 import {
-  permissionsForAccountRole,
+  effectivePermissionsForMember,
   type AccountPermission,
   type AccountRole,
 } from '../utils/accountRoles';
@@ -422,10 +422,18 @@ function serializeMember(member: AccountMemberRow, source: 'direct' | 'inherited
     accountId: member.accountId,
     memberUserId: member.memberUserId,
     role: member.role,
-    // `account_members.permissions` does not travel to Postgres: every write
-    // site set it to exactly `permissionsForAccountRole(role)`, making it a
-    // derivation rather than data. The wire keeps the field, computed here.
-    permissions: permissionsForAccountRole(member.role),
+    // `account_members.permissions` does not travel to Postgres — it was always
+    // a derivation rather than data. The wire keeps the field, computed here,
+    // and it is the EFFECTIVE set: the role's baseline with this member's own
+    // grants and revokes applied. Consumers gate on this array (Mention reads
+    // `account:act_as` out of it to decide who may publish as an account), so it
+    // has to be the same answer this API's own gates give.
+    permissions: effectivePermissionsForMember(member),
+    // The deltas themselves, so an editor UI can show what was adjusted rather
+    // than diffing the effective set against a role map it would have to keep a
+    // second copy of.
+    permissionGrants: member.permissionGrants,
+    permissionRevokes: member.permissionRevokes,
     inherit: member.inherit,
     status: member.status,
     source,
@@ -994,7 +1002,40 @@ router.post(
   })
 );
 
-/** Change a member's role/inheritance (`members:update`). */
+/**
+ * Change a member's role, inheritance and/or per-member permissions
+ * (`members:update`).
+ *
+ * ## The escalation guards
+ *
+ * `members:update` is held by owner and admin, and an admin's baseline is a
+ * PROPER SUBSET of an owner's — it carries neither `account:delete` nor
+ * `ownership:transfer`. Without a bound on what may be conferred, this endpoint
+ * would hand an admin both of those (via a confederate's row, or their own) and
+ * with them the account. The two rules below are what stop that, and the
+ * FIRST is the load-bearing one:
+ *
+ *  1. **An actor may only grant what they themselves effectively hold.** This is
+ *     transitive-closure-safe on its own: whatever chain of members grant each
+ *     other, no permission enters the account that was not already inside it.
+ *     Compared against the actor's EFFECTIVE set, so an actor whose own
+ *     `credentials:create` was revoked cannot re-mint it through somebody else.
+ *  2. **An actor may not edit their OWN membership row.** Rule 1 already refuses
+ *     the dangerous half of a self-edit, so this is not what closes the hole; it
+ *     is here because rule 1 evaluated against the very row being rewritten is a
+ *     read-modify-write racing itself, and because "you cannot rewrite your own
+ *     permissions" is the property an operator will assume holds.
+ *
+ * Escalation to OWNER is refused structurally rather than by a rule: `role` is
+ * typed to the assignable roles (owner is not among them), and `updateMember`
+ * refuses an owner ROW outright, so neither the actor nor their target can reach
+ * ownership through this endpoint at all.
+ *
+ * REVOKES are deliberately NOT subject to rule 1. An admin may revoke a
+ * permission they do not hold themselves — taking something away is not a
+ * conferral, and the alternative would leave a permission granted by a
+ * since-departed owner with nobody able to withdraw it.
+ */
 router.patch(
   '/:id/members/:memberId',
   membersLimiter,
@@ -1002,20 +1043,48 @@ router.patch(
   requireAccountPermission('members:update'),
   asyncHandler(async (req: AccountContextRequest, res) => {
     const account = req.account;
-    if (!account) {
+    const access = req.access;
+    if (!account || !access) {
       throw new NotFoundError('Account not found');
     }
-    const { role, inherit } = req.body as {
-      role: Exclude<AccountRole, 'owner'>;
+    const { role, inherit, permissionGrants, permissionRevokes } = req.body as {
+      role?: Exclude<AccountRole, 'owner'>;
       inherit?: boolean;
+      permissionGrants?: AccountPermission[];
+      permissionRevokes?: AccountPermission[];
     };
 
-    const member = await accountService.updateMemberRole(
+    const target = await accountService.requireDirectMember(
       account.id,
-      req.params.memberId,
-      role,
-      inherit
+      req.params.memberId
     );
+
+    // Rule 2. Compared on `memberUserId`, not on the membership id: an actor
+    // whose access is INHERITED from an ancestor has no row on this account, and
+    // the row they would be editing here is a different one that nonetheless
+    // decides what they may do on this account.
+    if (target.memberUserId === requireUserId(req)) {
+      throw new ForbiddenError('You cannot change your own membership');
+    }
+
+    // Rule 1.
+    if (permissionGrants && permissionGrants.length > 0) {
+      const beyondActor = permissionGrants.filter(
+        (permission) => !access.permissions.includes(permission)
+      );
+      if (beyondActor.length > 0) {
+        throw new ForbiddenError(
+          `You cannot grant permissions you do not hold: ${beyondActor.join(', ')}`
+        );
+      }
+    }
+
+    const member = await accountService.updateMember(account.id, req.params.memberId, {
+      ...(role !== undefined ? { role } : {}),
+      ...(inherit !== undefined ? { inherit } : {}),
+      ...(permissionGrants !== undefined ? { permissionGrants } : {}),
+      ...(permissionRevokes !== undefined ? { permissionRevokes } : {}),
+    });
     res.json({ member: serializeMember(member) });
   })
 );

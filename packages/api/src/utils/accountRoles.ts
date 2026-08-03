@@ -3,18 +3,20 @@
  *
  * The unified Account system collapses the three legacy role vocabularies
  * (`workspaceRoles`, `applicationRoles`, and `ManagedAccount.managers[].role`)
- * into ONE set of roles + capabilities keyed off an {@link AccountMember} row.
+ * into ONE set of roles + capabilities keyed off an `account_members` row.
  *
- * Each AccountMember has a `role`; the concrete `permissions` array stored on
- * the member document is derived from this map at write time via
- * `permissionsForAccountRole`. Routes gate actions on individual permission
- * strings (see `requireAccountPermission`) rather than on the role directly, so
- * the role map is the single source of truth for what each role may do.
+ * A member's role picks a BASELINE permission set out of {@link ROLE_PERMISSIONS};
+ * the row's `permission_grants` / `permission_revokes` then adjust it per member.
+ * {@link resolveEffectivePermissions} is the ONE place those three inputs are
+ * combined, and every gate reads its output — routes check individual permission
+ * strings (see `requireAccountPermission`), never a role name.
  *
  * `account:act_as` (the right to switch INTO the account via
- * `POST /accounts/:id/switch`, minting a real session AS it) is deliberately
- * granted ONLY to owner/admin/editor — billing/developer/viewer may manage
- * facets of the account but never post/act as it.
+ * `POST /accounts/:id/switch`, minting a real session AS it) is baseline for
+ * owner/admin/editor only — billing/developer/viewer may manage facets of the
+ * account but never post/act as it. It is read like every other permission, so a
+ * per-member revoke genuinely takes it away and a per-member grant genuinely
+ * confers it; there is deliberately no role-shaped shortcut for it.
  *
  * Legacy role mapping (used by the migration scripts):
  *  - ManagedAccount owner/admin/editor → owner/admin/editor (unchanged)
@@ -161,12 +163,13 @@ export const ROLE_PERMISSIONS: Readonly<Record<AccountRole, readonly AccountPerm
   viewer: VIEWER_PERMISSIONS,
 };
 
-/** Roles whose holders may switch INTO the account (mint a session AS it). */
-export const ACTING_AS_ROLES: readonly AccountRole[] = ['owner', 'admin', 'editor'];
-
 /**
- * Resolve the concrete permission list for a role. Returns a fresh array so the
- * caller can persist it without aliasing the shared constant.
+ * Resolve the BASELINE permission list for a role, before any per-member
+ * adjustment. Returns a fresh array so the caller can persist it without
+ * aliasing the shared constant.
+ *
+ * Callers gating an action want {@link resolveEffectivePermissions}, which
+ * layers the member's own grants and revokes over this.
  */
 export function permissionsForAccountRole(role: AccountRole): AccountPermission[] {
   return [...ROLE_PERMISSIONS[role]];
@@ -177,9 +180,76 @@ export function isAccountRole(value: string): value is AccountRole {
   return (ACCOUNT_ROLES as readonly string[]).includes(value);
 }
 
-/** Whether a role carries the `account:act_as` capability. */
-export function roleCanActAs(role: AccountRole): boolean {
-  return ROLE_PERMISSIONS[role].includes('account:act_as');
+/** Type guard for an arbitrary string being a permission in the CURRENT vocabulary. */
+export function isAccountPermission(value: string): value is AccountPermission {
+  return (ACCOUNT_PERMISSIONS as readonly string[]).includes(value);
+}
+
+/**
+ * The permissions a member actually holds: the role's baseline, plus the row's
+ * `permission_grants`, minus its `permission_revokes`.
+ *
+ * A REVOKE beats a GRANT naming the same permission, because the two disagreeing
+ * can only be a mistake and the safe reading of a mistake is the narrower one.
+ *
+ * ## Why this is a filter over the vocabulary rather than a set built from the row
+ *
+ * The result is produced by filtering {@link ACCOUNT_PERMISSIONS} itself, so a
+ * stored string that is no longer in the vocabulary CANNOT appear in the output —
+ * it goes inert the moment the permission is retired, with no write, no
+ * backfill and no failure. That is deliberate, and it is why neither delta column
+ * carries a SQL `CHECK` listing the vocabulary: measured on Postgres 17.5, adding
+ * `check (col <@ array[…])` and later NARROWING that array makes every subsequent
+ * `UPDATE` of a row holding a retired value fail — including an `UPDATE` that
+ * names only `role`, reported against a column the caller never mentioned. Adding
+ * the constraint `NOT VALID` does not help: it skips validating the existing rows
+ * at `ALTER` time, and the next update of one still fails. The vocabulary is
+ * therefore enforced at the WRITE boundary (the zod schema, which 400s an unknown
+ * string) and dropped again at the READ boundary (here).
+ *
+ * Output order follows the {@link ACCOUNT_PERMISSIONS} declaration order, so the
+ * wire value is deterministic for a given input and two members' sets diff
+ * meaningfully.
+ */
+export function resolveEffectivePermissions(
+  role: AccountRole,
+  grants: readonly string[],
+  revokes: readonly string[]
+): AccountPermission[] {
+  const held = new Set<string>(ROLE_PERMISSIONS[role]);
+  for (const permission of grants) held.add(permission);
+  for (const permission of revokes) held.delete(permission);
+  return ACCOUNT_PERMISSIONS.filter((permission) => held.has(permission));
+}
+
+/**
+ * The row-shaped form of {@link resolveEffectivePermissions}: what a membership
+ * row actually grants. The ONE place a stored row becomes a permission set, so
+ * a caller cannot read `role` and forget the deltas — `requireAccountPermission`,
+ * `verifyActingAs`, `serializeMember` and the permission editor's own escalation
+ * guard all resolve through it.
+ *
+ * It lives HERE rather than beside the row's other operations in
+ * `account.service.ts`, and that placement is load-bearing rather than
+ * aesthetic. Route suites whole-mock `services/account.service` (a `jest.mock`
+ * factory naming only `accountService`), so a serializer reaching into that
+ * module for a pure function gets `undefined is not a function` at request time
+ * — a 500 that reads like a route bug and is nowhere near the mock that caused
+ * it. This module is dependency-free and nothing mocks it. The parameter is
+ * structural for the same reason: naming the drizzle row type would make this
+ * file import `db/schema/accountMembers.ts`, which imports `ACCOUNT_ROLES` back
+ * out of it.
+ */
+export function effectivePermissionsForMember(member: {
+  role: AccountRole;
+  permissionGrants: readonly string[];
+  permissionRevokes: readonly string[];
+}): AccountPermission[] {
+  return resolveEffectivePermissions(
+    member.role,
+    member.permissionGrants,
+    member.permissionRevokes
+  );
 }
 
 /**
