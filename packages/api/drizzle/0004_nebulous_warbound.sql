@@ -1,3 +1,6 @@
+-- oxy:deploy-phase=pre
+-- Additive; safe while the previous image serves. See src/db/migrationPhases.ts.
+
 CREATE TABLE "bundles" (
 	"id" text PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,

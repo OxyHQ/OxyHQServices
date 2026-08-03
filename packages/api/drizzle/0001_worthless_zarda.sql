@@ -1,3 +1,6 @@
+-- oxy:deploy-phase=pre
+-- Additive; safe while the previous image serves. See src/db/migrationPhases.ts.
+
 CREATE TABLE "user_ancestors" (
 	"user_id" text NOT NULL,
 	"depth" integer NOT NULL,

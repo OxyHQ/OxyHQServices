@@ -23,7 +23,7 @@
     "prepublishOnly": "node ../../scripts/assert-bun-publish.mjs && bun run clean && bun run build",
     "release": "rm -rf dist && bun run build && release-it",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "bun run src/db/migrate.ts"
+    "db:migrate": "bun run src/db/migrate.ts --phase=all"
   },
   "release-it": {
     "git": {

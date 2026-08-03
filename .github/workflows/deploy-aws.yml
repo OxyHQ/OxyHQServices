@@ -167,9 +167,50 @@ jobs:
           echo "digest=$DIGEST" >>"$GITHUB_OUTPUT"
           echo "Built $COMMIT_TAG -> $DIGEST"
 
+      # Whether this release contains a migration that must run AFTER the rollout.
+      #
+      # Answerable from the repository alone, which is the only reason it can be
+      # answered here at all: pendingness needs the ledger, and the database is on
+      # a private VPC address this runner cannot reach. But a `post` migration can
+      # only be PENDING if it EXISTS, so "no post-phase marker anywhere in
+      # drizzle/" is a sound reason to skip the second one-shot task, and today
+      # that is every release — the common case pays nothing for this.
+      #
+      # The grep is exact rather than approximate because
+      # `scripts/check-migration-phases.mjs` separately proves every migration
+      # carries exactly one marker line in exactly this spelling, and asserts this
+      # workflow greps for the pattern that module exports. Without that gate a
+      # typo'd marker would read as "no post migration in this release" and the
+      # drop would never be applied by anything.
+      - name: Decide whether a post-rollout migration task is needed
+        id: post_migrations
+        run: |
+          set -euo pipefail
+          if grep -lE '^-- oxy:deploy-phase=post$' packages/api/drizzle/*.sql; then
+            echo 'command=["node","packages/api/dist/db/migrate.js","--phase=post"]' >>"$GITHUB_OUTPUT"
+            echo "This release carries post-rollout migrations."
+          else
+            echo 'command=' >>"$GITHUB_OUTPUT"
+            echo "No post-rollout migrations in this release; skipping that task."
+          fi
+
       - name: Register immutable task definition and deploy
         env:
           IMAGE_URI: ${{ env.ECR_REGISTRY }}/oxy/${{ env.APP }}@${{ steps.build.outputs.digest }}
+          # Applies pending additive migrations on the NEW image, inside the VPC,
+          # BEFORE the service update — so the schema a rollout needs is never
+          # behind the image that reads it. This is the whole fix for the
+          # 2026-08-02 outage: 0013_users_account_categories reached production
+          # minutes after the code that selects the column it adds, because the
+          # ordering lived in a human's head across two manual dispatches.
+          #
+          # Every deploy pays one one-shot task for this, whether anything is
+          # pending or not. There is no sound way to skip it: pendingness needs the
+          # ledger, and every cheaper proxy is a silent-skip machine. Concretely,
+          # "skip when this push changed no migration file" would have skipped the
+          # deploy AFTER the one that stranded 0013 and left production broken.
+          RUN_MIGRATIONS: 'true'
+          POST_DEPLOY_TASK_COMMAND_JSON: ${{ steps.post_migrations.outputs.command }}
         run: |
           STATUS=$(aws ecs describe-services --cluster "$CLUSTER" --services "$APP" --query 'services[0].status' --output text 2>/dev/null || echo NONE)
           if [ "$STATUS" != "ACTIVE" ]; then

@@ -1,3 +1,6 @@
+-- oxy:deploy-phase=pre
+-- Additive; safe while the previous image serves. See src/db/migrationPhases.ts.
+
 -- users.account_categories — the ordered, multi-valued replacement for the
 -- single-valued users.organization_category.
 --

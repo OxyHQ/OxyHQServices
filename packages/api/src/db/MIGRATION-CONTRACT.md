@@ -92,6 +92,36 @@ Production MongoDB is NOT touched by any code-porting task. It stays live servin
 six backends with its S3 backups running until a separately-approved cutover. Local
 data is disposable. No agent runs a backfill against production.
 
+### Every migration declares which side of a deploy it runs on
+
+One line, in the `.sql` file, no default:
+
+```sql
+-- oxy:deploy-phase=pre    additive; correct against BOTH the image serving and the one arriving
+-- oxy:deploy-phase=post   drops/renames/narrows; only correct once the new image is live
+```
+
+The deploy applies them itself — `pre` before the rollout, `post` after — so the
+ordering is not something anyone has to remember. `scripts/check-migration-phases.mjs`
+fails the pull request when a migration omits the marker or when the deploy stops
+applying migrations; `src/db/migrationPhases.ts` carries the full reasoning.
+
+Two rules follow, and both bite:
+
+- **Split expand and contract into separate migrations.** A file that adds a column
+  and drops another has no single correct side. `0013_users_account_categories` is
+  the model: it adds and carries the data, and leaves the drop of
+  `organization_category` to its own later migration.
+- **A `pre` migration must never land behind an unapplied `post` one.** The ledger
+  records progress as a high-water mark and cannot skip an entry, so the migrator
+  REFUSES that pending list rather than picking a half that breaks one of the two
+  images. Land such a pair in separate releases.
+
+Do NOT edit an already-applied migration to change its SQL. Adding the phase marker
+to the fourteen that predate it was safe only because drizzle stores the file hash
+but never compares it — pendingness is `created_at` versus the journal's `when`
+(verified in `drizzle-orm@0.45.2`, `pg-core/dialect.cjs`).
+
 ## Verification — evidence, not assertion
 
 Run each package's OWN `bun run test`; `bun run build` must be run from

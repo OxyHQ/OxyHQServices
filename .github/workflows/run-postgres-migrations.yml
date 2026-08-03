@@ -1,7 +1,20 @@
 name: Run PostgreSQL migrations
 
 # Applies the SQL migrations in `packages/api/drizzle/` to the production
-# PostgreSQL database. Manual only.
+# PostgreSQL database.
+#
+# THIS IS NO LONGER THE NORMAL PATH, AND MUST NOT BECOME ONE AGAIN. Every deploy
+# now applies its own pending additive migrations before the rollout, and its own
+# post-rollout ones after (`.github/workflows/deploy-aws.yml` ->
+# `.github/scripts/deploy-ecs-image.sh`). This workflow is the escape hatch: a
+# migration stranded by a failed deploy, a schema change with no code behind it,
+# a dry run to read the plan before a release.
+#
+# It exists because on 2026-08-02 it was the ONLY path, and 0013 reached
+# production behind the image that reads the column it adds — a 500 on
+# `POST /users/by-ids` ecosystem-wide until this workflow was dispatched by hand.
+# Nothing about that migration was wrong; the ordering just depended on somebody
+# remembering to run two workflows in the right order while a deploy raced them.
 #
 # WHY IT IS SHAPED LIKE THIS:
 #
@@ -31,6 +44,11 @@ name: Run PostgreSQL migrations
 # the list, then re-run with dry_run=false.
 #
 # Applying twice is safe: the second run finds nothing pending and exits 0.
+# Applying twice AT ONCE is not, and the migrator now refuses to — it holds a
+# Postgres advisory lock for the whole run, because drizzle's own migrator takes
+# no lock and two of them replay the same DDL. That lock is the only interlock
+# this workflow and a running deploy share: they sit in different `concurrency`
+# groups (`postgres-migrations` and `deploy-oxy-api`) and cannot see each other.
 
 on:
   workflow_dispatch:
@@ -45,6 +63,16 @@ on:
         required: true
         type: boolean
         default: true
+      phase:
+        description: >-
+          all = everything pending (the usual answer here; this workflow is
+          dispatched when nothing needs protecting from a half-migrated schema).
+          pre = additive only, stopping at the first destructive migration.
+          post = what a pre run deferred, once the new image is live.
+        required: true
+        type: choice
+        options: [all, pre, post]
+        default: all
 
 concurrency:
   # Two migrators against one database would race on the ledger.
@@ -111,11 +139,23 @@ jobs:
             ls packages/api/drizzle/*.sql >/dev/null
             echo "migrator + $(ls packages/api/drizzle/*.sql | wc -l) migration file(s) present"
           '
+          # And that it is a migrator that understands phases. An older image
+          # ignores the flag entirely and applies EVERYTHING, destructive
+          # migrations included, which is the failure this whole mechanism exists
+          # to prevent — and it would look like an ordinary successful run. The
+          # flag is parsed before DATABASE_URL is read, so this needs no database.
+          docker run --rm --entrypoint sh "$IMAGE" -c '
+            node packages/api/dist/db/migrate.js --phase=nonsense 2>&1 \
+              | grep -q "Unrecognised --phase" \
+              || { echo "This image does not validate --phase; it predates phased migrations."; exit 1; }
+            echo "migrator understands --phase"
+          '
 
       - name: Run the migration as an ECS one-shot task
         env:
           IMAGE: ${{ steps.image.outputs.image }}
           DRY_RUN: ${{ inputs.dry_run }}
+          PHASE: ${{ inputs.phase }}
         run: |
           set -euo pipefail
 
@@ -159,9 +199,10 @@ jobs:
           OVERRIDES=$(jq -nc \
             --arg name "$CONTAINER" \
             --arg dry "$DRY_RUN" \
+            --arg phase "$PHASE" \
             '{containerOverrides:[{
                name: $name,
-               command: ["node","packages/api/dist/db/migrate.js"],
+               command: ["node","packages/api/dist/db/migrate.js", "--phase=" + $phase],
                environment: [
                  {name:"DRY_RUN", value:$dry}
                ]

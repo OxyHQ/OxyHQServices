@@ -1,3 +1,6 @@
+-- oxy:deploy-phase=pre
+-- Additive; safe while the previous image serves. See src/db/migrationPhases.ts.
+
 -- Relax `signed_records_chain_completeness_check` so a v2 record can be stored
 -- OFF the linear chain.
 --

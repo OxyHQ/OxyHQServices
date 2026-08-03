@@ -6,7 +6,8 @@
  * module whose top level connects to a database and exits the process.
  */
 
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type postgres from 'postgres';
 import { ConfigurationError } from '../config/env';
@@ -94,6 +95,52 @@ export function pendingEntries(
 ): JournalEntry[] {
   if (lastAppliedMillis === null) return [...entries];
   return entries.filter((entry) => lastAppliedMillis < entry.when);
+}
+
+/**
+ * A throwaway migrations folder holding only the first `count` journal entries
+ * and their `.sql` files.
+ *
+ * WHY THIS EXISTS. drizzle's migrator reads its own folder
+ * (`readMigrationFiles`) and applies every entry newer than the newest one the
+ * ledger records; there is no public way to hand it a subset. A pre-deploy run
+ * that must stop before a `post` migration therefore points the migrator at a
+ * folder that ends there. The `.sql` files are copied byte for byte, so the
+ * `hash` drizzle records is identical to the one a full-folder run would have
+ * recorded — a later full run cannot tell the difference.
+ *
+ * Deliberately NOT `db.dialect.migrate(subset, ...)`, which would reach past
+ * the public `migrate()` helper: drizzle marks `dialect` and `session`
+ * `@internal` and does not declare them on `PgDatabase`, so reaching them needs
+ * a cast this repository does not permit.
+ *
+ * @returns The temporary folder. The caller owns it and must remove it.
+ */
+export function materializeJournalPrefix(
+  count: number,
+  sourceFolder: string = MIGRATIONS_FOLDER
+): string {
+  const journalPath = join(sourceFolder, 'meta', '_journal.json');
+  const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: JournalEntry[] };
+  const retained = journal.entries.slice(0, count);
+
+  if (retained.length !== count) {
+    throw new ConfigurationError(
+      `Cannot take the first ${count} entries of a journal holding ${journal.entries.length}.`
+    );
+  }
+
+  const folder = mkdtempSync(join(tmpdir(), 'oxy-migrate-prefix-'));
+  mkdirSync(join(folder, 'meta'), { recursive: true });
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ ...journal, entries: retained })
+  );
+  for (const entry of retained) {
+    copyFileSync(join(sourceFolder, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
+  }
+
+  return folder;
 }
 
 /**

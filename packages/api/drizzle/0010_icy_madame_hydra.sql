@@ -1,3 +1,6 @@
+-- oxy:deploy-phase=pre
+-- Additive; safe while the previous image serves. See src/db/migrationPhases.ts.
+
 CREATE TABLE "federation_key_pairs" (
 	"id" text PRIMARY KEY NOT NULL,
 	"key_id" text NOT NULL,
