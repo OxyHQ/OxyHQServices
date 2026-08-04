@@ -32,7 +32,7 @@
  */
 
 import { memo, useCallback, useMemo } from 'react';
-import type { FollowApplicationMode } from '@oxyhq/contracts';
+import type { FollowApplicationMode, FollowStatus } from '@oxyhq/contracts';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { View } from 'react-native';
 import { Button } from '@oxyhq/bloom/button';
@@ -40,6 +40,7 @@ import { ChevronBottom_Stroke2_Corner0_Rounded as ChevronDown } from '@oxyhq/blo
 import { Menu, MenuContent, MenuItem, MenuItemText, MenuTrigger } from '@oxyhq/bloom/menu';
 import { toast } from '@oxyhq/bloom/toast';
 import { useFollowTarget } from '../hooks/useFollowTarget';
+import { useFollowTargetStore } from '../stores/followTargetStore';
 
 /**
  * The small vocabulary of verbs the ecosystem actually uses. An application
@@ -221,6 +222,11 @@ export interface FollowTargetButtonProps {
    */
   applicationName?: string;
   /**
+   * Seed status from a list/feed payload. Incomplete rows (e.g. following without
+   * `relationshipId`) still trigger an authoritative refresh once private API is ready.
+   */
+  initialStatus?: FollowStatus;
+  /**
    * Fires when the server accepts a change, with whether this application
    * should act on the follow NOW — the effective state, not the global one.
    *
@@ -246,10 +252,17 @@ export const FollowTargetButton = memo(function FollowTargetButton({
   showOptions = true,
   durations = DEFAULT_DURATIONS,
   applicationName,
+  initialStatus,
   onChange,
 }: FollowTargetButtonProps) {
   const { status, isFollowing, isUnknown, isPending, follow, unfollow, disableHere, enableHere } =
-    useFollowTarget(targetId);
+    useFollowTarget(targetId, { initialStatus });
+
+  const reportMutationFailure = useCallback(() => {
+    const message =
+      useFollowTargetStore.getState().errors[targetId] ?? 'Could not update follow status';
+    toast.error(message);
+  }, [targetId]);
 
   const text = useMemo(() => ({ ...VERB_LABELS[verb], ...labels }), [verb, labels]);
 
@@ -275,25 +288,31 @@ export const FollowTargetButton = memo(function FollowTargetButton({
     switch (resolveFollowPrimaryAction({ isFollowing, applicationMode: status.applicationMode })) {
       case 'enable-here':
         if (await enableHere()) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE['enable-here']);
+        else reportMutationFailure();
         return;
       case 'unfollow':
         if (await unfollow()) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE.unfollow);
+        else reportMutationFailure();
         return;
       case 'follow':
         if (await follow()) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE.follow);
+        else reportMutationFailure();
     }
-  }, [isFollowing, status.applicationMode, follow, unfollow, enableHere, onChange]);
+  }, [isFollowing, status.applicationMode, follow, unfollow, enableHere, onChange, reportMutationFailure]);
 
   const handleTimed = useCallback(
     async (seconds: number, durationLabel: string) => {
-      if (!(await follow({ expiresIn: seconds }))) return;
+      if (!(await follow({ expiresIn: seconds }))) {
+        reportMutationFailure();
+        return;
+      }
       onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE['follow-timed']);
       // The confirmation is the point: a follow that ends on its own is a
       // promise, and a user who does not see it made will not believe it.
       // Which is also why it must not appear when the promise was not made.
       toast.success(`Following for ${durationLabel.toLowerCase()}`);
     },
-    [follow, onChange]
+    [follow, onChange, reportMutationFailure]
   );
 
   const menuItems = useMemo(
@@ -332,20 +351,23 @@ export const FollowTargetButton = memo(function FollowTargetButton({
         case 'enable-here':
           void enableHere().then((ok) => {
             if (ok) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE['enable-here']);
+            else reportMutationFailure();
           });
           return;
         case 'disable-here':
           void disableHere().then((ok) => {
             if (ok) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE['disable-here']);
+            else reportMutationFailure();
           });
           return;
         case 'unfollow':
           void unfollow().then((ok) => {
             if (ok) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE.unfollow);
+            else reportMutationFailure();
           });
       }
     },
-    [handleTimed, enableHere, disableHere, unfollow, onChange]
+    [handleTimed, enableHere, disableHere, unfollow, onChange, reportMutationFailure]
   );
 
   const primary = (

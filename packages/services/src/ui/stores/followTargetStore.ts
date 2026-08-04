@@ -94,6 +94,17 @@ export function isFollowedGlobally(status: FollowStatus): boolean {
 }
 
 /**
+ * Whether a cached status is safe to act on without a round trip.
+ *
+ * List payloads often carry `globalState` without `relationshipId`. Treating
+ * that as authoritative would leave disable/unfollow as no-ops forever.
+ */
+export function isCompleteFollowStatus(status: FollowStatus): boolean {
+  if (isFollowedGlobally(status)) return Boolean(status.relationshipId);
+  return true;
+}
+
+/**
  * Apply a mode change to a cached status without a round trip.
  *
  * Exported because the optimistic path and the settled path must agree on what

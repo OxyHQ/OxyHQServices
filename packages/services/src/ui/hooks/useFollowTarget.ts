@@ -19,6 +19,7 @@ import { useCallback, useEffect } from 'react';
 import type { FollowStatus } from '@oxyhq/contracts';
 import { useOxy } from '../context/OxyContext';
 import {
+  isCompleteFollowStatus,
   isFollowedGlobally,
   UNKNOWN_FOLLOW_STATUS,
   useFollowTargetStore,
@@ -90,15 +91,22 @@ export function useFollowTarget(
       useFollowTargetStore.getState().setStatus(targetId, next);
       useFollowTargetStore.getState().setError(targetId, undefined);
     } catch (e) {
-      useFollowTargetStore
-        .getState()
-        .setError(targetId, e instanceof Error ? e.message : 'Could not read follow status');
+      const store = useFollowTargetStore.getState();
+      const message = e instanceof Error ? e.message : 'Could not read follow status';
+      // Leave `isUnknown` false so the button stays interactive and can retry.
+      // A failed read is not the same as "never asked" — disabling forever would
+      // strand the user with no affordance when the network blips.
+      if (!store.statuses[targetId]) {
+        store.setStatus(targetId, UNKNOWN_FOLLOW_STATUS);
+      }
+      store.setError(targetId, message);
     }
   }, [targetId, canUsePrivateApi, oxyServices]);
 
   useEffect(() => {
     if (!targetId || !canUsePrivateApi) return;
-    if (useFollowTargetStore.getState().statuses[targetId]) return;
+    const existing = useFollowTargetStore.getState().statuses[targetId];
+    if (existing && isCompleteFollowStatus(existing)) return;
     void refresh();
   }, [targetId, canUsePrivateApi, refresh]);
 

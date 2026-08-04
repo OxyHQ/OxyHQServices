@@ -111,4 +111,42 @@ describe('useFollowTarget reports whether the server accepted', () => {
     expect(outcome).toBe(false);
     expect(oxyServices.unfollowTarget).not.toHaveBeenCalled();
   });
+
+  it('leaves the button interactive when the status read fails', async () => {
+    oxyServices.getFollowTargetStatus.mockRejectedValue(new Error('network down'));
+
+    const { result } = renderHook(() => useFollowTarget('target-1'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.isUnknown).toBe(false);
+    expect(result.current.error).toContain('network down');
+  });
+
+  it('refetches when initialStatus is incomplete (following without relationshipId)', async () => {
+    oxyServices.getFollowTargetStatus.mockResolvedValue({
+      relationshipId: 'rel-from-server',
+      globalState: 'active',
+      applicationMode: 'inherit',
+      effectiveState: 'following',
+    });
+
+    const { result } = renderHook(() =>
+      useFollowTarget('target-1', {
+        initialStatus: {
+          globalState: 'active',
+          applicationMode: 'inherit',
+          effectiveState: 'following',
+        },
+      })
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(oxyServices.getFollowTargetStatus).toHaveBeenCalledWith('target-1');
+    expect(result.current.status.relationshipId).toBe('rel-from-server');
+  });
 });

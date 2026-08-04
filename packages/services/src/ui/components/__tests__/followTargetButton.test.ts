@@ -18,6 +18,7 @@ import {
   resolveFollowPrimaryAction,
 } from '../FollowTargetButton';
 import {
+  isCompleteFollowStatus,
   isFollowedGlobally,
   UNKNOWN_FOLLOW_STATUS,
   withApplicationMode,
@@ -152,6 +153,17 @@ describe('withApplicationMode', () => {
       'not_following'
     );
     expect(isFollowedGlobally(UNKNOWN_FOLLOW_STATUS)).toBe(false);
+  });
+
+  it('treats a following row without relationshipId as incomplete', () => {
+    expect(
+      isCompleteFollowStatus({
+        globalState: 'active',
+        applicationMode: 'inherit',
+        effectiveState: 'following',
+      })
+    ).toBe(false);
+    expect(isCompleteFollowStatus(UNKNOWN_FOLLOW_STATUS)).toBe(true);
   });
 });
 
