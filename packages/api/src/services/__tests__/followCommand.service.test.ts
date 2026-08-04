@@ -14,6 +14,7 @@ import { applications } from '../../db/schema/applications';
 import { followApplicationOverrides } from '../../db/schema/followApplicationOverrides';
 import { followEvents } from '../../db/schema/followEvents';
 import { followRelationships } from '../../db/schema/followRelationships';
+import { followNamespaces } from '../../db/schema/followNamespaces';
 import { followTargetKinds } from '../../db/schema/followTargetKinds';
 import { followTargets } from '../../db/schema/followTargets';
 import { userFollows } from '../../db/schema/userFollows';
@@ -356,6 +357,9 @@ describe('a timed follow ends like a manual one', () => {
 describe('non-user targets', () => {
   it('follows a target that is not an account, without touching the account graph', async () => {
     const ns = unique('shopz');
+    // The namespace comes first: since 0018 it is a foreign key rather than a
+    // string, which is what stops one application defining another's kinds.
+    await getDb().insert(followNamespaces).values({ namespace: ns, applicationId: appA });
     await getDb().insert(followTargetKinds).values({ kind: `${ns}.store`, namespace: ns });
     const uri = unique('https://shop.example/stores/s');
     const [row] = await getDb()
