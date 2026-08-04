@@ -16,7 +16,7 @@
 import { TTLCache, registerCacheForCleanup } from './utils/cache';
 import { RequestDeduplicator, RequestQueue, SimpleLogger } from './utils/requestUtils';
 import { retryAsync } from './utils/asyncUtils';
-import { handleHttpError } from './utils/errorUtils';
+import { handleHttpError, parseHttpErrorBody } from './utils/errorUtils';
 import { jwtDecode } from 'jwt-decode';
 import { isNative, getPlatformOS } from './utils/platform';
 import { isReactNative } from '@oxyhq/protocol';
@@ -632,37 +632,44 @@ export class HttpService {
             }
           }
 
-          // Try to parse error response (handle empty/malformed JSON)
-          let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-          const contentType = response.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
+          // Read the error body (may be absent, non-JSON, empty or malformed).
+          // Anything unreadable leaves `errorBody` undefined and degrades to the
+          // status-based message — an error path that throws its own error is
+          // worse than the error it was reporting.
+          let errorBody: unknown;
+          const errorContentType = response.headers.get('content-type');
+          if (errorContentType?.includes('application/json')) {
             try {
-              const errorData = await response.json() as {
-                message?: string;
-                error?: string;
-                error_description?: string;
-              } | null;
-              // Accept either structured error field from API responses.
-              if (errorData?.message) {
-                errorMessage = errorData.message;
-              } else if (errorData?.error_description) {
-                // RFC 6749 §5.2 / RFC 6750 §3 — OAuth endpoints surface human text here.
-                errorMessage = errorData.error_description;
-              } else if (errorData?.error) {
-                errorMessage = errorData.error;
-              }
+              errorBody = await response.json();
             } catch (parseError) {
               // Malformed JSON or empty response - use status text
               this.logger.warn('Failed to parse error response JSON:', parseError);
             }
           }
 
-          const error = new Error(errorMessage) as Error & {
+          // `parseHttpErrorBody` handles every envelope in use, including the
+          // nested `{ error: { code, message } }` shape — assigning that nested
+          // OBJECT as the message is what produced `"[object Object]"`.
+          const parsed = parseHttpErrorBody(errorBody);
+          const error = new Error(
+            parsed.message ?? `HTTP ${response.status}: ${response.statusText}`,
+          ) as Error & {
             status?: number;
-            response?: { status: number; statusText: string }
+            code?: string;
+            details?: Record<string, unknown>;
+            response?: { status: number; statusText: string; data?: unknown };
           };
           error.status = response.status;
-          error.response = { status: response.status, statusText: response.statusText };
+          error.response = { status: response.status, statusText: response.statusText, data: errorBody };
+          // Only set `code`/`details` when the server actually sent them.
+          // Assigning `undefined` would still create the property, which changes
+          // how `handleHttpError` classifies the error downstream.
+          if (parsed.code !== undefined) {
+            error.code = parsed.code;
+          }
+          if (parsed.details !== undefined) {
+            error.details = parsed.details;
+          }
           throw error;
         }
 

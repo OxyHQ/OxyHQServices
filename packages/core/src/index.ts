@@ -476,8 +476,11 @@ export {
     ErrorCodes,
     createApiError,
     handleHttpError,
+    isHttpRequestError,
+    parseHttpErrorBody,
     validateRequiredFields,
 } from './utils/errorUtils';
+export type { HttpRequestError, ParsedHttpErrorBody } from './utils/errorUtils';
 
 export { retryAsync } from './utils/asyncUtils';
 
