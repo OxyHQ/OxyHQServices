@@ -453,6 +453,7 @@ export type { CircuitBreakerState, CircuitBreakerConfig } from './shared/utils/n
 // i18n
 // ---------------------------------------------------------------------------
 export { translate } from './i18n';
+export { accountCategoryLabel } from './i18n/accountCategoryLabels';
 
 // ---------------------------------------------------------------------------
 // API request / URL helpers

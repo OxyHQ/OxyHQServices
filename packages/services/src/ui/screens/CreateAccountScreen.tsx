@@ -3,7 +3,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { AccountCategoryId, AccountKind, CreateAccountInput } from '@oxyhq/core';
-import { DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName, MAX_ACCOUNT_CATEGORIES, MAX_DISPLAY_NAME_LENGTH, SELECTABLE_ACCOUNT_CATEGORY_IDS } from '@oxyhq/core';
+import { accountCategoryLabel, DISPLAY_NAME_INVALID_MESSAGE, isValidDisplayName, MAX_ACCOUNT_CATEGORIES, MAX_DISPLAY_NAME_LENGTH, SELECTABLE_ACCOUNT_CATEGORY_IDS } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import { useI18n } from '../hooks/useI18n';
 import { useSurfaceHeader } from '../hooks/useSurfaceHeader';
@@ -84,19 +84,6 @@ const kindDescription = (
 };
 
 /**
- * The visible label for a category id.
- *
- * A lookup, deliberately not a `switch` with a `default`: a `default` would let
- * an id with no translation render as some OTHER category's label, silently and
- * only in the languages that are missing it. Falling back to the raw id is ugly
- * and correct — it is visibly wrong, and it names the missing key.
- */
-const accountCategoryLabel = (
-  t: (key: string, vars?: Record<string, string | number>) => string,
-  category: AccountCategoryId,
-): string => t(`accounts.accountCategory.${category}`) || category;
-
-/**
  * Only the SELECTABLE ids are offered. The full `ACCOUNT_CATEGORY_IDS` still
  * contains withdrawn ones so that accounts already carrying them keep working —
  * offering them here would be how an account newly acquires one.
@@ -116,7 +103,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
 }) => {
   const bloomTheme = useTheme();
   const { oxyServices, createAccount, switchToAccount } = useOxy();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   useSurfaceHeader({
     title: t('accounts.create.title') || 'Create account',
@@ -337,7 +324,7 @@ const CreateAccountScreen: React.FC<BaseScreenProps> = ({
           {ACCOUNT_CATEGORY_OPTIONS.map((option) => {
             const position = accountCategories.indexOf(option);
             const selected = position >= 0;
-            const label = accountCategoryLabel(t, option);
+            const label = accountCategoryLabel(locale, option);
             return (
               <SettingsListItem
                 key={option}
