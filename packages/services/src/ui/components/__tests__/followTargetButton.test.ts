@@ -12,7 +12,11 @@
  * to reflect.
  */
 
-import { buildFollowMenuItems, resolveFollowPrimaryAction } from '../FollowTargetButton';
+import {
+  buildFollowMenuItems,
+  FOLLOW_ACTION_LEAVES_ACTIVE,
+  resolveFollowPrimaryAction,
+} from '../FollowTargetButton';
 import {
   isFollowedGlobally,
   UNKNOWN_FOLLOW_STATUS,
@@ -148,5 +152,56 @@ describe('withApplicationMode', () => {
       'not_following'
     );
     expect(isFollowedGlobally(UNKNOWN_FOLLOW_STATUS)).toBe(false);
+  });
+});
+
+describe('what onChange reports', () => {
+  // The bug: the same action reached from the primary button and from the menu
+  // reported differently. Someone picking "Don't show in Syra" kept the artist
+  // on Syra's own shelf and kept feeding its taste signal — the exact state
+  // that menu item exists to end.
+  //
+  // Both controls now read one table, so the two cannot drift apart again.
+  // These tests pin what the table SAYS; the `Record` type is what stops a new
+  // action from being omitted.
+
+  it('reports the EFFECTIVE state — does this app act on it now', () => {
+    expect(FOLLOW_ACTION_LEAVES_ACTIVE).toEqual({
+      follow: true,
+      'follow-timed': true,
+      'enable-here': true,
+      'disable-here': false,
+      unfollow: false,
+    });
+  });
+
+  it('treats enable-here as active even though the global follow did not change', () => {
+    // The distinction that decides the whole question: a mirror is asking
+    // "should this appear in MY app", not "does the user follow it anywhere".
+    expect(FOLLOW_ACTION_LEAVES_ACTIVE['enable-here']).toBe(true);
+    expect(FOLLOW_ACTION_LEAVES_ACTIVE['disable-here']).toBe(false);
+  });
+
+  it('covers every action either control can produce', () => {
+    // A menu item whose action is missing from the table would report
+    // `undefined` — falsy, so it would silently read as "not active here".
+    const fromMenu = new Set(
+      [
+        ...buildFollowMenuItems({ ...base }),
+        ...buildFollowMenuItems({ ...base, following: true, hasRelationship: true }),
+        ...buildFollowMenuItems({
+          ...base,
+          following: true,
+          hasRelationship: true,
+          applicationMode: 'disabled',
+        }),
+      ].map((item) => item.action.type)
+    );
+    // Plus the two the primary button can produce that the menu cannot.
+    for (const action of [...fromMenu, 'follow', 'unfollow']) {
+      expect(typeof FOLLOW_ACTION_LEAVES_ACTIVE[action as keyof typeof FOLLOW_ACTION_LEAVES_ACTIVE])
+        .toBe('boolean');
+    }
+    expect(fromMenu.size).toBeGreaterThanOrEqual(3);
   });
 });

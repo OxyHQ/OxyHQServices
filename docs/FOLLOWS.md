@@ -118,7 +118,14 @@ other app renders, in production, from their laptop. Pass an Oxy **file id**, or
 an absolute URL that is the same everywhere, or omit the field. There is no
 validation stopping you; this paragraph is the guard.
 
-**`onChange` on the button fires only when the server accepted the write**, and
+**`onChange` reports the EFFECTIVE state — whether this application should act
+on the follow now — not the global one.** That is the question a mirror is
+actually asking: a user who picks "Don't show in Mercaria" still follows the
+shop everywhere else, but it must leave Mercaria's own shelf, which is the
+entire purpose of that menu item. Every control reports through one table, so
+the primary button and the menu cannot disagree about the same action.
+
+**It fires only when the server accepted the write**, and
 the hook's `follow`/`unfollow` resolve to that same boolean. They never reject —
 a refusal becomes error state so the button can render it — so a caller that
 awaits them without reading the result would mirror failures as successes into
