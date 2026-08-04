@@ -134,6 +134,13 @@
       "when": 1785813000000,
       "tag": "0019_follow_enum_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785814925471,
+      "tag": "0020_follow_events_claim",
+      "breakpoints": true
     }
   ]
 }

@@ -27,7 +27,7 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { check, index, jsonb, pgTable, text, unique } from 'drizzle-orm/pg-core';
+import { check, index, integer, jsonb, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { appGrants } from './appGrants';
 import { applications } from './applications';
 import { createdAt, generatedId, timestamptz } from './columns';
@@ -99,8 +99,48 @@ export const followEvents = pgTable(
     contextApplicationId: text().references(() => applications.id, { onDelete: 'set null' }),
     /** Bounded extra detail. Never required to interpret the event. */
     payload: jsonb().$type<Record<string, unknown>>(),
-    /** When the worker finished with it. NULL means still to be processed. */
+    /**
+     * When the worker finished with it. NULL means still to be processed.
+     *
+     * Written ONLY after the side effect succeeded. An event acknowledged before
+     * its effect is an event silently lost, and nothing downstream can tell the
+     * difference between "delivered" and "marked delivered".
+     */
     processedAt: timestamptz(),
+    /**
+     * ## The claim, as three columns
+     *
+     * A worker leases an event rather than holding a row lock for as long as it
+     * takes to act on it: a lock lives inside a transaction, so keeping one
+     * across the side effect means a database connection is pinned for the
+     * duration of a remote delivery. The lease is what lets the claiming
+     * transaction commit immediately and the work happen outside it.
+     */
+    /** When the current claim was taken. NULL means unclaimed. */
+    claimedAt: timestamptz(),
+    /**
+     * Which worker holds it. Checked on acknowledgement, so a worker whose lease
+     * expired mid-flight cannot mark an event another worker has since taken —
+     * the second worker is the one that will report an outcome for it.
+     */
+    claimedBy: text(),
+    /**
+     * How many times this event has been CLAIMED, not how many times a handler
+     * has thrown. A process killed mid-handler never gets to record a failure,
+     * so counting at failure time lets an event that crashes its worker retry
+     * forever across restarts. Counting at claim time bounds it, at the cost of
+     * spending an attempt on an event that was interrupted by a deploy.
+     */
+    attempts: integer().notNull().default(0),
+    /**
+     * Dead letter. Set once an event has exhausted its attempts, or when it can
+     * never succeed (an event type no handler knows). A dead-lettered event is
+     * never claimed again and is deliberately NOT marked processed — its effect
+     * did not happen, and a queue that hides that is worse than one that stops.
+     */
+    failedAt: timestamptz(),
+    /** Why the last attempt failed. Bounded; provenance for whoever triages it. */
+    lastError: text(),
     createdAt: createdAt(),
   },
   (t) => [
@@ -108,6 +148,11 @@ export const followEvents = pgTable(
     // The repo's convention for a closed value set, which 0016 skipped: the
     // drizzle `enum` above is a COMPILE-TIME claim, and nothing stopped a
     // repair script or a future service from writing a type no consumer knows.
+    //
+    // A second line of defence, not a replacement for the worker's own guard:
+    // this constrains what can be WRITTEN from now on, and says nothing about a
+    // row that predates it — so `followOutbox.worker.ts` still dead-letters a
+    // type it has no handler for rather than trusting the column.
     check(
       'follow_events_type_check',
       sql`${t.type} in ('follow.created', 'follow.removed', 'follow.requested', 'follow.accepted', 'follow.rejected', 'follow.context_enabled', 'follow.context_disabled')`
@@ -116,12 +161,23 @@ export const followEvents = pgTable(
       'follow_events_cause_check',
       sql`${t.cause} in ('user_action', 'expired', 'federation_inbound', 'reconciliation', 'migration')`
     ),
-    // The worker's read: unprocessed, oldest first. Partial, so the index stays
+    // The worker's read: claimable, oldest first. Partial, so the index stays
     // the size of the backlog rather than the size of all history — which is the
     // difference between a queue and a table that used to be one.
+    //
+    // Dead letters are excluded for the same reason, and it is not cosmetic:
+    // they are by definition the OLDEST unprocessed rows, so leaving them in a
+    // `created_at`-ordered index makes every future claim scan past all of them
+    // first, forever.
     index('follow_events_pending_idx')
       .on(t.createdAt)
-      .where(sql`${t.processedAt} is null`),
+      .where(sql`${t.processedAt} is null and ${t.failedAt} is null`),
+    // The dead-letter read. Without it the only way to find the events that
+    // stopped is a scan of all history, and a marker nobody can find is not a
+    // marker.
+    index('follow_events_dead_letter_idx')
+      .on(t.failedAt)
+      .where(sql`${t.failedAt} is not null`),
     // "What happened to this relationship" — reconciliation and support.
     index('follow_events_relationship_idx').on(t.relationshipId),
     index('follow_events_actor_idx').on(t.actorUserId, t.createdAt),
