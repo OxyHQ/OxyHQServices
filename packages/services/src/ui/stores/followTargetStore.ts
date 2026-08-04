@@ -23,7 +23,7 @@
  */
 
 import { create } from 'zustand';
-import type { FollowApplicationMode, FollowStatus } from '@oxyhq/contracts';
+import type { FollowApplicationMode, FollowRecord, FollowStatus } from '@oxyhq/contracts';
 
 /** The status of one target, or `undefined` when it has never been read. */
 type StatusMap = Record<string, FollowStatus | undefined>;
@@ -102,6 +102,29 @@ export function isFollowedGlobally(status: FollowStatus): boolean {
 export function isCompleteFollowStatus(status: FollowStatus): boolean {
   if (isFollowedGlobally(status)) return Boolean(status.relationshipId);
   return true;
+}
+
+/** Convert one list row into the status shape the follow-target store expects. */
+export function followRecordToStatus(record: FollowRecord): FollowStatus {
+  return {
+    relationshipId: record.relationshipId,
+    globalState: record.globalState,
+    applicationMode: record.applicationMode,
+    effectiveState: record.effectiveState,
+    ...(record.expiresAt ? { expiresAt: record.expiresAt } : {}),
+  };
+}
+
+/**
+ * Bulk-convert a follow list page into a status map keyed by target id — the
+ * input shape for `useFollowTargetStore.getState().seed(...)`.
+ */
+export function followRecordsToStatusMap(records: FollowRecord[]): Record<string, FollowStatus> {
+  const entries: Record<string, FollowStatus> = {};
+  for (const record of records) {
+    entries[record.target.id] = followRecordToStatus(record);
+  }
+  return entries;
 }
 
 /**

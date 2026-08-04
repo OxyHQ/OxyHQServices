@@ -52,6 +52,9 @@ const PUBLIC_SURFACE = [
   'UNKNOWN_FOLLOW_STATUS',
   'isFollowedGlobally',
   'withApplicationMode',
+  'isCompleteFollowStatus',
+  'followRecordToStatus',
+  'followRecordsToStatusMap',
 ] as const;
 
 describe('the follow-graph public surface is reachable from the barrel', () => {
