@@ -1,6 +1,6 @@
 {
-  "id": "f119fd0a-0b43-4552-8f31-890984268db5",
-  "prevId": "3eab0113-6eb1-4b3c-aa9f-4b0301fac556",
+  "id": "6d4b2c9c-89a5-4fd0-a6b9-4955480da68d",
+  "prevId": "f119fd0a-0b43-4552-8f31-890984268db5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -194,7 +194,7 @@
         },
         "account_credentials_scopes_check": {
           "name": "account_credentials_scopes_check",
-          "value": "\"account_credentials\".\"scopes\" <@ array['files:read', 'files:write', 'files:delete', 'user:read', 'webhooks:receive', 'chat:completions', 'models:read', 'updates:publish', 'federation:write', 'signals:write', 'reputation:write', 'reputation:moderation:apply', 'reputation:binding:register', 'notifications:write', 'payments:read', 'payments:write', 'accounts:provision']::text[]"
+          "value": "\"account_credentials\".\"scopes\" <@ array['files:read', 'files:write', 'files:delete', 'user:read', 'webhooks:receive', 'chat:completions', 'models:read', 'updates:publish', 'federation:write', 'signals:write', 'reputation:write', 'reputation:moderation:apply', 'reputation:binding:register', 'notifications:write', 'payments:read', 'payments:write', 'accounts:provision', 'follows:read', 'follows:write', 'follows:context:write', 'follows:manage', 'follows:events', 'follow-targets:register']::text[]"
         },
         "account_credentials_rotated_from_not_self_check": {
           "name": "account_credentials_rotated_from_not_self_check",
@@ -1860,7 +1860,7 @@
         },
         "application_credentials_scopes_check": {
           "name": "application_credentials_scopes_check",
-          "value": "\"application_credentials\".\"scopes\" <@ array['files:read', 'files:write', 'files:delete', 'user:read', 'webhooks:receive', 'chat:completions', 'models:read', 'updates:publish', 'federation:write', 'signals:write', 'reputation:write', 'reputation:moderation:apply', 'reputation:binding:register', 'notifications:write', 'payments:read', 'payments:write', 'accounts:provision']::text[]"
+          "value": "\"application_credentials\".\"scopes\" <@ array['files:read', 'files:write', 'files:delete', 'user:read', 'webhooks:receive', 'chat:completions', 'models:read', 'updates:publish', 'federation:write', 'signals:write', 'reputation:write', 'reputation:moderation:apply', 'reputation:binding:register', 'notifications:write', 'payments:read', 'payments:write', 'accounts:provision', 'follows:read', 'follows:write', 'follows:context:write', 'follows:manage', 'follows:events', 'follow-targets:register']::text[]"
         },
         "application_credentials_rotated_from_not_self_check": {
           "name": "application_credentials_rotated_from_not_self_check",
@@ -5720,6 +5720,805 @@
           "value": "\"files\".\"size\" >= 0"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.follow_target_kinds": {
+      "name": "follow_target_kinds",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "namespace": {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "application_id": {
+          "name": "application_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capabilities": {
+          "name": "capabilities",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "follow_target_kinds_namespace_idx": {
+          "name": "follow_target_kinds_namespace_idx",
+          "columns": [
+            {
+              "expression": "namespace",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "follow_target_kinds_application_id_applications_id_fk": {
+          "name": "follow_target_kinds_application_id_applications_id_fk",
+          "tableFrom": "follow_target_kinds",
+          "tableTo": "applications",
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "follow_target_kinds_kind_key": {
+          "name": "follow_target_kinds_kind_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "kind"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "follow_target_kinds_namespace_prefix_check": {
+          "name": "follow_target_kinds_namespace_prefix_check",
+          "value": "\"follow_target_kinds\".\"kind\" like \"follow_target_kinds\".\"namespace\" || '.%'"
+        },
+        "follow_target_kinds_namespace_shape_check": {
+          "name": "follow_target_kinds_namespace_shape_check",
+          "value": "\"follow_target_kinds\".\"namespace\" ~ '^[a-z][a-z0-9_]*$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.follow_targets": {
+      "name": "follow_targets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "canonical_uri": {
+          "name": "canonical_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_application_id": {
+          "name": "provider_application_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_reference": {
+          "name": "provider_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "local_user_id": {
+          "name": "local_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata_snapshot": {
+          "name": "metadata_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capabilities": {
+          "name": "capabilities",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "follow_targets_kind_idx": {
+          "name": "follow_targets_kind_idx",
+          "columns": [
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "follow_targets_provider_application_id_idx": {
+          "name": "follow_targets_provider_application_id_idx",
+          "columns": [
+            {
+              "expression": "provider_application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "follow_targets_kind_follow_target_kinds_kind_fk": {
+          "name": "follow_targets_kind_follow_target_kinds_kind_fk",
+          "tableFrom": "follow_targets",
+          "tableTo": "follow_target_kinds",
+          "columnsFrom": [
+            "kind"
+          ],
+          "columnsTo": [
+            "kind"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "follow_targets_provider_application_id_applications_id_fk": {
+          "name": "follow_targets_provider_application_id_applications_id_fk",
+          "tableFrom": "follow_targets",
+          "tableTo": "applications",
+          "columnsFrom": [
+            "provider_application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "follow_targets_local_user_id_users_id_fk": {
+          "name": "follow_targets_local_user_id_users_id_fk",
+          "tableFrom": "follow_targets",
+          "tableTo": "users",
+          "columnsFrom": [
+            "local_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "follow_targets_canonical_uri_key": {
+          "name": "follow_targets_canonical_uri_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "canonical_uri"
+          ]
+        },
+        "follow_targets_local_user_id_key": {
+          "name": "follow_targets_local_user_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "local_user_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.follow_relationships": {
+      "name": "follow_relationships",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "follower_user_id": {
+          "name": "follower_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "follow_target_id": {
+          "name": "follow_target_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "origin_application_id": {
+          "name": "origin_application_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_grant_id": {
+          "name": "created_by_grant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'app'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "follow_relationships_follower_created_idx": {
+          "name": "follow_relationships_follower_created_idx",
+          "columns": [
+            {
+              "expression": "follower_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "follow_relationships_target_idx": {
+          "name": "follow_relationships_target_idx",
+          "columns": [
+            {
+              "expression": "follow_target_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "follow_relationships_origin_application_id_idx": {
+          "name": "follow_relationships_origin_application_id_idx",
+          "columns": [
+            {
+              "expression": "origin_application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "follow_relationships_expires_at_idx": {
+          "name": "follow_relationships_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"follow_relationships\".\"expires_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "follow_relationships_follower_user_id_users_id_fk": {
+          "name": "follow_relationships_follower_user_id_users_id_fk",
+          "tableFrom": "follow_relationships",
+          "tableTo": "users",
+          "columnsFrom": [
+            "follower_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "follow_relationships_follow_target_id_follow_targets_id_fk": {
+          "name": "follow_relationships_follow_target_id_follow_targets_id_fk",
+          "tableFrom": "follow_relationships",
+          "tableTo": "follow_targets",
+          "columnsFrom": [
+            "follow_target_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "follow_relationships_origin_application_id_applications_id_fk": {
+          "name": "follow_relationships_origin_application_id_applications_id_fk",
+          "tableFrom": "follow_relationships",
+          "tableTo": "applications",
+          "columnsFrom": [
+            "origin_application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "follow_relationships_created_by_grant_id_app_grants_id_fk": {
+          "name": "follow_relationships_created_by_grant_id_app_grants_id_fk",
+          "tableFrom": "follow_relationships",
+          "tableTo": "app_grants",
+          "columnsFrom": [
+            "created_by_grant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "follow_relationships_follower_target_key": {
+          "name": "follow_relationships_follower_target_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "follower_user_id",
+            "follow_target_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.follow_application_overrides": {
+      "name": "follow_application_overrides",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "relationship_id": {
+          "name": "relationship_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "application_id": {
+          "name": "application_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "follow_application_overrides_application_idx": {
+          "name": "follow_application_overrides_application_idx",
+          "columns": [
+            {
+              "expression": "application_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "mode",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "follow_application_overrides_relationship_id_follow_relationships_id_fk": {
+          "name": "follow_application_overrides_relationship_id_follow_relationships_id_fk",
+          "tableFrom": "follow_application_overrides",
+          "tableTo": "follow_relationships",
+          "columnsFrom": [
+            "relationship_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "follow_application_overrides_application_id_applications_id_fk": {
+          "name": "follow_application_overrides_application_id_applications_id_fk",
+          "tableFrom": "follow_application_overrides",
+          "tableTo": "applications",
+          "columnsFrom": [
+            "application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "follow_application_overrides_relationship_application_key": {
+          "name": "follow_application_overrides_relationship_application_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "relationship_id",
+            "application_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.follow_events": {
+      "name": "follow_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cause": {
+          "name": "cause",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "relationship_id": {
+          "name": "relationship_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_uri": {
+          "name": "target_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_kind": {
+          "name": "target_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "origin_application_id": {
+          "name": "origin_application_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grant_id": {
+          "name": "grant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "context_application_id": {
+          "name": "context_application_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "follow_events_pending_idx": {
+          "name": "follow_events_pending_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"follow_events\".\"processed_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "follow_events_relationship_idx": {
+          "name": "follow_events_relationship_idx",
+          "columns": [
+            {
+              "expression": "relationship_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "follow_events_actor_idx": {
+          "name": "follow_events_actor_idx",
+          "columns": [
+            {
+              "expression": "actor_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "follow_events_actor_user_id_users_id_fk": {
+          "name": "follow_events_actor_user_id_users_id_fk",
+          "tableFrom": "follow_events",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "follow_events_origin_application_id_applications_id_fk": {
+          "name": "follow_events_origin_application_id_applications_id_fk",
+          "tableFrom": "follow_events",
+          "tableTo": "applications",
+          "columnsFrom": [
+            "origin_application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "follow_events_grant_id_app_grants_id_fk": {
+          "name": "follow_events_grant_id_app_grants_id_fk",
+          "tableFrom": "follow_events",
+          "tableTo": "app_grants",
+          "columnsFrom": [
+            "grant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "follow_events_context_application_id_applications_id_fk": {
+          "name": "follow_events_context_application_id_applications_id_fk",
+          "tableFrom": "follow_events",
+          "tableTo": "applications",
+          "columnsFrom": [
+            "context_application_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "follow_events_event_id_key": {
+          "name": "follow_events_event_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "event_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.identity_backups": {
@@ -14052,12 +14851,6 @@
           "notNull": true,
           "default": "'personal'"
         },
-        "organization_category": {
-          "name": "organization_category",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "account_categories": {
           "name": "account_categories",
           "type": "text[]",
@@ -14852,10 +15645,6 @@
         "users_kind_check": {
           "name": "users_kind_check",
           "value": "\"users\".\"kind\" in ('personal', 'organization', 'project', 'bot', 'channel')"
-        },
-        "users_organization_category_check": {
-          "name": "users_organization_category_check",
-          "value": "\"users\".\"organization_category\" is null or \"users\".\"organization_category\" in ('agency', 'cooperative', 'landlord', 'other')"
         },
         "users_account_categories_check": {
           "name": "users_account_categories_check",

@@ -113,6 +113,13 @@
       "when": 1785763616557,
       "tag": "0015_application_follow_scopes",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785805127625,
+      "tag": "0016_follow_graph",
+      "breakpoints": true
     }
   ]
 }
