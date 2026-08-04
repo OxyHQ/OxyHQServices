@@ -190,7 +190,7 @@ describe('registering a kind', () => {
   });
 
   it('refuses even the namespace owner a kind another application registered', async () => {
-    // The gap 0017 leaves behind: it granted each existing namespace to
+    // The gap 0018 leaves behind: it granted each existing namespace to
     // whoever registered its FIRST kind, so a namespace two applications had
     // both written into comes out owned by one of them with the other's kind
     // rows still inside. Owning the namespace must not silently mean owning

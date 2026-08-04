@@ -122,10 +122,10 @@
       "breakpoints": true
     },
     {
-      "idx": 17,
+      "idx": 18,
       "version": "7",
-      "when": 1785810000000,
-      "tag": "0017_follow_namespaces",
+      "when": 1785812000000,
+      "tag": "0018_follow_namespaces",
       "breakpoints": true
     }
   ]

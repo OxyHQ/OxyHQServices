@@ -177,7 +177,7 @@ export async function registerKind(input: {
         updatedAt: new Date(),
       },
       // Owning the namespace is not quite the same as owning every kind in it,
-      // and the gap is real rather than theoretical: 0017 granted each existing
+      // and the gap is real rather than theoretical: 0018 granted each existing
       // namespace to whoever registered its FIRST kind, so a namespace that two
       // applications had both written into comes out owned by one of them with
       // the other's kind rows still inside. This predicate is what stops the
