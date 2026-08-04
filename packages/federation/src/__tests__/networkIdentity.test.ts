@@ -485,12 +485,21 @@ describe('upstreamHandleFromAutomatedActor', () => {
     ...over,
   });
 
-  it.each(['Service', 'Application', 'service', 'APPLICATION'])(
+  it.each(['Service', 'service', 'SERVICE'])(
     'accepts an actor published as %s, whatever its case',
     (actorType) => {
       expect(derive(candidate({ actorType }))).toBe('PabloIglesias');
     },
   );
+
+  it('refuses an Application — that is the SERVER\'s own actor', () => {
+    // Mastodon publishes https://<host>/actor as an `Application` named
+    // `mastodon.internal`. Accepting it would re-label the instance actor onto
+    // the upstream network, which is a false attribution about the operator
+    // rather than about a person, but false all the same.
+    expect(derive(candidate({ actorType: 'Application', preferredUsername: 'mastodon.internal' })))
+      .toBeUndefined();
+  });
 
   it('refuses a Person — the operator\'s own account is not a mirror', () => {
     expect(derive(candidate({ actorType: 'Person', preferredUsername: 'admin' }))).toBeUndefined();

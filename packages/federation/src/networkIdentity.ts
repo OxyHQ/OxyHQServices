@@ -566,8 +566,12 @@ export function upstreamHandleFromProxyOf(options: {
  */
 export function upstreamHandleFromAutomatedActor(): BridgeDerivation {
   return (candidate) => {
-    const actorType = candidate.actorType.trim().toLowerCase();
-    if (actorType !== 'service' && actorType !== 'application') return undefined;
+    // `Service` ONLY. `Application` is by convention the SERVER'S OWN actor —
+    // Mastodon publishes `https://<host>/actor` as an `Application` named
+    // `mastodon.internal` — so accepting it would re-label the instance actor
+    // itself onto the upstream network. Caught by an existing guard rather than
+    // by review, which is the whole reason that guard is there.
+    if (candidate.actorType.trim().toLowerCase() !== 'service') return undefined;
     const handle = candidate.preferredUsername.trim();
     return handle.length > 0 ? handle : undefined;
   };
