@@ -459,7 +459,6 @@
         "expo-crypto": "*",
         "expo-secure-store": "*",
         "express": "^4.0.0",
-        "express-rate-limit": "^8.0.0",
       },
       "optionalPeers": [
         "@react-native-async-storage/async-storage",
