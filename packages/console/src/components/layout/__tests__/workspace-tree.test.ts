@@ -7,8 +7,27 @@ function node(
   accountId: string,
   kind: AccountKind,
   relationship: AccountRelationship,
-  parentAccountId: string | null = null
+  parentAccountId: string | null = null,
+  permissions?: string[] | null,
 ): AccountNode {
+  const membership =
+    relationship === 'self'
+      ? null
+      : {
+          _id: `m_${accountId}`,
+          accountId,
+          memberUserId: 'caller',
+          role: relationship === 'owner' ? ('owner' as const) : ('admin' as const),
+          status: 'active' as const,
+          permissions:
+            permissions ??
+            (relationship === 'owner'
+              ? ['account:act_as', 'account:read']
+              : ['account:act_as', 'account:read']),
+          inherit: true,
+          source: 'direct' as const,
+        };
+
   return {
     accountId,
     kind,
@@ -20,7 +39,7 @@ function node(
       name: { displayName: accountId },
     } as AccountNode['account'],
     relationship,
-    callerMembership: null,
+    callerMembership: membership,
   };
 }
 
@@ -107,6 +126,15 @@ describe('buildWorkspaceTree', () => {
 
     expect(yourAccounts.map((a) => a.accountId)).toEqual(['me', 'mine']);
     expect(sharedAccounts.map((a) => a.accountId)).toEqual(['theirs']);
+  });
+
+  it('drops a shared member without account:act_as', () => {
+    const { sharedAccounts } = buildWorkspaceTree([
+      node('me', 'personal', 'self'),
+      node('billingOnly', 'organization', 'member', null, ['account:read', 'billing:manage']),
+    ]);
+
+    expect(sharedAccounts).toEqual([]);
   });
 
   it('nests direct children one level under their root, channels excluded', () => {

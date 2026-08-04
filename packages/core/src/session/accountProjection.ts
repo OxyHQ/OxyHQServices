@@ -135,6 +135,37 @@ export function isSwitchTargetAccount(
   return node.relationship === 'self' || isActAsEligibleKind(node.kind);
 }
 
+/**
+ * Whether the caller may switch INTO this account — the server-side
+ * `account:act_as` gate plus the structural {@link isSwitchTargetAccount} rule.
+ *
+ * `relationship: 'self'` always passes (returning to the caller's own personal
+ * account). Every other ground requires a switch-eligible kind AND
+ * `account:act_as` in the resolved membership permissions. When permissions are
+ * absent but the relationship is `owner`, the owner baseline is assumed — the
+ * API always resolves effective permissions for owned accounts, but test
+ * fixtures and stale rows may omit the membership blob.
+ */
+export function canSwitchIntoAccount(
+  node: {
+    kind?: AccountKind | null;
+    relationship?: AccountRelationship;
+    callerMembership?: AccountMember | null;
+  },
+): boolean {
+  if (node.relationship === 'self') {
+    return true;
+  }
+  if (!isSwitchTargetAccount(node)) {
+    return false;
+  }
+  const permissions = node.callerMembership?.permissions;
+  if (permissions) {
+    return permissions.includes('account:act_as');
+  }
+  return node.relationship === 'owner';
+}
+
 /** Input to {@link projectSwitchableAccounts}. */
 export interface ProjectSwitchableAccountsInput {
   /**
@@ -176,9 +207,9 @@ export interface ProjectSwitchableAccountsInput {
  * and a graph node is deduped into ONE device row enriched with the graph
  * metadata (relationship / kind / parent / membership).
  *
- * Graph nodes that are not switch targets — a `channel`, which nobody may act
- * as — are omitted. {@link isSwitchTargetAccount} is the rule; see the filter
- * below.
+ * Graph nodes the caller cannot switch into — a `channel`, or a managed account
+ * whose membership lacks `account:act_as` — are omitted.
+ * {@link canSwitchIntoAccount} is the rule; see the filter below.
  */
 export function projectSwitchableAccounts(input: ProjectSwitchableAccountsInput): SwitchableAccount[] {
   const { state, graph, profilesById, activeUser, locale, resolveAvatarUrl } = input;
@@ -274,7 +305,7 @@ export function projectSwitchableAccounts(input: ProjectSwitchableAccountsInput)
     // An account already on the device skipped this check via the branch above,
     // and correctly: whatever its kind, the caller is signed into it, so
     // switching is a local activation that asks the server for nothing.
-    if (!isSwitchTargetAccount(node)) {
+    if (!canSwitchIntoAccount(node)) {
       continue;
     }
     remember(toRow(node.account, {
@@ -298,7 +329,7 @@ export function projectSwitchableAccounts(input: ProjectSwitchableAccountsInput)
  * document, but including their ids lets the caller pass one id set and lets the
  * projection prefer freshly-fetched profiles uniformly.
  *
- * Applies the SAME {@link isSwitchTargetAccount} filter as
+ * Applies the SAME {@link canSwitchIntoAccount} filter as
  * {@link projectSwitchableAccounts} to graph nodes, so this never fetches a
  * profile for a row the projection will drop — and, just as importantly, never
  * SKIPS one the projection will keep, which would leave that row unrendered
@@ -315,7 +346,7 @@ export function switchableAccountIds(
     }
   }
   for (const node of graph) {
-    if (node.accountId && isSwitchTargetAccount(node)) {
+    if (node.accountId && canSwitchIntoAccount(node)) {
       ids.add(node.accountId);
     }
   }

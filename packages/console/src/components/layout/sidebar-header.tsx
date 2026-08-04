@@ -11,7 +11,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { getNormalizedUserHandle } from '@oxyhq/core';
 import { useAuth } from '@oxyhq/services';
-import { toast } from '@oxyhq/bloom';
+import { toast } from '@oxyhq/bloom/toast';
 import type { AccountKind, AccountNode, AccountRole } from '@/hooks/use-account';
 import {
   DropdownMenu,

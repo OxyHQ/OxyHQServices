@@ -1,4 +1,4 @@
-import { isSwitchTargetAccount } from '@oxyhq/core';
+import { canSwitchIntoAccount } from '@oxyhq/core';
 import type { AccountNode } from '@/hooks/use-account';
 
 /** The workspace switcher's rendered shape — see {@link buildWorkspaceTree}. */
@@ -26,7 +26,7 @@ export interface WorkspaceTree {
  * (a channel's members, its profile, its applications) — so the narrowing
  * belongs here, at the one place that asks "which identity can I become?".
  *
- * It asks {@link isSwitchTargetAccount} so the answer is the SAME one
+ * It asks {@link canSwitchIntoAccount} so the answer is the SAME one
  * `projectSwitchableAccounts` gives the SDK's own switcher. The Console reaches
  * its list through its own `listAccounts()` query rather than through that
  * projection, which is precisely how it went on offering channel rows after the
@@ -42,7 +42,7 @@ export interface WorkspaceTree {
  * refactor away from being dropped again.
  */
 export function buildWorkspaceTree(accounts: AccountNode[]): WorkspaceTree {
-  const switchable = accounts.filter(isSwitchTargetAccount);
+  const switchable = accounts.filter(canSwitchIntoAccount);
   const present = new Set(switchable.map((a) => a.accountId));
   const isTopLevel = (a: AccountNode) => !a.parentAccountId || !present.has(a.parentAccountId);
   // A strict partition of `switchable`. `nested` excludes promoted roots on

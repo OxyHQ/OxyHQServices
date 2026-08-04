@@ -7,7 +7,7 @@ import {
   getAccountFallbackHandle,
   getAccountDisplayName,
   getNormalizedUserHandle,
-  isSwitchTargetAccount,
+  canSwitchIntoAccount,
 } from '@oxyhq/core';
 import { useColors, type AppColors } from '@/hooks/useColors';
 import { useHapticPress } from '@/hooks/use-haptic-press';
@@ -47,11 +47,6 @@ function getNodeRole(node: AccountNode): AccountRole {
   return node.relationship === 'member' ? 'viewer' : 'owner';
 }
 
-/** Effective `account:act_as` from resolved membership permissions (not role alone). */
-function callerCanActAs(node: AccountNode): boolean {
-  const permissions = node.callerMembership?.permissions;
-  return permissions?.includes('account:act_as') ?? false;
-}
 
 interface AccountRowContentProps {
   node: AccountNode;
@@ -89,7 +84,7 @@ function AccountRowContent({
   // Two independent conditions, both required: the caller's effective permissions
   // must include `account:act_as` (grants/revokes may override the role baseline),
   // and the ACCOUNT must be something anybody can become at all.
-  const canSwitchInto = callerCanActAs(node) && isSwitchTargetAccount(node);
+  const canSwitchInto = canSwitchIntoAccount(node);
   const canManageMembers = hasCallerPermission(node, [
     'members:invite',
     'members:update',
@@ -225,7 +220,7 @@ export function useAccountRowBuilder({
       : undefined;
     // Same two conditions as `AccountRowContent`'s switch button above — the
     // whole row is that button's larger tap target, so the two must agree.
-    const canSwitchInto = callerCanActAs(node) && isSwitchTargetAccount(node);
+    const canSwitchInto = canSwitchIntoAccount(node);
     const canManageMembers = hasCallerPermission(node, [
       'members:invite',
       'members:update',

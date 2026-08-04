@@ -650,14 +650,14 @@ export {
 // chooser: device sign-ins ∪ account graph, deduped by accountId). Pure +
 // I/O-free — the caller hydrates profiles via `getUsersByIds`. Shared by
 // `@oxyhq/services` and auth.oxy.so so the list can't diverge.
-// `isSwitchTargetAccount` is the switcher's own question ("can I become this
-// account?"), exported so a surface that renders `AccountNode`s rather than the
-// projection — the Console's workspace switcher, the accounts app's
-// managed-accounts rows — asks the SAME question instead of testing a kind
-// literal. It is NOT `isActAsEligibleKind`: that one is false for `personal`
-// too, so gating a switcher on it alone empties the list.
+// `isSwitchTargetAccount` is the structural half ("is this kind switchable at
+// all?"); `canSwitchIntoAccount` adds the caller's `account:act_as` permission.
+// Both are exported so surfaces that render `AccountNode`s rather than the
+// projection — the Console workspace switcher, managed-accounts rows — ask the
+// SAME questions instead of testing a kind literal.
 export {
     isSwitchTargetAccount,
+    canSwitchIntoAccount,
     projectSwitchableAccounts,
     switchableAccountIds,
 } from './session/accountProjection';

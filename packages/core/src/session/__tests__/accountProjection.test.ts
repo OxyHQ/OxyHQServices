@@ -3,6 +3,7 @@ import { ACCOUNT_KINDS } from '@oxyhq/contracts';
 import type { User } from '../../models/interfaces';
 import type { AccountNode } from '../../mixins/OxyServices.accounts';
 import {
+  canSwitchIntoAccount,
   isSwitchTargetAccount,
   projectSwitchableAccounts,
   switchableAccountIds,
@@ -99,6 +100,71 @@ describe('isSwitchTargetAccount', () => {
     expect(isSwitchTargetAccount({})).toBe(false);
     expect(isSwitchTargetAccount({ kind: null })).toBe(false);
     expect(isSwitchTargetAccount({ kind: undefined, relationship: 'owner' })).toBe(false);
+  });
+});
+
+describe('canSwitchIntoAccount', () => {
+  it('admits self without membership permissions', () => {
+    expect(canSwitchIntoAccount({ kind: 'personal', relationship: 'self' })).toBe(true);
+  });
+
+  it('admits an owned switch target when membership is absent (owner baseline)', () => {
+    expect(canSwitchIntoAccount({ kind: 'organization', relationship: 'owner' })).toBe(true);
+  });
+
+  it('requires account:act_as for member relationships', () => {
+    expect(
+      canSwitchIntoAccount({
+        kind: 'organization',
+        relationship: 'member',
+        callerMembership: {
+          _id: 'm1',
+          accountId: 'org1',
+          memberUserId: 'u1',
+          role: 'billing',
+          status: 'active',
+          permissions: ['account:read', 'billing:manage'],
+          inherit: true,
+          source: 'direct',
+        },
+      }),
+    ).toBe(false);
+
+    expect(
+      canSwitchIntoAccount({
+        kind: 'organization',
+        relationship: 'member',
+        callerMembership: {
+          _id: 'm2',
+          accountId: 'org1',
+          memberUserId: 'u1',
+          role: 'admin',
+          status: 'active',
+          permissions: ['account:act_as', 'account:read'],
+          inherit: true,
+          source: 'direct',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('refuses channels even with act_as permission', () => {
+    expect(
+      canSwitchIntoAccount({
+        kind: 'channel',
+        relationship: 'owner',
+        callerMembership: {
+          _id: 'm3',
+          accountId: 'chan1',
+          memberUserId: 'u1',
+          role: 'owner',
+          status: 'active',
+          permissions: ['account:act_as'],
+          inherit: true,
+          source: 'direct',
+        },
+      }),
+    ).toBe(false);
   });
 });
 
@@ -233,6 +299,38 @@ describe('projectSwitchableAccounts', () => {
       'project',
       'bot',
     ]);
+  });
+
+  it('omits a graph-only member without account:act_as', () => {
+    const rows = projectSwitchableAccounts({
+      state: state([{ accountId: 'a1', sessionId: 's1' }], 'a1'),
+      graph: [
+        graphNode('org1', { kind: 'organization', relationship: 'member', callerMembership: {
+          _id: 'm1',
+          accountId: 'org1',
+          memberUserId: 'a1',
+          role: 'billing',
+          status: 'active',
+          permissions: ['account:read', 'billing:manage'],
+          inherit: true,
+          source: 'direct',
+        } }),
+        graphNode('org2', { kind: 'organization', relationship: 'member', callerMembership: {
+          _id: 'm2',
+          accountId: 'org2',
+          memberUserId: 'a1',
+          role: 'admin',
+          status: 'active',
+          permissions: ['account:act_as', 'account:read'],
+          inherit: true,
+          source: 'direct',
+        } }),
+      ],
+      profilesById: mapOf(user('a1'), user('org1'), user('org2')),
+      resolveAvatarUrl: noAvatar,
+    });
+
+    expect(rows.map((r) => r.accountId)).toEqual(['a1', 'org2']);
   });
 
   it('dedups an account present as BOTH device session and graph node into ONE enriched row', () => {
