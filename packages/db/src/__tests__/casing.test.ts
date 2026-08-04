@@ -1,5 +1,5 @@
-import { getTableName, sql } from 'drizzle-orm';
-import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { pgTable, PgDialect, text, timestamp } from 'drizzle-orm/pg-core';
 import { DATABASE_CASING, qualified, sqlColumnName } from '../casing';
 
 const sessions = pgTable('sessions', {
@@ -23,9 +23,13 @@ describe('casing', () => {
   });
 
   it('qualifies a column with its table, so a correlated subquery cannot rebind it', () => {
+    // Render through drizzle's real dialect rather than counting query chunks:
+    // a bare `"expires_at"` and a qualified `"sessions"."expires_at"` are both
+    // non-empty SQL, so only the rendered TEXT can tell a regression apart from
+    // the fix this function exists to guarantee.
+    const dialect = new PgDialect({ casing: DATABASE_CASING });
     const chunk = qualified(sessions.expiresAt);
     const rendered = sql`select 1 where ${chunk} is null`;
-    expect(getTableName(sessions.expiresAt.table)).toBe('sessions');
-    expect(rendered.queryChunks.length).toBeGreaterThan(0);
+    expect(dialect.sqlToQuery(rendered).sql).toBe('select 1 where "sessions"."expires_at" is null');
   });
 });
