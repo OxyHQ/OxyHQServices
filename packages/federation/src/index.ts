@@ -66,6 +66,7 @@ export {
   federatedUsernameFromUpstreamUrl,
   upstreamHandleFromProfileField,
   upstreamHandleFromAlsoKnownAs,
+  upstreamHandleFromAutomatedActor,
   upstreamHandleFromPreferredUsername,
   upstreamHandleFromProxyOf,
   readProxyDeclarations,

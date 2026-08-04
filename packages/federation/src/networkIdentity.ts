@@ -540,6 +540,39 @@ export function upstreamHandleFromProxyOf(options: {
  * mirror of anything. Without the marker requirement this rule would relabel that
  * person onto a network they may not even be on.
  */
+/**
+ * A mirror identified by the actor DECLARING ITSELF AUTOMATED, with the handle
+ * read from `preferredUsername`.
+ *
+ * For a bridge that runs stock server software there is nothing to fingerprint:
+ * somebody points a mirror bot at an ordinary instance and the result is
+ * indistinguishable from any other server. The tempting fallback is to match the
+ * per-account notice such a bridge writes into each bio — and that fails, because
+ * a notice is free text with LANGUAGES. One deployment served the same sentence
+ * in English, French and Spanish; an entry listing two of them silently left
+ * every account of the third under the bridge's own hostname, with the notice
+ * still in its bio, looking exactly like an ordinary account.
+ *
+ * `type` is the same claim without the prose. ActivityPub already distinguishes
+ * an automated actor (`Service`/`Application`) from a `Person`, every mirror is
+ * published as one, and the operator's own account is not — so the bridge's
+ * machine-readable declaration replaces a guess about wording. It is still a
+ * per-ACTOR proof, which is what keeps a human on that host from being
+ * re-attributed to another network.
+ *
+ * NOT a general "this actor is a bot" rule: it is only ever consulted for a host
+ * already reviewed into a bridge policy. Plenty of ordinary fediverse accounts
+ * are `Service`, and none of them are on a listed bridge.
+ */
+export function upstreamHandleFromAutomatedActor(): BridgeDerivation {
+  return (candidate) => {
+    const actorType = candidate.actorType.trim().toLowerCase();
+    if (actorType !== 'service' && actorType !== 'application') return undefined;
+    const handle = candidate.preferredUsername.trim();
+    return handle.length > 0 ? handle : undefined;
+  };
+}
+
 export function upstreamHandleFromPreferredUsername(markers: readonly RegExp[]): BridgeDerivation {
   return (candidate) => {
     if (!markers.some((marker) => marker.test(candidate.bio))) return undefined;

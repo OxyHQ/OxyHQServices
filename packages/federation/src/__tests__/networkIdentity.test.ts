@@ -15,6 +15,7 @@ import {
   parseUpstreamProfileUrl,
   federatedUsernameFromUpstreamUrl,
   stripBridgeBoilerplate,
+  upstreamHandleFromAutomatedActor,
   upstreamHandleFromPreferredUsername,
   upstreamHandleFromProfileField,
   upstreamHandleFromProxyOf,
@@ -456,5 +457,60 @@ describe('FEP-fffd proxyOf', () => {
       expect(relabeller.deriveNetworkIdentity(candidate({ host: 'mirror.example', ...claim }))
         ?.federatedUsername).toBe('elonmusk@x.com');
     });
+  });
+});
+
+/**
+ * The mirror test that does not read prose.
+ *
+ * A bridge on stock server software has nothing to fingerprint, and the obvious
+ * fallback — matching the per-account notice it writes into each bio — fails on
+ * LANGUAGE. One deployment served that sentence in English, French and Spanish;
+ * an entry listing two of them left every account of the third under the
+ * bridge's hostname, notice still in the bio, looking like an ordinary account.
+ * `type` is the same claim in a machine-readable field.
+ */
+describe('upstreamHandleFromAutomatedActor', () => {
+  const derive = upstreamHandleFromAutomatedActor();
+  const candidate = (over: Partial<NetworkIdentityCandidate>): NetworkIdentityCandidate => ({
+    host: 'mastox.eu',
+    acct: 'someone@mastox.eu',
+    preferredUsername: 'PabloIglesias',
+    actorUri: 'https://mastox.eu/users/PabloIglesias',
+    actorType: 'Service',
+    alsoKnownAs: [],
+    fields: [],
+    proxyOf: [],
+    bio: '',
+    ...over,
+  });
+
+  it.each(['Service', 'Application', 'service', 'APPLICATION'])(
+    'accepts an actor published as %s, whatever its case',
+    (actorType) => {
+      expect(derive(candidate({ actorType }))).toBe('PabloIglesias');
+    },
+  );
+
+  it('refuses a Person — the operator\'s own account is not a mirror', () => {
+    expect(derive(candidate({ actorType: 'Person', preferredUsername: 'admin' }))).toBeUndefined();
+    expect(derive(candidate({ actorType: 'Group' }))).toBeUndefined();
+  });
+
+  it('does not read the bio at all, in any language', () => {
+    // The whole point: identity no longer depends on wording. A mirror with NO
+    // notice still resolves, and a Person carrying one still does not.
+    expect(derive(candidate({ bio: '' }))).toBe('PabloIglesias');
+    expect(derive(candidate({
+      actorType: 'Person',
+      bio: '(bot de x a mastodon administrado por mastox.eu, contacte con @admin)',
+    }))).toBeUndefined();
+  });
+
+  it('refuses an actor with no preferredUsername rather than deriving an empty handle', () => {
+    // An empty handle is the signature of a broken derivation and the most
+    // destructive outcome available — every actor on the host collapsing onto
+    // one identity.
+    expect(derive(candidate({ preferredUsername: '   ' }))).toBeUndefined();
   });
 });
