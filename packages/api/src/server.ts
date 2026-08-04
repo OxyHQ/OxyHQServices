@@ -76,6 +76,10 @@ import updatesManifestRoutes from './routes/updates';
 import updatesAdminRoutes from './routes/updatesAdmin';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
+import {
+  startFollowOutboxWorker,
+  stopFollowOutboxWorker,
+} from './services/followOutbox.worker';
 import { startBackgroundJobs, stopBackgroundJobs } from './queue/backgroundJobs';
 import { startNodeIngestJobs, stopNodeIngestJobs } from './queue/nodeIngest.queue';
 import {
@@ -438,6 +442,7 @@ async function gracefulShutdown(signal: string) {
     logger.info('HTTP server closed');
   });
 
+  stopFollowOutboxWorker();
   await stopBackgroundJobs();
   await stopNodeIngestJobs();
   await stopTransparencyCheckpointJobs();
@@ -1001,6 +1006,12 @@ export async function bootstrap(
       logger.error('SMTP inbound server failed to start', err instanceof Error ? err : new Error(String(err)));
     }
   }
+
+  // Drain the `follow_events` outbox. OFF unless this deployment asks for it:
+  // acknowledging an event is a claim that its delivery happened, and the
+  // handler set today observes rather than delivers. The WRITE is never gated —
+  // events accumulate regardless, so switching the loop on later loses nothing.
+  startFollowOutboxWorker();
 
   // Start background jobs: durable BullMQ scheduling when REDIS_URL is set,
   // otherwise the in-process cron fallback. Never throws.
