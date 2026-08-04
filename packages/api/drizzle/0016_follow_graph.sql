@@ -1,5 +1,22 @@
 -- oxy:deploy-phase=pre
 --
+-- NOT IN HERE, and deliberately: `ALTER TABLE users DROP COLUMN
+-- organization_category`. `drizzle-kit generate` emitted it alongside these
+-- tables because the column is absent from the TypeScript schema — 0013
+-- replaced it with `account_categories` and says in its own header that it
+-- LEAVES THE COLUMN IN PLACE. So the drop is real pending work that nobody has
+-- scheduled, and it does not belong in a migration titled "follow graph": a
+-- reviewer reading this file has no reason to look for a users column being
+-- destroyed, which is exactly how that kind of change ships.
+--
+-- The generated snapshot (`meta/0016_snapshot.json`) already omits the column,
+-- which is what stops drizzle re-proposing the drop on every subsequent
+-- generate. Do not "fix" the snapshot to match the database: putting the column
+-- back into it re-arms this.
+--
+-- `users.test.ts` is what caught it, by asserting the column still exists and
+-- is still CHECK-constrained.
+--
 -- PRE: five new tables and nothing else. The previous image does not know they
 -- exist, so it can keep serving while they land — which is the point of doing
 -- it before the new image rather than after.
@@ -82,7 +99,6 @@ CREATE TABLE "follow_events" (
 --> statement-breakpoint
 ALTER TABLE "account_credentials" DROP CONSTRAINT "account_credentials_scopes_check";--> statement-breakpoint
 ALTER TABLE "application_credentials" DROP CONSTRAINT "application_credentials_scopes_check";--> statement-breakpoint
-ALTER TABLE "users" DROP CONSTRAINT "users_organization_category_check";--> statement-breakpoint
 ALTER TABLE "follow_target_kinds" ADD CONSTRAINT "follow_target_kinds_application_id_applications_id_fk" FOREIGN KEY ("application_id") REFERENCES "public"."applications"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "follow_targets" ADD CONSTRAINT "follow_targets_kind_follow_target_kinds_kind_fk" FOREIGN KEY ("kind") REFERENCES "public"."follow_target_kinds"("kind") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "follow_targets" ADD CONSTRAINT "follow_targets_provider_application_id_applications_id_fk" FOREIGN KEY ("provider_application_id") REFERENCES "public"."applications"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -108,7 +124,6 @@ CREATE INDEX "follow_application_overrides_application_idx" ON "follow_applicati
 CREATE INDEX "follow_events_pending_idx" ON "follow_events" USING btree ("created_at") WHERE "follow_events"."processed_at" is null;--> statement-breakpoint
 CREATE INDEX "follow_events_relationship_idx" ON "follow_events" USING btree ("relationship_id");--> statement-breakpoint
 CREATE INDEX "follow_events_actor_idx" ON "follow_events" USING btree ("actor_user_id","created_at");--> statement-breakpoint
-ALTER TABLE "users" DROP COLUMN "organization_category";--> statement-breakpoint
 ALTER TABLE "account_credentials" ADD CONSTRAINT "account_credentials_scopes_check" CHECK ("account_credentials"."scopes" <@ array['files:read', 'files:write', 'files:delete', 'user:read', 'webhooks:receive', 'chat:completions', 'models:read', 'updates:publish', 'federation:write', 'signals:write', 'reputation:write', 'reputation:moderation:apply', 'reputation:binding:register', 'notifications:write', 'payments:read', 'payments:write', 'accounts:provision', 'follows:read', 'follows:write', 'follows:context:write', 'follows:manage', 'follows:events', 'follow-targets:register']::text[]);--> statement-breakpoint
 ALTER TABLE "application_credentials" ADD CONSTRAINT "application_credentials_scopes_check" CHECK ("application_credentials"."scopes" <@ array['files:read', 'files:write', 'files:delete', 'user:read', 'webhooks:receive', 'chat:completions', 'models:read', 'updates:publish', 'federation:write', 'signals:write', 'reputation:write', 'reputation:moderation:apply', 'reputation:binding:register', 'notifications:write', 'payments:read', 'payments:write', 'accounts:provision', 'follows:read', 'follows:write', 'follows:context:write', 'follows:manage', 'follows:events', 'follow-targets:register']::text[]);
 
