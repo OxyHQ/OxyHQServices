@@ -226,28 +226,35 @@ export const FollowTargetButton = memo(function FollowTargetButton({
     return status.applicationMode === 'disabled' ? text.disabled : text.active;
   }, [isFollowing, status.globalState, status.applicationMode, text]);
 
+  // `onChange` fires ONLY when the server accepted the write.
+  //
+  // The mutations never reject — a refusal becomes error state so the button
+  // can render it — so an unconditional `onChange` after `await` reports
+  // INTENT rather than outcome. A caller mirroring the follow somewhere else
+  // (a local shelf, a ranking signal) would then mirror failures too, and the
+  // button beside it would show the server's truth while the mirror showed a
+  // press that did not happen. Same shape of trap as reading `effectiveState`
+  // as "does the user follow this".
   const handlePrimary = useCallback(async () => {
     switch (resolveFollowPrimaryAction({ isFollowing, applicationMode: status.applicationMode })) {
       case 'enable-here':
-        await enableHere();
-        onChange?.(true);
+        if (await enableHere()) onChange?.(true);
         return;
       case 'unfollow':
-        await unfollow();
-        onChange?.(false);
+        if (await unfollow()) onChange?.(false);
         return;
       case 'follow':
-        await follow();
-        onChange?.(true);
+        if (await follow()) onChange?.(true);
     }
   }, [isFollowing, status.applicationMode, follow, unfollow, enableHere, onChange]);
 
   const handleTimed = useCallback(
     async (seconds: number, durationLabel: string) => {
-      await follow({ expiresIn: seconds });
+      if (!(await follow({ expiresIn: seconds }))) return;
       onChange?.(true);
       // The confirmation is the point: a follow that ends on its own is a
       // promise, and a user who does not see it made will not believe it.
+      // Which is also why it must not appear when the promise was not made.
       toast.success(`Following for ${durationLabel.toLowerCase()}`);
     },
     [follow, onChange]
@@ -288,8 +295,9 @@ export const FollowTargetButton = memo(function FollowTargetButton({
           void disableHere();
           return;
         case 'unfollow':
-          void unfollow();
-          onChange?.(false);
+          void unfollow().then((ok) => {
+            if (ok) onChange?.(false);
+          });
       }
     },
     [handleTimed, enableHere, disableHere, unfollow, onChange]

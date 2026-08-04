@@ -50,7 +50,7 @@ import { createdAt, generatedId, updatedAt } from './columns';
  * kind registered carelessly leaks nothing.
  */
 export interface FollowKindCapabilities {
-  verb?: 'follow' | 'subscribe' | 'join';
+  verb?: 'follow' | 'subscribe' | 'join' | 'watch';
   reverse?: 'public' | 'private' | 'aggregate' | 'unavailable';
   /** Whether following this kind has to be projected onto a remote protocol. */
   federated?: boolean;

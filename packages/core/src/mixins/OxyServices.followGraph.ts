@@ -222,7 +222,10 @@ export function OxyServicesFollowGraphMixin<T extends typeof OxyServicesBase>(Ba
       kind: string;
       label?: string;
       capabilities?: {
-        verb?: 'follow' | 'subscribe' | 'join';
+        // Matches `FollowVerb` in @oxyhq/services, which is what renders it. A
+        // kind that can display a verb it cannot record is a kind whose button
+        // and registration disagree.
+        verb?: 'follow' | 'subscribe' | 'join' | 'watch';
         reverse?: 'public' | 'private' | 'aggregate' | 'unavailable';
         federated?: boolean;
       };

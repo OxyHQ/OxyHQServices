@@ -36,11 +36,20 @@ export interface UseFollowTargetResult {
   isUnknown: boolean;
   isPending: boolean;
   error: string | undefined;
-  follow: (options?: { expiresIn?: number }) => Promise<void>;
-  unfollow: () => Promise<void>;
+  /**
+   * Every mutation resolves to whether the server ACCEPTED it.
+   *
+   * They never reject — a refusal becomes `error` in the store, so the button
+   * can render it — which means a caller that only awaits them cannot tell a
+   * write that happened from one that did not. Returning the outcome is what
+   * lets a caller mirror the change somewhere else without mirroring failures
+   * too.
+   */
+  follow: (options?: { expiresIn?: number }) => Promise<boolean>;
+  unfollow: () => Promise<boolean>;
   /** Stop acting on this follow HERE, without giving it up everywhere. */
-  disableHere: () => Promise<void>;
-  enableHere: () => Promise<void>;
+  disableHere: () => Promise<boolean>;
+  enableHere: () => Promise<boolean>;
   refresh: () => Promise<void>;
 }
 
@@ -103,8 +112,8 @@ export function useFollowTarget(
       optimistic: FollowStatus,
       run: () => Promise<FollowStatus | void>,
       failureMessage: string
-    ) => {
-      if (!targetId) return;
+    ): Promise<boolean> => {
+      if (!targetId) return false;
       const store = useFollowTargetStore.getState();
       const previous = store.statuses[targetId];
       store.setStatus(targetId, optimistic);
@@ -113,12 +122,14 @@ export function useFollowTarget(
       try {
         const settled = await run();
         if (settled) useFollowTargetStore.getState().setStatus(targetId, settled);
+        return true;
       } catch (e) {
         const s = useFollowTargetStore.getState();
         // Back to what was true, not to a guess. Clearing the entry instead
         // would make the next render ask again and flash the wrong state.
         if (previous) s.setStatus(targetId, previous);
         s.setError(targetId, e instanceof Error ? e.message : failureMessage);
+        return false;
       } finally {
         useFollowTargetStore.getState().setPending(targetId, false);
       }
@@ -130,8 +141,8 @@ export function useFollowTarget(
 
   const follow = useCallback(
     async (opts?: { expiresIn?: number }) => {
-      if (!targetId) return;
-      await mutate(
+      if (!targetId) return false;
+      return mutate(
         {
           ...withApplicationMode({ ...current, globalState: 'active' }, current.applicationMode),
           ...(opts?.expiresIn
@@ -150,8 +161,8 @@ export function useFollowTarget(
 
   const unfollow = useCallback(async () => {
     const relationshipId = current.relationshipId;
-    if (!targetId || !relationshipId) return;
-    await mutate(
+    if (!targetId || !relationshipId) return false;
+    return mutate(
       { ...UNKNOWN_FOLLOW_STATUS },
       async () => {
         await oxyServices.unfollowTarget(relationshipId);
@@ -163,8 +174,8 @@ export function useFollowTarget(
 
   const disableHere = useCallback(async () => {
     const relationshipId = current.relationshipId;
-    if (!targetId || !relationshipId) return;
-    await mutate(
+    if (!targetId || !relationshipId) return false;
+    return mutate(
       withApplicationMode(current, 'disabled'),
       async () => {
         await oxyServices.setFollowApplicationMode(relationshipId, 'disabled');
@@ -175,8 +186,8 @@ export function useFollowTarget(
 
   const enableHere = useCallback(async () => {
     const relationshipId = current.relationshipId;
-    if (!targetId || !relationshipId) return;
-    await mutate(
+    if (!targetId || !relationshipId) return false;
+    return mutate(
       withApplicationMode(current, 'inherit'),
       async () => {
         await oxyServices.restoreFollowInheritance(relationshipId);
