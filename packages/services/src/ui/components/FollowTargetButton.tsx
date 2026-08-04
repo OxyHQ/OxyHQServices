@@ -90,6 +90,29 @@ const DEFAULT_DURATIONS: FollowDuration[] = [
   { label: 'A week', seconds: 7 * 24 * HOUR },
 ];
 
+/**
+ * Whether an action leaves the target ACTIVE in this application.
+ *
+ * One table, read by both the primary button and the menu, because the same
+ * action reached from two controls once reported differently — and a rule
+ * living in two switch statements is a rule that drifts. `Record` rather than
+ * a function with a default, so a new action is a compile error instead of a
+ * silent `false`.
+ */
+export const FOLLOW_ACTION_LEAVES_ACTIVE: Record<
+  'follow' | 'follow-timed' | 'enable-here' | 'disable-here' | 'unfollow',
+  boolean
+> = {
+  follow: true,
+  'follow-timed': true,
+  // Re-enabling here does not change the global follow — the user already had
+  // it — but it does change whether this application acts on it, which is what
+  // a mirror is asking about.
+  'enable-here': true,
+  'disable-here': false,
+  unfollow: false,
+};
+
 /** One line in the disclosure menu. */
 export interface FollowMenuItem {
   key: string;
@@ -197,7 +220,20 @@ export interface FollowTargetButtonProps {
    * application" is not.
    */
   applicationName?: string;
-  onChange?: (following: boolean) => void;
+  /**
+   * Fires when the server accepts a change, with whether this application
+   * should act on the follow NOW — the effective state, not the global one.
+   *
+   * That is the question an application mirroring the follow is actually
+   * asking: a user who picks "Don't show in Mercaria" still follows the shop
+   * everywhere else, but the shop must leave Mercaria's own shelf, which is
+   * the entire purpose of that menu item. Reporting the global state instead
+   * would leave it there.
+   *
+   * Never fires for a refused write — the mutations resolve to whether the
+   * server accepted, and only an accepted one gets here.
+   */
+  onChange?: (activeHere: boolean) => void;
 }
 
 export const FollowTargetButton = memo(function FollowTargetButton({
@@ -238,20 +274,20 @@ export const FollowTargetButton = memo(function FollowTargetButton({
   const handlePrimary = useCallback(async () => {
     switch (resolveFollowPrimaryAction({ isFollowing, applicationMode: status.applicationMode })) {
       case 'enable-here':
-        if (await enableHere()) onChange?.(true);
+        if (await enableHere()) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE['enable-here']);
         return;
       case 'unfollow':
-        if (await unfollow()) onChange?.(false);
+        if (await unfollow()) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE.unfollow);
         return;
       case 'follow':
-        if (await follow()) onChange?.(true);
+        if (await follow()) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE.follow);
     }
   }, [isFollowing, status.applicationMode, follow, unfollow, enableHere, onChange]);
 
   const handleTimed = useCallback(
     async (seconds: number, durationLabel: string) => {
       if (!(await follow({ expiresIn: seconds }))) return;
-      onChange?.(true);
+      onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE['follow-timed']);
       // The confirmation is the point: a follow that ends on its own is a
       // promise, and a user who does not see it made will not believe it.
       // Which is also why it must not appear when the promise was not made.
@@ -288,17 +324,24 @@ export const FollowTargetButton = memo(function FollowTargetButton({
         case 'follow-timed':
           void handleTimed(item.action.seconds, item.action.durationLabel);
           return;
+        // Every branch reports through `onChange`, and they must agree with
+        // the primary button: the same action reached from two controls that
+        // reported differently was a real bug — a user picking "don't show
+        // here" kept the target on the app's own shelf, which is the state the
+        // menu item exists to end.
         case 'enable-here':
           void enableHere().then((ok) => {
-            if (ok) onChange?.(true);
+            if (ok) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE['enable-here']);
           });
           return;
         case 'disable-here':
-          void disableHere();
+          void disableHere().then((ok) => {
+            if (ok) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE['disable-here']);
+          });
           return;
         case 'unfollow':
           void unfollow().then((ok) => {
-            if (ok) onChange?.(false);
+            if (ok) onChange?.(FOLLOW_ACTION_LEAVES_ACTIVE.unfollow);
           });
       }
     },
