@@ -65,6 +65,7 @@ export type RegistryFailure =
   | 'invalid_kind'
   | 'namespace_taken'
   | 'namespace_not_owned'
+  | 'namespace_in_use'
   | 'kind_not_owned'
   | 'unknown_kind'
   | 'metadata_too_large'
@@ -156,6 +157,79 @@ export async function claimNamespace(input: {
   }
 
   return { ok: true, value: { namespace, created: true } };
+}
+
+/**
+ * Release a namespace the caller holds, provided nothing has been registered
+ * inside it.
+ *
+ * ## Why this exists
+ *
+ * A claim is first-come and otherwise permanent, and registration is
+ * user-delegated and therefore client-side — so the first person to open a
+ * screen on ANY build of an application triggers it. Mention found the sharp
+ * edge before it cost anything: its local `.env` uses a fallback client id that
+ * is deliberately not the production one, so a developer reaching that screen
+ * while signed in would have bound `mention` to the DEV application, for good.
+ * That agent declined to run registration against production at all, which was
+ * right and should not have been necessary.
+ *
+ * Releasing makes the mistake recoverable. It is safe precisely because it is
+ * narrow:
+ *
+ * - Only the HOLDER may release. Another application asking is refused, so this
+ *   is not a way to take a name from somebody who has not used it yet.
+ * - Only an EMPTY namespace may go. The foreign key from `follow_target_kinds`
+ *   is `RESTRICT`, so the database refuses while any kind still points at it —
+ *   and that is what keeps the original guarantee intact: a namespace that
+ *   anything in the graph names can never be re-granted, because targets and
+ *   relationships across the whole graph derive their meaning from it.
+ *
+ * The unowned platform namespace (`oxy`, `application_id` NULL) can therefore
+ * never be released by anyone: no capability matches a NULL holder.
+ */
+export async function releaseNamespace(input: {
+  capability: FollowCapability;
+  namespace: string;
+}): Promise<RegistryResult<{ namespace: string; released: boolean }>> {
+  const namespace = input.namespace.trim().toLowerCase();
+  if (!NAMESPACE_SHAPE.test(namespace)) return fail('invalid_namespace');
+
+  const [existing] = await getDb()
+    .select({ applicationId: followNamespaces.applicationId })
+    .from(followNamespaces)
+    .where(eq(followNamespaces.namespace, namespace))
+    .limit(1);
+
+  // Releasing something nobody holds is the state the caller asked for, so it
+  // succeeds rather than erroring — same reasoning as an idempotent unfollow.
+  if (!existing) return { ok: true, value: { namespace, released: false } };
+
+  if (existing.applicationId !== input.capability.applicationId) {
+    return fail('namespace_not_owned');
+  }
+
+  const [kind] = await getDb()
+    .select({ kind: followTargetKinds.kind })
+    .from(followTargetKinds)
+    .where(eq(followTargetKinds.namespace, namespace))
+    .limit(1);
+
+  // Checked here so the caller gets a reason rather than a constraint name; the
+  // RESTRICT below is still what actually enforces it, including against a kind
+  // registered between this read and the delete.
+  if (kind) return fail('namespace_in_use');
+
+  await getDb()
+    .delete(followNamespaces)
+    .where(
+      and(
+        eq(followNamespaces.namespace, namespace),
+        eq(followNamespaces.applicationId, input.capability.applicationId)
+      )
+    );
+
+  return { ok: true, value: { namespace, released: true } };
 }
 
 /**
