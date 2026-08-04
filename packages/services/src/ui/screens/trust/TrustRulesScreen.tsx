@@ -4,6 +4,7 @@ import { View, Text } from 'react-native';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Chip } from '@oxyhq/bloom/chip';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { reputationCategoryLabel } from '@oxyhq/core';
 import type { ReputationRule, ReputationCategory } from '@oxyhq/contracts';
 import type { BaseScreenProps } from '../../types/navigation';
 import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
@@ -24,7 +25,7 @@ const CATEGORY_ORDER: ReputationCategory[] = [
 
 const TrustRulesScreen: React.FC<BaseScreenProps> = () => {
     const { oxyServices } = useOxy();
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
 
     useSurfaceHeader({
         title: t('trust.rules.title') || 'Trust Rules',
@@ -82,7 +83,7 @@ const TrustRulesScreen: React.FC<BaseScreenProps> = () => {
                         {groupedRules.map(({ category, items }) => (
                             <SettingsListGroup
                                 key={category}
-                                title={t(`trust.rules.categories.${category}`) || category}
+                                title={reputationCategoryLabel(locale, category)}
                             >
                                 {items.map((rule) => (
                                     <SettingsListItem

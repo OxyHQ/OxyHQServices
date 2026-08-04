@@ -26,7 +26,7 @@ interface Achievement {
 }
 
 /**
- * Per-achievement identity tints. Like the trust-tier palette in `trustTier.ts`,
+ * Per-achievement identity tints. Like the trust-tier palette in `trustTierLabels`,
  * these are data, not theme surfaces — they brand each badge regardless of theme.
  */
 const ACHIEVEMENT_TINT = {

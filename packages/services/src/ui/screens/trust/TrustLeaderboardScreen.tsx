@@ -8,7 +8,7 @@ import {
     TouchableOpacity,
 } from 'react-native';
 import type { ReputationLeaderboardEntry } from '@oxyhq/contracts';
-import { getNormalizedUserHandle, logger } from '@oxyhq/core';
+import { getNormalizedUserHandle, logger, trustTierLabel } from '@oxyhq/core';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { H6, Text } from '@oxyhq/bloom/typography';
 import { Chip } from '@oxyhq/bloom/chip';
@@ -19,7 +19,6 @@ import { Avatar } from '@oxyhq/bloom/avatar';
 import { useI18n } from '../../hooks/useI18n';
 import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
 import { useOxy } from '../../context/OxyContext';
-import { getTrustTierLabel } from './trustTier';
 
 const AVATAR_SIZE = 40;
 const EMPTY_ICON_SIZE = 64;
@@ -29,7 +28,7 @@ const PODIUM_RANK = 3;
 
 const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ navigate }) => {
     const { oxyServices, user: currentUser } = useOxy();
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
     const bloomTheme = useTheme();
 
     const [leaderboard, setLeaderboard] = useState<ReputationLeaderboardEntry[]>([]);
@@ -106,7 +105,7 @@ const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ navigate }) => {
                         </Text>
                         <View style={styles.tierRow} className="mt-space-4">
                             <Chip size="small" variant="soft" color={isPodium ? 'primary' : 'default'}>
-                                {getTrustTierLabel(item.trustTier, t)}
+                                {trustTierLabel(locale, item.trustTier)}
                             </Chip>
                         </View>
                     </View>
@@ -116,7 +115,7 @@ const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ navigate }) => {
                 </TouchableOpacity>
             );
         },
-        [oxyServices, currentUserId, handleEntryPress, t],
+        [oxyServices, currentUserId, handleEntryPress, locale],
     );
 
     const keyExtractor = useCallback(
