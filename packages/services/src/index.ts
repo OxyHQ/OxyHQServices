@@ -279,7 +279,17 @@ export type { RequireOxyAuthProps, RequireOxyAuthPrompt } from './ui/components/
 export { default as FollowButton } from './ui/components/FollowButton';
 export type { FollowButtonProps, SingleFollowButtonProps, MultiFollowButtonProps } from './ui/components/FollowButton';
 // The follow graph (#809): follows anything registered, not just users.
-export { FollowTargetButton } from './ui/components/FollowTargetButton';
+export {
+  FollowTargetButton,
+  // The product rules the button encodes, for an application drawing its own
+  // affordance instead of using it — a chip grid, a compact row control.
+  // Unexported, they get duplicated, and the duplicate is where the "off here"
+  // rule goes wrong: pressing a follow that is switched off here must re-enable
+  // it here, not unfollow everywhere.
+  buildFollowMenuItems,
+  resolveFollowPrimaryAction,
+  FOLLOW_ACTION_LEAVES_ACTIVE,
+} from './ui/components/FollowTargetButton';
 export type {
   FollowTargetButtonProps,
   FollowVerb,
