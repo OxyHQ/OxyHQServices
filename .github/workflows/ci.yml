@@ -273,6 +273,26 @@ jobs:
         run: bun run typecheck:scripts
         working-directory: ./packages/api
 
+      # The TypeScript schema and the migration snapshot chain must describe the
+      # same database.
+      #
+      # 0018 and 0019 were hand-written with no `meta/*_snapshot.json`, so the
+      # chain stopped describing the database two migrations early. Nothing
+      # failed then; the NEXT generate emitted `CREATE TABLE follow_namespaces`
+      # and five already-applied constraints, which would have failed the
+      # pre-deploy migration one-shot in production — the one place a failure
+      # stops a release rather than degrading it. A human caught it by reading
+      # the generated file instead of trusting it, which is not a control.
+      #
+      # Here rather than in `migration-phases` because this needs `drizzle-kit`,
+      # and that job deliberately runs with NO install at all — a property its
+      # own fixture test asserts. DATABASE_URL is only for drizzle-kit's config;
+      # the generate never connects.
+      - name: Schema and snapshots agree
+        run: bun scripts/check-drizzle-snapshot-sync.mjs
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+
   # bun.lock must match the package.json files (see scripts/check-lockfile-sync.mjs).
   #
   # Deliberately NOT `bun install --frozen-lockfile`: measured on bun 1.3.14
