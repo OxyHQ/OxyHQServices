@@ -35,13 +35,24 @@ export type FollowTargetKind = string;
 
 /**
  * Where a relationship stands globally — the user's own decision, independent
- * of any application.
+ * of any application. Mirrors the database's own enum, which is the authority.
  *
- * `pending` is a real state and not a transient one: a private account has to
+ * `requested` is a real state and not a transient one: a private account has to
  * accept, and until it does the user has asked and is waiting. A client that
  * renders it as "not following" invites a second request that changes nothing.
  */
-export type FollowState = 'active' | 'pending' | 'blocked';
+export type FollowState = 'none' | 'requested' | 'active' | 'rejected';
+
+/**
+ * What this application should DO right now — the field a button renders.
+ *
+ * Note that "never followed" and "following, but switched off here" both come
+ * back as `not_following`, because the answer to "does this appear in my feed"
+ * is the same for both. They are still distinguishable, and a UI explaining
+ * itself must distinguish them: it is `globalState === 'active'` with
+ * `applicationMode === 'disabled'`.
+ */
+export type FollowEffectiveState = 'not_following' | 'requested' | 'following';
 
 /**
  * What ONE application does with a relationship.
@@ -96,24 +107,28 @@ export interface FollowRecord {
  * following" will be asked why the button does nothing.
  */
 export interface FollowStatus {
-  following: boolean;
-  relationshipId: string | null;
-  globalState: FollowState | null;
+  /** Absent when nothing has ever been followed. Every other operation needs it. */
+  relationshipId?: string;
+  globalState: FollowState;
   applicationMode: FollowApplicationMode;
-  /**
-   * `active` only when the user follows globally AND this application is not
-   * disabled for it. This is the field a feed query should honour.
-   */
-  effectiveState: FollowState | 'inactive';
+  /** `following` only when followed globally AND not disabled here. */
+  effectiveState: FollowEffectiveState;
   expiresAt?: string;
 }
 
-/** `PUT /v2/follows/:targetId` — `created: false` means it already existed. */
+/**
+ * `PUT /v2/follows/:targetId` — `created: false` means it already existed.
+ *
+ * Carries the whole resulting status rather than a couple of fields off it, so
+ * a client can store the answer instead of reconstructing one. Reconstructing
+ * is where an optimistic update and the settled value drift: the derivation of
+ * `effectiveState` lives on the server, and a client recomputing it is a second
+ * implementation of a rule that has one.
+ */
 export interface FollowMutation {
   relationshipId: string;
-  state: FollowState;
   created: boolean;
-  expiresAt?: string;
+  status: FollowStatus;
 }
 
 /** `DELETE /v2/follows/:relationshipId` — `removed: false` means it was already gone. */

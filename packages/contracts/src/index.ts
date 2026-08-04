@@ -420,6 +420,7 @@ export type {
 export type {
     FollowTargetKind,
     FollowState,
+    FollowEffectiveState,
     FollowApplicationMode,
     FollowTarget,
     FollowRecord,

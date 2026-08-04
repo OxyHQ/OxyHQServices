@@ -13,7 +13,11 @@
  */
 
 import { buildFollowMenuItems } from '../FollowTargetButton';
-import { UNKNOWN_FOLLOW_STATUS, withApplicationMode } from '../../stores/followTargetStore';
+import {
+  isFollowedGlobally,
+  UNKNOWN_FOLLOW_STATUS,
+  withApplicationMode,
+} from '../../stores/followTargetStore';
 
 const DURATIONS = [
   { label: '24 hours', seconds: 86400 },
@@ -92,29 +96,37 @@ describe('buildFollowMenuItems', () => {
 });
 
 describe('withApplicationMode', () => {
-  const active = { ...UNKNOWN_FOLLOW_STATUS, following: true, globalState: 'active' as const };
+  const active = { ...UNKNOWN_FOLLOW_STATUS, globalState: 'active' as const };
 
   it('makes a disabled follow inactive without giving up the follow', () => {
     const next = withApplicationMode(active, 'disabled');
-    expect(next.effectiveState).toBe('inactive');
-    // The distinction the whole design exists for: still following globally.
-    expect(next.following).toBe(true);
+    expect(next.effectiveState).toBe('not_following');
+    // The distinction the whole design exists for, and the reason a client must
+    // never read `effectiveState` as "does the user follow this": the follow is
+    // still there globally.
     expect(next.globalState).toBe('active');
+    expect(isFollowedGlobally(next)).toBe(true);
   });
 
   it('restores the global state when enabled again', () => {
     expect(withApplicationMode(withApplicationMode(active, 'disabled'), 'enabled')).toMatchObject({
       applicationMode: 'enabled',
-      effectiveState: 'active',
+      effectiveState: 'following',
     });
   });
 
-  it('keeps a pending follow pending rather than promoting it', () => {
-    const pending = { ...active, globalState: 'pending' as const };
-    expect(withApplicationMode(pending, 'enabled').effectiveState).toBe('pending');
+  it('keeps a requested follow requested rather than promoting it', () => {
+    const requested = { ...active, globalState: 'requested' as const };
+    expect(withApplicationMode(requested, 'enabled').effectiveState).toBe('requested');
+    // And a request in flight still counts as following, so the button offers
+    // to cancel rather than to ask again.
+    expect(isFollowedGlobally(requested)).toBe(true);
   });
 
-  it('stays inactive when there is no global relationship to act on', () => {
-    expect(withApplicationMode(UNKNOWN_FOLLOW_STATUS, 'enabled').effectiveState).toBe('inactive');
+  it('stays not-following when there is no global relationship to act on', () => {
+    expect(withApplicationMode(UNKNOWN_FOLLOW_STATUS, 'enabled').effectiveState).toBe(
+      'not_following'
+    );
+    expect(isFollowedGlobally(UNKNOWN_FOLLOW_STATUS)).toBe(false);
   });
 });

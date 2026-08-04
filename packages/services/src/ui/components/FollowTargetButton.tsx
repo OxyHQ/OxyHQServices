@@ -196,26 +196,29 @@ export const FollowTargetButton = memo(function FollowTargetButton({
   applicationName,
   onChange,
 }: FollowTargetButtonProps) {
-  const { status, isUnknown, isPending, follow, unfollow, disableHere, enableHere } =
+  const { status, isFollowing, isUnknown, isPending, follow, unfollow, disableHere, enableHere } =
     useFollowTarget(targetId);
 
   const text = useMemo(() => ({ ...VERB_LABELS[verb], ...labels }), [verb, labels]);
 
   const label = useMemo(() => {
-    if (status.globalState === 'pending') return text.pending;
-    if (!status.following) return text.idle;
+    if (status.globalState === 'requested') return text.pending;
+    if (!isFollowing) return text.idle;
+    // Followed globally but switched off here. `effectiveState` reports
+    // `not_following` for this, correctly — the question it answers is "does
+    // this act here" — so the label has to be derived from the other two.
     return status.applicationMode === 'disabled' ? text.disabled : text.active;
-  }, [status.following, status.globalState, status.applicationMode, text]);
+  }, [isFollowing, status.globalState, status.applicationMode, text]);
 
   const handlePrimary = useCallback(async () => {
-    if (status.following) {
+    if (isFollowing) {
       await unfollow();
       onChange?.(false);
       return;
     }
     await follow();
     onChange?.(true);
-  }, [status.following, follow, unfollow, onChange]);
+  }, [isFollowing, follow, unfollow, onChange]);
 
   const handleTimed = useCallback(
     async (seconds: number, durationLabel: string) => {
@@ -231,7 +234,7 @@ export const FollowTargetButton = memo(function FollowTargetButton({
   const menuItems = useMemo(
     () =>
       buildFollowMenuItems({
-        following: status.following,
+        following: isFollowing,
         applicationMode: status.applicationMode,
         hasRelationship: Boolean(status.relationshipId),
         isPending,
@@ -240,7 +243,7 @@ export const FollowTargetButton = memo(function FollowTargetButton({
         applicationName: applicationName ?? 'this app',
       }),
     [
-      status.following,
+      isFollowing,
       status.applicationMode,
       status.relationshipId,
       isPending,
@@ -272,7 +275,7 @@ export const FollowTargetButton = memo(function FollowTargetButton({
 
   const primary = (
     <Button
-      variant={status.following ? 'secondary' : 'primary'}
+      variant={isFollowing ? 'secondary' : 'primary'}
       size={size}
       // Unknown is not "not following": the button stays inert until the first
       // read settles rather than inviting a follow that may already exist.

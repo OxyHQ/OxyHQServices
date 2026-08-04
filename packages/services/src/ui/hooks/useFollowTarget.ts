@@ -19,6 +19,7 @@ import { useCallback, useEffect } from 'react';
 import type { FollowStatus } from '@oxyhq/contracts';
 import { useOxy } from '../context/OxyContext';
 import {
+  isFollowedGlobally,
   UNKNOWN_FOLLOW_STATUS,
   useFollowTargetStore,
   withApplicationMode,
@@ -26,6 +27,11 @@ import {
 
 export interface UseFollowTargetResult {
   status: FollowStatus;
+  /**
+   * Whether the user follows this at all — NOT `effectiveState`, which reports
+   * `not_following` for a follow merely switched off in this application.
+   */
+  isFollowing: boolean;
   /** True until the first read settles. Distinct from "not following". */
   isUnknown: boolean;
   isPending: boolean;
@@ -127,25 +133,15 @@ export function useFollowTarget(
       if (!targetId) return;
       await mutate(
         {
-          ...current,
-          following: true,
-          globalState: 'active',
-          effectiveState: current.applicationMode === 'disabled' ? 'inactive' : 'active',
+          ...withApplicationMode({ ...current, globalState: 'active' }, current.applicationMode),
           ...(opts?.expiresIn
             ? { expiresAt: new Date(Date.now() + opts.expiresIn * 1000).toISOString() }
             : {}),
         },
-        async () => {
-          const result = await oxyServices.followTarget(targetId, opts);
-          return {
-            ...current,
-            following: true,
-            relationshipId: result.relationshipId,
-            globalState: result.state,
-            effectiveState: current.applicationMode === 'disabled' ? 'inactive' : result.state,
-            ...(result.expiresAt ? { expiresAt: result.expiresAt } : {}),
-          };
-        },
+        // The server returns the whole resulting status, so store it rather
+        // than reconstructing one: `effectiveState`'s derivation lives there,
+        // and a client recomputing it is a second implementation of one rule.
+        async () => (await oxyServices.followTarget(targetId, opts)).status,
         'Could not follow'
       );
     },
@@ -185,6 +181,7 @@ export function useFollowTarget(
 
   return {
     status: current,
+    isFollowing: isFollowedGlobally(current),
     isUnknown: status === undefined,
     isPending,
     error,

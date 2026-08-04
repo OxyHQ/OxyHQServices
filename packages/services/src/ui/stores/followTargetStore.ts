@@ -49,15 +49,14 @@ interface FollowTargetState {
 
 /**
  * The state one target is in before the server has been asked. Distinct from
- * "not following": a button that renders `following: false` while the answer is
- * unknown invites a second follow that the user did not intend.
+ * "not following": a button that renders a follow action while the answer is
+ * unknown invites a follow the user did not intend, so callers check
+ * `isUnknown` rather than reading this as an answer.
  */
 export const UNKNOWN_FOLLOW_STATUS: FollowStatus = {
-  following: false,
-  relationshipId: null,
-  globalState: null,
+  globalState: 'none',
   applicationMode: 'inherit',
-  effectiveState: 'inactive',
+  effectiveState: 'not_following',
 };
 
 export const useFollowTargetStore = create<FollowTargetState>((set) => ({
@@ -83,10 +82,23 @@ export const useFollowTargetStore = create<FollowTargetState>((set) => ({
 }));
 
 /**
+ * Whether the user follows this at all, anywhere.
+ *
+ * Deliberately NOT `effectiveState !== 'not_following'`: a follow switched off
+ * in this application reports `not_following` — correctly, since the question
+ * that field answers is "does this act here" — and a button that read it as
+ * "not followed" would offer to follow something already followed.
+ */
+export function isFollowedGlobally(status: FollowStatus): boolean {
+  return status.globalState === 'active' || status.globalState === 'requested';
+}
+
+/**
  * Apply a mode change to a cached status without a round trip.
  *
  * Exported because the optimistic path and the settled path must agree on what
- * `effectiveState` becomes; deriving it in two places is how they drift.
+ * `effectiveState` becomes; deriving it in two places is how they drift. Mirrors
+ * the server's own derivation, which is the authority.
  */
 export function withApplicationMode(
   status: FollowStatus,
@@ -96,11 +108,12 @@ export function withApplicationMode(
     ...status,
     applicationMode: mode,
     effectiveState:
-      mode === 'disabled' || status.globalState === null
-        ? 'inactive'
-        : // `enabled` and `inherit` both act on the global state here; what
-          // separates them is what happens to a LATER global change, which is
-          // the server's business and not visible in this snapshot.
-          status.globalState,
+      mode === 'disabled'
+        ? 'not_following'
+        : status.globalState === 'active'
+          ? 'following'
+          : status.globalState === 'requested'
+            ? 'requested'
+            : 'not_following',
   };
 }
