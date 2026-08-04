@@ -347,6 +347,39 @@ describe('ensuring a target', () => {
       })
     ).toEqual({ ok: false, reason: 'metadata_too_large' });
   });
+
+  it('derives localUserId for oxy.user from the canonical URI', async () => {
+    const [targetUser] = await getDb().insert(users).values({}).returning({ id: users.id });
+    const uri = `https://oxy.so/users/${targetUser.id}`;
+
+    const result = await ensureTarget({
+      capability: capabilityFor(appA),
+      uri,
+      kind: 'oxy.user',
+    });
+
+    expect(result).toMatchObject({ ok: true, value: { created: true } });
+    if (!result.ok) throw new Error('expected success');
+    const [row] = await getDb()
+      .select({ localUserId: followTargets.localUserId })
+      .from(followTargets)
+      .where(eq(followTargets.id, result.value.id));
+    expect(row.localUserId).toBe(targetUser.id);
+  });
+
+  it('refuses a mismatched localUserId for oxy.user', async () => {
+    const [targetUser] = await getDb().insert(users).values({}).returning({ id: users.id });
+    const uri = `https://oxy.so/users/${targetUser.id}`;
+
+    expect(
+      await ensureTarget({
+        capability: capabilityFor(appA),
+        uri,
+        kind: 'oxy.user',
+        localUserId: userId,
+      })
+    ).toEqual({ ok: false, reason: 'local_user_mismatch' });
+  });
 });
 
 describe('the database keeps the rule even if the service stops', () => {

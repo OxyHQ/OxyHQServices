@@ -33,6 +33,7 @@ import {
   type FollowKindCapabilities,
 } from '../db/schema/followTargetKinds';
 import { followTargets } from '../db/schema/followTargets';
+import { users } from '../db/schema/users';
 import type { FollowCapability } from './followCapability.service';
 
 /**
@@ -53,6 +54,9 @@ const NAMESPACE_SHAPE = /^[a-z][a-z0-9_]*$/;
  */
 const KIND_SHAPE = /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/;
 
+const OXY_USER_KIND = 'oxy.user';
+const OXY_USER_URI = /^https:\/\/oxy\.so\/users\/([^/?#]+)$/i;
+
 /** Bounded, because this is stored on every target row and rendered by clients. */
 const MAX_METADATA_BYTES = 4096;
 
@@ -64,12 +68,41 @@ export type RegistryFailure =
   | 'kind_not_owned'
   | 'unknown_kind'
   | 'metadata_too_large'
-  | 'invalid_uri';
+  | 'invalid_uri'
+  | 'local_user_mismatch'
+  | 'unknown_local_user';
 
 export type RegistryResult<T> = { ok: true; value: T } | { ok: false; reason: RegistryFailure };
 
 function fail<T>(reason: RegistryFailure): RegistryResult<T> {
   return { ok: false, reason };
+}
+
+async function resolveLocalUserIdForTarget(input: {
+  kind: string;
+  uri: string;
+  localUserId?: string;
+}): Promise<RegistryResult<string | undefined>> {
+  if (input.kind !== OXY_USER_KIND) {
+    return { ok: true, value: undefined };
+  }
+
+  const parsed = OXY_USER_URI.exec(input.uri)?.[1];
+  if (!parsed) return fail('invalid_uri');
+
+  if (input.localUserId && input.localUserId !== parsed) {
+    return fail('local_user_mismatch');
+  }
+
+  const localUserId = input.localUserId ?? parsed;
+  const [user] = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, localUserId))
+    .limit(1);
+
+  if (!user) return fail('unknown_local_user');
+  return { ok: true, value: localUserId };
 }
 
 /**
@@ -241,6 +274,14 @@ export async function ensureTarget(input: {
   // describe — no verb, no privacy decision for reverse lookups.
   if (!kindRow) return fail('unknown_kind');
 
+  const localUserIdResult = await resolveLocalUserIdForTarget({
+    kind,
+    uri,
+    localUserId: input.localUserId,
+  });
+  if (!localUserIdResult.ok) return localUserIdResult;
+  const localUserId = localUserIdResult.value;
+
   const [existing] = await getDb()
     .select({
       id: followTargets.id,
@@ -272,7 +313,7 @@ export async function ensureTarget(input: {
       kind,
       providerApplicationId: input.capability.applicationId,
       ...(input.providerReference ? { providerReference: input.providerReference } : {}),
-      ...(input.localUserId ? { localUserId: input.localUserId } : {}),
+      ...(localUserId ? { localUserId } : {}),
       ...(input.metadata ? { metadataSnapshot: input.metadata } : {}),
     })
     // Two applications registering the same URI at once is the ordinary case,

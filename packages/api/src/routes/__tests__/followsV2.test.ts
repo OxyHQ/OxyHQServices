@@ -306,6 +306,20 @@ describe('following, over the wire', () => {
       404
     );
   });
+
+  it('refuses self-follow with 400', async () => {
+    const { userId } = await signIn(ALL_SCOPES);
+    const target = await request('POST', '/v2/follow-targets', {
+      uri: `https://oxy.so/users/${userId}`,
+      kind: 'oxy.user',
+    });
+    expect(target.status).toBe(200);
+    const targetId = (target.body.data as { id: string }).id;
+
+    const res = await request('PUT', `/v2/follows/${targetId}`);
+    expect(res.status).toBe(400);
+    expect(String(res.body.message ?? res.body.error)).toMatch(/yourself/i);
+  });
 });
 
 describe('the central list', () => {

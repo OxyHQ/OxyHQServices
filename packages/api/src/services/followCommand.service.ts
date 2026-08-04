@@ -39,7 +39,10 @@ import { followEvents, type FollowEventCause, type FollowEventType } from '../db
 import { followRelationships } from '../db/schema/followRelationships';
 import { followTargets } from '../db/schema/followTargets';
 import { userFollows } from '../db/schema/userFollows';
+import { BadRequestError } from '../utils/error';
+import graphCache from '../utils/graphCache';
 import { logger } from '../utils/logger';
+import userCache from '../utils/userCache';
 import type { FollowCapability } from './followCapability.service';
 
 /** A transaction handle, or the pool when a caller has no transaction of its own. */
@@ -86,6 +89,16 @@ export interface FollowResult {
  */
 function eventId(type: FollowEventType, relationshipId: string, at: Date): string {
   return `${type}:${relationshipId}:${at.getTime()}`;
+}
+
+/** Invalidate cached graph projections after `user_follows` changes. */
+async function invalidateAccountFollowCaches(
+  followerId: string,
+  followedId: string
+): Promise<void> {
+  await Promise.all([graphCache.invalidate(followerId), graphCache.invalidate(followedId)]);
+  userCache.invalidate(followerId, 'graph');
+  userCache.invalidate(followedId, 'graph');
 }
 
 /**
@@ -215,10 +228,10 @@ export async function followTarget(input: {
   const at = new Date();
 
   if (target.localUserId && target.localUserId === capability.userId) {
-    throw new Error('Cannot follow yourself');
+    throw new BadRequestError('Cannot follow yourself');
   }
 
-  return getDb().transaction(async (tx) => {
+  const result = await getDb().transaction(async (tx) => {
     const inserted = await tx
       .insert(followRelationships)
       .values({
@@ -278,6 +291,12 @@ export async function followTarget(input: {
     const status = await readStatus(tx, capability.userId, capability.applicationId, target.id);
     return { relationshipId, created, status };
   });
+
+  if (result.created && target.localUserId) {
+    await invalidateAccountFollowCaches(capability.userId, target.localUserId);
+  }
+
+  return result;
 }
 
 /**
@@ -295,7 +314,7 @@ export async function unfollowEverywhere(input: {
   const { capability, relationshipId } = input;
   const at = new Date();
 
-  return getDb().transaction(async (tx) => {
+  const result = await getDb().transaction(async (tx) => {
     const [relationship] = await tx
       .select({
         id: followRelationships.id,
@@ -309,7 +328,7 @@ export async function unfollowEverywhere(input: {
     // Unfollowing something already gone is a success, not an error — the state
     // the caller asked for is the state that holds.
     if (!relationship || relationship.followerUserId !== capability.userId) {
-      return { removed: false };
+      return { removed: false, followedId: null as string | null };
     }
 
     const [target] = await tx
@@ -348,8 +367,14 @@ export async function unfollowEverywhere(input: {
         );
     }
 
-    return { removed: true };
+    return { removed: true, followedId: target?.localUserId ?? null };
   });
+
+  if (result.removed && result.followedId) {
+    await invalidateAccountFollowCaches(capability.userId, result.followedId);
+  }
+
+  return { removed: result.removed };
 }
 
 /**
