@@ -19,8 +19,12 @@ import {
   unionValidScopes,
   isPaymentsScope,
   isPrivilegedScope,
+  isUserConsentRequiredScope,
   isValidApplicationScope,
+  userConsentRequiredScopes,
   PAYMENTS_APPLICATION_SCOPES,
+  PRIVILEGED_APPLICATION_SCOPES,
+  USER_CONSENT_REQUIRED_SCOPES,
 } from '../applicationScopes';
 
 describe('intersectScopes (credential ∩ app grant)', () => {
@@ -137,5 +141,75 @@ describe('payments:read / payments:write (F2.0)', () => {
     expect(isPaymentsScope('user:read')).toBe(false);
     expect(isPaymentsScope('federation:write')).toBe(false);
     expect(isPaymentsScope('bogus:scope')).toBe(false);
+  });
+});
+
+describe('follow scopes: the user grants them, the platform never assumes them', () => {
+  /*
+   * Written out rather than derived from the constant. Iterating
+   * `USER_CONSENT_REQUIRED_SCOPES` to check facts ABOUT it proves nothing:
+   * deleting a member makes such a loop iterate less and pass — verified by
+   * mutation, which is how this list came to be here.
+   */
+  const MUST_BE_CONSENTED = [
+    'follows:read',
+    'follows:write',
+    'follows:context:write',
+    'follows:manage',
+    'follows:events',
+    'follow-targets:register',
+  ] as const;
+
+  it('holds exactly the follow family, and loses none of it silently', () => {
+    expect([...USER_CONSENT_REQUIRED_SCOPES].sort()).toEqual([...MUST_BE_CONSENTED].sort());
+  });
+
+  it('treats every one of them as consent-required', () => {
+    for (const scope of MUST_BE_CONSENTED) {
+      expect(isUserConsentRequiredScope(scope)).toBe(true);
+      expect(userConsentRequiredScopes(['user:read', scope])).toEqual([scope]);
+    }
+  });
+
+  it('recognises the whole family as valid application scopes', () => {
+    for (const scope of MUST_BE_CONSENTED) {
+      expect(isValidApplicationScope(scope)).toBe(true);
+    }
+  });
+
+  it('keeps them OUT of the privileged set', () => {
+    // Privileged asks "may the app's owner grant this to themselves?" and its
+    // answer is about platform staff. A follow scope's authority comes from the
+    // subject user, so staff-gating it would be answering the wrong question —
+    // and would block a third-party app the user genuinely authorized.
+    for (const scope of MUST_BE_CONSENTED) {
+      expect(isPrivilegedScope(scope)).toBe(false);
+    }
+  });
+
+  it('and the two sets do not overlap in the other direction either', () => {
+    for (const scope of PRIVILEGED_APPLICATION_SCOPES) {
+      expect(isUserConsentRequiredScope(scope)).toBe(false);
+    }
+  });
+
+  it('returns WHICH scopes forced the prompt, not merely that one did', () => {
+    // The consent screen has to name what it is asking about; a boolean cannot
+    // produce "this app wants to manage who you follow".
+    expect(userConsentRequiredScopes(['user:read', 'follows:write', 'files:read'])).toEqual([
+      'follows:write',
+    ]);
+  });
+
+  it('says nothing is required when nothing in the request touches the user graph', () => {
+    expect(userConsentRequiredScopes(['user:read', 'files:read'])).toEqual([]);
+    expect(userConsentRequiredScopes([])).toEqual([]);
+  });
+
+  it('is blind to the application asking — that is the entire point', () => {
+    // Same requested scopes must produce the same answer for an official app
+    // and a third-party one. The function takes no application at all, which is
+    // how that is guaranteed rather than remembered.
+    expect(userConsentRequiredScopes.length).toBe(1);
   });
 });

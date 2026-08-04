@@ -24,6 +24,7 @@ import { users } from '../db/schema/users';
 import { intersectScopes, isPaymentsScope } from '../utils/applicationScopes';
 import { isCredentialUsable } from '../utils/credentialUsability';
 import { isTrustedApplication } from '../utils/trustedApplication';
+import { userConsentRequiredScopes } from '../utils/applicationScopes';
 import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
@@ -2522,10 +2523,17 @@ router.post(
     // Record (or refresh) the user's consent so a returning user skips the
     // consent screen while the granted scopes still cover the request — the
     // standard OAuth returning-user model. TRUSTED apps are auto-approved and
-    // never prompt, so we DON'T persist a (revocable) grant for them; only
-    // third-party grants belong in the "Connected apps" management surface.
+    // never prompt, so a grant is normally pointless for them and would only
+    // clutter the "Connected apps" management surface.
+    //
+    // EXCEPT when the request names a scope the user had to be asked about. Then
+    // the grant is the whole point: it is what makes the authorization revocable,
+    // and a permission the user granted but cannot find or withdraw is worse than
+    // one they were never asked for. A trusted app therefore records a grant for
+    // exactly the same reason a third-party one does — it was consented to.
     // Best-effort: a failure here must never block the issued code.
-    if (!isTrustedApplication(app)) {
+    const consentScopes = userConsentRequiredScopes(requestedScopes);
+    if (!isTrustedApplication(app) || consentScopes.length > 0) {
       try {
         await recordAppGrant(user._id.toString(), app.id, requestedScopes);
       } catch (error) {
@@ -2625,14 +2633,19 @@ router.get(
       throw new ForbiddenError('redirect_uri is not registered for this client');
     }
 
-    // Trusted apps are auto-approved — full first-party trust, regardless of
-    // scope (the Google-with-its-own-apps model).
-    if (isTrustedApplication(app)) {
+    const requestedScopes = scope ? scope.split(/\s+/).filter(Boolean) : [];
+    // Scopes over the USER's own data — the follow graph — are never decided on
+    // the user's behalf. They are the one thing platform trust does not answer
+    // for: the relationships belong to the user, the people on the other end can
+    // see them, and being first-party is not a reason to be handed them without
+    // being asked. Everything else keeps the "Google with its own apps" model.
+    const mustAsk = userConsentRequiredScopes(requestedScopes);
+
+    // Trusted apps are auto-approved for the rest, regardless of scope.
+    if (isTrustedApplication(app) && mustAsk.length === 0) {
       sendSuccess(res, { consentRequired: false, reason: 'trusted' });
       return;
     }
-
-    const requestedScopes = scope ? scope.split(/\s+/).filter(Boolean) : [];
     const [grant] = await getDb()
       .select({ scopes: appGrants.scopes })
       .from(appGrants)
@@ -2646,11 +2659,22 @@ router.get(
         sendSuccess(res, { consentRequired: false, reason: 'granted' });
         return;
       }
-      sendSuccess(res, { consentRequired: true, reason: 'scope_changed' });
+      sendSuccess(res, {
+        consentRequired: true,
+        reason: 'scope_changed',
+        ...(mustAsk.length > 0 ? { userConsentScopes: mustAsk } : {}),
+      });
       return;
     }
 
-    sendSuccess(res, { consentRequired: true, reason: 'new' });
+    // The scopes that FORCED the screen travel with the answer so the consent UI
+    // can say which one it is asking about. A bare `true` cannot produce the
+    // sentence the user needs to make the decision.
+    sendSuccess(res, {
+      consentRequired: true,
+      reason: 'new',
+      ...(mustAsk.length > 0 ? { userConsentScopes: mustAsk } : {}),
+    });
   })
 );
 

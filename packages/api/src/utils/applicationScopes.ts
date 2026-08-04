@@ -36,6 +36,12 @@
  *   that an Oxy user was present in it as a named local principal, PROVING it
  *   with that user's own access token. PRIVILEGED — only Oxy platform staff may
  *   grant it.
+ * - The `follows:*` family and `follow-targets:register` let an application act
+ *   on the user's OWN follow graph. They are deliberately NOT privileged: the
+ *   authority comes from the subject user's explicit grant, never from what the
+ *   platform thinks of the application. Their real constraint lives in
+ *   {@link USER_CONSENT_REQUIRED_SCOPES} — they can never be auto-approved, for
+ *   any application classification.
  */
 export const APPLICATION_SCOPES = [
   'files:read',
@@ -55,6 +61,12 @@ export const APPLICATION_SCOPES = [
   'payments:read',
   'payments:write',
   'accounts:provision',
+  'follows:read',
+  'follows:write',
+  'follows:context:write',
+  'follows:manage',
+  'follows:events',
+  'follow-targets:register',
 ] as const;
 
 export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
@@ -117,6 +129,57 @@ export const PRIVILEGED_APPLICATION_SCOPES = [
   'notifications:write',
   'accounts:provision',
 ] as const satisfies readonly ApplicationScope[];
+
+/**
+ * Scopes the SUBJECT USER must consent to explicitly, for every application,
+ * with no auto-approval path.
+ *
+ * This is a different axis from {@link PRIVILEGED_APPLICATION_SCOPES} and the
+ * two must not be confused. Privileged asks "may this application's OWNER grant
+ * this to themselves?", and its answer is about platform staff. This asks "may
+ * the platform decide on the USER's behalf?", and its answer is always no —
+ * whoever the application is.
+ *
+ * Trusted applications are otherwise auto-approved on the consent path (the
+ * "Google with its own apps" model), which is reasonable for an app reading its
+ * own files and wrong for the user's follow graph: those relationships are the
+ * user's, they are visible to the people on the other end of them, and being
+ * first-party is not a reason to be handed them without being asked. So a
+ * request naming any scope in this set always reaches the consent screen and
+ * always records a revocable grant, and an official application and a
+ * third-party one get exactly the same treatment for the same requested scopes.
+ *
+ * Adding a scope here makes it un-bypassable. Keep it to authority over data
+ * that is the USER's rather than the application's.
+ */
+export const USER_CONSENT_REQUIRED_SCOPES = [
+  'follows:read',
+  'follows:write',
+  'follows:context:write',
+  'follows:manage',
+  'follows:events',
+  'follow-targets:register',
+] as const satisfies readonly ApplicationScope[];
+
+const USER_CONSENT_REQUIRED_SCOPE_SET: ReadonlySet<string> = new Set<string>(
+  USER_CONSENT_REQUIRED_SCOPES
+);
+
+/** True when `scope` may never be auto-approved on the user's behalf. */
+export function isUserConsentRequiredScope(scope: string): boolean {
+  return USER_CONSENT_REQUIRED_SCOPE_SET.has(scope);
+}
+
+/**
+ * The subset of `requested` that the user has to be asked about.
+ *
+ * Returned rather than a boolean so a caller can SHOW which scopes forced the
+ * screen — "this app wants to manage who you follow" is the sentence the user
+ * needs, and a bare `true` cannot produce it.
+ */
+export function userConsentRequiredScopes(requested: readonly string[]): string[] {
+  return requested.filter(isUserConsentRequiredScope);
+}
 
 const PRIVILEGED_APPLICATION_SCOPE_SET: ReadonlySet<ApplicationScope> = new Set<ApplicationScope>(
   PRIVILEGED_APPLICATION_SCOPES
