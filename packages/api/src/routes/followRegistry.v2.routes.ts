@@ -90,6 +90,10 @@ function raise(reason: RegistryFailure): never {
       throw new BadRequestError('Target metadata is too large');
     case 'invalid_uri':
       throw new BadRequestError('A target URI must be absolute');
+    case 'local_user_mismatch':
+      throw new BadRequestError('localUserId does not match the Oxy user in the URI');
+    case 'unknown_local_user':
+      throw new BadRequestError('No Oxy account exists for that user id');
   }
 }
 

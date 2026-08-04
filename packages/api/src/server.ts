@@ -66,7 +66,9 @@ import nodeRoutes from './routes/nodes';
 import { sweepValidations } from './services/civic/validator.service';
 import { sweepPersonhoodAudits } from './services/civic/personhoodAudit.service';
 import { sweepNodeLiveness } from './services/nodeRegistry.service';
+import { expireDueFollows } from './services/followCommand.service';
 import { VALIDATION_SWEEP_INTERVAL_MS, PERSONHOOD_AUDIT_SWEEP_INTERVAL_MS } from './utils/civic.constants';
+import { FOLLOW_EXPIRY_SWEEP_INTERVAL_MS } from './utils/follow.constants';
 import { NODE_LIVENESS_SWEEP_INTERVAL_MS } from './utils/nodes.constants';
 import didRoutes from './routes/did';
 import transparencyRoutes from './routes/transparency';
@@ -630,12 +632,12 @@ app.use('/platform-stats', platformStatsRoutes);
 app.use('/topics', topicsRoutes);
 // The follow graph. `/v2` because these are new operations rather than a new
 // spelling of the legacy toggle — the two coexist while applications migrate.
-app.use('/v2/follows', followsV2Routes);
-app.use('/v2/me', meFollowsRouter);
+app.use('/v2/follows', userRateLimiter, followsV2Routes);
+app.use('/v2/me', userRateLimiter, meFollowsRouter);
 // The registry an application talks to: namespaces, kinds, targets. Separate
 // from `/v2/follows` because it is authorized on the application's ownership of
 // a namespace rather than on the user's own graph.
-app.use('/v2/follow-targets', followRegistryV2Routes);
+app.use('/v2/follow-targets', userRateLimiter, followRegistryV2Routes);
 app.use('/contacts', userRateLimiter, csrfProtection, contactsRouter);
 // Service-token-only cross-app signal ingest (endorsements + interests). No
 // csrfProtection — Bearer-authenticated service writes are exempt (no ambient
@@ -979,6 +981,16 @@ export async function bootstrap(
     );
   }, NODE_LIVENESS_SWEEP_INTERVAL_MS);
   nodeLivenessSweep.unref();
+
+  // Expire timed follow relationships whose `expiresAt` has passed. Routed
+  // through `expireDueFollows` so removals emit events and update the account
+  // graph exactly like a manual unfollow.
+  const followExpirySweep = setInterval(() => {
+    expireDueFollows().catch((err) =>
+      logger.error('Follow expiry sweep failed', err instanceof Error ? err : new Error(String(err))),
+    );
+  }, FOLLOW_EXPIRY_SWEEP_INTERVAL_MS);
+  followExpirySweep.unref();
 
   // Start SMTP inbound server if enabled
   if (getEnvBoolean('SMTP_ENABLED', false)) {

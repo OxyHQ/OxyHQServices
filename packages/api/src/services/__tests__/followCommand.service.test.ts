@@ -28,6 +28,7 @@ import {
   setApplicationMode,
   unfollowEverywhere,
 } from '../followCommand.service';
+import { BadRequestError } from '../../utils/error';
 
 let followerId: string;
 let followedId: string;
@@ -138,7 +139,7 @@ describe('following is global, and happens once', () => {
 
     await expect(
       followTarget({ capability: capabilityFor(appA), target: self })
-    ).rejects.toThrow('Cannot follow yourself');
+    ).rejects.toBeInstanceOf(BadRequestError);
   });
 });
 
