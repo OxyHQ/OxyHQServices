@@ -88,8 +88,8 @@ const FollowButtonInner = memo(function FollowButtonInner({
     if (disabled || isLoading || !isKnown) return;
 
     try {
-      await toggleFollow();
-      onFollowChange?.(!isFollowing);
+      const accepted = await toggleFollow();
+      if (accepted) onFollowChange?.(!isFollowing);
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error(String(err));
       toast.error(error.message || 'Failed to update follow status');

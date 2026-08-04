@@ -289,7 +289,9 @@ export const FollowTargetButton = memo(function FollowTargetButton({
           void handleTimed(item.action.seconds, item.action.durationLabel);
           return;
         case 'enable-here':
-          void enableHere();
+          void enableHere().then((ok) => {
+            if (ok) onChange?.(true);
+          });
           return;
         case 'disable-here':
           void disableHere();

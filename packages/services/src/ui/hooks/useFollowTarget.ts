@@ -110,7 +110,7 @@ export function useFollowTarget(
   const mutate = useCallback(
     async (
       optimistic: FollowStatus,
-      run: () => Promise<FollowStatus | void>,
+      run: () => Promise<FollowStatus | undefined>,
       failureMessage: string
     ): Promise<boolean> => {
       if (!targetId) return false;
