@@ -306,6 +306,11 @@ export {
   // guide most likely to be reached for did not resolve.
   isFollowedGlobally,
   withApplicationMode,
+  // Whether a cached status is safe to act on without a round trip — list rows
+  // often carry globalState without relationshipId.
+  isCompleteFollowStatus,
+  followRecordToStatus,
+  followRecordsToStatusMap,
 } from './ui/stores/followTargetStore';
 export { default as OxyPayButton } from './ui/components/OxyPayButton';
 export { LogoIcon } from './ui/components/logo/LogoIcon';

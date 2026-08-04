@@ -89,6 +89,12 @@ export interface FollowRecord {
   globalState: FollowState;
   applicationMode: FollowApplicationMode;
   /**
+   * Whether this follow acts in the requesting application right now — the
+   * same field a button renders. List rows carry it so a follow list can seed
+   * `FollowTargetButton` without recomputing the server's derivation.
+   */
+  effectiveState: FollowEffectiveState;
+  /**
    * Where the user was when they followed. Provenance for the audit trail and
    * for notification routing — never authority: this application cannot undo
    * what another one recorded.

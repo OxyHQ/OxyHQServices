@@ -19,6 +19,8 @@ import {
 } from '../FollowTargetButton';
 import {
   isCompleteFollowStatus,
+  followRecordToStatus,
+  followRecordsToStatusMap,
   isFollowedGlobally,
   UNKNOWN_FOLLOW_STATUS,
   withApplicationMode,
@@ -164,6 +166,43 @@ describe('withApplicationMode', () => {
       })
     ).toBe(false);
     expect(isCompleteFollowStatus(UNKNOWN_FOLLOW_STATUS)).toBe(true);
+  });
+
+  it('converts a list row into a complete follow status', () => {
+    const status = followRecordToStatus({
+      relationshipId: 'rel-1',
+      target: { id: 'tgt-1', uri: 'https://example.test/t/1', kind: 'oxy.topic' },
+      globalState: 'active',
+      applicationMode: 'inherit',
+      effectiveState: 'following',
+      originApplicationId: 'app-a',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(status).toEqual({
+      relationshipId: 'rel-1',
+      globalState: 'active',
+      applicationMode: 'inherit',
+      effectiveState: 'following',
+    });
+    expect(isCompleteFollowStatus(status)).toBe(true);
+    expect(followRecordsToStatusMap([
+      {
+        relationshipId: 'rel-1',
+        target: { id: 'tgt-1', uri: 'https://example.test/t/1', kind: 'oxy.topic' },
+        globalState: 'active',
+        applicationMode: 'disabled',
+        effectiveState: 'not_following',
+        originApplicationId: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ])).toEqual({
+      'tgt-1': {
+        relationshipId: 'rel-1',
+        globalState: 'active',
+        applicationMode: 'disabled',
+        effectiveState: 'not_following',
+      },
+    });
   });
 });
 
