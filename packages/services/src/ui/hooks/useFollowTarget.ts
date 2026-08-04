@@ -175,10 +175,12 @@ export function useFollowTarget(
   const disableHere = useCallback(async () => {
     const relationshipId = current.relationshipId;
     if (!targetId || !relationshipId) return false;
+    const optimistic = withApplicationMode(current, 'disabled');
     return mutate(
-      withApplicationMode(current, 'disabled'),
+      optimistic,
       async () => {
         await oxyServices.setFollowApplicationMode(relationshipId, 'disabled');
+        return optimistic;
       },
       'Could not change this app’s setting for this follow'
     );
@@ -187,10 +189,12 @@ export function useFollowTarget(
   const enableHere = useCallback(async () => {
     const relationshipId = current.relationshipId;
     if (!targetId || !relationshipId) return false;
+    const optimistic = withApplicationMode(current, 'inherit');
     return mutate(
-      withApplicationMode(current, 'inherit'),
+      optimistic,
       async () => {
         await oxyServices.restoreFollowInheritance(relationshipId);
+        return optimistic;
       },
       'Could not change this app’s setting for this follow'
     );
