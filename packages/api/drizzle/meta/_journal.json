@@ -127,6 +127,13 @@
       "when": 1785812000000,
       "tag": "0018_follow_namespaces",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785813000000,
+      "tag": "0019_follow_enum_checks",
+      "breakpoints": true
     }
   ]
 }

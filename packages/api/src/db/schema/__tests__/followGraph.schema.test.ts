@@ -13,6 +13,7 @@ import { closePostgres, connectPostgres, getDb } from '../../../config/postgres'
 import { applications } from '../applications';
 import { followApplicationOverrides } from '../followApplicationOverrides';
 import { followEvents } from '../followEvents';
+import { followNamespaces } from '../followNamespaces';
 import { followRelationships } from '../followRelationships';
 import { followTargetKinds } from '../followTargetKinds';
 import { followTargets } from '../followTargets';
@@ -36,6 +37,13 @@ async function makeApplication(name = 'Test app') {
 }
 
 async function registerKind(kind: string, namespace: string, appId: string | null = applicationId) {
+  // The namespace has to exist first: since 0018 it is a foreign key rather
+  // than a string, which is what stops one application defining another's
+  // kinds. Claiming it here mirrors what the registry service does.
+  await getDb()
+    .insert(followNamespaces)
+    .values({ namespace, applicationId: appId })
+    .onConflictDoNothing({ target: followNamespaces.namespace });
   const [row] = await getDb()
     .insert(followTargetKinds)
     .values({ kind, namespace, applicationId: appId })
@@ -175,6 +183,87 @@ describe('the relationship is the user’s', () => {
     await getDb().insert(followApplicationOverrides).values(values);
 
     await expect(getDb().insert(followApplicationOverrides).values(values)).rejects.toThrow();
+  });
+});
+
+describe('the closed value sets are closed in the DATABASE, not only in TypeScript', () => {
+  // The drizzle `enum` on each of these columns is a COMPILE-TIME claim. 0016
+  // created all five tables without the CHECK this repo puts beside such a
+  // column (see `account_credentials` in 0006), so until 0019 nothing stopped a
+  // repair script, a migration, or a service built against a different revision
+  // from storing a value every consumer then has to survive at runtime.
+  //
+  // Each case writes a value ONE character away from a real one, because that
+  // is the shape a typo actually takes.
+
+  async function aRelationship() {
+    const ns = unique('enumns');
+    await registerKind(`${ns}.thing`, ns);
+    const uri = unique('https://x.example/t');
+    const targetId = await makeTarget(`${ns}.thing`, uri);
+    return { relationshipId: await follow(targetId), uri, kind: `${ns}.thing` };
+  }
+
+  it('refuses an event type nothing knows how to handle', async () => {
+    const { relationshipId, uri, kind } = await aRelationship();
+    await expect(
+      getDb().insert(followEvents).values({
+        eventId: unique('event-'),
+        // `follow.create`, not `follow.created`.
+        type: 'follow.create' as unknown as 'follow.created',
+        cause: 'user_action',
+        actorUserId: userId,
+        relationshipId,
+        targetUri: uri,
+        targetKind: kind,
+      })
+    ).rejects.toThrow();
+  });
+
+  it('refuses a cause that would make an expiry indistinguishable from a decision', async () => {
+    const { relationshipId, uri, kind } = await aRelationship();
+    await expect(
+      getDb().insert(followEvents).values({
+        eventId: unique('event-'),
+        type: 'follow.removed',
+        cause: 'expiry' as unknown as 'expired',
+        actorUserId: userId,
+        relationshipId,
+        targetUri: uri,
+        targetKind: kind,
+      })
+    ).rejects.toThrow();
+  });
+
+  it('refuses a relationship state no client can render', async () => {
+    const ns = unique('enumns');
+    await registerKind(`${ns}.thing`, ns);
+    const targetId = await makeTarget(`${ns}.thing`, unique('https://x.example/t'));
+    await expect(
+      follow(targetId, { state: 'pending' })
+    ).rejects.toThrow();
+  });
+
+  it('refuses a source that is not one of the four ways a follow can arrive', async () => {
+    const ns = unique('enumns');
+    await registerKind(`${ns}.thing`, ns);
+    const targetId = await makeTarget(`${ns}.thing`, unique('https://x.example/t'));
+    await expect(follow(targetId, { source: 'import' })).rejects.toThrow();
+  });
+
+  it('refuses a stored override mode of `inherit`', async () => {
+    // Inheriting means having NO row here. Storing it would give one state two
+    // representations, and a reader would then have to handle both.
+    const { relationshipId } = await aRelationship();
+    await expect(
+      getDb()
+        .insert(followApplicationOverrides)
+        .values({
+          relationshipId,
+          applicationId,
+          mode: 'inherit' as unknown as 'disabled',
+        })
+    ).rejects.toThrow();
   });
 });
 

@@ -37,7 +37,7 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { index, pgTable, text, unique } from 'drizzle-orm/pg-core';
+import { check, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { appGrants } from './appGrants';
 import { applications } from './applications';
 import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
@@ -88,6 +88,14 @@ export const followRelationships = pgTable(
     // make a repeated follow idempotent rather than a second row, which is what
     // keeps counts from drifting.
     unique('follow_relationships_follower_target_key').on(t.followerUserId, t.followTargetId),
+    // Same tuples as the `as const` arrays above. The drizzle `enum` is a
+    // compile-time claim only; this is what stops a repair script or a future
+    // service from storing a state no consumer knows how to render.
+    check('follow_relationships_state_check', sql`${t.state} in ('requested', 'active', 'rejected')`),
+    check(
+      'follow_relationships_source_check',
+      sql`${t.source} in ('app', 'federation_inbound', 'migration', 'system')`
+    ),
     // "Everything this user follows" — the central list, in its sort order.
     index('follow_relationships_follower_created_idx').on(t.followerUserId, t.createdAt),
     // The reverse direction: who follows this target. Whether that is EXPOSED is

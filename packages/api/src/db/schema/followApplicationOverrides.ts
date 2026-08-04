@@ -24,7 +24,8 @@
  * signal.
  */
 
-import { index, pgTable, text, unique } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { check, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { applications } from './applications';
 import { createdAt, generatedId, updatedAt } from './columns';
 import { followRelationships } from './followRelationships';
@@ -60,6 +61,10 @@ export const followApplicationOverrides = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    // `inherit` is deliberately NOT admissible. It is a real mode in the API
+    // and the client, and it means having no row here at all — admitting it
+    // would give one state two representations.
+    check('follow_application_overrides_mode_check', sql`${t.mode} in ('enabled', 'disabled')`),
     unique('follow_application_overrides_relationship_application_key').on(
       t.relationshipId,
       t.applicationId

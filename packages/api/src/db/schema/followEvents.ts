@@ -27,7 +27,7 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { index, jsonb, pgTable, text, unique } from 'drizzle-orm/pg-core';
+import { check, index, jsonb, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { appGrants } from './appGrants';
 import { applications } from './applications';
 import { createdAt, generatedId, timestamptz } from './columns';
@@ -105,6 +105,17 @@ export const followEvents = pgTable(
   },
   (t) => [
     unique('follow_events_event_id_key').on(t.eventId),
+    // The repo's convention for a closed value set, which 0016 skipped: the
+    // drizzle `enum` above is a COMPILE-TIME claim, and nothing stopped a
+    // repair script or a future service from writing a type no consumer knows.
+    check(
+      'follow_events_type_check',
+      sql`${t.type} in ('follow.created', 'follow.removed', 'follow.requested', 'follow.accepted', 'follow.rejected', 'follow.context_enabled', 'follow.context_disabled')`
+    ),
+    check(
+      'follow_events_cause_check',
+      sql`${t.cause} in ('user_action', 'expired', 'federation_inbound', 'reconciliation', 'migration')`
+    ),
     // The worker's read: unprocessed, oldest first. Partial, so the index stays
     // the size of the backlog rather than the size of all history — which is the
     // difference between a queue and a table that used to be one.
