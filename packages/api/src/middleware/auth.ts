@@ -52,6 +52,17 @@ dotenv.config();
  */
 export interface AuthRequest extends Request {
   user?: AccountDocument;
+  /**
+   * The VERIFIED session this request authenticated with.
+   *
+   * Exposed because the follow graph has to know which application is acting,
+   * and the authorization record that answers that is keyed on the session id.
+   * Taking it from the token again downstream would mean parsing a credential
+   * twice and trusting the second read; taking it from a header or a body field
+   * would mean trusting the caller. This is the value the middleware already
+   * checked.
+   */
+  sessionId?: string;
 }
 
 /**
@@ -188,6 +199,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
         // `userCache` and shared by every concurrent request for this account;
         // the `fullUser.id = …` this replaces wrote through to the cache entry.
         req.user = { ...user, id: user._id };
+        (req as AuthRequest).sessionId = decoded.sessionId;
 
         next();
       } catch (dbError) {
