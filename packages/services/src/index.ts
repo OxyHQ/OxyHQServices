@@ -288,7 +288,15 @@ export type {
 } from './ui/components/FollowTargetButton';
 export { useFollowTarget } from './ui/hooks/useFollowTarget';
 export type { UseFollowTargetResult } from './ui/hooks/useFollowTarget';
-export { useFollowTargetStore, UNKNOWN_FOLLOW_STATUS } from './ui/stores/followTargetStore';
+export {
+  useFollowTargetStore,
+  UNKNOWN_FOLLOW_STATUS,
+  // The answer to "does the user follow this at all". Documented in
+  // docs/FOLLOWS.md and, until now, not exported — so the one line of that
+  // guide most likely to be reached for did not resolve.
+  isFollowedGlobally,
+  withApplicationMode,
+} from './ui/stores/followTargetStore';
 export { default as OxyPayButton } from './ui/components/OxyPayButton';
 export { LogoIcon } from './ui/components/logo/LogoIcon';
 export { LogoText } from './ui/components/logo/LogoText';

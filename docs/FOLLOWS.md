@@ -80,6 +80,13 @@ Then render:
 <FollowTargetButton targetId={id} verb="subscribe" applicationName="Mercaria" />
 ```
 
+Keeping something else in step with the follow — a local shelf, a ranking
+signal — goes through `onChange`, which fires only on an accepted write:
+
+```tsx
+<FollowTargetButton targetId={id} onChange={(following) => mirror(following)} />
+```
+
 ## Things that will surprise you
 
 **A target's URI is its identity, not its id.** Two applications describing the
@@ -102,6 +109,20 @@ of a follow the user deliberately switched off here. A button that reads it as
 **Only the providing application refreshes a target's metadata.** Whoever
 registered it owns the display snapshot. If a second application could overwrite
 it, the name would flip depending on which app last looked.
+
+**Which is exactly why `metadata` must not contain an environment-dependent
+URL.** The obvious thing to pass is the image URL your app already resolved —
+and in development that is `http://localhost:4120/...`. Because your app is the
+providing one, one developer running one screen overwrites the snapshot every
+other app renders, in production, from their laptop. Pass an Oxy **file id**, or
+an absolute URL that is the same everywhere, or omit the field. There is no
+validation stopping you; this paragraph is the guard.
+
+**`onChange` on the button fires only when the server accepted the write**, and
+the hook's `follow`/`unfollow` resolve to that same boolean. They never reject —
+a refusal becomes error state so the button can render it — so a caller that
+awaits them without reading the result would mirror failures as successes into
+whatever it is keeping in step.
 
 **Deleting your application does not delete anyone's follows.** The
 `origin_application_id` on a relationship is provenance, not ownership — it
