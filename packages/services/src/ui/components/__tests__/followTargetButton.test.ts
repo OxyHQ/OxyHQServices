@@ -12,7 +12,7 @@
  * to reflect.
  */
 
-import { buildFollowMenuItems } from '../FollowTargetButton';
+import { buildFollowMenuItems, resolveFollowPrimaryAction } from '../FollowTargetButton';
 import {
   isFollowedGlobally,
   UNKNOWN_FOLLOW_STATUS,
@@ -35,6 +35,26 @@ const base = {
 };
 
 const keys = (items: ReturnType<typeof buildFollowMenuItems>) => items.map((i) => i.key);
+
+describe('resolveFollowPrimaryAction', () => {
+  it('follows when not following globally', () => {
+    expect(resolveFollowPrimaryAction({ isFollowing: false, applicationMode: 'inherit' })).toBe(
+      'follow'
+    );
+  });
+
+  it('unfollows when following and active here', () => {
+    expect(resolveFollowPrimaryAction({ isFollowing: true, applicationMode: 'inherit' })).toBe(
+      'unfollow'
+    );
+  });
+
+  it('re-enables here instead of unfollowing everywhere when switched off in this app', () => {
+    expect(resolveFollowPrimaryAction({ isFollowing: true, applicationMode: 'disabled' })).toBe(
+      'enable-here'
+    );
+  });
+});
 
 describe('buildFollowMenuItems', () => {
   describe('before following', () => {
@@ -108,9 +128,9 @@ describe('withApplicationMode', () => {
     expect(isFollowedGlobally(next)).toBe(true);
   });
 
-  it('restores the global state when enabled again', () => {
-    expect(withApplicationMode(withApplicationMode(active, 'disabled'), 'enabled')).toMatchObject({
-      applicationMode: 'enabled',
+  it('restores inheritance when enabled again', () => {
+    expect(withApplicationMode(withApplicationMode(active, 'disabled'), 'inherit')).toMatchObject({
+      applicationMode: 'inherit',
       effectiveState: 'following',
     });
   });

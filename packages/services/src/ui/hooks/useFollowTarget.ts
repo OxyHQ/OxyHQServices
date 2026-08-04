@@ -161,23 +161,29 @@ export function useFollowTarget(
     );
   }, [targetId, current.relationshipId, mutate, oxyServices]);
 
-  const setMode = useCallback(
-    async (mode: 'enabled' | 'disabled') => {
-      const relationshipId = current.relationshipId;
-      if (!targetId || !relationshipId) return;
-      await mutate(
-        withApplicationMode(current, mode),
-        async () => {
-          await oxyServices.setFollowApplicationMode(relationshipId, mode);
-        },
-        'Could not change this app’s setting for this follow'
-      );
-    },
-    [targetId, current, mutate, oxyServices]
-  );
+  const disableHere = useCallback(async () => {
+    const relationshipId = current.relationshipId;
+    if (!targetId || !relationshipId) return;
+    await mutate(
+      withApplicationMode(current, 'disabled'),
+      async () => {
+        await oxyServices.setFollowApplicationMode(relationshipId, 'disabled');
+      },
+      'Could not change this app’s setting for this follow'
+    );
+  }, [targetId, current, mutate, oxyServices]);
 
-  const disableHere = useCallback(() => setMode('disabled'), [setMode]);
-  const enableHere = useCallback(() => setMode('enabled'), [setMode]);
+  const enableHere = useCallback(async () => {
+    const relationshipId = current.relationshipId;
+    if (!targetId || !relationshipId) return;
+    await mutate(
+      withApplicationMode(current, 'inherit'),
+      async () => {
+        await oxyServices.restoreFollowInheritance(relationshipId);
+      },
+      'Could not change this app’s setting for this follow'
+    );
+  }, [targetId, current, mutate, oxyServices]);
 
   return {
     status: current,

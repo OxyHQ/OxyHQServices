@@ -129,7 +129,7 @@ export function OxyServicesFollowGraphMixin<T extends typeof OxyServicesBase>(Ba
       relationshipId: string,
       mode: 'enabled' | 'disabled',
       applicationId?: string,
-    ): Promise<{ ok: true; mode: 'enabled' | 'disabled' }> {
+    ): Promise<{ ok: true }> {
       try {
         return await this.makeRequest(
           'PUT',

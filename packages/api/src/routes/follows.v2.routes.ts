@@ -35,6 +35,7 @@ import {
   type FollowCapability,
 } from '../services/followCapability.service';
 import {
+  deriveFollowEffectiveState,
   followTarget,
   getFollowStatus,
   restoreInheritance,
@@ -317,20 +318,24 @@ meFollowsRouter.get(
     const page = hasMore ? rows.slice(0, limit) : rows;
 
     sendSuccess(res, {
-      follows: page.map((row) => ({
-        relationshipId: row.relationshipId,
-        target: {
-          id: row.targetId,
-          uri: row.canonicalUri,
-          kind: row.kind,
-          ...(row.metadata ? { metadata: row.metadata } : {}),
-        },
-        globalState: row.state,
-        applicationMode: row.overrideMode ?? 'inherit',
-        originApplicationId: row.originApplicationId,
-        ...(row.expiresAt ? { expiresAt: row.expiresAt.toISOString() } : {}),
-        createdAt: row.createdAt.toISOString(),
-      })),
+      follows: page.map((row) => {
+        const applicationMode = row.overrideMode ?? 'inherit';
+        return {
+          relationshipId: row.relationshipId,
+          target: {
+            id: row.targetId,
+            uri: row.canonicalUri,
+            kind: row.kind,
+            ...(row.metadata ? { metadata: row.metadata } : {}),
+          },
+          globalState: row.state,
+          applicationMode,
+          effectiveState: deriveFollowEffectiveState(row.state, applicationMode),
+          originApplicationId: row.originApplicationId,
+          ...(row.expiresAt ? { expiresAt: row.expiresAt.toISOString() } : {}),
+          createdAt: row.createdAt.toISOString(),
+        };
+      }),
       ...(hasMore ? { nextCursor: page[page.length - 1].createdAt.toISOString() } : {}),
     });
   })

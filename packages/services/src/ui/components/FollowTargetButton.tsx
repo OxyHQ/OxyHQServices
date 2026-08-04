@@ -111,6 +111,22 @@ export interface FollowMenuItem {
  * answered — every one of them addresses a relationship that does not exist
  * yet, so offering them mid-write would mean sending a guessed id.
  */
+/**
+ * What the main button should do for the current state.
+ *
+ * Exported because the product rule is not obvious from the label alone: a
+ * follow switched off here still reads as "following" globally, so the primary
+ * press must re-enable here — not unfollow everywhere.
+ */
+export function resolveFollowPrimaryAction(input: {
+  isFollowing: boolean;
+  applicationMode: FollowApplicationMode;
+}): 'follow' | 'unfollow' | 'enable-here' {
+  if (!input.isFollowing) return 'follow';
+  if (input.applicationMode === 'disabled') return 'enable-here';
+  return 'unfollow';
+}
+
 export function buildFollowMenuItems(input: {
   following: boolean;
   applicationMode: FollowApplicationMode;
@@ -211,14 +227,20 @@ export const FollowTargetButton = memo(function FollowTargetButton({
   }, [isFollowing, status.globalState, status.applicationMode, text]);
 
   const handlePrimary = useCallback(async () => {
-    if (isFollowing) {
-      await unfollow();
-      onChange?.(false);
-      return;
+    switch (resolveFollowPrimaryAction({ isFollowing, applicationMode: status.applicationMode })) {
+      case 'enable-here':
+        await enableHere();
+        onChange?.(true);
+        return;
+      case 'unfollow':
+        await unfollow();
+        onChange?.(false);
+        return;
+      case 'follow':
+        await follow();
+        onChange?.(true);
     }
-    await follow();
-    onChange?.(true);
-  }, [isFollowing, follow, unfollow, onChange]);
+  }, [isFollowing, status.applicationMode, follow, unfollow, enableHere, onChange]);
 
   const handleTimed = useCallback(
     async (seconds: number, durationLabel: string) => {

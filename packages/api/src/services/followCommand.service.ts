@@ -118,6 +118,14 @@ function effectiveState(
   return 'not_following';
 }
 
+/** Exported for serializers that mirror {@link readStatus} without a round trip. */
+export function deriveFollowEffectiveState(
+  globalState: FollowStatus['globalState'],
+  mode: FollowStatus['applicationMode']
+): FollowStatus['effectiveState'] {
+  return effectiveState(globalState, mode);
+}
+
 async function readStatus(
   tx: Tx | Db,
   userId: string,

@@ -335,6 +335,7 @@ describe('the central list', () => {
     expect(follows[0]).toMatchObject({
       globalState: 'active',
       applicationMode: 'inherit',
+      effectiveState: 'following',
       target: { kind },
     });
 
