@@ -343,6 +343,21 @@ jobs:
       # migrations, deploy workflow and deploy script.
       - run: bun scripts/test-check-migration-phases.mjs
       - run: bun scripts/check-migration-phases.mjs
+      # The schema and the snapshot chain must describe the same database.
+      #
+      # 0018 and 0019 were hand-written with no `meta/*_snapshot.json`, so the
+      # chain stopped describing the database two migrations early. Nothing
+      # failed then; the NEXT generate emitted `CREATE TABLE follow_namespaces`
+      # and five already-applied constraints, which would have failed the
+      # pre-deploy migration one-shot in production. A human caught it by
+      # reading the generated file instead of trusting it, which is not a
+      # control.
+      #
+      # Needs a database URL only because drizzle-kit's config demands one; the
+      # generate itself never connects.
+      - run: bun scripts/check-drizzle-snapshot-sync.mjs
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
 
   # Contracts package tests (Jest — no MongoDB)
   contracts-test:
