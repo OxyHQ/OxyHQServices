@@ -52,7 +52,7 @@ await oxyServices.registerFollowKind({
   kind: 'mercaria.store',
   label: 'Store',
   capabilities: {
-    verb: 'subscribe',    // what a button says
+    verb: 'follow',       // what a button says — see the note on verbs below
     reverse: 'aggregate', // who may see a store's followers: a count, not a list
     federated: false,     // does following this have to reach another server
   },
@@ -77,7 +77,7 @@ const { id } = await oxyServices.ensureFollowTarget({
 Then render:
 
 ```tsx
-<FollowTargetButton targetId={id} verb="subscribe" applicationName="Mercaria" />
+<FollowTargetButton targetId={id} applicationName="Mercaria" />
 ```
 
 Keeping something else in step with the follow — a local shelf, a ranking
@@ -88,6 +88,25 @@ signal — goes through `onChange`, which fires only on an accepted write:
 ```
 
 ## Things that will surprise you
+
+**`https://oxy.so/users/<id>` is RESERVED — do not register your own kind on
+it.** The registry matches that shape to resolve `local_user_id`, and only for
+`oxy.user`. If your thing IS an Oxy account, its kind is `oxy.user` and you
+register nothing. If you register your own kind over that URI you take the row
+permanently: `ensureTarget` returns an existing row with its EXISTING kind and
+never backfills the linkage, so the account is stuck kinded as yours. Use a URI
+shape of your own for anything else.
+
+**Nothing warns you when you take a URI somebody else registered.**
+`ensureTarget` on an existing URI returns that row and its kind, silently
+ignoring the `kind` you passed — that is what "idempotent on the URI" means and
+it is the most expensive thing here to get wrong. The response carries `kind`,
+so compare it against what you asked for if being wrong would matter.
+
+**Pick your verb against your own product's vocabulary, not ours.** Mercaria
+went with `follow` because "Subscribe" already means a recurring purchase plan
+on its product page, and a store card using that word beside a purchase option
+is a collision the user has to resolve.
 
 **A target's URI is its identity, not its id.** Two applications describing the
 same fediverse actor must pass the same URI, and then they get the same row —
