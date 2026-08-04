@@ -121,6 +121,7 @@
     "@types/elliptic": "catalog:",
     "buffer": "^6.0.3",
     "elliptic": "catalog:",
+    "express-rate-limit": "catalog:",
     "helmet": "^8.0.0",
     "invariant": "^2.2.4",
     "jwt-decode": "^4.0.0",
@@ -132,8 +133,7 @@
     "@react-native-async-storage/async-storage": "*",
     "expo-crypto": "*",
     "expo-secure-store": "*",
-    "express": "^4.0.0",
-    "express-rate-limit": "^8.0.0"
+    "express": "^4.0.0"
   },
   "peerDependenciesMeta": {
     "@react-native-async-storage/async-storage": {

@@ -431,6 +431,7 @@
         "@types/elliptic": "catalog:",
         "buffer": "^6.0.3",
         "elliptic": "catalog:",
+        "express-rate-limit": "catalog:",
         "helmet": "^8.0.0",
         "invariant": "^2.2.4",
         "jwt-decode": "^4.0.0",

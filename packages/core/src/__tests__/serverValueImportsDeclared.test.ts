@@ -103,6 +103,13 @@ describe('@oxyhq/core/server value imports are installable', () => {
     expect(manifest.peerDependenciesMeta?.helmet?.optional).toBeUndefined();
   });
 
+  it('keeps express-rate-limit installable rather than a peer', () => {
+    // Same class as helmet: `rateLimit.ts` value-imports it and the server
+    // barrel re-exports that module, so a missing install crashes at boot.
+    expect(dependencies.has('express-rate-limit')).toBe(true);
+    expect(manifest.peerDependencies?.['express-rate-limit']).toBeUndefined();
+  });
+
   it('leaves express as an optional peer, because it is type-only here', () => {
     // The counter-example that stops this test from being read as "declare
     // everything": type imports vanish at build time, so an optional peer is a
