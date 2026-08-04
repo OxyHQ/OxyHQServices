@@ -483,6 +483,25 @@
         "typescript": "^5.9.2",
       },
     },
+    "packages/db": {
+      "name": "@oxyhq/db",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@biomejs/biome": "catalog:",
+        "@types/jest": "^30.0.0",
+        "@types/node": "^22.20.1",
+        "drizzle-orm": "catalog:",
+        "jest": "^29.7.0",
+        "postgres": "catalog:",
+        "release-it": "catalog:",
+        "ts-jest": "^29.4.11",
+        "typescript": "^5.9.2",
+      },
+      "peerDependencies": {
+        "drizzle-orm": "^0.45.2",
+        "postgres": "^3.4.9",
+      },
+    },
     "packages/expo-splash": {
       "name": "@oxyhq/expo-splash",
       "version": "0.1.0",
@@ -1874,6 +1893,8 @@
     "@oxyhq/contracts": ["@oxyhq/contracts@workspace:packages/contracts"],
 
     "@oxyhq/core": ["@oxyhq/core@workspace:packages/core"],
+
+    "@oxyhq/db": ["@oxyhq/db@workspace:packages/db"],
 
     "@oxyhq/expo-splash": ["@oxyhq/expo-splash@workspace:packages/expo-splash"],
 
