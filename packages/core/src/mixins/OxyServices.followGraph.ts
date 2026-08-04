@@ -163,6 +163,80 @@ export function OxyServicesFollowGraphMixin<T extends typeof OxyServicesBase>(Ba
     }
 
     /**
+     * Resolve a target by canonical URI, registering it the first time anyone
+     * asks. The call an application makes on the way into a screen, before it
+     * can render a button.
+     *
+     * Idempotent on the URI, which is what makes two applications describing
+     * the same thing — the same fediverse actor, the same topic — arrive at ONE
+     * row, and therefore at one relationship per user rather than one per app.
+     *
+     * `metadata` is a display snapshot (name, handle, icon) and is refreshed
+     * only for the application that provides the target: a second application
+     * passing its own idea of the name would make the display flip depending on
+     * which app last looked.
+     */
+    async ensureFollowTarget(input: {
+      uri: string;
+      kind: string;
+      metadata?: Record<string, unknown>;
+      providerReference?: string;
+      localUserId?: string;
+    }): Promise<{ id: string; uri: string; kind: string; created: boolean }> {
+      try {
+        return await this.makeRequest('POST', '/v2/follow-targets', input, { cache: false });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Claim a namespace for the calling application. First come, and idempotent
+     * for the holder — an application that registers on every boot must not
+     * fail the second time.
+     */
+    async claimFollowNamespace(
+      namespace: string
+    ): Promise<{ namespace: string; created: boolean }> {
+      try {
+        return await this.makeRequest(
+          'POST',
+          '/v2/follow-targets/namespaces',
+          { namespace },
+          { cache: false },
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Declare what following a kind of thing MEANS: the verb clients render,
+     * whether reverse lookups are public, whether it federates.
+     *
+     * Declared once by the application that owns the concept, rather than
+     * passed per call site — otherwise two screens of one app can disagree
+     * about whether a store is followed or subscribed to.
+     */
+    async registerFollowKind(input: {
+      kind: string;
+      label?: string;
+      capabilities?: {
+        verb?: 'follow' | 'subscribe' | 'join';
+        reverse?: 'public' | 'private' | 'aggregate' | 'unavailable';
+        federated?: boolean;
+      };
+    }): Promise<{ kind: string; created: boolean }> {
+      try {
+        return await this.makeRequest('POST', '/v2/follow-targets/kinds', input, {
+          cache: false,
+        });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
      * Everything the signed-in user follows, newest first.
      *
      * Owner-only by construction server-side — there is no parameter naming a

@@ -34,6 +34,7 @@
 import { sql } from 'drizzle-orm';
 import { check, index, jsonb, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { applications } from './applications';
+import { followNamespaces } from './followNamespaces';
 import { createdAt, generatedId, updatedAt } from './columns';
 
 /**
@@ -67,8 +68,15 @@ export const followTargetKinds = pgTable(
     /**
      * The namespace half, stored rather than parsed at read time so ownership
      * can be indexed and constrained instead of re-derived by every caller.
+     *
+     * A REFERENCE into `follow_namespaces`: the prefix check below proves the
+     * kind lives in the namespace it claims, and this proves the claimant owns
+     * that namespace at all. Without the second, any application holding
+     * `follow-targets:register` could register another's kinds.
      */
-    namespace: text().notNull(),
+    namespace: text()
+      .notNull()
+      .references(() => followNamespaces.namespace, { onDelete: 'restrict' }),
     /**
      * The application that owns the namespace. NULL for the platform's own
      * `oxy.*` kinds.

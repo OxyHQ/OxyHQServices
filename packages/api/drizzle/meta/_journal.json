@@ -120,6 +120,13 @@
       "when": 1785805127625,
       "tag": "0016_follow_graph",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785810000000,
+      "tag": "0017_follow_namespaces",
+      "breakpoints": true
     }
   ]
 }

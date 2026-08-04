@@ -52,6 +52,7 @@ export * from './federationKeyPairs';
 export * from './fileLinks';
 export * from './fileVariants';
 export * from './files';
+export * from './followNamespaces';
 export * from './followTargetKinds';
 export * from './followTargets';
 export * from './followRelationships';
