@@ -417,6 +417,20 @@ export type {
     LinkPreviewBatchResponse,
 } from './links';
 
+export type {
+    FollowTargetKind,
+    FollowState,
+    FollowEffectiveState,
+    FollowApplicationMode,
+    FollowTarget,
+    FollowRecord,
+    FollowStatus,
+    FollowMutation,
+    UnfollowMutation,
+    FollowListPage,
+    FollowOptions,
+} from './followGraph';
+
 export {
     sessionAccountSchema,
     deviceSessionStateSchema,

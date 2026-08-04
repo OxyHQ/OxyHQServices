@@ -50,6 +50,7 @@
 import { sql } from 'drizzle-orm';
 import type { Database } from '../../config/postgres';
 import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from '../migrationLedger';
+import { POSTGRES_NATIVE_TABLES } from './collectionMap';
 import { planTables, tableName, type CollectionPlan } from './plan';
 
 /** The modes a reset may not be combined with, as the CLI parses them. */
@@ -210,6 +211,17 @@ export async function resetToEmpty(
 export function resetTableNames(plans: readonly CollectionPlan[]): string[] {
   const names = new Set<string>();
   for (const plan of plans) for (const table of planTables(plan)) names.add(tableName(table));
+  // Postgres-native tables come too, and they are LISTED rather than reached by
+  // `CASCADE`. Every `follow_*` table references `users`, which is backfilled,
+  // so a truncate that named only the plan tables would fail outright — and the
+  // fix that suggests itself, adding `CASCADE`, is the one this function
+  // deliberately does not use, because it would reach into whatever else grows
+  // a reference later without anyone deciding.
+  //
+  // Safe because a reset only runs on a rehearsal database before go-live,
+  // where these tables are empty. It is refused outright once the ledger has
+  // moved; see `resetToEmpty`.
+  for (const entry of POSTGRES_NATIVE_TABLES) names.add(entry.table);
   return [...names].sort();
 }
 

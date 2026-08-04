@@ -30,6 +30,7 @@ import { OxyServicesAppDataMixin } from './OxyServices.appData';
 import { OxyServicesCivicMixin } from './OxyServices.civic';
 import { OxyServicesNodesMixin } from './OxyServices.nodes';
 import { OxyServicesLinksMixin } from './OxyServices.links';
+import { OxyServicesFollowGraphMixin } from './OxyServices.followGraph';
 import { OxyServicesDeviceBootMixin } from './OxyServices.deviceBoot';
 import { OxyServicesDeviceTransferMixin } from './OxyServices.deviceTransfer';
 
@@ -66,6 +67,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesCivicMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesNodesMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLinksMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesFollowGraphMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesDeviceBootMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesDeviceTransferMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUtilityMixin<typeof OxyServicesBase>>>;
@@ -141,6 +143,9 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     // Link previews / unfurls: SDK-owned link-metadata resolution via oxy-api,
     // so apps stop scraping link metadata locally.
     OxyServicesLinksMixin,
+    // The user-owned follow graph (#809). One relationship per user and target,
+    // shared across applications, with per-application context on top.
+    OxyServicesFollowGraphMixin,
 
     // Device-first token mint: the client half of the zero-cookie transport
     // (`mintFromDeviceSecret` → `POST /session/device/token`).

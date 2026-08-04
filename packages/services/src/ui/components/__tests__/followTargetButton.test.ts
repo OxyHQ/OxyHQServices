@@ -1,0 +1,132 @@
+/**
+ * The follow button's product decisions, as a table.
+ *
+ * `buildFollowMenuItems` is pure and tested here rather than through a render
+ * because what matters is WHICH choices exist in which state — an assertion a
+ * rendering test would make about the DOM, one layout change away from being
+ * about nothing.
+ *
+ * `withApplicationMode` sits beside it because the two have to agree: the menu
+ * offers "don't show here", and the store computes what that does to the
+ * effective state. If they disagree the button offers something it then fails
+ * to reflect.
+ */
+
+import { buildFollowMenuItems } from '../FollowTargetButton';
+import {
+  isFollowedGlobally,
+  UNKNOWN_FOLLOW_STATUS,
+  withApplicationMode,
+} from '../../stores/followTargetStore';
+
+const DURATIONS = [
+  { label: '24 hours', seconds: 86400 },
+  { label: 'A week', seconds: 604800 },
+];
+
+const base = {
+  following: false,
+  applicationMode: 'inherit' as const,
+  hasRelationship: false,
+  isPending: false,
+  durations: DURATIONS,
+  idleVerb: 'Follow',
+  applicationName: 'Mention',
+};
+
+const keys = (items: ReturnType<typeof buildFollowMenuItems>) => items.map((i) => i.key);
+
+describe('buildFollowMenuItems', () => {
+  describe('before following', () => {
+    it('offers the timed follows and nothing else', () => {
+      const items = buildFollowMenuItems(base);
+      expect(keys(items)).toEqual(['for-86400', 'for-604800']);
+      // Nothing that addresses a relationship, because there is none.
+      expect(keys(items).some((k) => k.includes('unfollow') || k.includes('here'))).toBe(false);
+    });
+
+    it('phrases the option with the application’s own verb', () => {
+      expect(buildFollowMenuItems({ ...base, idleVerb: 'Subscribe' })[0].label).toBe(
+        'Subscribe for 24 hours'
+      );
+    });
+
+    it('offers nothing when the application turned timed follows off', () => {
+      expect(buildFollowMenuItems({ ...base, durations: false })).toEqual([]);
+    });
+  });
+
+  describe('while following', () => {
+    const following = { ...base, following: true, hasRelationship: true };
+
+    it('offers turning it off here, and unfollowing everywhere', () => {
+      expect(keys(buildFollowMenuItems(following))).toEqual([
+        'disable-here',
+        'unfollow-everywhere',
+      ]);
+    });
+
+    it('names the application, so the line is a sentence the user can act on', () => {
+      expect(buildFollowMenuItems(following)[0].label).toBe('Don’t show in Mention');
+    });
+
+    it('offers turning it back on once it is off here', () => {
+      const items = buildFollowMenuItems({ ...following, applicationMode: 'disabled' });
+      expect(keys(items)).toEqual(['enable-here', 'unfollow-everywhere']);
+      expect(items[0].label).toBe('Show in Mention');
+    });
+
+    it('never offers a timed follow', () => {
+      // Extending a follow is a different operation from starting one, and
+      // offering "Follow for 24 hours" to somebody already following would read
+      // as shortening it.
+      expect(keys(buildFollowMenuItems(following)).some((k) => k.startsWith('for-'))).toBe(false);
+    });
+
+    it('offers nothing while a write is in flight', () => {
+      // Every entry addresses the relationship id, which an optimistic follow
+      // does not have yet. Offering them here would mean sending a guess.
+      expect(buildFollowMenuItems({ ...following, isPending: true })).toEqual([]);
+    });
+
+    it('offers nothing when the relationship id is not known', () => {
+      expect(buildFollowMenuItems({ ...following, hasRelationship: false })).toEqual([]);
+    });
+  });
+});
+
+describe('withApplicationMode', () => {
+  const active = { ...UNKNOWN_FOLLOW_STATUS, globalState: 'active' as const };
+
+  it('makes a disabled follow inactive without giving up the follow', () => {
+    const next = withApplicationMode(active, 'disabled');
+    expect(next.effectiveState).toBe('not_following');
+    // The distinction the whole design exists for, and the reason a client must
+    // never read `effectiveState` as "does the user follow this": the follow is
+    // still there globally.
+    expect(next.globalState).toBe('active');
+    expect(isFollowedGlobally(next)).toBe(true);
+  });
+
+  it('restores the global state when enabled again', () => {
+    expect(withApplicationMode(withApplicationMode(active, 'disabled'), 'enabled')).toMatchObject({
+      applicationMode: 'enabled',
+      effectiveState: 'following',
+    });
+  });
+
+  it('keeps a requested follow requested rather than promoting it', () => {
+    const requested = { ...active, globalState: 'requested' as const };
+    expect(withApplicationMode(requested, 'enabled').effectiveState).toBe('requested');
+    // And a request in flight still counts as following, so the button offers
+    // to cancel rather than to ask again.
+    expect(isFollowedGlobally(requested)).toBe(true);
+  });
+
+  it('stays not-following when there is no global relationship to act on', () => {
+    expect(withApplicationMode(UNKNOWN_FOLLOW_STATUS, 'enabled').effectiveState).toBe(
+      'not_following'
+    );
+    expect(isFollowedGlobally(UNKNOWN_FOLLOW_STATUS)).toBe(false);
+  });
+});

@@ -28,6 +28,7 @@ import { authCodes } from './authCodes';
 import { authSessions } from './authSessions';
 import { billingSubscriptions } from './billingSubscriptions';
 import { billingTransactions } from './billingTransactions';
+import { followEvents } from './followEvents';
 import { bookmarks } from './bookmarks';
 import { conductStrikes } from './conductStrikes';
 import { devicePairingSessions } from './devicePairingSessions';
@@ -87,6 +88,23 @@ export const DEFERRED_FOREIGN_KEYS: readonly DeferredForeignKey[] = [
 ];
 
 export const ID_COLUMNS_WITHOUT_FOREIGN_KEY: readonly IdColumnWithoutForeignKey[] = [
+  {
+    table: followEvents,
+    column: followEvents.relationshipId,
+    reason:
+      'The outbox has to OUTLIVE what it describes. `follow.removed` is an event about a ' +
+      'relationship that no longer exists, so a foreign key would delete the record of the ' +
+      'removal at the exact moment a consumer — federation teardown, a notification ' +
+      'projection — needs to read it. The id is kept as a plain column deliberately.',
+  },
+  {
+    table: followEvents,
+    column: followEvents.eventId,
+    reason:
+      'Not a reference at all despite the name: it is this event\u2019s OWN public, ' +
+      'deterministic identity, which consumers dedupe redeliveries on. There is nothing ' +
+      'for it to point at.',
+  },
   {
     table: bookmarks,
     column: bookmarks.postId,

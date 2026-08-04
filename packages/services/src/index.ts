@@ -278,6 +278,17 @@ export type { RequireOxyAuthProps, RequireOxyAuthPrompt } from './ui/components/
 
 export { default as FollowButton } from './ui/components/FollowButton';
 export type { FollowButtonProps, SingleFollowButtonProps, MultiFollowButtonProps } from './ui/components/FollowButton';
+// The follow graph (#809): follows anything registered, not just users.
+export { FollowTargetButton } from './ui/components/FollowTargetButton';
+export type {
+  FollowTargetButtonProps,
+  FollowVerb,
+  FollowLabels,
+  FollowDuration,
+} from './ui/components/FollowTargetButton';
+export { useFollowTarget } from './ui/hooks/useFollowTarget';
+export type { UseFollowTargetResult } from './ui/hooks/useFollowTarget';
+export { useFollowTargetStore, UNKNOWN_FOLLOW_STATUS } from './ui/stores/followTargetStore';
 export { default as OxyPayButton } from './ui/components/OxyPayButton';
 export { LogoIcon } from './ui/components/logo/LogoIcon';
 export { LogoText } from './ui/components/logo/LogoText';

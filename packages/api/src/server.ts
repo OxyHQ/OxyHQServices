@@ -53,6 +53,8 @@ import billingRoutes from './routes/billing';
 import modelsStatsRoutes from './routes/models-stats';
 import platformStatsRoutes from './routes/platform-stats';
 import topicsRoutes from './routes/topics.routes';
+import followsV2Routes, { meFollowsRouter } from './routes/follows.v2.routes';
+import followRegistryV2Routes from './routes/followRegistry.v2.routes';
 import contactsRouter from './routes/contacts';
 import userDataRouter from './routes/userData';
 import appSignalsRouter from './routes/appSignals';
@@ -626,6 +628,14 @@ app.use('/billing', billingRoutes);
 app.use('/models', modelsStatsRoutes);
 app.use('/platform-stats', platformStatsRoutes);
 app.use('/topics', topicsRoutes);
+// The follow graph. `/v2` because these are new operations rather than a new
+// spelling of the legacy toggle — the two coexist while applications migrate.
+app.use('/v2/follows', followsV2Routes);
+app.use('/v2/me', meFollowsRouter);
+// The registry an application talks to: namespaces, kinds, targets. Separate
+// from `/v2/follows` because it is authorized on the application's ownership of
+// a namespace rather than on the user's own graph.
+app.use('/v2/follow-targets', followRegistryV2Routes);
 app.use('/contacts', userRateLimiter, csrfProtection, contactsRouter);
 // Service-token-only cross-app signal ingest (endorsements + interests). No
 // csrfProtection — Bearer-authenticated service writes are exempt (no ambient

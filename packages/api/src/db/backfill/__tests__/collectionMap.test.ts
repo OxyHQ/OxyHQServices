@@ -14,6 +14,7 @@ import {
   COLLECTION_PLANS,
   knownCollections,
   NOT_MIGRATED,
+  POSTGRES_NATIVE_TABLES,
   tablesWithoutAPlan,
 } from '../collectionMap';
 import { planLevels, selfReferences } from '../order';
@@ -26,17 +27,35 @@ describe('collection → table map', () => {
     expect(tablesWithoutAPlan()).toEqual([]);
   });
 
-  it('covers all 97 tables', () => {
+  it('accounts for every table: 97 backfilled, 6 born in Postgres', () => {
     // A vacuity floor. Without it a traversal bug that finds zero tables makes
     // the assertion above pass trivially.
+    //
+    // The two numbers are pinned SEPARATELY on purpose. A single total would
+    // let a new table be added to the native list — where nothing migrates it
+    // — while the check still passed, which is the exact accident the list is
+    // meant to make impossible.
     const tables = allSchemaTables();
-    expect(tables.length).toBe(97);
+    expect(tables.length).toBe(103);
 
     const covered = new Set<string>();
     for (const plan of COLLECTION_PLANS) {
       for (const table of planTables(plan)) covered.add(tableName(table));
     }
     expect(covered.size).toBe(97);
+    expect(POSTGRES_NATIVE_TABLES).toHaveLength(6);
+    // No table may be both: a plan writing a table listed as having no source
+    // means one of the two is a lie.
+    for (const entry of POSTGRES_NATIVE_TABLES) expect(covered.has(entry.table)).toBe(false);
+  });
+
+  it('gives every Postgres-native table a written reason', () => {
+    // Same discipline as `NOT_MIGRATED`. An entry with no reason is an entry
+    // nobody can review, and this list is the one that says "nothing will ever
+    // migrate this".
+    for (const entry of POSTGRES_NATIVE_TABLES) {
+      expect(entry.reason.length).toBeGreaterThan(40);
+    }
   });
 
   it('names each collection exactly once, across plans and exclusions', () => {

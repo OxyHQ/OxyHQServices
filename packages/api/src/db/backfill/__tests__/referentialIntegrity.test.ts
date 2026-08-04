@@ -50,7 +50,7 @@ import {
   type FixtureSet,
 } from '../backfillFixtures';
 import { auditWouldBlockCopy, type AuditFinding } from '../audit';
-import { COLLECTION_PLANS } from '../collectionMap';
+import { COLLECTION_PLANS, POSTGRES_NATIVE_TABLES } from '../collectionMap';
 import { createMongoTestDatabase, type MongoTestDatabase } from '../mongoTestSource';
 import { planTables, tableName, type CollectionPlan } from '../plan';
 import {
@@ -197,7 +197,7 @@ describe('the relations are DERIVED, and they are the database\'s own', () => {
     expect(relations.length).toBeGreaterThanOrEqual(150);
   });
 
-  it('matches pg_constraint exactly — name, columns, target and ON DELETE', async () => {
+  it('matches pg_constraint exactly over the tables it audits', async () => {
     const catalogue = await catalogueForeignKeys();
     // Precondition: the throwaway database really was migrated. Without it a
     // catalogue query returning nothing would make the diffs below trivially
@@ -205,7 +205,28 @@ describe('the relations are DERIVED, and they are the database\'s own', () => {
     expect(catalogue.length).toBeGreaterThanOrEqual(150);
 
     const derived = new Set(relations.map(signature));
-    const enforced = new Set(catalogue.map(catalogueSignature));
+
+    // This audit answers "did the backfill leave an orphan", so its scope is
+    // the tables the backfill writes. Postgres-native tables (the follow graph)
+    // hold no backfilled rows and are excluded from the comparison rather than
+    // from the database — an FK on a table nothing migrates cannot produce a
+    // migration orphan.
+    //
+    // Excluded by NAME from the declared list, never by pattern: a pattern
+    // would also swallow a future backfilled table that happened to match, and
+    // the count is pinned below so the exclusion cannot quietly widen.
+    const nativeTables = new Set(POSTGRES_NATIVE_TABLES.map((entry) => entry.table));
+    const outOfScope = catalogue.filter((entry) => nativeTables.has(entry.source_table));
+    // 16: one on `follow_namespaces`, two on `follow_target_kinds`, three on
+    // `follow_targets`, four on `follow_relationships`, two on
+    // `follow_application_overrides`, four on `follow_events`. Counted from the
+    // schema rather than copied from a failure message, so the number means
+    // something when it changes.
+    expect(outOfScope.length).toBe(16);
+
+    const enforced = new Set(
+      catalogue.filter((entry) => !nativeTables.has(entry.source_table)).map(catalogueSignature)
+    );
 
     // BOTH directions, and reported as sorted lists so a failure names the
     // offending constraints rather than saying two sets differ. A missing entry

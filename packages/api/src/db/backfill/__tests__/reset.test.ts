@@ -53,6 +53,7 @@ import { reputationRules, users } from '../../schema';
 import { cleanFixtures, type FixtureSet } from '../backfillFixtures';
 import { COLLECTION_PLANS } from '../collectionMap';
 import { createMongoTestDatabase, type MongoTestDatabase } from '../mongoTestSource';
+import { POSTGRES_NATIVE_TABLES } from '../collectionMap';
 import { planTables, tableName } from '../plan';
 import {
   assertResetIsAllowed,
@@ -203,12 +204,18 @@ describe('what a reset covers', () => {
     await truncateAll();
   });
 
-  it('is exactly the tables the plans write, derived rather than listed', () => {
+  it('is the tables the plans write PLUS the Postgres-native ones, derived rather than listed', () => {
     const covered = resetTableNames(COLLECTION_PLANS);
     const written = new Set<string>();
     for (const plan of COLLECTION_PLANS) {
       for (const table of planTables(plan)) written.add(tableName(table));
     }
+    // The native tables are here because they REFERENCE backfilled ones — every
+    // `follow_*` table points at `users` — and this truncate deliberately has
+    // no `CASCADE`, so a statement naming only the plan tables fails outright.
+    // Listing them keeps the property that matters: the statement names
+    // everything it touches, and nothing is reached into implicitly.
+    for (const entry of POSTGRES_NATIVE_TABLES) written.add(entry.table);
     expect(covered).toEqual([...written].sort());
     // A floor, so a derivation that found nothing cannot pass the equality
     // above by matching an equally empty set.

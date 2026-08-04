@@ -58,6 +58,77 @@ export const COLLECTION_PLANS: readonly CollectionPlan[] = [
 ];
 
 /**
+ * Tables that are BORN in Postgres and have no Mongo counterpart.
+ *
+ * Every other exclusion in this file is about a Mongo COLLECTION that does not
+ * move. This is the opposite direction and it is new: a table that never had a
+ * source, because the feature was designed after the cutover.
+ *
+ * It exists so `tablesWithoutAPlan()` keeps asking its question — "did somebody
+ * add a table and forget to migrate it?" — without answering "yes" for a table
+ * where the answer is structurally no. A silent allowance would have been the
+ * easy version and the wrong one: the whole value of that check is that it is
+ * asked from the TABLE side, so an unexplained gap has to be impossible.
+ *
+ * The reset path reads this too. `resetToEmpty` truncates without `CASCADE` on
+ * purpose, and a Postgres-native table referencing a backfilled one (every
+ * `follow_*` table references `users`) makes that statement fail outright. They
+ * are listed there rather than cascaded into, so the truncate still names
+ * everything it touches.
+ *
+ * ## Before adding one
+ *
+ * A table belongs here only if no Mongo collection ever held its data. If the
+ * data exists in Mongo and you would rather not move it, that is a
+ * {@link NOT_MIGRATED} entry with a reason, not this.
+ */
+export const POSTGRES_NATIVE_TABLES: readonly { table: string; reason: string }[] = [
+  {
+    table: 'follow_namespaces',
+    reason:
+      'The follow graph (#809) was designed in Postgres. A namespace is an ' +
+      'application\'s claim on a kind prefix, and nothing in Mongo ever ' +
+      'expressed that — the old follow model had no notion of an application ' +
+      'at all.',
+  },
+  {
+    table: 'follow_target_kinds',
+    reason:
+      'Kinds are registered at runtime by applications. Mongo\'s follow data ' +
+      'was user-to-user only, so there is no source for a row describing what ' +
+      'a `mercaria.store` is.',
+  },
+  {
+    table: 'follow_targets',
+    reason:
+      'A target is any followable thing addressed by canonical URI. The Mongo ' +
+      'era had users and nothing else; a user\'s target row is created on ' +
+      'demand by the registry rather than copied.',
+  },
+  {
+    table: 'follow_relationships',
+    reason:
+      'The user-owned edge. Mongo\'s user-to-user follows live in ' +
+      '`user_follows`, which IS backfilled and remains authoritative for that ' +
+      'question; migrating them onto this table is a separate, later decision ' +
+      'with its own adapter, not part of the Mongo cutover.',
+  },
+  {
+    table: 'follow_application_overrides',
+    reason:
+      'Per-application context on a relationship. Requires an application id, ' +
+      'which no Mongo follow record carries.',
+  },
+  {
+    table: 'follow_events',
+    reason:
+      'The transactional outbox. Its rows describe changes made after the ' +
+      'cutover; backfilling history into a queue would deliver events for ' +
+      'things that already happened.',
+  },
+];
+
+/**
  * Every collection that deliberately does NOT move, and why.
  *
  * Ordered by the change that retired each one, because they retire in groups
@@ -284,9 +355,10 @@ export function tablesWithoutAPlan(): string[] {
   for (const plan of COLLECTION_PLANS) {
     for (const table of planTables(plan)) covered.add(tableName(table));
   }
+  const native = new Set(POSTGRES_NATIVE_TABLES.map((entry) => entry.table));
   return allSchemaTables()
     .map((table) => getTableConfig(table).name)
-    .filter((name) => !covered.has(name))
+    .filter((name) => !covered.has(name) && !native.has(name))
     .sort();
 }
 
