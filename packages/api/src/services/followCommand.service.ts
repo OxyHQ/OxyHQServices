@@ -416,6 +416,21 @@ export async function setApplicationMode(input: {
       .where(eq(followTargets.id, relationship.targetId))
       .limit(1);
 
+    const [existing] = await tx
+      .select({ mode: followApplicationOverrides.mode })
+      .from(followApplicationOverrides)
+      .where(
+        and(
+          eq(followApplicationOverrides.relationshipId, relationshipId),
+          eq(followApplicationOverrides.applicationId, applicationId)
+        )
+      )
+      .limit(1);
+
+    if (existing?.mode === mode) {
+      return { ok: true };
+    }
+
     await tx
       .insert(followApplicationOverrides)
       .values({ relationshipId, applicationId, mode })
@@ -454,9 +469,14 @@ export async function restoreInheritance(input: {
   const { capability, relationshipId } = input;
   const applicationId = input.applicationId ?? capability.applicationId;
 
+  const at = new Date();
+
   return getDb().transaction(async (tx) => {
     const [relationship] = await tx
-      .select({ followerUserId: followRelationships.followerUserId })
+      .select({
+        followerUserId: followRelationships.followerUserId,
+        targetId: followRelationships.followTargetId,
+      })
       .from(followRelationships)
       .where(eq(followRelationships.id, relationshipId))
       .limit(1);
@@ -465,14 +485,34 @@ export async function restoreInheritance(input: {
       return { ok: false };
     }
 
-    await tx
+    const [target] = await tx
+      .select({ canonicalUri: followTargets.canonicalUri, kind: followTargets.kind })
+      .from(followTargets)
+      .where(eq(followTargets.id, relationship.targetId))
+      .limit(1);
+
+    const removed = await tx
       .delete(followApplicationOverrides)
       .where(
         and(
           eq(followApplicationOverrides.relationshipId, relationshipId),
           eq(followApplicationOverrides.applicationId, applicationId)
         )
-      );
+      )
+      .returning({ id: followApplicationOverrides.id });
+
+    if (removed.length > 0) {
+      await emit(tx, {
+        type: 'follow.context_enabled',
+        cause: 'user_action',
+        capability,
+        relationshipId,
+        targetUri: target?.canonicalUri ?? '',
+        targetKind: target?.kind ?? '',
+        contextApplicationId: applicationId,
+        at,
+      });
+    }
 
     return { ok: true };
   });

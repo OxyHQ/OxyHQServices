@@ -502,13 +502,17 @@ export function startFollowOutboxWorker(): boolean {
 
   if (timer) return true;
 
-  const intervalMs = getEnvNumber('FOLLOW_OUTBOX_POLL_INTERVAL_MS', DEFAULT_POLL_INTERVAL_MS);
+  const intervalMs = Math.max(
+    getEnvNumber('FOLLOW_OUTBOX_POLL_INTERVAL_MS', DEFAULT_POLL_INTERVAL_MS),
+    100
+  );
   timer = setInterval(() => {
     void tick();
   }, intervalMs);
   // Never keeps the process alive on its own — in jest an interval that does
   // hangs the whole run.
   timer.unref?.();
+  void tick();
 
   logger.info('[FollowOutbox] Worker started', { ownerId: WORKER_OWNER_ID, intervalMs });
   return true;

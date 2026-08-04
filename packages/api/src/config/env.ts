@@ -60,6 +60,12 @@ export interface RequiredEnvVars {
   // deletions. Defaults to disabled; read per request in `routes/federation.ts`.
   FEDERATION_DOMAIN_PURGE_ENABLED?: string;
 
+  // Follow-graph outbox worker (`follow_events`). OFF by default — acknowledging
+  // an event asserts its delivery happened; read by `followOutbox.worker.ts`.
+  FOLLOW_OUTBOX_WORKER_ENABLED?: string;
+  FOLLOW_OUTBOX_POLL_INTERVAL_MS?: string;
+  FOLLOW_OUTBOX_BATCH_SIZE?: string;
+
   // Server
   PORT?: string;
   NODE_ENV?: string;

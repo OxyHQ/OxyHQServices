@@ -211,6 +211,26 @@ describe('disabling in one application is private and local', () => {
       .from(followApplicationOverrides)
       .where(eq(followApplicationOverrides.relationshipId, relationshipId));
     expect(rows).toHaveLength(0);
+
+    const events = await eventsFor(relationshipId);
+    expect(events.map((e) => e.type)).toEqual([
+      'follow.created',
+      'follow.context_disabled',
+      'follow.context_enabled',
+    ]);
+  });
+
+  it('does not write a duplicate event when the mode is already set', async () => {
+    const { relationshipId } = await followTarget({
+      capability: capabilityFor(appA),
+      target: userTarget,
+    });
+
+    await setApplicationMode({ capability: capabilityFor(appB), relationshipId, mode: 'disabled' });
+    await setApplicationMode({ capability: capabilityFor(appB), relationshipId, mode: 'disabled' });
+
+    const events = await eventsFor(relationshipId);
+    expect(events.filter((e) => e.type === 'follow.context_disabled')).toHaveLength(1);
   });
 
   it('refuses to configure a relationship belonging to somebody else', async () => {
