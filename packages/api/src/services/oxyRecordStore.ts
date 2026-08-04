@@ -57,6 +57,45 @@ function clampLogLimit(limit: number): number {
 }
 
 /**
+ * Most authors one multi-author page may name. A feed asks for the people a
+ * viewer follows; beyond this the caller pages its own author set rather than
+ * asking the database to merge an unbounded number of index scans.
+ */
+export const MAX_RECORD_AUTHORS = 300;
+
+/** Most lexicon collections one multi-author page may name. */
+export const MAX_RECORD_COLLECTIONS = 32;
+
+/**
+ * Keyset position in the multi-author stream. `createdAt` is the axis and `id`
+ * the tiebreaker — see {@link OxyRecordStoreImpl.listRecordsByAuthors} for why
+ * this cursor may repeat a record and must never be treated as exact.
+ */
+export interface AuthorRecordCursor {
+  createdAt: Date;
+  id: string;
+}
+
+/** One row of the multi-author stream: the full envelope plus its stored coordinates. */
+export interface AuthorRecordRow {
+  id: string;
+  userId: string;
+  recordId: string;
+  /** The envelope's `collection` — the lexicon this record belongs to. */
+  nsid: string;
+  /** The STORE's insert time. Never the envelope's self-asserted timestamp. */
+  createdAt: Date;
+  envelope: SignedRecordEnvelope;
+}
+
+/** One page of the multi-author stream. */
+export interface AuthorRecordPage {
+  records: AuthorRecordRow[];
+  /** Where to resume, or `null` when this page reached the end of the stream. */
+  nextCursor: AuthorRecordCursor | null;
+}
+
+/**
  * The Oxy implementation of the protocol {@link RecordStore}, backed by the
  * `signed_records` ledger + `repo_heads` head pointer.
  */
@@ -314,6 +353,123 @@ class OxyRecordStoreImpl implements RecordStore {
       .orderBy(asc(signedRecords.seq))
       .limit(clampLogLimit(limit));
     return rows.map((row) => row.envelope);
+  }
+
+  /**
+   * Records published by ANY of `userIds` in any of `collections`, as one
+   * ordered page — the multi-author read a consuming app projects a
+   * cross-app feed from ("give me records of these 300 people, of these lexicon
+   * types, since this cursor").
+   *
+   * Every other read on this store is single-subject, because the protocol
+   * engine is: `RecordStore` exists for verify-then-append and a feed is not
+   * that. This one is deliberately NOT part of that interface.
+   *
+   * ## The cursor is (created_at, id), and it can REPEAT a record — never skip
+   *
+   * `created_at` is `defaultNow()`, and `now()` in Postgres is the TRANSACTION
+   * START time, not the commit time. A transaction that starts earlier can
+   * commit later, so a reader holding a strictly-increasing cursor can pass a
+   * timestamp that a not-yet-committed row will later occupy — and that row is
+   * then invisible forever. A monotonic sequence would not fix it: a sequence
+   * value is also assigned at insert, not at commit.
+   *
+   * So this page is complete only up to that race, and callers MUST re-poll from
+   * slightly BEFORE their last cursor rather than exactly at it. That is safe
+   * here specifically because a record is content-addressed (`record_id` is
+   * unique) and projection is idempotent, so re-delivering one costs bytes while
+   * skipping one costs a post that never appears. `id` breaks ties within a
+   * timestamp: it is a total order, though not a chronological one (pre-cutover
+   * ids are ObjectId hex, post-cutover ones uuid v7, and the two do not sort
+   * against each other) — which is exactly why it is the TIEBREAKER and
+   * `created_at` is the axis.
+   *
+   * Only `verified` rows with an `nsid` are returned: an unverified row has no
+   * business in anyone's feed, and a v1 row has no lexicon to filter on.
+   *
+   * THROWS rather than truncating when a cap is exceeded. A silently shortened
+   * author list reads as "these people published nothing".
+   */
+  async listRecordsByAuthors(params: {
+    userIds: readonly string[];
+    collections: readonly string[];
+    after?: AuthorRecordCursor | null;
+    limit?: number;
+  }): Promise<AuthorRecordPage> {
+    const userIds = [...new Set(params.userIds)];
+    const collections = [...new Set(params.collections)];
+
+    if (userIds.length > MAX_RECORD_AUTHORS) {
+      throw new Error(`listRecordsByAuthors: ${userIds.length} authors exceeds the ${MAX_RECORD_AUTHORS} cap`);
+    }
+    if (collections.length > MAX_RECORD_COLLECTIONS) {
+      throw new Error(
+        `listRecordsByAuthors: ${collections.length} collections exceeds the ${MAX_RECORD_COLLECTIONS} cap`,
+      );
+    }
+    // An empty filter is an empty result, never "everything" — the same guard
+    // `getPublicLogSince` makes for its collection allowlist.
+    if (userIds.length === 0 || collections.length === 0) {
+      return { records: [], nextCursor: null };
+    }
+
+    const limit = clampLogLimit(params.limit ?? DEFAULT_LOG_LIMIT);
+    const after = params.after ?? null;
+
+    const conditions: SQL[] = [
+      inArray(signedRecords.userId, userIds),
+      inArray(signedRecords.nsid, collections),
+      eq(signedRecords.verified, true),
+    ];
+    if (after) {
+      // Row-value comparison so the keyset rides the (user_id, created_at, id)
+      // index instead of becoming a filter over an OR expansion.
+      //
+      // The timestamp is bound as an ISO string with an explicit cast, not as a
+      // `Date`. A raw `sql` fragment carries no column type, so the driver has
+      // nothing to infer from and rejects the value outright
+      // (`The "string" argument must be of type string … Received an instance of
+      // Date`) — drizzle only maps `Date` → `timestamptz` when the parameter sits
+      // against a typed column, which is exactly what a row-value comparison is
+      // not.
+      conditions.push(
+        sql`(${signedRecords.createdAt}, ${signedRecords.id}) > (${after.createdAt.toISOString()}::timestamptz, ${after.id})`,
+      );
+    }
+
+    const rows = await getDb()
+      .select({
+        id: signedRecords.id,
+        userId: signedRecords.userId,
+        recordId: signedRecords.recordId,
+        nsid: signedRecords.nsid,
+        createdAt: signedRecords.createdAt,
+        envelope: signedRecords.envelope,
+      })
+      .from(signedRecords)
+      .where(and(...conditions))
+      .orderBy(asc(signedRecords.createdAt), asc(signedRecords.id))
+      .limit(limit);
+
+    const records = rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      // The `signed_records_chain_completeness_check` CHECK makes `record_id`
+      // and `nsid` non-null on exactly the rows this query selects (`nsid is
+      // not null`), so the narrowing is guaranteed by the schema, not assumed.
+      recordId: row.recordId as string,
+      nsid: row.nsid as string,
+      createdAt: row.createdAt,
+      envelope: row.envelope,
+    }));
+
+    const last = records.at(-1);
+    return {
+      records,
+      // A full page means there may be more; a short one is the end of the
+      // stream as of this snapshot. Either way the caller re-polls with overlap.
+      nextCursor: last && records.length === limit ? { createdAt: last.createdAt, id: last.id } : null,
+    };
   }
 
   /** Latest stored record of `type` for a user (v1 singleton read), or null. */

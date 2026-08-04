@@ -141,6 +141,13 @@
       "when": 1785814925471,
       "tag": "0020_follow_events_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785887052731,
+      "tag": "0021_signed_records_author_feed_index",
+      "breakpoints": true
     }
   ]
 }
