@@ -23,8 +23,25 @@ join it.
 
 ## Onboarding an application
 
-Three calls, once, on boot. All of them are idempotent, which matters — an
-application that fails on its second deploy is an application that fails.
+Three calls, once. All of them are idempotent, which matters — an application
+that fails the second time it runs them is an application that fails.
+
+**Not on your server's boot, though, and this surprises people.** Every one of
+these is authorized by a *capability*, and a capability is derived from a user's
+session — the application half comes from the authorization record behind that
+session. There is deliberately no service-credential path: a service token can
+prove which application is calling but not that any user asked it to, and this
+whole design refuses to let an application act on the graph on its own account.
+
+So an application registers **lazily**: the first time somebody holding
+`follow-targets:register` opens a screen that needs it. That is a one-off cost
+in the lifetime of the application, not a recurring one, and the calls are
+idempotent precisely so the guard can be "have I done this in this session"
+rather than anything durable.
+
+If your deployment needs to be self-sufficient in this respect, say so — it is a
+real limitation, not a decision that has to stand forever. It just cannot be
+fixed by handing a service credential the ability to write here.
 
 ```ts
 // 1. Claim your namespace. First come; yours forever.
