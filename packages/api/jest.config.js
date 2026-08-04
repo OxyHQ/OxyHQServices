@@ -1,8 +1,8 @@
-const { cpus, totalmem } = require('node:os');
+const { computeMaxWorkers } = require('./jest.workerCount.cjs');
 
-// Every worker opens its OWN Postgres pool against the one test server. With
-// `PG_MAX_POOL_SIZE = 8` (see `jest.globalSetup.ts`, where 8 is a floor set by
-// the backfill's own copy concurrency), 10 workers ask for at most 80
+// Every worker opens its OWN Postgres pool against its OWN throwaway database.
+// With `PG_MAX_POOL_SIZE = 8` (see `jest.globalSetup.ts`, where 8 is a floor set
+// by the backfill's own copy concurrency), 10 workers ask for at most 80
 // connections against a `max_connections` of 100 — under the ceiling with room
 // for the migrator's own session and a psql.
 //
@@ -11,8 +11,7 @@ const { cpus, totalmem } = require('node:os');
 // whichever worker happens to ask while it is saturated, so a different and
 // entirely innocent suite fails on each run. Five consecutive runs, five
 // different victims, every one green in isolation.
-const POSTGRES_WORKER_CEILING = 10;
-
+//
 // That ceiling has to LOWER the worker count and never raise it. Written as a
 // bare `maxWorkers: 10` it did both, and on the machine CI actually runs on it
 // raised it: a GitHub-hosted `ubuntu-latest` runner has 4 vCPUs and 16 GiB, so
@@ -30,34 +29,18 @@ const POSTGRES_WORKER_CEILING = 10;
 // worker, because ts-jest holds a TypeScript program per worker and
 // `--coverage` instruments every file. 13.68 GiB does not fit in 16 GiB beside
 // the runner agent and the mongo and postgis service containers; 7.06 GiB does.
-const WORKER_BYTES = 1_000_000_000;
-const JEST_BASE_BYTES = 4_500_000_000;
-// A quarter of the machine left to the OS, docker and page cache.
-const MEMORY_BUDGET_FRACTION = 0.75;
-
-// The run has to be under all three ceilings, so take the smallest. On CI
-// (4 vCPUs, 16 GiB) that is the CPU bound at 3; on a 32-core workstation it is
-// the Postgres bound at 10, exactly as before. The memory bound only binds on a
-// machine with many cores and little RAM per core, where the CPU bound alone
-// would put us back where this started.
-const MAX_WORKERS = Math.min(
-  POSTGRES_WORKER_CEILING,
-  Math.max(1, cpus().length - 1),
-  Math.max(
-    1,
-    Math.floor((totalmem() * MEMORY_BUDGET_FRACTION - JEST_BASE_BYTES) / WORKER_BYTES)
-  )
-);
+const MAX_WORKERS = computeMaxWorkers();
 
 module.exports = {
   maxWorkers: MAX_WORKERS,
   preset: 'ts-jest',
   testEnvironment: 'node',
-  // Creates ONE throwaway, fully-migrated Postgres database per run and points
-  // DATABASE_URL at it, then drops it. A reachable Postgres is a hard
-  // prerequisite of this suite — see jest.globalSetup.ts.
+  // Provisions one throwaway, fully-migrated Postgres database per worker, then
+  // drops them all. A reachable Postgres is a hard prerequisite of this suite —
+  // see jest.globalSetup.ts and jest.setupWorkerDatabase.cjs.
   globalSetup: '<rootDir>/jest.globalSetup.ts',
   globalTeardown: '<rootDir>/jest.globalTeardown.ts',
+  setupFiles: ['<rootDir>/jest.setupWorkerDatabase.cjs'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.cjs'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   moduleNameMapper: {

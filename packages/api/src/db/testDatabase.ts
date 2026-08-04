@@ -88,14 +88,25 @@ function maintenanceUrl(databaseUrl: string): string {
   return url.toString();
 }
 
+export type CreateTestDatabaseOptions = {
+  /**
+   * When true (default), sets `process.env.DATABASE_URL` to the new database.
+   * Global setup passes `false` while provisioning one database per worker.
+   */
+  assignEnv?: boolean;
+};
+
 /**
- * Create a migrated throwaway database and point `DATABASE_URL` at it.
+ * Create a migrated throwaway database and, by default, point `DATABASE_URL` at it.
  *
  * @returns The throwaway database's connection string.
  * @throws {ConfigurationError} When neither `TEST_DATABASE_URL` nor
  *   `DATABASE_URL` is set — there is no server to create the database on.
  */
-export async function createTestDatabase(): Promise<string> {
+export async function createTestDatabase(
+  options: CreateTestDatabaseOptions = {}
+): Promise<string> {
+  const { assignEnv = true } = options;
   const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!baseUrl) {
     throw new ConfigurationError(
@@ -130,8 +141,22 @@ export async function createTestDatabase(): Promise<string> {
     throw error;
   }
 
-  process.env.DATABASE_URL = url;
+  if (assignEnv) {
+    process.env.DATABASE_URL = url;
+  }
   return url;
+}
+
+/**
+ * Create `count` independent throwaway databases, each fully migrated.
+ * Used by Jest global setup to provision one database per worker.
+ */
+export async function createTestDatabases(count: number): Promise<string[]> {
+  const urls: string[] = [];
+  for (let i = 0; i < count; i++) {
+    urls.push(await createTestDatabase({ assignEnv: false }));
+  }
+  return urls;
 }
 
 /**

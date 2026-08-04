@@ -1,10 +1,10 @@
 /**
  * Jest global setup — Postgres.
  *
- * Creates ONE throwaway, fully-migrated database for the whole run and points
- * `DATABASE_URL` at it. Jest forks its workers after this resolves, so every
- * test file inherits that env var and `connectPostgres()` opens against the
- * throwaway database rather than a developer's real one.
+ * Creates one throwaway, fully-migrated database PER WORKER and writes their
+ * URLs to a manifest file. `jest.setupWorkerDatabase.cjs` runs in each worker
+ * before test files load and points `DATABASE_URL` at that worker's database,
+ * so parallel suites cannot race on shared rows.
  *
  * This runs for EVERY `bun run test`, so a reachable Postgres is a hard
  * prerequisite of the suite — deliberately, since the alternative (skipping
@@ -15,7 +15,13 @@
  * The Mongo side is untouched: `jest.setup.cjs` still mocks mongoose wholesale.
  */
 
-import { createTestDatabase } from './src/db/testDatabase';
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createTestDatabases } from './src/db/testDatabase';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { computeMaxWorkers, OXY_JEST_DATABASE_MANIFEST } = require('./jest.workerCount.cjs');
 
 /**
  * Connections one worker's pool may open. Deliberately tiny, and NOT a tuning
@@ -50,5 +56,15 @@ const TEST_MAX_POOL_SIZE = '8';
 
 export default async function globalSetup(): Promise<void> {
   process.env.PG_MAX_POOL_SIZE ??= TEST_MAX_POOL_SIZE;
-  await createTestDatabase();
+
+  const workerCount = computeMaxWorkers();
+  const urls = await createTestDatabases(workerCount);
+
+  const manifestPath = join(tmpdir(), `oxy-jest-databases-${process.pid}.json`);
+  writeFileSync(manifestPath, JSON.stringify(urls));
+  process.env[OXY_JEST_DATABASE_MANIFEST] = manifestPath;
+
+  // Global setup and teardown share this process; keep a valid URL for teardown
+  // guards and any code that runs before workers fork.
+  process.env.DATABASE_URL = urls[0];
 }
