@@ -52,8 +52,17 @@ export async function executeRows<TRow extends Record<string, unknown>>(
   return (await executor.execute(query)) as TRow[];
 }
 
-/** A drizzle handle over the consumer's own schema. */
-export type OxyDatabase<TSchema extends Record<string, unknown>> = PostgresJsDatabase<TSchema>;
+/**
+ * A drizzle handle over the consumer's own schema. Drizzle's own `drizzle()`
+ * factory returns `PostgresJsDatabase<TSchema> & { $client: TClient }` (see
+ * `drizzle-orm/postgres-js/driver.d.ts`) — the `$client` escape hatch back to
+ * the underlying postgres.js client is really there at runtime, so the type
+ * alias has to carry it too, or `createDatabase`'s declared return type lies
+ * about what callers actually get back.
+ */
+export type OxyDatabase<TSchema extends Record<string, unknown>> = PostgresJsDatabase<TSchema> & {
+  $client: postgres.Sql;
+};
 
 export interface CreateDatabaseOptions<TSchema extends Record<string, unknown>> {
   readonly url: string;

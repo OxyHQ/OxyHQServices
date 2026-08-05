@@ -20,16 +20,18 @@ describe('SqlExecutor', () => {
   });
 
   // The regression check for "a real drizzle handle and a real transaction
-  // are assignable to SqlExecutor" does NOT live here. This package's
-  // `tsconfig.json` sets `isolatedModules: true`, and ts-jest reads that exact
-  // compiler option to decide its OWN diagnostics mode — `config-set.js`:
-  // `this.isolatedModules = this.parsedTsConfig.options.isolatedModules ?? false`
-  // — so ts-jest transpiles this file WITHOUT type-checking it (confirmed
-  // empirically: a deliberate `const x: number = 'a string'` added here did
-  // NOT fail `bun run --filter @oxyhq/db test`). A type-only assertion placed
-  // in this file would compile-error-check nothing and silently no-op forever.
-  // The real check lives in `../database.typetest.ts`, a plain `src/` module
-  // excluded from every BUILD tsconfig but not from `tsconfig.json` — so
+  // are assignable to SqlExecutor" does NOT live here, even though `jest.config.js`
+  // now type-checks this file (Task 4b overrides `isolatedModules: false` for
+  // ts-jest, so a type-only assertion here would no longer silently no-op —
+  // this package's `tsconfig.json` still sets `isolatedModules: true` for the
+  // `tsc` build configs, which is a separate, deliberately-kept guard against
+  // code that would not survive a per-file transpiler downstream, unrelated to
+  // whether tests get type-checked). It stays in `../database.typetest.ts`
+  // instead because that check needs no live database or constructed
+  // transaction handle to run — it only needs `PostgresJsDatabase`'s and its
+  // `transaction` callback's declared TYPES, extracted at the type level, so a
+  // plain `src/` module gated by `tsc` is the more direct fit than a Jest test.
+  // It is excluded from every BUILD tsconfig but not from `tsconfig.json` — so
   // `bun run --filter @oxyhq/db typescript` is the command that gates it.
 });
 
