@@ -132,7 +132,8 @@ awaits them without reading the result would mirror failures as successes into
 whatever it is keeping in step.
 
 **A namespace you claimed by mistake can be given back, while it is empty.**
-`DELETE /v2/follow-targets/namespaces/<namespace>`, holder only, refused once
+`DELETE /v2/follow-targets/namespaces/<namespace>` (or
+`oxyServices.releaseFollowNamespace('<namespace>')`), holder only, refused once
 any kind is registered inside it. This exists because registration is
 client-side and a claim is first-come, so the first person to open a screen on
 *any* build triggers it — including a development build using a fallback client
