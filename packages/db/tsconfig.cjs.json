@@ -10,5 +10,5 @@
     "tsBuildInfoFile": "dist/cjs/.tsbuildinfo"
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "**/__tests__"]
+  "exclude": ["node_modules", "dist", "**/__tests__", "**/*.typetest.ts"]
 }

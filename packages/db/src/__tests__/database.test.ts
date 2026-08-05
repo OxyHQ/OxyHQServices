@@ -1,8 +1,8 @@
 import net from 'node:net';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { pgTable, text } from 'drizzle-orm/pg-core';
 import type postgres from 'postgres';
-import { createDatabase, type SqlExecutor } from '../database';
+import { createDatabase, executeRows, type SqlExecutor } from '../database';
 
 describe('SqlExecutor', () => {
   it('is satisfied by anything that can run a drizzle SQL chunk', async () => {
@@ -17,6 +17,43 @@ describe('SqlExecutor', () => {
     await fake.execute(sql`select 1`);
 
     expect(calls).toEqual(['chunked']);
+  });
+
+  // The regression check for "a real drizzle handle and a real transaction
+  // are assignable to SqlExecutor" does NOT live here. This package's
+  // `tsconfig.json` sets `isolatedModules: true`, and ts-jest reads that exact
+  // compiler option to decide its OWN diagnostics mode — `config-set.js`:
+  // `this.isolatedModules = this.parsedTsConfig.options.isolatedModules ?? false`
+  // — so ts-jest transpiles this file WITHOUT type-checking it (confirmed
+  // empirically: a deliberate `const x: number = 'a string'` added here did
+  // NOT fail `bun run --filter @oxyhq/db test`). A type-only assertion placed
+  // in this file would compile-error-check nothing and silently no-op forever.
+  // The real check lives in `../database.typetest.ts`, a plain `src/` module
+  // excluded from every BUILD tsconfig but not from `tsconfig.json` — so
+  // `bun run --filter @oxyhq/db typescript` is the command that gates it.
+});
+
+describe('executeRows', () => {
+  it("forwards the query unchanged and returns the executor's rows, narrowed to the caller-declared shape", async () => {
+    const fakeRows: Record<string, unknown>[] = [{ ctid: 'abc' }];
+    let received: SQL | undefined;
+    const fakeExecutor: SqlExecutor = {
+      execute: async (query) => {
+        received = query;
+        return fakeRows;
+      },
+    };
+    const query = sql`delete from widgets returning ctid`;
+
+    const rows = await executeRows<{ ctid: string }>(fakeExecutor, query);
+
+    // Same query object reaches the executor — not a rebuilt/rewritten one.
+    expect(received).toBe(query);
+    // Same array the executor returned — no cloning, no filtering.
+    expect(rows).toBe(fakeRows);
+    // Compiles as `{ ctid: string }`, not `Record<string, unknown>` — the row
+    // typing `SqlExecutor.execute` itself cannot carry (see its doc comment).
+    expect(rows[0].ctid).toBe('abc');
   });
 });
 
@@ -48,9 +85,18 @@ describe('createDatabase', () => {
   // query, because that query's own connect only lands on a later tick.
   // Spying on the constructor a real connection attempt would call proves the
   // lazy behaviour at RUNTIME instead of assuming it, and doubles as a
-  // regression gate: if a future `postgres` version — or a later edit here —
-  // started connecting eagerly, every other test in this file would start
-  // needing a live database, and this is the one that would say so.
+  // regression gate: if a future edit to `createDatabase` started connecting
+  // eagerly, every other test in this file would start needing a live
+  // database, and this is the one that would say so.
+  //
+  // KNOWN COUPLING, kept deliberately: this pins a third-party behaviour
+  // (postgres.js's current `reconnect()` → `setTimeout` scheduling) that
+  // `createDatabase` depends on but does not own and cannot control. A
+  // future postgres.js release that stays fully lazy but reschedules through
+  // a different mechanism (a microtask, a different timer) could make this
+  // specific test flaky or wrong with NO change to `database.ts` — if that
+  // happens, the fix is to adjust the wait/spy here to match the new
+  // mechanism, not to conclude `createDatabase` regressed.
   it('opens no socket while building the handle — connecting is deferred to the first query', async () => {
     const connectSpy = jest.spyOn(net.Socket.prototype, 'connect');
     try {

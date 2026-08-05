@@ -10,10 +10,46 @@ import { DATABASE_CASING } from './casing';
  * Declared structurally rather than as `PostgresJsDatabase<typeof schema>`,
  * because that type names the CONSUMER's schema and nothing in a shared package
  * may. A transaction handle satisfies it as readily as a pool does, which is
- * what lets a sweep or a gate run inside one.
+ * what lets a sweep or a gate run inside one — verified directly: both a real
+ * `PostgresJsDatabase` and the `tx` handle inside `db.transaction(cb)` type-check
+ * as `SqlExecutor` (see `__tests__/database.test.ts`).
+ *
+ * `execute` is deliberately NOT generic on this method. drizzle's own
+ * `PgDatabase.execute<TRow>()` returns `PgRaw<PgQueryResultKind<...>>` — a
+ * concrete class with private fields, not a plain `Promise<TRow[]>` — so no
+ * hand-written `execute<T>(query): Promise<T[]>` can ever structurally match
+ * it: TypeScript rejects the assignment on `T` alone (`'T' could be
+ * instantiated with an arbitrary type`), and constraining `T` to
+ * `Record<string, unknown>` does not fix this, because a generic-method
+ * comparison also fails once the source's `T` and the target's `T` are
+ * required to unify as arbitrary-but-matching subtypes rather than the exact
+ * same type. Fixing the return type to `Record<string, unknown>[]` (still a
+ * plain array — `postgres.js`'s `RowList<T>` is `T & Iterable<...> &
+ * ResultQueryMeta<...>`, so it structurally IS a `T[]`) removes the
+ * conflict entirely: no generic left to disagree over. Row typing at the call
+ * site is recovered via {@link executeRows}, a generic FUNCTION rather than a
+ * generic METHOD — the shape drizzle's own `execute<TRow>` uses is simply not
+ * reachable from a plain interface, but a caller-side assertion is, and it's
+ * the same trust boundary drizzle's own generic already relies on (nothing
+ * validates `TRow` against the query at runtime, on either side).
  */
 export interface SqlExecutor {
-  execute<T>(query: SQL): Promise<T[]>;
+  execute(query: SQL): Promise<Record<string, unknown>[]>;
+}
+
+/**
+ * Run a query through an executor and assert the row shape the caller already
+ * knows the query returns — the same trust boundary drizzle's own
+ * `db.execute<TRow>()` relies on, recovered here because {@link SqlExecutor}
+ * cannot carry a generic method (see its doc comment for why). Nothing here
+ * validates `TRow` against the query; a caller asking for the wrong shape gets
+ * a wrong TYPE, not a caught error.
+ */
+export async function executeRows<TRow extends Record<string, unknown>>(
+  executor: SqlExecutor,
+  query: SQL
+): Promise<TRow[]> {
+  return (await executor.execute(query)) as TRow[];
 }
 
 /** A drizzle handle over the consumer's own schema. */

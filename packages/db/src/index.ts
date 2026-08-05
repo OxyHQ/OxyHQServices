@@ -13,13 +13,14 @@ export {
   uuidv7,
   type SelectedRow,
 } from './columns';
-export { isLiveEntityId } from './ids';
 export {
   createDatabase,
+  executeRows,
   type CreateDatabaseOptions,
   type OxyDatabase,
   type SqlExecutor,
 } from './database';
+export { isLiveEntityId } from './ids';
 export {
   CHECK_VIOLATION,
   DEADLOCK_DETECTED,
