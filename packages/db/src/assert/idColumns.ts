@@ -31,7 +31,12 @@
  * refuses an unset `onDelete`, so that field needs no runtime check.
  */
 
-import { getTableConfig, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
+import {
+  getTableConfig,
+  type PgColumn,
+  type PgTable,
+  type UpdateDeleteAction,
+} from 'drizzle-orm/pg-core';
 import { sqlColumnName } from '../casing';
 import type { InvariantViolation } from './schemaInvariants';
 
@@ -43,7 +48,8 @@ export interface DeferredForeignKey {
   readonly parentTable: string;
   /** Column on the parent, e.g. `id`. */
   readonly parentColumn: string;
-  readonly onDelete: 'cascade' | 'set null' | 'restrict' | 'no action';
+  /** Decided per relation — never left to default. */
+  readonly onDelete: UpdateDeleteAction;
   /** Why that `ON DELETE`, in one line. */
   readonly reason: string;
 }
