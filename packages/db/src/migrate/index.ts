@@ -18,3 +18,15 @@ export {
   assertMigrationTarget,
   readTargetDatabase,
 } from './targetDatabase';
+export {
+  DEPLOY_PHASES,
+  MIGRATION_RUNS,
+  POST_PHASE_GREP_PATTERN,
+  phaseMarkerLine,
+  planMigrationRun,
+  readMigrationPhases,
+  type DeployPhase,
+  type MigrationPhaseReadResult,
+  type MigrationRun,
+  type MigrationRunPlan,
+} from './phases';
