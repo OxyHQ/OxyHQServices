@@ -30,7 +30,12 @@ import { repoHeads } from '../../db/schema/repoHeads';
 import { signedRecords } from '../../db/schema/signedRecords';
 import { users } from '../../db/schema/users';
 import { buildUserDid } from '../did.service';
-import { oxyRecordStore, subjectKeyForUser } from '../oxyRecordStore';
+import {
+  MAX_RECORD_AUTHORS,
+  MAX_RECORD_COLLECTIONS,
+  oxyRecordStore,
+  subjectKeyForUser,
+} from '../oxyRecordStore';
 
 /** A wall-clock base every fixture's `issuedAt` is offset from. */
 const T0 = 1_700_000_000_000;
@@ -395,5 +400,162 @@ describe('the subject DID gates every read and the append', () => {
       reason: 'invalid_envelope',
     });
     expect(await countRecords(userId)).toBe(0);
+  });
+});
+
+/**
+ * The multi-author read — the one query on this store that spans subjects.
+ *
+ * Fixtures vary `collection` (the `nsid` column) freely while keeping `type`
+ * inside the Oxy store's accepted set, because the CHECK constraint still
+ * rejects an app `type` (see the append case above). That split is deliberate:
+ * `nsid` is what this query filters on, so the suite exercises it today without
+ * depending on the separate decision to admit app records.
+ */
+describe('listRecordsByAuthors', () => {
+  const FEED = 'app.mention.feed.post';
+  const OTHER = 'app.syra.listen';
+
+  it('merges several authors into one page ordered by store time', async () => {
+    const [a, b] = [await account(), await account()];
+    await seedRows(a, [
+      { seq: 0, collection: FEED, issuedAt: T0, createdAt: new Date(T0 + 1000) },
+      { seq: 1, collection: FEED, issuedAt: T0, createdAt: new Date(T0 + 3000) },
+    ]);
+    await seedRows(b, [{ seq: 0, collection: FEED, issuedAt: T0, createdAt: new Date(T0 + 2000) }]);
+
+    const page = await oxyRecordStore.listRecordsByAuthors({
+      userIds: [a, b],
+      collections: [FEED],
+    });
+
+    // Interleaved by time across authors — not grouped by author, which is what
+    // a naive per-author loop would produce.
+    expect(page.records.map((r) => r.recordId)).toEqual([`${a}-0`, `${b}-0`, `${a}-1`]);
+    expect(page.records.every((r) => r.nsid === FEED)).toBe(true);
+  });
+
+  it('returns only the requested collections', async () => {
+    const userId = await account();
+    await seedRows(userId, [
+      { seq: 0, collection: FEED, issuedAt: T0, createdAt: new Date(T0 + 1000) },
+      { seq: 1, collection: OTHER, issuedAt: T0, createdAt: new Date(T0 + 2000) },
+    ]);
+
+    const page = await oxyRecordStore.listRecordsByAuthors({ userIds: [userId], collections: [FEED] });
+
+    expect(page.records.map((r) => r.recordId)).toEqual([`${userId}-0`]);
+  });
+
+  it('excludes unverified rows and v1 rows', async () => {
+    const userId = await account();
+    await seedRows(userId, [
+      { seq: 0, collection: FEED, issuedAt: T0, createdAt: new Date(T0 + 1000), verified: false },
+      // No `seq` ⇒ v1: the completeness CHECK leaves `nsid` null, so it can
+      // never carry a lexicon to be asked for.
+      { issuedAt: T0, createdAt: new Date(T0 + 2000) },
+      { seq: 1, collection: FEED, issuedAt: T0, createdAt: new Date(T0 + 3000) },
+    ]);
+
+    const page = await oxyRecordStore.listRecordsByAuthors({ userIds: [userId], collections: [FEED] });
+
+    expect(page.records.map((r) => r.recordId)).toEqual([`${userId}-1`]);
+  });
+
+  /**
+   * The fixture that tells a ROW-VALUE cursor from a plain timestamp one.
+   *
+   * Both rows share `created_at` to the microsecond. `created_at > cursor` skips
+   * the second row forever; `created_at >= cursor` returns the first one again
+   * on every poll. Only `(created_at, id) > (…, …)` resumes exactly once — and
+   * every other case in this block would pass under all three, which is why
+   * this one exists.
+   */
+  it('resumes past a cursor when two records share a timestamp', async () => {
+    const userId = await account();
+    const sameInstant = new Date(T0 + 5000);
+    await seedRows(userId, [
+      { seq: 0, collection: FEED, issuedAt: T0, createdAt: sameInstant },
+      { seq: 1, collection: FEED, issuedAt: T0, createdAt: sameInstant },
+    ]);
+
+    const first = await oxyRecordStore.listRecordsByAuthors({
+      userIds: [userId],
+      collections: [FEED],
+      limit: 1,
+    });
+    expect(first.records).toHaveLength(1);
+    expect(first.nextCursor).not.toBeNull();
+
+    const second = await oxyRecordStore.listRecordsByAuthors({
+      userIds: [userId],
+      collections: [FEED],
+      after: first.nextCursor,
+    });
+
+    const seen = [...first.records, ...second.records].map((r) => r.recordId);
+    expect(seen).toEqual([`${userId}-0`, `${userId}-1`].sort());
+    expect(new Set(seen).size).toBe(2);
+  });
+
+  it('reports no cursor once the stream is exhausted', async () => {
+    const userId = await account();
+    await seedRows(userId, [{ seq: 0, collection: FEED, issuedAt: T0, createdAt: new Date(T0 + 1000) }]);
+
+    const page = await oxyRecordStore.listRecordsByAuthors({ userIds: [userId], collections: [FEED] });
+
+    expect(page.records).toHaveLength(1);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  /**
+   * An empty filter must mean NOTHING, never everything. Both cases seed a row
+   * that a dropped `WHERE` clause would happily return, so the assertion cannot
+   * pass vacuously.
+   */
+  it('answers an empty author or collection list with an empty page', async () => {
+    const userId = await account();
+    await seedRows(userId, [{ seq: 0, collection: FEED, issuedAt: T0, createdAt: new Date(T0 + 1000) }]);
+
+    expect(await oxyRecordStore.listRecordsByAuthors({ userIds: [], collections: [FEED] })).toEqual({
+      records: [],
+      nextCursor: null,
+    });
+    expect(await oxyRecordStore.listRecordsByAuthors({ userIds: [userId], collections: [] })).toEqual({
+      records: [],
+      nextCursor: null,
+    });
+  });
+
+  it('refuses an oversized author or collection list instead of truncating it', async () => {
+    const userId = await account();
+
+    await expect(
+      oxyRecordStore.listRecordsByAuthors({
+        userIds: Array.from({ length: MAX_RECORD_AUTHORS + 1 }, (_, i) => `u${i}`),
+        collections: [FEED],
+      }),
+    ).rejects.toThrow(/exceeds the 300 cap/);
+
+    await expect(
+      oxyRecordStore.listRecordsByAuthors({
+        userIds: [userId],
+        collections: Array.from({ length: MAX_RECORD_COLLECTIONS + 1 }, (_, i) => `app.c${i}`),
+      }),
+    ).rejects.toThrow(/exceeds the 32 cap/);
+  });
+
+  it('counts a repeated author once against the cap', async () => {
+    const userId = await account();
+    await seedRows(userId, [{ seq: 0, collection: FEED, issuedAt: T0, createdAt: new Date(T0 + 1000) }]);
+
+    // 400 entries, one distinct id: deduping happens BEFORE the cap, so a
+    // caller that repeats an author is not punished for it.
+    const page = await oxyRecordStore.listRecordsByAuthors({
+      userIds: Array.from({ length: 400 }, () => userId),
+      collections: [FEED, FEED],
+    });
+
+    expect(page.records.map((r) => r.recordId)).toEqual([`${userId}-0`]);
   });
 });
