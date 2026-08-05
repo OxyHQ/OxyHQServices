@@ -124,6 +124,100 @@ describe('createTestDatabase', () => {
       expect(endCalls).toBe(1);
     });
   });
+
+  describe('migrate hook (faked driver, no live Postgres)', () => {
+    beforeEach(() => {
+      jest.resetModules();
+    });
+
+    afterEach(() => {
+      jest.resetModules();
+      jest.restoreAllMocks();
+      jest.dontMock('postgres');
+    });
+
+    function mockPostgresTrackingStatements(statements: string[]): void {
+      jest.doMock('postgres', () => {
+        const factory = jest.fn(() =>
+          Object.assign(jest.fn(), {
+            unsafe: jest.fn((statement: string) => {
+              statements.push(statement);
+              return Promise.resolve([]);
+            }),
+            end: jest.fn(() => Promise.resolve(undefined)),
+          })
+        );
+        return { __esModule: true, default: factory };
+      });
+    }
+
+    it("runs the hook, once, with the created database's own URL — never the admin URL — after the database actually exists", async () => {
+      const statements: string[] = [];
+      mockPostgresTrackingStatements(statements);
+
+      const { createTestDatabase: createTestDatabaseUnderMock } = await import('../testing');
+
+      const adminUrl = 'postgres://user:pass@db.example.com:5432/oxy_dev?sslmode=require';
+      let statementsWhenHookRan: string[] = [];
+      const migrate = jest.fn(async (databaseUrl: string) => {
+        statementsWhenHookRan = [...statements];
+        void databaseUrl;
+      });
+
+      const url = await createTestDatabaseUnderMock({ adminUrl, migrate });
+
+      expect(migrate).toHaveBeenCalledTimes(1);
+      expect(migrate).toHaveBeenCalledWith(url);
+      expect(url).not.toBe(adminUrl);
+      expect(new URL(url).pathname).toMatch(/^\/oxydb_test_[0-9a-f]{16}$/);
+      // The CREATE had already happened by the time the hook ran — not
+      // dispatched concurrently with it, and not before the admin connection
+      // observed it succeed.
+      expect(statementsWhenHookRan).toEqual([statements[0]]);
+      expect(statements[0]).toMatch(/^create database "oxydb_test_[0-9a-f]{16}"$/);
+    });
+
+    it('drops the database when the hook throws, rather than leaving it behind', async () => {
+      const statements: string[] = [];
+      mockPostgresTrackingStatements(statements);
+
+      const { createTestDatabase: createTestDatabaseUnderMock } = await import('../testing');
+
+      const migrate = jest.fn(async () => {
+        throw new Error('simulated migration failure');
+      });
+
+      await expect(
+        createTestDatabaseUnderMock({
+          adminUrl: 'postgres://db.example.com/oxy_dev',
+          migrate,
+        })
+      ).rejects.toThrow('simulated migration failure');
+
+      // Not just "a drop happened somewhere" — the SAME name that was
+      // created is the one that got dropped, in order.
+      expect(statements).toHaveLength(2);
+      const created = /^create database "(oxydb_test_[0-9a-f]{16})"$/.exec(statements[0]);
+      const dropped = /^drop database if exists "(oxydb_test_[0-9a-f]{16})" with \(force\)$/.exec(
+        statements[1]
+      );
+      expect(created).not.toBeNull();
+      expect(dropped).not.toBeNull();
+      expect(dropped?.[1]).toBe(created?.[1]);
+    });
+
+    it('is never called at all when omitted — the database is returned empty', async () => {
+      const statements: string[] = [];
+      mockPostgresTrackingStatements(statements);
+
+      const { createTestDatabase: createTestDatabaseUnderMock } = await import('../testing');
+
+      await createTestDatabaseUnderMock({ adminUrl: 'postgres://db.example.com/oxy_dev' });
+
+      expect(statements).toHaveLength(1);
+      expect(statements[0]).toMatch(/^create database/);
+    });
+  });
 });
 
 describe('dropTestDatabase', () => {

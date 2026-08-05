@@ -2,21 +2,22 @@
  * Throwaway Test Database
  *
  * Creates a uniquely-named database on the Postgres server `options.adminUrl`
- * points at and returns its connection string, so a suite can run against a
- * real schema instead of a fake one. `dropTestDatabase` removes it again.
+ * points at, optionally applies a caller-supplied schema to it via
+ * `options.migrate`, and returns its connection string — so a suite can run
+ * against a real schema instead of a fake one. `dropTestDatabase` removes it
+ * again.
  *
- * Deliberately does NOT apply any schema. Mention's original version of this
- * harness (the source this module was ported from) shelled out to its own
- * `bun run db:migrate`, because at the time nothing in this codebase applied
- * migrations generically. `@oxyhq/db/migrate`'s `runMigrations` now does
- * exactly that, driven entirely by caller-supplied options (its own migrations
- * folder, its own extensions, its own deploy phase) — so a consumer of this
- * harness calls it directly against the URL {@link createTestDatabase}
- * returns, the same way it would against any other freshly created database.
- * Re-implementing a second migration mechanism here would mean this module
- * would have to guess a caller's script name and environment variable, which
- * is exactly the kind of consumer-specific assumption this package exists to
- * avoid baking in.
+ * `migrate` is a callback, not a built-in migration mechanism. Mention's
+ * original version of this harness (the source this module was ported from)
+ * shelled out to its own `bun run db:migrate`, because at the time nothing in
+ * this codebase applied migrations generically. `@oxyhq/db/migrate`'s
+ * `runMigrations` now does exactly that, driven entirely by caller-supplied
+ * options (its own migrations folder, its own extensions, its own deploy
+ * phase) — so a caller passes `(url) => runMigrations({ databaseUrl: url, ... })`
+ * (or its own spawn, if it still needs one) rather than this module
+ * re-implementing a second migration mechanism that would have to guess a
+ * caller's script name and environment variable, which is exactly the kind of
+ * consumer-specific assumption this package exists to avoid baking in.
  *
  * There is likewise no default for `adminUrl` read from the environment:
  * which variable (if any) a caller resolves this from is that caller's own
@@ -52,6 +53,26 @@ export interface CreateTestDatabaseOptions {
    * create a throwaway database somewhere the caller did not intend.
    */
   readonly adminUrl?: string;
+
+  /**
+   * Applies the caller's own schema to the throwaway database once it
+   * exists, before {@link createTestDatabase} returns. Receives the
+   * throwaway database's OWN connection string — never `adminUrl`: `CREATE
+   * DATABASE` has already run by the time this is called, so the hook
+   * connects to the real target, not the maintenance database. Typically a
+   * closure over `runMigrations` from `@oxyhq/db/migrate`, or a caller's own
+   * migration entrypoint.
+   *
+   * Omitted, the throwaway database is returned empty — a caller may still
+   * apply its own schema afterward, the same way it would against any other
+   * freshly created database.
+   *
+   * A hook that throws does not leak the database it was given: the
+   * throwaway database is dropped before the rejection propagates, so a
+   * broken migration cannot turn one failed test run into a Postgres server
+   * full of abandoned throwaway databases.
+   */
+  readonly migrate?: (databaseUrl: string) => Promise<void>;
 }
 
 /**
@@ -65,12 +86,15 @@ function maintenanceUrl(databaseUrl: string): string {
 }
 
 /**
- * Create an empty throwaway database and return its connection string.
+ * Create a throwaway database — empty, unless `options.migrate` applies a
+ * schema to it — and return its connection string.
  *
  * @returns The throwaway database's own connection string, on the same
  *   server as `options.adminUrl`.
  * @throws {Error} When `options.adminUrl` is missing or empty — there is no
  *   server to create the database on, and this never invents one.
+ * @throws Whatever `options.migrate` throws, after dropping the database it
+ *   was given — a failed migration never leaves a throwaway database behind.
  */
 export async function createTestDatabase(
   options: CreateTestDatabaseOptions = {}
@@ -99,6 +123,18 @@ export async function createTestDatabase(
     await create.unsafe(`create database "${name}"`);
   } finally {
     await create.end({ timeout: ADMIN_CLOSE_TIMEOUT_SECONDS });
+  }
+
+  if (options.migrate) {
+    try {
+      await options.migrate(url);
+    } catch (error) {
+      // A hook that fails midway must not leave the throwaway database
+      // behind — see this option's own doc comment for why an abandoned one
+      // is not merely harmless clutter.
+      await dropTestDatabase(url);
+      throw error;
+    }
   }
 
   return url;

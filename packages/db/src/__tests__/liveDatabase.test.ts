@@ -1,12 +1,18 @@
 /**
- * Live-Postgres coverage for the ephemeral-database harness itself, and for
- * the four migration-ledger functions Task 5 shipped with NO coverage at
- * all: `assertMigrationTarget`, `readAppliedMillis`, `readLastAppliedMillis`,
+ * Live-Postgres coverage for the ephemeral-database harness itself —
+ * including that a throwing `migrate` hook does not leak the database it was
+ * given, confirmed here against a REAL server rather than the faked driver
+ * `testing.test.ts` uses for the same claim — and for the four
+ * migration-ledger functions Task 5 shipped with NO coverage at all:
+ * `assertMigrationTarget`, `readAppliedMillis`, `readLastAppliedMillis`,
  * `assertPostgresMigrationsCurrent`. Each needs a real `postgres.Sql` — a
  * stub would only prove the comparison agrees with itself, the same reasoning
  * `targetDatabase.test.ts` and `extensions.test.ts` already give for leaving
  * them out — and this package had no live-database harness until this task
- * built `createTestDatabase`/`dropTestDatabase`.
+ * built `createTestDatabase`/`dropTestDatabase`. The "migrated" database
+ * below is created through the `migrate` hook itself (closing over
+ * `runMigrations`), the same composition Task 12/14 are expected to use, not
+ * a hand-wired call kept separate from what the harness actually offers.
  *
  * Skipped entirely when `OXYDB_TEST_ADMIN_URL` is unset: this package's own
  * CI does not yet run a Postgres service (wiring one is a separate task), so
@@ -97,6 +103,37 @@ describeLive('createTestDatabase / dropTestDatabase (live Postgres)', () => {
       await admin.end({ timeout: 5 });
     }
   });
+
+  it('drops the database when the migrate hook throws, rather than leaving it behind', async () => {
+    let capturedUrl = '';
+
+    await expect(
+      createTestDatabase({
+        adminUrl: ADMIN_URL,
+        migrate: async (url) => {
+          capturedUrl = url;
+          throw new Error('simulated migration failure');
+        },
+      })
+    ).rejects.toThrow('simulated migration failure');
+
+    expect(capturedUrl).not.toBe('');
+    const name = bareDatabaseName(capturedUrl);
+
+    // Same evidence standard as the test above: a SEPARATE admin connection
+    // querying pg_database directly, against a real server — not an inference
+    // from the rejection alone (a hook that throws AFTER leaking the database
+    // would reject exactly the same way).
+    const admin = postgres(assertAssigned(ADMIN_URL, 'ADMIN_URL'), { max: 1 });
+    try {
+      const rows = await admin<{ present: boolean }[]>`
+        select exists(select 1 from pg_database where datname = ${name}) as present
+      `;
+      expect(rows[0]?.present).toBe(false);
+    } finally {
+      await admin.end({ timeout: 5 });
+    }
+  });
 });
 
 describeLive('migration-ledger functions against a real Postgres', () => {
@@ -114,20 +151,26 @@ describeLive('migration-ledger functions against a real Postgres', () => {
     freshClient = postgres(freshUrl, { max: 1 });
 
     // A second database, actually migrated through the SAME runMigrations
-    // this package ships — so the ledger rows these tests read are exactly
-    // what a real migration run produces, not a hand-written fixture.
-    migratedUrl = await createTestDatabase({ adminUrl: ADMIN_URL });
-    migratedName = bareDatabaseName(migratedUrl);
-    fixtureFolder = migrationsFixture();
-    await runMigrations({
-      databaseUrl: migratedUrl,
-      migrationsFolder: fixtureFolder,
-      extensions: [],
-      run: 'all',
-      expectedDatabase: migratedName,
-      dryRun: false,
-      logger: noopLogger,
+    // this package ships, wired through createTestDatabase's own `migrate`
+    // hook — the way a real consumer (Task 12/14) is expected to use it —
+    // so the ledger rows these tests read are exactly what a real migration
+    // run produces, not a hand-written fixture.
+    const folder = migrationsFixture();
+    fixtureFolder = folder;
+    migratedUrl = await createTestDatabase({
+      adminUrl: ADMIN_URL,
+      migrate: (url) =>
+        runMigrations({
+          databaseUrl: url,
+          migrationsFolder: folder,
+          extensions: [],
+          run: 'all',
+          expectedDatabase: bareDatabaseName(url),
+          dryRun: false,
+          logger: noopLogger,
+        }),
     });
+    migratedName = bareDatabaseName(migratedUrl);
     migratedClient = postgres(migratedUrl, { max: 1 });
   });
 
