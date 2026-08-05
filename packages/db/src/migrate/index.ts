@@ -19,6 +19,7 @@ export {
   readTargetDatabase,
 } from './targetDatabase';
 export { type RequiredExtension, ensureExtensions } from './extensions';
+export { type RunMigrationsOptions, runMigrations } from './runner';
 export {
   DEPLOY_PHASES,
   MIGRATION_RUNS,
