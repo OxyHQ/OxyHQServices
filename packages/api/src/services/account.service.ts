@@ -41,8 +41,9 @@ import { accountCredentials } from '../db/schema/accountCredentials';
 import { accountMembers } from '../db/schema/accountMembers';
 import { userAncestors, MAX_ACCOUNT_DEPTH } from '../db/schema/userAncestors';
 import { users } from '../db/schema/users';
+import { publicColumns } from '@oxyhq/db/assert';
 import {
-  publicColumns,
+  PROTECTED_COLUMNS_BY_TABLE,
   USERS_PROTECTED_COLUMNS,
 } from '../db/schema/protectedColumns';
 import type { AccountKind } from '../db/schema/users';
@@ -129,7 +130,7 @@ export type AccountCredentialRow = typeof accountCredentials.$inferSelect;
  * A `users` row, read as an ACCOUNT rather than as a profile — WITHOUT the
  * protected columns.
  *
- * Every read here goes through `publicColumns(users)`, so the phone number, the
+ * Every read here goes through `publicColumns(users, ...)`, so the phone number, the
  * contact-discovery hashes and the refresh token never enter this service's
  * memory, let alone an account DTO. Narrowing the TYPE to match is the half that
  * a convention cannot give you: a serializer that reaches for `phone` on an
@@ -324,7 +325,7 @@ async function loadAccount(
   db: Database,
   accountId: string
 ): Promise<AccountWithAncestors | null> {
-  const [account] = await db.select(publicColumns(users)).from(users).where(eq(users.id, accountId)).limit(1);
+  const [account] = await db.select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE)).from(users).where(eq(users.id, accountId)).limit(1);
   if (!account) return null;
   return { account, ancestors: await loadAncestors(db, accountId) };
 }
@@ -579,7 +580,7 @@ export class AccountService {
     }
   ): Promise<AccountRow> {
     const db = getDb();
-    const [account] = await db.select(publicColumns(users)).from(users).where(eq(users.id, accountId)).limit(1);
+    const [account] = await db.select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE)).from(users).where(eq(users.id, accountId)).limit(1);
     if (!account) {
       throw new NotFoundError('Account not found');
     }
@@ -657,7 +658,7 @@ export class AccountService {
    */
   async archiveAccount(accountId: string): Promise<AccountRow> {
     const db = getDb();
-    const [account] = await db.select(publicColumns(users)).from(users).where(eq(users.id, accountId)).limit(1);
+    const [account] = await db.select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE)).from(users).where(eq(users.id, accountId)).limit(1);
     if (!account) {
       throw new NotFoundError('Account not found');
     }
@@ -682,7 +683,7 @@ export class AccountService {
    */
   async listChildren(userId: string, accountId: string): Promise<AccountNode[]> {
     const children = await getDb()
-      .select(publicColumns(users))
+      .select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE))
       .from(users)
       .where(and(eq(users.parentAccountId, accountId), ne(users.accountStatus, 'archived')))
       .orderBy(asc(users.createdAt));
@@ -695,7 +696,7 @@ export class AccountService {
    */
   async getSubtree(userId: string, accountId: string): Promise<AccountNode[]> {
     const subtree = await getDb()
-      .select(publicColumns(users))
+      .select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE))
       .from(users)
       .where(
         and(
@@ -959,7 +960,7 @@ export class AccountService {
         : eq(users.id, userId);
 
     const accounts = await db
-      .select(publicColumns(users))
+      .select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE))
       .from(users)
       .where(and(reachable, ne(users.accountStatus, 'archived')))
       .orderBy(asc(users.createdAt));

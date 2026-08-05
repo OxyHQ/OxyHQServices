@@ -14,6 +14,15 @@
  * `runMigrations`), the same composition Task 12/14 are expected to use, not
  * a hand-wired call kept separate from what the harness actually offers.
  *
+ * The final `describeLive` block covers `runMigrations`'s own
+ * `expectedDatabase` option — optional precisely so a consumer that has
+ * never carried the target-database guard is not forced to adopt it as a
+ * side effect of adopting this package (see the option's own doc comment in
+ * `runner.ts`) — proving BOTH directions: that the check genuinely does not
+ * run when the option is omitted, and genuinely does when it is supplied. An
+ * optional guard that silently never fires either way would be worse than no
+ * option at all.
+ *
  * Skipped entirely when `OXYDB_TEST_ADMIN_URL` is unset: this package's own
  * CI does not yet run a Postgres service (wiring one is a separate task), so
  * a checkout with no server to reach must not fail here. Point it at any
@@ -232,5 +241,73 @@ describeLive('migration-ledger functions against a real Postgres', () => {
         /0002_third/
       );
     });
+  });
+});
+
+describeLive('runMigrations — expectedDatabase is optional', () => {
+  it('does not check the target when expectedDatabase is omitted, and still applies migrations', async () => {
+    // The proof is the OMISSION itself, not a mismatch: assertMigrationTarget
+    // has its own dedicated coverage above for what happens when it runs. If
+    // this call silently checked against some inferred value anyway, that
+    // would be indistinguishable from correct behaviour from the outside —
+    // so this asserts the run SUCCEEDS with no target named at all, which is
+    // only possible if the check truly did not execute.
+    const folder = migrationsFixture();
+    let url: string | undefined;
+    try {
+      url = await createTestDatabase({
+        adminUrl: ADMIN_URL,
+        migrate: (databaseUrl) =>
+          runMigrations({
+            databaseUrl,
+            migrationsFolder: folder,
+            extensions: [],
+            run: 'all',
+            // expectedDatabase deliberately omitted.
+            dryRun: false,
+            logger: noopLogger,
+          }),
+      });
+
+      const client = postgres(url, { max: 1 });
+      try {
+        await expect(readLastAppliedMillis(client)).resolves.toBe(2_000);
+      } finally {
+        await client.end({ timeout: 5 });
+      }
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+      if (url) await dropTestDatabase(url);
+    }
+  });
+
+  it('DOES check the target when expectedDatabase is supplied, and rejects on a mismatch', async () => {
+    // The other half of the same proof: the identical call, differing only
+    // in whether expectedDatabase is present, behaves differently — so the
+    // option genuinely gates the check in both directions, rather than the
+    // check silently never firing regardless of the option (or always
+    // firing regardless of it).
+    const folder = migrationsFixture();
+    try {
+      await expect(
+        createTestDatabase({
+          adminUrl: ADMIN_URL,
+          migrate: (databaseUrl) =>
+            runMigrations({
+              databaseUrl,
+              migrationsFolder: folder,
+              extensions: [],
+              run: 'all',
+              expectedDatabase: 'definitely_not_this_database',
+              dryRun: false,
+              logger: noopLogger,
+            }),
+        })
+        // createTestDatabase's own migrate-hook contract drops the database
+        // it created before rethrowing, so nothing is leaked here.
+      ).rejects.toThrow(WrongMigrationTargetError);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
   });
 });

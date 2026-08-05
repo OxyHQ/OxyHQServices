@@ -20,9 +20,10 @@
  */
 
 import { and, eq, inArray, ne, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { publicColumns } from '@oxyhq/db/assert';
 import { getDb, type Database } from '../config/postgres';
 import { blocks } from '../db/schema/blocks';
-import { publicColumns } from '../db/schema/protectedColumns';
+import { PROTECTED_COLUMNS_BY_TABLE } from '../db/schema/protectedColumns';
 import { restrictions } from '../db/schema/restrictions';
 import { userAncestors } from '../db/schema/userAncestors';
 import { userFollows } from '../db/schema/userFollows';
@@ -570,7 +571,7 @@ export interface AccountDocument {
  * the protected set (`db/schema/protectedColumns.ts`), which is precisely what
  * Mongoose's `select: false` withheld from these two reads.
  */
-const accountDocumentColumns = publicColumns(users);
+const accountDocumentColumns = publicColumns(users, PROTECTED_COLUMNS_BY_TABLE);
 
 export class UserService {
   /**

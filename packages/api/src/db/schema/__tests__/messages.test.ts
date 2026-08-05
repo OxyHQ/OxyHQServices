@@ -18,13 +18,14 @@
 
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, getTableColumns, sql } from 'drizzle-orm';
+import { publicColumns } from '@oxyhq/db/assert';
 import { closePostgres, connectPostgres, getDb } from '../../../config/postgres';
 import { files } from '../files';
 import { mailboxes } from '../mailboxes';
 import { messageAttachments } from '../messageAttachments';
 import { MESSAGE_RECIPIENT_KINDS, messageRecipients } from '../messageRecipients';
 import { messages } from '../messages';
-import { MESSAGES_PROTECTED_COLUMNS, publicColumns } from '../protectedColumns';
+import { MESSAGES_PROTECTED_COLUMNS, PROTECTED_COLUMNS_BY_TABLE } from '../protectedColumns';
 import { users } from '../users';
 
 /** Postgres `unique_violation`. */
@@ -233,7 +234,7 @@ describe('messages — the protected bodies', () => {
 
   it('withholds exactly those columns from publicColumns and nothing else', () => {
     const all = Object.keys(getTableColumns(messages));
-    const selectable = new Set(Object.keys(publicColumns(messages)));
+    const selectable = new Set(Object.keys(publicColumns(messages, PROTECTED_COLUMNS_BY_TABLE)));
 
     for (const column of MESSAGES_PROTECTED_COLUMNS) {
       expect(selectable.has(column)).toBe(false);
@@ -262,7 +263,7 @@ describe('messages — the protected bodies', () => {
       headers: { received: 'from mx.example.com (203.0.113.9)' },
     });
 
-    const [row] = await getDb().select(publicColumns(messages)).from(messages).where(eq(messages.id, id));
+    const [row] = await getDb().select(publicColumns(messages, PROTECTED_COLUMNS_BY_TABLE)).from(messages).where(eq(messages.id, id));
     const serialized = JSON.stringify(row);
 
     expect(Object.keys(row)).not.toContain('text');

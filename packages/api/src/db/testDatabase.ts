@@ -47,27 +47,18 @@ const PACKAGE_ROOT = join(__dirname, '..', '..');
 /**
  * Run `bun run db:migrate` against `databaseUrl`.
  *
- * `databaseName` is passed as `--target-database`: this harness minted the
- * name itself moments ago, so handing it back is a genuine independent
- * affirmation that `databaseUrl` resolves to what this call believes it does —
- * see `@oxyhq/db/migrate`'s `targetDatabase.ts` for why that check exists.
- *
  * @throws {Error} Carrying the migrator's own output when it fails — a silent
  *   migration failure would leave every test querying an empty database and
  *   failing for the wrong reason.
  */
-function runMigrations(databaseUrl: string, databaseName: string): Promise<void> {
+function runMigrations(databaseUrl: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      'bun',
-      ['run', 'db:migrate', `--target-database=${databaseName}`],
-      {
-        cwd: PACKAGE_ROOT,
-        env: { ...process.env, DATABASE_URL: databaseUrl },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        timeout: MIGRATE_TIMEOUT_MS,
-      }
-    );
+    const child = spawn('bun', ['run', 'db:migrate'], {
+      cwd: PACKAGE_ROOT,
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: MIGRATE_TIMEOUT_MS,
+    });
 
     let output = '';
     child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
@@ -142,7 +133,7 @@ export async function createTestDatabase(
   }
 
   try {
-    await runMigrations(url, name);
+    await runMigrations(url);
   } catch (error) {
     // An unmigrated database left behind would be dropped by nothing, so remove
     // it before surfacing the failure.

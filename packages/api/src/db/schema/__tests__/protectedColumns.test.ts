@@ -20,13 +20,9 @@
 import { readdirSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { getTableColumns, getTableName } from 'drizzle-orm';
-import { findImplicitWholeRowReads } from '@oxyhq/db/assert';
+import { findImplicitWholeRowReads, publicColumns } from '@oxyhq/db/assert';
 import { blocks } from '../blocks';
-import {
-  PROTECTED_COLUMNS,
-  PROTECTED_COLUMNS_BY_TABLE,
-  publicColumns,
-} from '../protectedColumns';
+import { PROTECTED_COLUMNS, PROTECTED_COLUMNS_BY_TABLE } from '../protectedColumns';
 import { users } from '../users';
 
 /**
@@ -113,7 +109,7 @@ describe('protected columns — the registry', () => {
 
 describe('protected columns — publicColumns()', () => {
   it('withholds every protected column', () => {
-    const selectable = Object.keys(publicColumns(users));
+    const selectable = Object.keys(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE));
 
     expect(selectable).not.toContain('phone');
     expect(selectable).not.toContain('hashedEmail');
@@ -126,7 +122,7 @@ describe('protected columns — publicColumns()', () => {
 
   it('withholds nothing else — the removal is exactly the registry', () => {
     const all = Object.keys(getTableColumns(users));
-    const selectable = new Set(Object.keys(publicColumns(users)));
+    const selectable = new Set(Object.keys(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE)));
     const missing = all.filter(
       (name) =>
         !selectable.has(name) &&
@@ -141,7 +137,7 @@ describe('protected columns — publicColumns()', () => {
   });
 
   it('returns every column of a table that protects none', () => {
-    expect(Object.keys(publicColumns(blocks)).sort()).toEqual(
+    expect(Object.keys(publicColumns(blocks, PROTECTED_COLUMNS_BY_TABLE)).sort()).toEqual(
       Object.keys(getTableColumns(blocks)).sort()
     );
   });

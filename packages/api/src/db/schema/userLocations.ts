@@ -70,8 +70,9 @@ import { users } from './users';
  * (`geometry`, which drizzle DOES ship a builder for, measures in units of the
  * SRID — degrees for 4326 — so it is not a substitute here.)
  *
- * Declared in this file rather than in `columns.ts` because exactly one table
- * has a spatial column; `columns.ts` holds the shapes that repeat everywhere.
+ * Declared in this file rather than reusing `@oxyhq/db`'s own `geography`
+ * export — kept separate for now since this is the only spatial column in
+ * this schema; worth revisiting if a second one lands.
  * The TypeScript type is the `string` Postgres renders the value as (WKB hex),
  * and there is deliberately no `toDriver` direction: the column is GENERATED,
  * so no application code ever writes it, and giving it a write path would

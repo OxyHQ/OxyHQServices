@@ -9,14 +9,13 @@
  * manual escape hatch (`.github/workflows/run-postgres-migrations.yml`).
  * Nothing applies a migration by any other route.
  *
- * The actual apply — journal read, target-database assertion, ledger read,
- * phase planning, extension setup, `migrate()`, the post-apply re-check — is
- * `runMigrations` from `@oxyhq/db/migrate`; see its own doc comment for the
- * full ordering and why each step comes where it does. This file supplies
- * everything that mechanism needs from THIS package (its migrations folder,
- * its required extensions, its `--phase`/`--target-database` arguments) and
- * keeps the ONE thing `runMigrations` deliberately does not own: the
- * cross-process advisory lock below.
+ * The actual apply — journal read, ledger read, phase planning, extension
+ * setup, `migrate()`, the post-apply re-check — is `runMigrations` from
+ * `@oxyhq/db/migrate`; see its own doc comment for the full ordering and why
+ * each step comes where it does. This file supplies everything that
+ * mechanism needs from THIS package (its migrations folder, its required
+ * extensions, its `--phase` argument) and keeps the ONE thing `runMigrations`
+ * deliberately does not own: the cross-process advisory lock below.
  *
  * `--phase` IS REQUIRED, and says which side of a deployment this run stands
  * on. `@oxyhq/db/migrate`'s `phases.ts` explains the marker each migration
@@ -32,13 +31,16 @@
  * to guess, and guessing "pre" silently strands a drop while guessing "all"
  * silently runs one against a live previous image.
  *
- * `--target-database` IS ALSO REQUIRED — `@oxyhq/db/migrate`'s
- * `readTargetDatabase`/`assertMigrationTarget` (`targetDatabase.ts`). Pointed
- * at the wrong database, a migrator finds an empty ledger, applies the whole
- * journal, and reports success while the real database sits untouched; this is
- * the affirmative check that catches it. There is no default here either, for
- * the same reason `--phase` has none: deriving it from `DATABASE_URL`'s own
- * pathname would check the URL against itself and could never fail.
+ * `runMigrations`'s `expectedDatabase` option (the target-database affirmative
+ * check — see its own doc comment in `@oxyhq/db/migrate`'s `runner.ts`) is
+ * DELIBERATELY NOT wired here. Adopting it would newly require a
+ * `--target-database` argument on every invocation of this file — the
+ * package.json script, this jest harness, every developer's local command,
+ * and both production deploy paths — which is a real behaviour change, not a
+ * call-site adaptation, and out of scope for porting this file onto the
+ * shared package unchanged. Wiring it is a deliberate follow-up, decided on
+ * its own merits (including where the production database name comes from),
+ * not a side effect of this port.
  *
  * WHY NOT `drizzle-kit migrate`
  *
@@ -88,12 +90,7 @@
 
 import { createHash } from 'node:crypto';
 import postgres from 'postgres';
-import {
-  type MigrationRun,
-  MIGRATION_RUNS,
-  readTargetDatabase,
-  runMigrations,
-} from '@oxyhq/db/migrate';
+import { type MigrationRun, MIGRATION_RUNS, runMigrations } from '@oxyhq/db/migrate';
 import { ConfigurationError } from '../config/env';
 import { logger } from '../utils/logger';
 import { REQUIRED_EXTENSIONS } from './extensions';
@@ -200,10 +197,9 @@ async function acquireMigrationLock(client: postgres.Sql): Promise<void> {
 async function main(): Promise<void> {
   // Argument validation first, and before DATABASE_URL: it is the cheapest and
   // most local failure, and it lets the deploy workflow prove an image
-  // understands `--phase`/`--target-database` without handing it a database
+  // understands `--phase` without handing it a database
   // (`run-postgres-migrations.yml`, "Assert the image can actually migrate").
   const run = readRun(process.argv.slice(2));
-  const expectedDatabase = readTargetDatabase(process.argv.slice(2));
 
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -226,7 +222,7 @@ async function main(): Promise<void> {
       migrationsFolder: MIGRATIONS_FOLDER,
       extensions: REQUIRED_EXTENSIONS,
       run,
-      expectedDatabase,
+      // expectedDatabase intentionally omitted — see this file's header.
       dryRun: isDryRun(),
       logger,
     });

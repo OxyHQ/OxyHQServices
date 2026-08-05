@@ -8,8 +8,11 @@
  *
  * Drizzle enumerates columns explicitly, so a naive port keeps NEITHER guard:
  * `db.select().from(users)` returns the raw phone number, the contact-discovery
- * hashes and the refresh token. This module is the single global replacement,
- * decided once for every table and every repo rather than per model.
+ * hashes and the refresh token. This module holds THIS schema's registry —
+ * decided once for every table and every repo rather than per model. The
+ * mechanism that reads it (`publicColumns`, the implicit-whole-row-read
+ * scanner) is shared plumbing with no opinion on which columns to protect, so
+ * it lives in `@oxyhq/db/assert` instead of here.
  *
  * ## The mechanism
  *
@@ -18,11 +21,13 @@
  *    `deferredForeignKeys.ts`, and for the same reason: a rule written only in a
  *    comment is a rule nothing checks.
  *
- * 2. **`publicColumns(table)` is the sanctioned read.**
- *    `db.select(publicColumns(users)).from(users)` omits every protected column
- *    AT THE TYPE LEVEL — the resulting row type has no `phone` property at all,
- *    so a serializer that tries to read one fails `tsc` rather than shipping it.
- *    That is the part a convention cannot give you.
+ * 2. **`publicColumns(table, PROTECTED_COLUMNS_BY_TABLE)` is the sanctioned
+ *    read**, imported from `@oxyhq/db/assert`.
+ *    `db.select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE)).from(users)`
+ *    omits every protected column AT THE TYPE LEVEL — the resulting row type
+ *    has no `phone` property at all, so a serializer that tries to read one
+ *    fails `tsc` rather than shipping it. That is the part a convention
+ *    cannot give you.
  *
  * 3. **Opting in is explicit and greppable.** A path that legitimately needs a
  *    protected column names it:
@@ -32,9 +37,11 @@
  *
  * 4. **`__tests__/protectedColumns.test.ts` is the gate.** It holds the `users`
  *    entry against the exact set Mongoose marked `select: false`, refuses a
- *    stale entry, checks the runtime filter, and scans `src/` for the two shapes
- *    that return every column implicitly — a bare `select()` and the relational
- *    `db.query.<table>` API — against any table in this registry.
+ *    stale entry, checks the runtime filter, and calls
+ *    `@oxyhq/db/assert`'s `findImplicitWholeRowReads` to scan `src/` for the
+ *    two shapes that return every column implicitly — a bare `select()` and
+ *    the relational `db.query.<table>` API — against any table in this
+ *    registry.
  *
  * ## Scope: the title, not the Mongoose keyword
  *
@@ -55,7 +62,6 @@
  * `hashedEmail` / `hashedPhone` have always had. This module restores the first.
  */
 
-import { getTableColumns, getTableName } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { authSessions } from './authSessions';
 import { federationKeyPairs } from './federationKeyPairs';
@@ -145,7 +151,10 @@ export const MESSAGES_PROTECTED_COLUMNS = [
 ] as const;
 
 /**
- * The registry, keyed by SQL table name.
+ * The registry, keyed by SQL table name. Declared `as const` and passed
+ * straight through to `@oxyhq/db/assert`'s `publicColumns` at every call
+ * site — that is what keeps the type-level guarantee (see that function's
+ * own doc comment for exactly what widening it would cost).
  */
 export const PROTECTED_COLUMNS_BY_TABLE = {
   users: USERS_PROTECTED_COLUMNS,
@@ -287,49 +296,3 @@ export const PROTECTED_COLUMNS: readonly ProtectedColumn[] = [
       'position, so returning it largely reconstructs the body the entry above withholds.',
   },
 ];
-
-/** SQL names of the tables that own at least one protected column. */
-export type ProtectedTableName = keyof typeof PROTECTED_COLUMNS_BY_TABLE;
-
-/** The protected property names of `T`, or `never` if it owns none. */
-type ProtectedNameOf<T extends PgTable> = T['_']['name'] extends ProtectedTableName
-  ? (typeof PROTECTED_COLUMNS_BY_TABLE)[T['_']['name']][number]
-  : never;
-
-/** `T`'s columns with every protected one removed, at the type level. */
-export type PublicColumns<T extends PgTable> = Omit<T['_']['columns'], ProtectedNameOf<T>>;
-
-/**
- * Every column of `table` a client may see.
- *
- * ```ts
- * const rows = await db.select(publicColumns(users)).from(users);
- * rows[0].phone; // Property 'phone' does not exist — a compile error, not a leak
- * ```
- *
- * A table with no registry entry gets all of its columns, so this is safe to use
- * everywhere and stays correct the moment a column is added to the registry.
- */
-export function publicColumns<T extends PgTable>(table: T): PublicColumns<T> {
-  const name = getTableName(table);
-  const withheld = new Set<string>(
-    isProtectedTableName(name) ? PROTECTED_COLUMNS_BY_TABLE[name] : []
-  );
-
-  const selection: Record<string, PgColumn> = {};
-  for (const [property, column] of Object.entries(getTableColumns(table))) {
-    if (withheld.has(property)) continue;
-    selection[property] = column;
-  }
-
-  // The one cast in this module: the loop above removes exactly the keys
-  // `PublicColumns<T>` removes, which the type system cannot follow through
-  // `Object.entries`. `__tests__/protectedColumns.test.ts` re-checks the
-  // equivalence at runtime so the cast cannot quietly become a lie.
-  return selection as PublicColumns<T>;
-}
-
-/** Whether `name` is a table in the registry. */
-function isProtectedTableName(name: string): name is ProtectedTableName {
-  return name in PROTECTED_COLUMNS_BY_TABLE;
-}

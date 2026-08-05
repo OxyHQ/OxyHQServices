@@ -88,8 +88,30 @@ export interface RunMigrationsOptions {
   readonly extensions: readonly RequiredExtension[];
   /** Which side of the deploy this invocation is. */
   readonly run: MigrationRun;
-  /** The database name this connection must resolve to, from `readTargetDatabase(argv)`. */
-  readonly expectedDatabase: string;
+  /**
+   * The database name this connection must resolve to, from
+   * `readTargetDatabase(argv)` — OPTIONAL, and deliberately so.
+   *
+   * A guard is a capability a caller ADOPTS, not a tax this package levies:
+   * `assertMigrationTarget` is a real safety improvement (see
+   * `targetDatabase.ts` for the outage it prevents), but a consumer that has
+   * never carried it should not be forced to invent a `--target-database`
+   * value — and thread it through every invocation site (a deploy script, a
+   * manual-dispatch workflow, a test harness, every developer's local
+   * command) — just to adopt `runMigrations`. That is a behaviour change
+   * with no narrower shape than "everyone's workflow changes today," and this
+   * package does not get to impose it as a side effect of being adopted.
+   *
+   * Omitted, `assertMigrationTarget` does not run at all — not a no-op check
+   * against an inferred value, an absent one. Deriving a default from
+   * `options.databaseUrl`'s own pathname would check the URL against itself
+   * and could never fail, which is worse than not checking: it would look
+   * like protection and provide none.
+   *
+   * A future caller should not "tidy" this back to required. Leave it
+   * optional; let each consumer decide for itself, on its own schedule.
+   */
+  readonly expectedDatabase?: string;
   /**
    * Report what this run WOULD apply and write nothing — not even the
    * ledger table. The caller decides how this is triggered (an env var, a
@@ -148,11 +170,11 @@ export function materializeJournalPrefix(
  * Apply pending migrations to `options.databaseUrl`, in the order described
  * in this module's header.
  *
- * @throws {Error} When the connected database is not `expectedDatabase`, when
- *   the journal holds an unreachable entry, when a pending migration's deploy
- *   phase cannot be resolved safely for `options.run`, when an extension the
- *   schema depends on cannot be ensured, or when `migrate()` reports success
- *   but the ledger disagrees.
+ * @throws {Error} When `options.expectedDatabase` is supplied and the
+ *   connected database is not it, when the journal holds an unreachable
+ *   entry, when a pending migration's deploy phase cannot be resolved safely
+ *   for `options.run`, when an extension the schema depends on cannot be
+ *   ensured, or when `migrate()` reports success but the ledger disagrees.
  */
 export async function runMigrations(options: RunMigrationsOptions): Promise<void> {
   // Pure filesystem reads, no connection opened yet — the cheapest possible
@@ -177,9 +199,14 @@ ${problems.map((problem) => `  - ${problem}`).join('\n')}`
   let prefixFolder: string | null = null;
 
   try {
-    // FIRST statement on this connection — see targetDatabase.ts for why
-    // everything below must come after it.
-    await assertMigrationTarget(client, options.expectedDatabase);
+    // FIRST statement on this connection, when the caller opted in — see
+    // targetDatabase.ts for why everything below must come after it. A
+    // caller that did not supply `expectedDatabase` gets no check at all,
+    // not a check against a guessed value (see the option's own doc comment
+    // for why no default is safe).
+    if (options.expectedDatabase !== undefined) {
+      await assertMigrationTarget(client, options.expectedDatabase);
+    }
 
     // Refuses outright rather than reporting a clean run over a migration the
     // apply rule can never reach.
