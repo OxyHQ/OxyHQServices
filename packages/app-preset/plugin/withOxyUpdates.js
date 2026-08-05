@@ -105,8 +105,16 @@ module.exports = function withOxyUpdates(config, options = {}) {
     );
   }
 
+  // Trimmed with a loop rather than a `/\/+$/` regex: an anchored repetition is
+  // the polynomial-ReDoS shape CodeQL flags (js/polynomial-redos), and this is
+  // linear and just as clear.
+  let origin = apiOrigin;
+  while (origin.endsWith('/')) {
+    origin = origin.slice(0, -1);
+  }
+
   const updates = { ...config.updates };
-  updates.url = `${apiOrigin.replace(/\/+$/, '')}/updates/v1/apps/${clientId}/manifest`;
+  updates.url = `${origin}/updates/v1/apps/${clientId}/manifest`;
   updates.requestHeaders = { ...updates.requestHeaders, 'expo-channel-name': channel };
 
   if (codeSigning !== false) {
