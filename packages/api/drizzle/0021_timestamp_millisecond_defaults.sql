@@ -26,13 +26,29 @@
 -- earlier — which is the fixed behaviour, not a new one to tolerate. Existing
 -- rows are untouched; a default applies only to future inserts.
 --
--- WHAT IS STILL WORTH KNOWING BEFORE RUNNING IT. Each statement takes ACCESS
--- EXCLUSIVE on its table, and the migrator runs the whole file in ONE
--- transaction, so all ~103 tables are held until commit. The work itself is
--- milliseconds of catalogue writes, but acquisition queues behind any
--- long-running query on a table it has not reached yet, and once a lock is
--- held everything else on that table waits. Run it as the pre-deploy one-shot
--- normally does, not beside a long analytical query.
+-- WHY THE LOCK TIMEOUT BELOW. Each statement takes ACCESS EXCLUSIVE on its
+-- table, and drizzle wraps every pending migration in ONE transaction
+-- (`PgDialect.migrate`), so all ~103 locks are held until commit. The work is
+-- milliseconds of catalogue writes, but ACQUISITION queues behind any
+-- long-running query or idle-in-transaction session on a table this has not
+-- reached yet — and Postgres lock queues are FIFO, so from that moment every
+-- later query on that table waits behind this migration too. The pre-deploy
+-- one-shot allows it up to `MAX_WAIT_SECS` (1200), and the deploy role cannot
+-- call `ecs:StopTask`, so the unbounded case is twenty minutes of blocked
+-- production traffic with no kill switch in the pipeline.
+--
+-- Three seconds turns that into a failed migration, which is the outcome
+-- `deploy-ecs-image.sh` says it wants: the previous image keeps serving, the
+-- deploy goes red, and nothing was applied. Retry when the blocking session is
+-- gone.
+--
+-- `SET LOCAL` scopes it to the transaction, not the session — but note that a
+-- run applying SEVERAL pending migrations shares one transaction, so anything
+-- after this file in the same run inherits the 3s ceiling. That is the right
+-- default for the DDL this schema has, and it is deliberate rather than
+-- incidental; a future migration that genuinely needs to wait longer should
+-- raise it in its own first statement.
+SET LOCAL lock_timeout = '3s';--> statement-breakpoint
 ALTER TABLE "account_credentials" ALTER COLUMN "created_at" SET DEFAULT date_trunc('milliseconds', now());--> statement-breakpoint
 ALTER TABLE "account_credentials" ALTER COLUMN "updated_at" SET DEFAULT date_trunc('milliseconds', now());--> statement-breakpoint
 ALTER TABLE "account_members" ALTER COLUMN "created_at" SET DEFAULT date_trunc('milliseconds', now());--> statement-breakpoint
