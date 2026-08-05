@@ -127,12 +127,42 @@ async function waitFor<T>(read: () => Promise<T>, done: (value: T) => boolean, w
   }
 }
 
-/** Let the floating post-registration probe finish before the test ends. */
-async function settleProbe(userId: string): Promise<void> {
+/** Probes that have called `safeFetch` since the last `clearAllMocks`. */
+function probesSoFar(): number {
+  return mockSafeFetch.mock.calls.length;
+}
+
+/**
+ * Let the floating post-registration probe finish before the test ends.
+ *
+ * `probesBefore` is {@link probesSoFar} read immediately BEFORE the call that
+ * fired this probe, and a RE-registration must pass it. Without it the wait is
+ * vacuous on the second probe of a test: it asked only whether `lastProbeAt` is
+ * non-null, which the FIRST probe's write already made true, so the settle
+ * returned on its first poll and left the new probe in flight. That probe's
+ * `safeFetch` then landed in whatever test was running when it resolved —
+ * against a spy `beforeEach` had already cleared — which is the flake in #836,
+ * reproduced here 1 full-suite run in 3 and always in the case that follows the
+ * last re-registration.
+ *
+ * Counting the mock's calls rather than comparing timestamps is deliberate:
+ * `lastProbeAt` is a `Date` at millisecond resolution and two probes inside one
+ * millisecond are ordinary against a local database, so a "strictly newer"
+ * comparison would trade this flake for a timeout.
+ *
+ * The default of `0` stays correct for a user with NO prior probe — including
+ * the two-account cases, where another account's probe may already have bumped
+ * the count but this account's `lastProbeAt` is still null and does the waiting.
+ * It is only a RE-registration, where both halves are already satisfied, that
+ * needs the explicit baseline.
+ */
+async function settleProbe(userId: string, probesBefore = 0): Promise<void> {
   await waitFor(
-    () => storedNode(userId),
-    (row) => row === undefined || row.lastProbeAt !== null,
-    'the fire-and-forget liveness probe to write lastProbeAt',
+    async () => ({ row: await storedNode(userId), probes: probesSoFar() }),
+    ({ row, probes }) =>
+      // No row means materialization was skipped, so no probe was ever fired.
+      row === undefined || (probes > probesBefore && row.lastProbeAt !== null),
+    'the fire-and-forget liveness probe to call safeFetch and write lastProbeAt',
   );
 }
 
@@ -198,11 +228,12 @@ describe('materializeNodeFromRecord', () => {
     await settleProbe(userId);
     const before = await storedNode(userId);
 
+    const probesBefore = probesSoFar();
     const second = await materializeNodeFromRecord(userId, nodeRecord({
       endpoint: 'https://moved.example.com',
       mode: 'push',
     }));
-    await settleProbe(userId);
+    await settleProbe(userId, probesBefore);
     const after = await storedNode(userId);
 
     expect(await storedNodeCount(userId)).toBe(1);
@@ -221,10 +252,11 @@ describe('materializeNodeFromRecord', () => {
     await settleProbe(userId);
     await getDb().update(userNodes).set({ lastError: 'boom' }).where(eq(userNodes.userId, userId));
 
+    const probesBefore = probesSoFar();
     await materializeNodeFromRecord(userId, nodeRecord());
 
     expect((await storedNode(userId)).lastError).toBeNull();
-    await settleProbe(userId);
+    await settleProbe(userId, probesBefore);
   });
 
   it('records an Oxy-operated node as managed + controller oxy, together', async () => {
@@ -243,10 +275,13 @@ describe('materializeNodeFromRecord', () => {
     await materializeNodeFromRecord(userId, nodeRecord(), { operator: 'oxy' });
     await settleProbe(userId);
 
+    const probesBefore = probesSoFar();
     await materializeNodeFromRecord(userId, nodeRecord(), { operator: 'self' });
 
     expect(await storedNode(userId)).toMatchObject({ managed: false, controller: 'self' });
-    await settleProbe(userId);
+    // The settle that used to be vacuous, and the one whose leaked probe landed
+    // in the very next case — see `settleProbe`.
+    await settleProbe(userId, probesBefore);
   });
 
   it.each([
