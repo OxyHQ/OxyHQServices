@@ -128,12 +128,32 @@ export async function createTestDatabase(
   if (options.migrate) {
     try {
       await options.migrate(url);
-    } catch (error) {
+    } catch (migrateError) {
       // A hook that fails midway must not leave the throwaway database
       // behind — see this option's own doc comment for why an abandoned one
-      // is not merely harmless clutter.
-      await dropTestDatabase(url);
-      throw error;
+      // is not merely harmless clutter. But this drop can ALSO fail, and a
+      // bare `throw migrateError` below would never be reached in that case —
+      // the drop's own rejection would propagate instead, discarding the
+      // migration failure entirely and reporting only "could not drop the
+      // database" for a problem that was really "your migration is broken".
+      // An `AggregateError` keeps both failures, names the migration failure
+      // in its own message text (not just buried in a `.cause` a logger may
+      // never print), and still throws the original `migrateError` unchanged
+      // in the common case where the drop succeeds.
+      try {
+        await dropTestDatabase(url);
+      } catch (dropError) {
+        const migrateMessage =
+          migrateError instanceof Error ? migrateError.message : String(migrateError);
+        const dropMessage = dropError instanceof Error ? dropError.message : String(dropError);
+        throw new AggregateError(
+          [migrateError, dropError],
+          `options.migrate failed (${migrateMessage}), and the throwaway \
+database could not be dropped afterward either (${dropMessage}) — it may \
+still exist and need manual cleanup.`
+        );
+      }
+      throw migrateError;
     }
   }
 

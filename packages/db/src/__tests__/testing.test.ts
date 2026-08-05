@@ -217,6 +217,58 @@ describe('createTestDatabase', () => {
       expect(statements).toHaveLength(1);
       expect(statements[0]).toMatch(/^create database/);
     });
+
+    // Review finding (fix round 2): a compound failure — the hook throws, and
+    // the cleanup drop ALSO throws — used to discard the migration failure
+    // entirely: `await dropTestDatabase(url)` rejecting meant the `throw error`
+    // below it never ran, so the caller saw only "could not drop database",
+    // never "your migration is broken". Mutation proof this test can fail is
+    // in the fix-round report (revert the fix, this test goes red on its own).
+    it('names the migration failure even when the subsequent drop ALSO fails (compound failure)', async () => {
+      jest.doMock('postgres', () => {
+        const factory = jest.fn(() =>
+          Object.assign(jest.fn(), {
+            unsafe: jest.fn((statement: string) => {
+              if (statement.startsWith('drop database')) {
+                return Promise.reject(new Error('simulated drop failure'));
+              }
+              return Promise.resolve([]);
+            }),
+            end: jest.fn(() => Promise.resolve(undefined)),
+          })
+        );
+        return { __esModule: true, default: factory };
+      });
+
+      const { createTestDatabase: createTestDatabaseUnderMock } = await import('../testing');
+
+      const migrate = jest.fn(async () => {
+        throw new Error('simulated migration failure');
+      });
+
+      let caught: unknown;
+      try {
+        await createTestDatabaseUnderMock({
+          adminUrl: 'postgres://db.example.com/oxy_dev',
+          migrate,
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      // Not "rejects.toThrow" alone: this asserts the STRUCTURE a caller can
+      // actually recover the original migration failure from, not just that
+      // some string happens to appear in a message.
+      expect(caught).toBeInstanceOf(AggregateError);
+      const aggregate = caught as AggregateError;
+      expect(aggregate.message).toMatch(/simulated migration failure/);
+      expect(aggregate.message).toMatch(/simulated drop failure/);
+      expect(aggregate.errors).toHaveLength(2);
+      expect(aggregate.errors[0]).toBeInstanceOf(Error);
+      expect((aggregate.errors[0] as Error).message).toBe('simulated migration failure');
+      expect(aggregate.errors[1]).toBeInstanceOf(Error);
+      expect((aggregate.errors[1] as Error).message).toBe('simulated drop failure');
+    });
   });
 });
 
@@ -295,6 +347,37 @@ describe('dropTestDatabase', () => {
       expect(statements).toEqual([
         'drop database if exists "oxydb_test_0123456789abcdef" with (force)',
       ]);
+      expect(endCalls).toBe(1);
+    });
+
+    // Review finding (fix round 2): the previous report claimed this test
+    // existed already, paired with createTestDatabase's equivalent — it did
+    // not; only createTestDatabase's was written. Corrected here rather than
+    // silently: this test was missing, now added. `dropTestDatabase`'s own
+    // try/finally already closed the connection correctly on a failed DROP —
+    // this closes the coverage gap, not a behaviour change.
+    it('closes the admin connection even when DROP DATABASE fails', async () => {
+      let endCalls = 0;
+
+      jest.doMock('postgres', () => {
+        const factory = jest.fn(() =>
+          Object.assign(jest.fn(), {
+            unsafe: jest.fn(() => Promise.reject(new Error('simulated drop failure'))),
+            end: jest.fn(() => {
+              endCalls += 1;
+              return Promise.resolve(undefined);
+            }),
+          })
+        );
+        return { __esModule: true, default: factory };
+      });
+
+      const { dropTestDatabase: dropTestDatabaseUnderMock } = await import('../testing');
+
+      await expect(
+        dropTestDatabaseUnderMock('postgres://db.example.com/oxydb_test_0123456789abcdef')
+      ).rejects.toThrow('simulated drop failure');
+
       expect(endCalls).toBe(1);
     });
   });
