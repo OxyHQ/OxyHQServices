@@ -3,11 +3,11 @@
  *
  * `assertMigrationTarget` compares against a REAL `current_database()`, and a
  * stubbed `postgres.Sql` would only ever prove the comparison agrees with
- * itself (the same reasoning `database.test.ts` in this package and the
- * Mention source this module was moved from both apply). This package has no
- * live-Postgres test harness yet — that lands in a later task — so
- * `assertMigrationTarget` is left for integration coverage once one exists,
- * rather than given a mock that would assert nothing real.
+ * itself (the same reasoning `database.test.ts` in this package already
+ * applies). This package has no live-Postgres test harness yet — that lands
+ * in a later task — so `assertMigrationTarget` is left for integration
+ * coverage once one exists, rather than given a mock that would assert
+ * nothing real.
  */
 
 import { MissingMigrationTargetError, readTargetDatabase } from '../migrate/targetDatabase';
