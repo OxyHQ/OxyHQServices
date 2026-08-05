@@ -62,7 +62,7 @@ import type {
 } from '@oxyhq/contracts';
 import { asc, desc, eq, gte, inArray } from 'drizzle-orm';
 import { getDb } from '../config/postgres';
-import { isUniqueViolation } from '../db/pgErrors';
+import { isUniqueViolation } from '@oxyhq/db';
 import { repoHeads } from '../db/schema/repoHeads';
 import {
   transparencyCheckpointAnchors,

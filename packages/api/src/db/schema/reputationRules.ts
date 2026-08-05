@@ -16,7 +16,7 @@ import { sql } from 'drizzle-orm';
 import { boolean, check, integer, pgTable, text } from 'drizzle-orm/pg-core';
 import { REPUTATION_CATEGORIES as CONTRACT_REPUTATION_CATEGORIES } from '@oxyhq/contracts';
 import type { ReputationCategory } from '@oxyhq/contracts';
-import { createdAt, generatedId, inList, updatedAt } from './columns';
+import { createdAt, generatedId, inList, updatedAt } from '@oxyhq/db';
 
 /**
  * Category buckets a transaction may be filed under, from the contract so the

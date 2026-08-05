@@ -9,9 +9,18 @@
  * manual escape hatch (`.github/workflows/run-postgres-migrations.yml`).
  * Nothing applies a migration by any other route.
  *
+ * The actual apply — journal read, target-database assertion, ledger read,
+ * phase planning, extension setup, `migrate()`, the post-apply re-check — is
+ * `runMigrations` from `@oxyhq/db/migrate`; see its own doc comment for the
+ * full ordering and why each step comes where it does. This file supplies
+ * everything that mechanism needs from THIS package (its migrations folder,
+ * its required extensions, its `--phase`/`--target-database` arguments) and
+ * keeps the ONE thing `runMigrations` deliberately does not own: the
+ * cross-process advisory lock below.
+ *
  * `--phase` IS REQUIRED, and says which side of a deployment this run stands
- * on. `src/db/migrationPhases.ts` explains the marker each migration carries
- * and the incident that put it there; the short version:
+ * on. `@oxyhq/db/migrate`'s `phases.ts` explains the marker each migration
+ * carries and the incident that put it there; the short version:
  *
  *   --phase=pre    the PREVIOUS image is still serving. Applies additive
  *                  migrations only, and stops at the first destructive one.
@@ -22,6 +31,14 @@
  * There is no default. A run that does not say which side it is on would have
  * to guess, and guessing "pre" silently strands a drop while guessing "all"
  * silently runs one against a live previous image.
+ *
+ * `--target-database` IS ALSO REQUIRED — `@oxyhq/db/migrate`'s
+ * `readTargetDatabase`/`assertMigrationTarget` (`targetDatabase.ts`). Pointed
+ * at the wrong database, a migrator finds an empty ledger, applies the whole
+ * journal, and reports success while the real database sits untouched; this is
+ * the affirmative check that catches it. There is no default here either, for
+ * the same reason `--phase` has none: deriving it from `DATABASE_URL`'s own
+ * pathname would check the URL against itself and could never fail.
  *
  * WHY NOT `drizzle-kit migrate`
  *
@@ -60,34 +77,27 @@
  * deploy and a manual dispatch can overlap, and their two workflows sit in
  * different GitHub concurrency groups and cannot see each other. Hence the
  * session advisory lock below, which is the only interlock both paths share.
+ * `runMigrations` takes no lock of its own for exactly this reason (see its own
+ * doc comment): a caller that can run concurrently with itself needs one held
+ * on a connection it owns for its own lifetime, not on the short-lived
+ * connection that function opens and closes internally.
  *
  * DRY RUN. `DRY_RUN=true` reports what this phase WOULD apply and writes
  * nothing — not even the ledger table.
  */
 
 import { createHash } from 'node:crypto';
-import { rmSync } from 'node:fs';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import { ConfigurationError } from '../config/env';
-import { ensureExtensions } from './extensions';
-import { logger } from '../utils/logger';
 import {
-  MIGRATIONS_FOLDER,
-  MIGRATIONS_SCHEMA,
-  MIGRATIONS_TABLE,
-  materializeJournalPrefix,
-  pendingEntries,
-  readJournal,
-  readLastAppliedMillis,
-} from './migrationLedger';
-import {
-  MIGRATION_RUNS,
   type MigrationRun,
-  planMigrationRun,
-  readMigrationPhases,
-} from './migrationPhases';
+  MIGRATION_RUNS,
+  readTargetDatabase,
+  runMigrations,
+} from '@oxyhq/db/migrate';
+import { ConfigurationError } from '../config/env';
+import { logger } from '../utils/logger';
+import { REQUIRED_EXTENSIONS } from './extensions';
+import { MIGRATIONS_FOLDER } from './migrationsFolder';
 
 /** Seconds to wait for in-flight queries before forcing the socket shut. */
 const CLOSE_TIMEOUT_SECONDS = 5;
@@ -148,11 +158,11 @@ function advisoryLockKey(name: string): bigint {
 /**
  * Hold the migration advisory lock for the life of `client`'s session.
  *
- * The lock lives on its OWN connection, not on the pool drizzle migrates
- * through: a session-level advisory lock belongs to the connection that took
- * it, so sharing one with the migrator would silently drop the lock if
- * postgres.js ever reconnected mid-run. Released when the session ends, which
- * `main`'s `finally` guarantees even when the process is killed.
+ * The lock lives on its OWN connection, not on the pool `runMigrations`
+ * migrates through: a session-level advisory lock belongs to the connection
+ * that took it, so sharing one with the migrator would silently drop the lock
+ * if postgres.js ever reconnected mid-run. Released when the session ends,
+ * which `main`'s `finally` guarantees even when the process is killed.
  */
 async function acquireMigrationLock(client: postgres.Sql): Promise<void> {
   const key = advisoryLockKey(MIGRATION_LOCK_NAMESPACE).toString();
@@ -190,9 +200,10 @@ async function acquireMigrationLock(client: postgres.Sql): Promise<void> {
 async function main(): Promise<void> {
   // Argument validation first, and before DATABASE_URL: it is the cheapest and
   // most local failure, and it lets the deploy workflow prove an image
-  // understands `--phase` without handing it a database
+  // understands `--phase`/`--target-database` without handing it a database
   // (`run-postgres-migrations.yml`, "Assert the image can actually migrate").
   const run = readRun(process.argv.slice(2));
+  const expectedDatabase = readTargetDatabase(process.argv.slice(2));
 
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -202,118 +213,24 @@ async function main(): Promise<void> {
     );
   }
 
-  const entries = readJournal();
-  const dryRun = isDryRun();
-
-  const { phases, problems } = readMigrationPhases(
-    entries.map((entry) => entry.tag),
-    MIGRATIONS_FOLDER
-  );
-  if (problems.length > 0) {
-    throw new ConfigurationError(
-      `${problems.length} migration(s) do not declare which side of a deploy they belong on:\n` +
-      problems.map((problem) => `  - ${problem}`).join('\n')
-    );
-  }
-
-  // The lock's own connection. Taken before anything is read, so the pending
-  // calculation below cannot be invalidated by another migrator between the
-  // read and the apply.
+  // The lock's own connection, taken before `runMigrations` reads anything, so
+  // the pending calculation inside it cannot be invalidated by another
+  // migrator between its read and its apply.
   const lockClient = postgres(url, { max: 1 });
-  // `max: 1` — migrations are one serial stream of DDL; a pool would buy
-  // nothing and would let statements interleave across connections.
-  const client = postgres(url, {
-    max: 1,
-    onnotice: (notice) => logger.debug('Postgres notice', { notice: notice.message }),
-  });
-  let prefixFolder: string | null = null;
 
   try {
     await acquireMigrationLock(lockClient);
 
-    const pending = pendingEntries(entries, await readLastAppliedMillis(client));
-    const plan = planMigrationRun(pending, phases, run);
-
-    if (plan.blocked) {
-      throw new Error(plan.blocked);
-    }
-
-    if (plan.deferred.length > 0) {
-      logger.info(
-        `Leaving ${plan.deferred.length} migration(s) for a later phase`,
-        { phase: run, deferred: plan.deferred.map((entry) => entry.tag) }
-      );
-    }
-
-    if (plan.apply.length === 0) {
-      logger.info('No migrations to apply', {
-        phase: run,
-        journalEntries: entries.length,
-        pending: pending.map((entry) => entry.tag),
-      });
-      return;
-    }
-
-    const tags = plan.apply.map((entry) => entry.tag);
-
-    if (dryRun) {
-      logger.info(
-        `DRY RUN — ${plan.apply.length} migration(s) would be applied; nothing was written`,
-        { phase: run, pending: tags, journalEntries: entries.length }
-      );
-      return;
-    }
-
-    // Extensions first, and inside this script rather than chained in the
-    // `db:migrate` npm script: production applies migrations by running the
-    // COMPILED form of this file directly as a one-shot ECS task, so anything
-    // chained in package.json would silently not run there. A migration that
-    // creates a `geography` column fails at table 39 of 45 without it.
-    await ensureExtensions(url);
-
-    logger.info(`Applying ${plan.apply.length} migration(s)`, { phase: run, pending: tags });
-
-    // A phase that stops short points the migrator at a folder ending where it
-    // stops; a phase applying everything pending uses the real one, so the
-    // common path is byte for byte what it always was.
-    let migrationsFolder = MIGRATIONS_FOLDER;
-    if (plan.deferred.length > 0) {
-      const last = plan.apply[plan.apply.length - 1];
-      prefixFolder = materializeJournalPrefix(
-        entries.findIndex((entry) => entry.tag === last.tag) + 1,
-        MIGRATIONS_FOLDER
-      );
-      migrationsFolder = prefixFolder;
-    }
-
-    // No `schema`/`casing` here on purpose: `migrate()` only executes the raw
-    // SQL text of the migration files, so it never builds a query from the
-    // schema definitions and the compiled migrator stays independent of them.
-    await migrate(drizzle(client), {
-      migrationsFolder,
-      migrationsSchema: MIGRATIONS_SCHEMA,
-      migrationsTable: MIGRATIONS_TABLE,
+    await runMigrations({
+      databaseUrl: url,
+      migrationsFolder: MIGRATIONS_FOLDER,
+      extensions: REQUIRED_EXTENSIONS,
+      run,
+      expectedDatabase,
+      dryRun: isDryRun(),
+      logger,
     });
-
-    // A migrator that reports success while leaving work pending is worse than
-    // one that fails, so re-read the ledger rather than trusting the call.
-    // Measured against what this PHASE undertook — anything it deliberately
-    // deferred is still pending on purpose.
-    const stillPending = pendingEntries(entries, await readLastAppliedMillis(client));
-    const remaining = plan.apply.filter((entry) =>
-      stillPending.some((pendingEntry) => pendingEntry.tag === entry.tag)
-    );
-    if (remaining.length > 0) {
-      throw new Error(
-        `Migration reported success but ${remaining.length} migration(s) are still ` +
-        `pending: ${remaining.map((entry) => entry.tag).join(', ')}`
-      );
-    }
-
-    logger.info(`Applied ${plan.apply.length} migration(s)`, { phase: run, applied: tags });
   } finally {
-    if (prefixFolder) rmSync(prefixFolder, { recursive: true, force: true });
-    await client.end({ timeout: CLOSE_TIMEOUT_SECONDS });
     // Ends the lock's session, which is what releases the advisory lock.
     await lockClient.end({ timeout: CLOSE_TIMEOUT_SECONDS });
   }

@@ -63,7 +63,7 @@ import {
   userFollows,
   users,
 } from '../../schema';
-import { sqlColumnName } from '../../casing';
+import { sqlColumnName } from '@oxyhq/db';
 import { auditWouldBlockCopy, type AuditFinding } from '../audit';
 import {
   cleanFixtures,

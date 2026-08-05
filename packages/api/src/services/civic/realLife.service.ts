@@ -31,7 +31,7 @@ import { verifyEnvelopeSignature, type RejectionReason } from '@oxyhq/protocol';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { realLifeAttestationRecordSchema } from '@oxyhq/contracts';
 import { getDb } from '../../config/postgres';
-import { isUniqueViolation } from '../../db/pgErrors';
+import { isUniqueViolation } from '@oxyhq/db';
 import { civicNonces } from '../../db/schema/civicNonces';
 import { reputationTransactions } from '../../db/schema/reputationTransactions';
 import { users } from '../../db/schema/users';

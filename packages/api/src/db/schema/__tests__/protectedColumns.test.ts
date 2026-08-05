@@ -17,9 +17,10 @@
  * and the contact-discovery hashes, without naming any of them.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { extname, join, relative } from 'node:path';
+import { readdirSync } from 'node:fs';
+import { extname, join } from 'node:path';
 import { getTableColumns, getTableName } from 'drizzle-orm';
+import { findImplicitWholeRowReads } from '@oxyhq/db/assert';
 import { blocks } from '../blocks';
 import {
   PROTECTED_COLUMNS,
@@ -71,45 +72,6 @@ function sourceFiles(directory: string): string[] {
     }
   }
   return found;
-}
-
-/**
- * Blank out comments, preserving line structure.
- *
- * Without this the scan flags `protectedColumns.ts`'s own documentation, which
- * quotes both offending shapes on purpose — a scanner that cries wolf on the
- * file explaining the rule is a scanner someone deletes.
- */
-function withoutComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
-    .replace(/\/\/[^\n]*/g, (line) => line.replace(/[^\n]/g, ' '));
-}
-
-/**
- * `file:line: <the offending line>` for every match of `pattern`.
- *
- * Matched against the WHOLE file, not line by line: drizzle chains wrap, so
- * `.select()` and `.from(users)` routinely land on different lines and a
- * per-line scan would miss exactly the formatting the codebase uses.
- */
-function findViolations(pattern: RegExp, files: string[]): string[] {
-  const violations: string[] = [];
-  for (const file of files) {
-    const source = withoutComments(readFileSync(file, 'utf8'));
-    const scan = new RegExp(pattern.source, `${pattern.flags.replace('g', '')}g`);
-
-    for (const match of source.matchAll(scan)) {
-      const before = source.slice(0, match.index);
-      const line = before.split('\n').length;
-      // The whole matched text is reported, never a capture group: a truncated
-      // match is how a scanner's evidence stops being readable, and then gets
-      // trusted anyway.
-      const shown = match[0].replace(/\s+/g, ' ').trim();
-      violations.push(`${relative(SOURCE_ROOT, file)}:${line}: ${shown}`);
-    }
-  }
-  return violations;
 }
 
 const protectedTableNames = Object.keys(PROTECTED_COLUMNS_BY_TABLE);
@@ -193,22 +155,16 @@ describe('protected columns — no implicit whole-row read', () => {
     expect(protectedTableNames.length).toBeGreaterThan(0);
   });
 
-  it('never calls `select()` with no columns against a protected table', () => {
-    // `db.select().from(users)` — the argument-less form returns EVERY column.
-    // Reads as: "select the columns you need, or `publicColumns(users)`."
-    const pattern = new RegExp(
-      `\\.select\\(\\s*\\)[\\s\\S]{0,120}?\\.from\\(\\s*(?:${protectedTableNames.join('|')})\\s*[,)]`
-    );
+  it('never calls `select()` with no columns, or uses the relational query API, against a protected table', async () => {
+    // `db.select().from(users)` — the argument-less form returns EVERY column,
+    // as does `db.query.users.findFirst()` unless a `columns:` projection is
+    // passed. Reads as: "select the columns you need, or
+    // `db.select(publicColumns(users)).from(users)`."
+    const violations = await findImplicitWholeRowReads({
+      sourceDir: SOURCE_ROOT,
+      registry: PROTECTED_COLUMNS_BY_TABLE,
+    });
 
-    expect(findViolations(pattern, files)).toEqual([]);
-  });
-
-  it('never uses the relational query API on a protected table', () => {
-    // `db.query.users.findFirst()` also returns every column unless a `columns:`
-    // projection is passed, and that projection is easy to omit and invisible
-    // when it is. Reads as: "use `db.select(publicColumns(users)).from(users)`."
-    const pattern = new RegExp(`\\.query\\.(?:${protectedTableNames.join('|')})\\b`);
-
-    expect(findViolations(pattern, files)).toEqual([]);
+    expect(violations).toEqual([]);
   });
 });

@@ -36,7 +36,7 @@ import {
 } from '@oxyhq/contracts';
 import { getDb } from '../config/postgres';
 import { identityBackups } from '../db/schema/identityBackups';
-import { isUniqueViolation } from '../db/pgErrors';
+import { isUniqueViolation } from '@oxyhq/db';
 
 const router = Router();
 

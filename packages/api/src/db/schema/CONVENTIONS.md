@@ -21,7 +21,7 @@ explicit collection → table map; write it out, one entry per table.
 not pass an explicit column name unless the SQL name genuinely differs from the
 property.
 
-**`db/casing.ts` is the naming authority.** `DATABASE_CASING` is read by
+**`@oxyhq/db`'s casing module is the naming authority.** `DATABASE_CASING` is read by
 `drizzle()` (what queries reference), by `drizzle.config.ts` (what the DDL
 creates), and by `sqlColumnName`. One setting, not three copies.
 
@@ -135,8 +135,8 @@ install into the unscoped delivery set instead of retiring it.
 ## Expiry — the Mongo TTL replacement
 
 Postgres has no TTL index and 14 models relied on one. The mechanism is defined
-once in `db/expiry.ts`; a table adds a registry entry rather than its own cleanup
-path. An entry is the exact analogue of a Mongo TTL index —
+once in `@oxyhq/db/expiry`; this schema's own registry lives in `db/expiry.ts`,
+and a table adds an entry there rather than its own cleanup path. An entry is the exact analogue of a Mongo TTL index —
 `{ table, column, retentionSeconds }` → `delete where column <= now() - N` — so
 all three uses in the Mongo schema map onto it without loss:
 
@@ -188,6 +188,7 @@ for real, converting a non-problem into a live bug.
 - `citext` is an extension: `CREATE EXTENSION` would have to run in dev, CI and
   RDS before the first migration, an ordering dependency in every environment for
   one column. (Since PostGIS was adopted there IS now a mechanism for that —
+  `@oxyhq/db/migrate`'s `ensureExtensions`, fed this schema's own registry in
   `db/extensions.ts`, see below — but a mechanism is not a reason: the two
   objections that follow are what decide `citext`, and both stand.)
 - `citext` changes behaviour for EVERY comparison on that column, including ones
@@ -376,10 +377,10 @@ columns" above.
 **The extension is a precondition of the MIGRATOR, not a migration.** This file
 refused `citext` partly over "an install-ordering dependency in every
 environment"; that objection is answered rather than ignored. `db/extensions.ts`
-declares the requirement as data and `bun run db:migrate` runs
-`scripts/ensure-extensions.ts` BEFORE `drizzle-kit migrate`, so the ordering
-cannot be got wrong by renumbering, squashing or regenerating the sequence —
-which matters because migrations here are regenerated centrally from schema TS.
+declares the requirement as data, and `@oxyhq/db/migrate`'s `ensureExtensions`
+runs it before applying any migration, so the ordering cannot be got wrong by
+renumbering, squashing or regenerating the sequence — which matters because
+migrations here are regenerated centrally from schema TS.
 `docker-compose.dev.yml` and the CI service container both run
 `postgis/postgis:17-3.5`. A managed database needs `CREATE EXTENSION postgis`
 run once by a privileged role; after that the migration role's

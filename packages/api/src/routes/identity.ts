@@ -19,7 +19,7 @@
  * Five public read routes opened by running `userId` through the legacy 24-hex
  * id predicate in `utils/validation.ts` and throwing a 404 on a miss. That
  * predicate is `/^[0-9a-f]{24}$/i` and rejects the **uuid v7 every account
- * created after the Postgres cutover carries** (`schema/columns.ts`
+ * created after the Postgres cutover carries** (`@oxyhq/db`'s
  * `generatedId()`), so each answered 404 BEFORE ANY QUERY RAN for such an
  * account.
  *

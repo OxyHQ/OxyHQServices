@@ -61,7 +61,7 @@ import {
   text,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { createdAt, generatedId, tsvector, updatedAt } from './columns';
+import { createdAt, generatedId, tsvector, updatedAt } from '@oxyhq/db';
 import { users } from './users';
 
 /**

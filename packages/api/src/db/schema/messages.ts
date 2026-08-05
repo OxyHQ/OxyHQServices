@@ -54,7 +54,7 @@ import {
   pgTable,
   text,
 } from 'drizzle-orm/pg-core';
-import { createdAt, generatedId, timestamptz, tsvector, updatedAt } from './columns';
+import { createdAt, generatedId, timestamptz, tsvector, updatedAt } from '@oxyhq/db';
 import { mailboxes } from './mailboxes';
 import { users } from './users';
 

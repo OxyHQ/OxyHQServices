@@ -49,7 +49,7 @@
  * ```
  *
  * That regex rejects the **uuid v7 every row created after the Postgres cutover
- * carries** (`schema/columns.ts` `generatedId()`). `resolveBindingProof`
+ * carries** (`@oxyhq/db`'s `generatedId()`). `resolveBindingProof`
  * therefore answered `no_binding_proof` BEFORE QUERYING for any post-cutover
  * binding — so `applyModerationDecision` could not apply an effect at all for
  * such an account, however well-formed the event, however real the seeded

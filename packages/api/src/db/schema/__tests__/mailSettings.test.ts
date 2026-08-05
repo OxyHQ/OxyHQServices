@@ -19,7 +19,8 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, getTableName, sql } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../../../config/postgres';
-import { EXPIRY_SWEEP_TARGETS, sweepExpiredRows } from '../../expiry';
+import { sweepExpiredRows } from '@oxyhq/db/expiry';
+import { EXPIRY_SWEEP_TARGETS } from '../../expiry';
 import { bundles } from '../bundles';
 import { contacts } from '../contacts';
 import { emailFilterActions } from '../emailFilterActions';

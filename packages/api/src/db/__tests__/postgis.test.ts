@@ -36,8 +36,8 @@
 
 import { SQL, is, sql } from 'drizzle-orm';
 import { IndexedColumn, PgDialect, getTableConfig } from 'drizzle-orm/pg-core';
+import { DATABASE_CASING, sqlColumnName } from '@oxyhq/db';
 import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
-import { DATABASE_CASING, sqlColumnName } from '../casing';
 import { REQUIRED_EXTENSIONS } from '../extensions';
 import { userLocations } from '../schema/userLocations';
 

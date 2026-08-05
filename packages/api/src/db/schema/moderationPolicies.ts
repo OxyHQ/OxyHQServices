@@ -46,7 +46,7 @@ import {
   text,
   unique,
 } from 'drizzle-orm/pg-core';
-import { createdAt, generatedId, updatedAt } from './columns';
+import { createdAt, generatedId, updatedAt } from '@oxyhq/db';
 
 /** `active` is used for new effects; `retired` remains resolvable. */
 export const MODERATION_POLICY_STATUSES = ['active', 'retired'] as const;

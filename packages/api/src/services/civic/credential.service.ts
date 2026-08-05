@@ -55,7 +55,7 @@ import { verifyAndStoreRecord } from '../signedRecord.service';
 import { getHead } from '../repoLog.service';
 import { oxyRecordStore } from '../oxyRecordStore';
 import { getDb } from '../../config/postgres';
-import { isUniqueViolation } from '../../db/pgErrors';
+import { isUniqueViolation } from '@oxyhq/db';
 import { userAuthMethods } from '../../db/schema/userAuthMethods';
 import { userVerifiedDomains } from '../../db/schema/userVerifiedDomains';
 import { users } from '../../db/schema/users';

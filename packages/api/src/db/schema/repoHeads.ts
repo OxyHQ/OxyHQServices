@@ -31,7 +31,7 @@
 
 import { sql } from 'drizzle-orm';
 import { check, integer, pgTable, text } from 'drizzle-orm/pg-core';
-import { createdAt, generatedId, updatedAt } from './columns';
+import { createdAt, generatedId, updatedAt } from '@oxyhq/db';
 import { signedRecords } from './signedRecords';
 import { users } from './users';
 

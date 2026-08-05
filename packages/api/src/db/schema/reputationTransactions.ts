@@ -54,7 +54,7 @@ import {
 import type { ReputationTargetEntityType, ReputationTransactionStatus } from '@oxyhq/contracts';
 import { applicationCredentials } from './applicationCredentials';
 import { applications } from './applications';
-import { createdAt, generatedId, inList, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, inList, timestamptz, updatedAt } from '@oxyhq/db';
 import { REPUTATION_CATEGORIES } from './reputationRules';
 import { users } from './users';
 

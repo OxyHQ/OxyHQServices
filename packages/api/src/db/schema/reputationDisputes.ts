@@ -15,7 +15,7 @@ import { sql } from 'drizzle-orm';
 import { check, index, pgTable, text } from 'drizzle-orm/pg-core';
 import { REPUTATION_DISPUTE_STATUSES as CONTRACT_DISPUTE_STATUSES } from '@oxyhq/contracts';
 import type { ReputationDisputeStatus } from '@oxyhq/contracts';
-import { createdAt, generatedId, inList, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, inList, timestamptz, updatedAt } from '@oxyhq/db';
 import { reputationTransactions } from './reputationTransactions';
 import { users } from './users';
 

@@ -364,6 +364,47 @@ jobs:
       - run: bun scripts/test-check-migration-phases.mjs
       - run: bun scripts/check-migration-phases.mjs
 
+  # DB package tests (Jest — Postgres service for the live suites that are
+  # always-skipped without one: liveDatabase.test.ts, schemaInvariants.live.test.ts,
+  # expiryIndexes.live.test.ts).
+  db-test:
+    name: DB Tests
+    runs-on: ubuntu-latest
+    services:
+      # PostGIS, matching api-test: this package's live suites build their own
+      # throwaway schemas (never PostGIS types), but the image is pinned the
+      # same way everywhere else in this repo so no job disagrees about what a
+      # "Postgres service" means here.
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: oxy
+          POSTGRES_PASSWORD: oxy
+          POSTGRES_DB: oxy_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U oxy -d oxy_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install
+      - run: bun run lint && bun run typescript && bun run build
+        working-directory: ./packages/db
+      - run: bun run test
+        working-directory: ./packages/db
+        env:
+          # The admin connection the live suites create/drop throwaway
+          # databases through — see liveDatabase.test.ts's own doc comment.
+          # Without this every live suite is `describe.skip`, indistinguishable
+          # from passing; this is what makes them actually run in CI.
+          OXYDB_TEST_ADMIN_URL: postgres://oxy:oxy@127.0.0.1:5432/postgres
+
   # Contracts package tests (Jest — no MongoDB)
   contracts-test:
     name: Contracts Tests
@@ -589,6 +630,7 @@ jobs:
       - lockfile-sync
       - deploy-secrets-sync
       - migration-phases
+      - db-test
       - contracts-test
       - protocol-test
       - federation-test

@@ -20,7 +20,7 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, pgTable, text } from 'drizzle-orm/pg-core';
 import type { LinkPreviewStatus } from '@oxyhq/contracts';
-import { createdAt, timestamptz, updatedAt } from './columns';
+import { createdAt, timestamptz, updatedAt } from '@oxyhq/db';
 
 /**
  * Resolution states, mirroring `@oxyhq/contracts`' `LinkPreviewStatus`.

@@ -35,8 +35,8 @@
  *      WRONG phase it would apply destructive migrations against the image still
  *      serving, which is worse than the outage it replaced.
  *   4. `deploy-aws.yml` decides whether it needs a post-rollout migration task by
- *      grepping for the pattern `migrationPhases.ts` exports. That grep is only
- *      sound because of (1); this pins the two together so the workflow cannot
+ *      grepping for the pattern `@oxyhq/db`'s `migrate/phases.ts` exports. That grep
+ *      is only sound because of (1); this pins the two together so the workflow cannot
  *      drift to a pattern the marker syntax no longer matches.
  *
  * WHAT IS NOT CHECKED, DELIBERATELY
@@ -57,7 +57,7 @@ import { join } from 'node:path';
 import {
   POST_PHASE_GREP_PATTERN,
   readMigrationPhases,
-} from '../packages/api/src/db/migrationPhases.ts';
+} from '../packages/db/src/migrate/phases.ts';
 
 const DRIZZLE_FOLDER = join('packages', 'api', 'drizzle');
 const JOURNAL_PATH = join(DRIZZLE_FOLDER, 'meta', '_journal.json');
@@ -156,7 +156,7 @@ if (!deployScript.includes(PRE_PHASE_COMMAND)) {
 if (!deployWorkflow.includes(POST_PHASE_GREP_PATTERN)) {
   fail(
     `${DEPLOY_WORKFLOW_PATH} does not grep for ${POST_PHASE_GREP_PATTERN}, the pattern ` +
-    'packages/api/src/db/migrationPhases.ts exports. The workflow decides whether a release needs ' +
+    "@oxyhq/db's migrate/phases.ts exports. The workflow decides whether a release needs " +
     'a post-rollout migration task from that grep, so a pattern that no longer matches the marker ' +
     'syntax silently skips the task and the destructive migration is never applied by anything.'
   );

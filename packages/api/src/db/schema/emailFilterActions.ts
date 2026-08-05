@@ -10,7 +10,7 @@
 
 import { sql } from 'drizzle-orm';
 import { check, integer, pgTable, text, unique } from 'drizzle-orm/pg-core';
-import { generatedId } from './columns';
+import { generatedId } from '@oxyhq/db';
 import { emailFilters } from './emailFilters';
 
 /** What the rule does. */

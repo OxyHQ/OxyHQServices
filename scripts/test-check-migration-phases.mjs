@@ -39,7 +39,7 @@ const DRIZZLE = join('packages', 'api', 'drizzle');
 const JOURNAL = join(DRIZZLE, 'meta', '_journal.json');
 const WORKFLOW = join('.github', 'workflows', 'deploy-aws.yml');
 const DEPLOY_SCRIPT = join('.github', 'scripts', 'deploy-ecs-image.sh');
-const PARSER = join('packages', 'api', 'src', 'db', 'migrationPhases.ts');
+const PARSER = join('packages', 'db', 'src', 'migrate', 'phases.ts');
 const GATE = join('scripts', 'check-migration-phases.mjs');
 
 const fixturePrefix = join(tmpdir(), 'oxy-migration-phases-');

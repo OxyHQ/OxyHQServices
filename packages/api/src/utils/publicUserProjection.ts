@@ -40,7 +40,7 @@
 
 import { sql, type SQL } from 'drizzle-orm';
 import type { AccountCategoryId, AccountKind } from '@oxyhq/contracts';
-import { qualified } from '../db/casing';
+import { qualified } from '@oxyhq/db';
 import { userFollows } from '../db/schema/userFollows';
 import { userLinkMetadata } from '../db/schema/userLinkMetadata';
 import { users } from '../db/schema/users';

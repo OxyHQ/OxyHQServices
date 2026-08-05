@@ -45,7 +45,7 @@ import type {
 } from '@oxyhq/contracts';
 
 import { getDb, type Database } from '../config/postgres';
-import { isUniqueViolation } from '../db/pgErrors';
+import { isUniqueViolation } from '@oxyhq/db';
 import type * as schema from '../db/schema';
 import { conductStrikes } from '../db/schema/conductStrikes';
 import { personhoodStatuses } from '../db/schema/personhoodStatuses';

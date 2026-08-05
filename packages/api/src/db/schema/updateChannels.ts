@@ -12,7 +12,7 @@
 
 import { pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { applications } from './applications';
-import { createdAt, generatedId, updatedAt } from './columns';
+import { createdAt, generatedId, updatedAt } from '@oxyhq/db';
 
 /**
  * Platforms an Oxy Update targets. Narrower than `push_tokens.platform` — there

@@ -28,7 +28,7 @@ import { sql } from 'drizzle-orm';
 import { boolean, check, doublePrecision, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { APPLICATION_MODERATION_STANDINGS } from '@oxyhq/contracts';
 import { applications } from './applications';
-import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, timestamptz, updatedAt } from '@oxyhq/db';
 import { users } from './users';
 
 /** Renders a `const` tuple as a SQL `in (…)` list. */

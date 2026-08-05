@@ -28,7 +28,7 @@
 import { sql } from 'drizzle-orm';
 import { check, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { applications } from './applications';
-import { createdAt, generatedId } from './columns';
+import { createdAt, generatedId } from '@oxyhq/db';
 
 export const followNamespaces = pgTable(
   'follow_namespaces',

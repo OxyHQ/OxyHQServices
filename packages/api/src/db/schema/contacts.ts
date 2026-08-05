@@ -37,7 +37,7 @@
 
 import { sql } from 'drizzle-orm';
 import { boolean, index, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
-import { createdAt, generatedId, timestamptz, tsvector, updatedAt } from './columns';
+import { createdAt, generatedId, timestamptz, tsvector, updatedAt } from '@oxyhq/db';
 import { users } from './users';
 
 /** Matches the Mongo text index's default language. A LITERAL — see `columns.ts`. */

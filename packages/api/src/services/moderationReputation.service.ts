@@ -54,7 +54,7 @@ import type {
 } from '@oxyhq/contracts';
 
 import { getDb } from '../config/postgres';
-import { isUniqueViolation } from '../db/pgErrors';
+import { isUniqueViolation } from '@oxyhq/db';
 import { applicationModerationTrust } from '../db/schema/applicationModerationTrust';
 import { conductStrikes } from '../db/schema/conductStrikes';
 import { moderationEffects } from '../db/schema/moderationEffects';

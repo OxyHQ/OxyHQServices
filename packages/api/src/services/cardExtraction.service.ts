@@ -27,7 +27,7 @@
 import axios from 'axios';
 import { and, eq, sql } from 'drizzle-orm';
 import { getDb } from '../config/postgres';
-import { qualified } from '../db/casing';
+import { qualified } from '@oxyhq/db';
 import {
   MESSAGE_CARD_TYPES,
   messages,
@@ -86,7 +86,7 @@ class CardExtractionService {
           // question it is asked instead of loading every attachment row.
           // Both sides of the correlation are QUALIFIED: an unqualified pair
           // inside a subquery resolves against the subquery's own table and
-          // silently answers a different question (`db/casing.ts`).
+          // silently answers a different question (`@oxyhq/db`'s casing module).
           hasAttachments: sql<boolean>`exists (
             select 1 from ${messageAttachments}
             where ${qualified(messageAttachments.messageId)} = ${qualified(messages.id)}

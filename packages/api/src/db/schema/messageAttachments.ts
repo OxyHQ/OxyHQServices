@@ -30,7 +30,7 @@
 
 import { sql } from 'drizzle-orm';
 import { bigint, boolean, check, index, integer, pgTable, text, unique } from 'drizzle-orm/pg-core';
-import { generatedId } from './columns';
+import { generatedId } from '@oxyhq/db';
 import { files } from './files';
 import { messages } from './messages';
 

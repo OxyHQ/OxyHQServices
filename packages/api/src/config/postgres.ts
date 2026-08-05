@@ -13,7 +13,7 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { logger } from '../utils/logger';
 import { ConfigurationError, getEnvNumber } from './env';
-import { DATABASE_CASING } from '../db/casing';
+import { DATABASE_CASING } from '@oxyhq/db';
 import * as schema from '../db/schema';
 
 /**
@@ -99,7 +99,7 @@ export async function connectPostgres(): Promise<Database> {
   // Drizzle applies `casing` at RUNTIME when building SQL, drizzle-kit applies
   // it at GENERATE time when emitting DDL. They must agree or queries reference
   // columns the migrations never created — so both read the SAME constant, and
-  // `db/casing.ts` owns it.
+  // `@oxyhq/db` owns it.
   db = drizzle(instanceClient, { schema, casing: DATABASE_CASING });
 
   logger.info('Connected to PostgreSQL successfully', { maxPoolSize });
@@ -133,7 +133,7 @@ export function getDb(): Database {
  * the other user.
  *
  * This is NOT an escape hatch for ordinary queries: a raw statement bypasses
- * drizzle's casing (`db/casing.ts`), its typed row shapes, and the protected-
+ * drizzle's casing (`@oxyhq/db`), its typed row shapes, and the protected-
  * column mechanism (`schema/protectedColumns.ts`) that stops `select *` from
  * returning a phone number. Reach for it only when the operation genuinely has
  * no ORM expression, and say why at the call site.

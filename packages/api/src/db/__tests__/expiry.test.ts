@@ -9,11 +9,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getTableName } from 'drizzle-orm';
+import { findUnsupportedExpiryColumns } from '@oxyhq/db/assert';
+import { sweepAllExpiredRows, sweepExpiredRows } from '@oxyhq/db/expiry';
 import { closePostgres, connectPostgres, getDb } from '../../config/postgres';
-import { sqlColumnName } from '../casing';
-import { EXPIRY_SWEEP_TARGETS, sweepAllExpiredRows, sweepExpiredRows } from '../expiry';
+import { EXPIRY_SWEEP_TARGETS } from '../expiry';
 import { appAffinitySeenEvents } from '../schema/appAffinitySeenEvents';
 import { applications } from '../schema/applications';
 import { authChallenges } from '../schema/authChallenges';
@@ -68,25 +69,12 @@ describe('sweep registry', () => {
   });
 
   it('has a supporting index on every swept column', async () => {
-    const unindexed: string[] = [];
+    // The sweep's predicate is a range scan on this column; without an index
+    // it is a sequential scan of the whole table every interval. Mongo's TTL
+    // index carried the same obligation.
+    const violations = await findUnsupportedExpiryColumns(getDb(), EXPIRY_SWEEP_TARGETS);
 
-    for (const target of EXPIRY_SWEEP_TARGETS) {
-      const table = getTableName(target.table);
-      const column = sqlColumnName(target.column);
-      // The sweep's predicate is a range scan on this column; without an index
-      // it is a sequential scan of the whole table every interval. Mongo's TTL
-      // index carried the same obligation.
-      const rows = await getDb().execute<{ indexdef: string }>(sql`
-        select indexdef from pg_indexes
-        where schemaname = 'public' and tablename = ${table}
-      `);
-      const leadsWithColumn = new RegExp(`\\(${column}\\b`);
-      if (!rows.some((row) => leadsWithColumn.test(row.indexdef))) {
-        unindexed.push(`${table}.${column}`);
-      }
-    }
-
-    expect(unindexed).toEqual([]);
+    expect(violations).toEqual([]);
   });
 });
 
@@ -209,7 +197,7 @@ describe('batching', () => {
 
 describe('sweepAllExpiredRows', () => {
   it('returns one result per registered target', async () => {
-    const results = await sweepAllExpiredRows(getDb());
+    const results = await sweepAllExpiredRows(getDb(), EXPIRY_SWEEP_TARGETS);
 
     expect(results.map((result) => result.table)).toEqual(
       EXPIRY_SWEEP_TARGETS.map((target) => getTableName(target.table))

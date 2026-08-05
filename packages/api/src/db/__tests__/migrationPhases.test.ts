@@ -18,15 +18,16 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readJournal, MIGRATIONS_FOLDER } from '../migrationLedger';
 import {
   DEPLOY_PHASES,
   MIGRATION_RUNS,
   POST_PHASE_GREP_PATTERN,
   phaseMarkerLine,
   planMigrationRun,
+  readJournal,
   readMigrationPhases,
-} from '../migrationPhases';
+} from '@oxyhq/db/migrate';
+import { MIGRATIONS_FOLDER } from '../migrationsFolder';
 
 const throwawayFolders: string[] = [];
 

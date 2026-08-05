@@ -25,7 +25,7 @@
 
 import { and, eq, gte, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { federatedUsernameFromUpstreamUrl } from '@oxyhq/federation';
-import { qualified } from '../db/casing';
+import { qualified } from '@oxyhq/db';
 import { users } from '../db/schema/users';
 import { userLocations } from '../db/schema/userLocations';
 
