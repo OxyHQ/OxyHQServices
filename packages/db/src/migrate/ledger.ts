@@ -219,6 +219,35 @@ export function planLedgerRun(
 }
 
 /**
+ * A row's `created_at`, coerced to the millisecond number every rule in this
+ * file compares — dropping rows this package cannot make sense of rather than
+ * guessing a value for them.
+ *
+ * Pulled out of {@link readAppliedMillis} and {@link readLastAppliedMillis} so
+ * this coercion is ONE rule both round trips call, not two copies that could
+ * drift: `readLastAppliedMillis` reduces to `toAppliedMillis(rows)[0] ?? null`
+ * on the same query shape, and reusing the array version there means there is
+ * only one place a future edit could get the NULL handling below wrong.
+ *
+ * Two things this collapses on purpose:
+ *
+ * - `bigint` arrives as a STRING from postgres.js, so every `created_at` must
+ *   pass through `Number(...)` before it is comparable to anything numeric —
+ *   returning the raw string would make every high-water comparison silently
+ *   false (`'2000' < 3000` is `true`, but string-vs-number equality never is).
+ * - A NULL `created_at` is DROPPED, never coerced: `Number(null)` is `0`,
+ *   which reads as a row applied at the Unix epoch and would drag the whole
+ *   ledger's high-water mark down to it — the exact way a migration that
+ *   really did run would look, wrongly, like it never had.
+ */
+export function toAppliedMillis(rows: { created_at: string | null }[]): number[] {
+  return rows
+    .map((row) => row.created_at)
+    .filter((value): value is string => value !== null)
+    .map(Number);
+}
+
+/**
  * Every `created_at` the ledger has recorded, or `[]` when the ledger table does
  * not exist yet (a database no migration has ever touched).
  *
@@ -239,13 +268,7 @@ export async function readAppliedMillis(client: postgres.Sql): Promise<number[]>
     from ${client(MIGRATIONS_SCHEMA)}.${client(MIGRATIONS_TABLE)}
   `;
 
-  // `bigint` arrives as a string from postgres.js. A NULL `created_at` is
-  // dropped rather than coerced: `Number(null)` is 0, which would read as a row
-  // applied at the epoch and drag the whole comparison with it.
-  return rows
-    .map((row) => row.created_at)
-    .filter((value): value is string => value !== null)
-    .map(Number);
+  return toAppliedMillis(rows);
 }
 
 /**
@@ -268,10 +291,10 @@ export async function readLastAppliedMillis(client: postgres.Sql): Promise<numbe
     limit 1
   `;
 
-  const createdAt = rows[0]?.created_at;
-  // `bigint` arrives as a string from postgres.js; an empty ledger table reads
-  // as no row at all.
-  return createdAt === undefined || createdAt === null ? null : Number(createdAt);
+  // A NULL row and an empty result set both mean "nothing usable" — the same
+  // rule `toAppliedMillis` already states, so this asks it rather than
+  // restating "undefined or null" separately.
+  return toAppliedMillis(rows)[0] ?? null;
 }
 
 /**

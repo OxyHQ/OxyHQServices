@@ -7,6 +7,7 @@ import {
   pendingEntries,
   planLedgerRun,
   readJournal,
+  toAppliedMillis,
   unreachableEntries,
   type JournalEntry,
 } from '../migrate/ledger';
@@ -223,5 +224,41 @@ describe('planLedgerRun', () => {
       caught = error as UnreachableMigrationError;
     }
     expect(caught?.entries.map((entry) => entry.tag)).toEqual(['0001_b', '0002_c']);
+  });
+});
+
+describe('toAppliedMillis', () => {
+  // `readAppliedMillis` and `readLastAppliedMillis` both reduce to this
+  // function on the rows postgres.js hands back, so these are the tests for
+  // both round trips' coercion rule — not just for this function in isolation.
+
+  it('drops a NULL created_at rather than coercing it to 0', () => {
+    // The exact bug this exists to refuse: `Number(null)` is 0, which would
+    // read as a row applied at the Unix epoch and drag the ledger's
+    // high-water mark down to it.
+    expect(toAppliedMillis([{ created_at: null }, { created_at: '5000' }])).toEqual([5000]);
+  });
+
+  it('coerces a bigint-as-string to an actual number, not a string', () => {
+    // toEqual distinguishes '1712345678901' from 1712345678901 — a missed
+    // `Number(...)` would return the former and fail this assertion, not
+    // silently pass it.
+    expect(toAppliedMillis([{ created_at: '1712345678901' }])).toEqual([1712345678901]);
+  });
+
+  it('returns [] for an empty result set — a table that exists but holds no rows', () => {
+    expect(toAppliedMillis([])).toEqual([]);
+  });
+
+  it('models readLastAppliedMillis: the single most-recent row, or null when there is none', () => {
+    // `readLastAppliedMillis` is `toAppliedMillis(rows)[0] ?? null` on a
+    // `order by created_at desc limit 1` result — asserted here directly
+    // since calling the real function needs a live database this package
+    // does not yet have a harness for.
+    expect(toAppliedMillis([{ created_at: '2000' }])[0] ?? null).toBe(2000);
+    expect(toAppliedMillis([])[0] ?? null).toBeNull();
+    // A lone NULL row: dropped by the coercion, same as an empty result set —
+    // not coerced to a value of 0.
+    expect(toAppliedMillis([{ created_at: null }])[0] ?? null).toBeNull();
   });
 });
