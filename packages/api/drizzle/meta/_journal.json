@@ -148,6 +148,13 @@
       "when": 1785887052731,
       "tag": "0021_signed_records_author_feed_index",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1785897904255,
+      "tag": "0022_signed_records_accept_app_record",
+      "breakpoints": true
     }
   ]
 }
