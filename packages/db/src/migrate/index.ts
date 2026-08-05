@@ -18,6 +18,7 @@ export {
   assertMigrationTarget,
   readTargetDatabase,
 } from './targetDatabase';
+export { type RequiredExtension, ensureExtensions } from './extensions';
 export {
   DEPLOY_PHASES,
   MIGRATION_RUNS,
