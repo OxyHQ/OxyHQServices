@@ -77,11 +77,15 @@ const V1_LEGACY_RECORD_TYPES: ReadonlySet<OxySignedRecordType> = new Set(['ident
  *  1. `subject_mismatch` — the envelope's `subject` MUST be `subjectUserId`'s DID
  *     (a caller may only publish records about their own account / chain).
  *  2. the STORE strictness gate — the base envelope `type` is an OPEN string so
- *     any Oxy app can sign on the shared grammar, but the Oxy identity/civic/node
- *     store accepts ONLY the closed `oxySignedRecordTypeSchema` set; a non-Oxy
- *     `type` (e.g. an app's `app_record`) is rejected as `invalid_envelope`.
+ *     any Oxy app can sign on the shared grammar, but the store accepts ONLY the
+ *     closed `oxySignedRecordTypeSchema` set; a `type` outside it is rejected as
+ *     `invalid_envelope`. That set now includes `app_record`, the one category
+ *     every Oxy app's records carry (the lexicon is the envelope's `collection`,
+ *     not the type) — see `@oxyhq/contracts`'s `oxyRecordTypes.ts` for why the
+ *     boundary moved.
  *  3. the CHAIN gate — every Oxy type except the two v1 legacy singletons MUST
- *     arrive as a v2 (chained) envelope.
+ *     arrive as a v2 (chained) envelope. `app_record` is not a legacy singleton,
+ *     so an app record must be chained — which is what Mention already signs.
  *
  * ## Why (3) exists — the `recordId ?? ''` root cause
  *

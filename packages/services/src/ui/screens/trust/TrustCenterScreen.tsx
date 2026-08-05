@@ -13,7 +13,7 @@ import { Loading } from '@oxyhq/bloom/loading';
 import { useI18n } from '../../hooks/useI18n';
 import { useSurfaceHeader } from '../../hooks/useSurfaceHeader';
 import { useOxy } from '../../context/OxyContext';
-import { getTrustTierLabel } from './trustTier';
+import { trustTierLabel } from '@oxyhq/core';
 
 const TrustCenterScreen: React.FC<BaseScreenProps> = ({
     navigate,
@@ -21,7 +21,7 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
     // Reputation/trust is the ACTIVE account's standing (the org/project/bot
     // when switched, else the personal user).
     const { user, oxyServices, isAuthenticated } = useOxy();
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
     const [reputationTotal, setReputationTotal] = useState<number | null>(null);
     const [trustTier, setTrustTier] = useState<TrustTier | null>(null);
     const [transactions, setTransactions] = useState<ReputationTransaction[]>([]);
@@ -53,9 +53,9 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
             .finally(() => setIsLoading(false));
     }, [user, oxyServices, t]);
 
-    const trustTierLabel = useMemo(
-        () => (trustTier ? getTrustTierLabel(trustTier, t) : null),
-        [trustTier, t],
+    const resolvedTrustTierLabel = useMemo(
+        () => (trustTier ? trustTierLabel(locale, trustTier) : null),
+        [trustTier, locale],
     );
 
     const title = t('trust.center.title') || 'Trust Center';
@@ -87,7 +87,7 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
                     <Text className="text-text-tertiary text-base mt-space-2 mb-space-12">
                         {t('trust.center.balance') || 'Reputation Balance'}
                     </Text>
-                    {trustTierLabel ? (
+                    {resolvedTrustTierLabel ? (
                         <Chip
                             variant="soft"
                             color="primary"
@@ -99,7 +99,7 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
                                 />
                             }
                         >
-                            {trustTierLabel}
+                            {resolvedTrustTierLabel}
                         </Chip>
                     ) : null}
                     <Text

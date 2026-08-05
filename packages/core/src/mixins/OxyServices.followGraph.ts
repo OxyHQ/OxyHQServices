@@ -211,6 +211,30 @@ export function OxyServicesFollowGraphMixin<T extends typeof OxyServicesBase>(Ba
     }
 
     /**
+     * Release a namespace the calling application holds, when nothing is
+     registered inside it yet.
+     *
+     * Idempotent when the namespace is already unowned (`released: false`).
+     * Exists because claims are first-come and registration runs on boot — a
+     * development build with the wrong client id can bind a name permanently
+     * unless the holder can give it back.
+     */
+    async releaseFollowNamespace(
+      namespace: string,
+    ): Promise<{ namespace: string; released: boolean }> {
+      try {
+        return await this.makeRequest(
+          'DELETE',
+          `/v2/follow-targets/namespaces/${encodeURIComponent(namespace)}`,
+          undefined,
+          { cache: false },
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
      * Declare what following a kind of thing MEANS: the verb clients render,
      * whether reverse lookups are public, whether it federates.
      *

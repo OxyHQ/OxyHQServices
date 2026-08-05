@@ -25,6 +25,7 @@ import {
   getKindCapabilities,
   listKindsForApplication,
   registerKind,
+  releaseNamespace,
 } from '../followRegistry.service';
 
 let userId: string;
@@ -140,6 +141,64 @@ describe('claiming a namespace', () => {
       ok: false,
       reason: 'namespace_taken',
     });
+  });
+});
+
+describe('releasing a namespace', () => {
+  it('lets the holder release an empty namespace, and another application claim it after', async () => {
+    // The recoverable-mistake case: a development build using a fallback client
+    // id claims the name, and without this it is bound to the wrong
+    // application permanently.
+    const ns = await ownedNamespace();
+
+    expect(await releaseNamespace({ capability: capabilityFor(appA), namespace: ns })).toEqual({
+      ok: true,
+      value: { namespace: ns, released: true },
+    });
+    expect(await claimNamespace({ capability: capabilityFor(appB), namespace: ns })).toMatchObject({
+      ok: true,
+      value: { created: true },
+    });
+  });
+
+  it('refuses to release a namespace that has kinds in it', async () => {
+    // The original guarantee, intact: targets and relationships across the
+    // graph derive their meaning from a kind, and a kind from its namespace.
+    const ns = await ownedNamespace();
+    await registerKind({ capability: capabilityFor(appA), kind: `${ns}.store` });
+
+    expect(await releaseNamespace({ capability: capabilityFor(appA), namespace: ns })).toEqual({
+      ok: false,
+      reason: 'namespace_in_use',
+    });
+    // And it is still held afterwards.
+    expect(await claimNamespace({ capability: capabilityFor(appB), namespace: ns })).toEqual({
+      ok: false,
+      reason: 'namespace_taken',
+    });
+  });
+
+  it('refuses to release a namespace another application holds', async () => {
+    // Not a way to take a name from somebody who has not used it yet.
+    const ns = await ownedNamespace();
+    expect(await releaseNamespace({ capability: capabilityFor(appB), namespace: ns })).toEqual({
+      ok: false,
+      reason: 'namespace_not_owned',
+    });
+  });
+
+  it('can never release the platform namespace', async () => {
+    // `oxy` is held by no application row, so no capability matches its holder.
+    expect(await releaseNamespace({ capability: capabilityFor(appA), namespace: 'oxy' })).toEqual({
+      ok: false,
+      reason: 'namespace_not_owned',
+    });
+  });
+
+  it('succeeds when there was nothing to release', async () => {
+    expect(
+      await releaseNamespace({ capability: capabilityFor(appA), namespace: unique('gone') })
+    ).toMatchObject({ ok: true, value: { released: false } });
   });
 });
 

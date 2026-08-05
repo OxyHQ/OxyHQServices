@@ -454,6 +454,9 @@ export type { CircuitBreakerState, CircuitBreakerConfig } from './shared/utils/n
 // ---------------------------------------------------------------------------
 export { translate } from './i18n';
 export { accountCategoryLabel } from './i18n/accountCategoryLabels';
+export { accountRoleLabel } from './i18n/accountRoleLabels';
+export { reputationCategoryLabel } from './i18n/reputationCategoryLabels';
+export { trustTierLabel } from './i18n/trustTierLabels';
 
 // ---------------------------------------------------------------------------
 // API request / URL helpers

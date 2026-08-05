@@ -1,6 +1,6 @@
 {
-  "id": "65d53cf8-ad7d-45c3-bdc4-80cbea74771b",
-  "prevId": "9b97b22e-0f0b-4f7b-9dc7-4babd762b4eb",
+  "id": "c29a08fb-7e04-43ba-9085-8eb8ee40228e",
+  "prevId": "dbf1dad4-a9ca-4c77-a9d0-421b965cd4fb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -94,14 +94,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -276,14 +276,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -464,7 +464,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -664,14 +664,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -817,7 +817,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -912,14 +912,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -1060,14 +1060,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -1359,14 +1359,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -1575,14 +1575,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -1760,14 +1760,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -1950,14 +1950,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -2164,14 +2164,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -2306,14 +2306,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -2435,14 +2435,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -2718,14 +2718,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -2945,14 +2945,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -3095,14 +3095,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -3235,7 +3235,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -3325,14 +3325,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -3442,14 +3442,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -3535,7 +3535,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -3684,14 +3684,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -3948,14 +3948,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -4129,14 +4129,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -4304,14 +4304,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -4581,14 +4581,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -4680,7 +4680,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -4950,14 +4950,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -5056,14 +5056,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -5143,14 +5143,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -5220,7 +5220,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -5516,14 +5516,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -5749,7 +5749,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -5848,14 +5848,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -5983,14 +5983,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -6146,14 +6146,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -6336,14 +6336,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -6535,7 +6535,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -6754,7 +6754,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -6859,14 +6859,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -7036,14 +7036,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -7179,14 +7179,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -7278,14 +7278,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -7847,14 +7847,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -8418,14 +8418,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -8709,14 +8709,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -8945,7 +8945,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -9065,14 +9065,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -9257,14 +9257,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -9383,14 +9383,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -9543,14 +9543,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -9683,14 +9683,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -9818,14 +9818,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -9963,14 +9963,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -10302,14 +10302,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -10581,14 +10581,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -10753,14 +10753,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -10906,14 +10906,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -11142,7 +11142,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -11300,14 +11300,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -11443,14 +11443,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -11793,14 +11793,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -12083,7 +12083,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -12255,7 +12255,7 @@
       "checkConstraints": {
         "signed_records_type_check": {
           "name": "signed_records_type_check",
-          "value": "\"signed_records\".\"type\" in ('identity', 'profile', 'reputation_attestation', 'real_life_attestation', 'validation_verdict', 'personhood_vouch', 'credential', 'node')"
+          "value": "\"signed_records\".\"type\" in ('identity', 'profile', 'reputation_attestation', 'real_life_attestation', 'validation_verdict', 'personhood_vouch', 'credential', 'node', 'app_record')"
         },
         "signed_records_seq_check": {
           "name": "signed_records_seq_check",
@@ -12381,14 +12381,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -12559,14 +12559,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -12752,14 +12752,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -12900,14 +12900,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -13010,7 +13010,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -13228,14 +13228,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -13313,14 +13313,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -13444,14 +13444,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -13609,14 +13609,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -13798,14 +13798,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -13907,7 +13907,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -14045,14 +14045,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -14130,14 +14130,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -14289,14 +14289,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -14499,14 +14499,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -14775,14 +14775,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -14891,7 +14891,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -15508,14 +15508,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -16101,14 +16101,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -16291,7 +16291,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -16574,14 +16574,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -16724,14 +16724,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {},
@@ -16815,14 +16815,14 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         }
       },
       "indexes": {
@@ -16948,7 +16948,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "date_trunc('milliseconds', now())"
         },
         "last_used_at": {
           "name": "last_used_at",

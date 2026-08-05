@@ -1,6 +1,6 @@
 {
-  "id": "65d53cf8-ad7d-45c3-bdc4-80cbea74771b",
-  "prevId": "9b97b22e-0f0b-4f7b-9dc7-4babd762b4eb",
+  "id": "dbf1dad4-a9ca-4c77-a9d0-421b965cd4fb",
+  "prevId": "65d53cf8-ad7d-45c3-bdc4-80cbea74771b",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12255,7 +12255,7 @@
       "checkConstraints": {
         "signed_records_type_check": {
           "name": "signed_records_type_check",
-          "value": "\"signed_records\".\"type\" in ('identity', 'profile', 'reputation_attestation', 'real_life_attestation', 'validation_verdict', 'personhood_vouch', 'credential', 'node')"
+          "value": "\"signed_records\".\"type\" in ('identity', 'profile', 'reputation_attestation', 'real_life_attestation', 'validation_verdict', 'personhood_vouch', 'credential', 'node', 'app_record')"
         },
         "signed_records_seq_check": {
           "name": "signed_records_seq_check",

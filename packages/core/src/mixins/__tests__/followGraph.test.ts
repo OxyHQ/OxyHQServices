@@ -105,6 +105,23 @@ describe('OxyServices.followGraph', () => {
       await oxy.followTarget('../../admin');
       expect(makeRequest.mock.calls[0][1]).toBe('/v2/follows/..%2F..%2Fadmin');
     });
+
+    it('claims a namespace with POST', async () => {
+      await oxy.claimFollowNamespace('mention');
+      expect(makeRequest.mock.calls[0].slice(0, 3)).toEqual([
+        'POST',
+        '/v2/follow-targets/namespaces',
+        { namespace: 'mention' },
+      ]);
+    });
+
+    it('releases a namespace with DELETE and encodes the segment', async () => {
+      await oxy.releaseFollowNamespace('mention.dev');
+      expect(makeRequest.mock.calls[0].slice(0, 2)).toEqual([
+        'DELETE',
+        '/v2/follow-targets/namespaces/mention.dev',
+      ]);
+    });
   });
 
   describe('caching', () => {
@@ -115,6 +132,8 @@ describe('OxyServices.followGraph', () => {
       await oxy.unfollowTarget('r');
       await oxy.setFollowApplicationMode('r', 'disabled');
       await oxy.restoreFollowInheritance('r');
+      await oxy.claimFollowNamespace('ns');
+      await oxy.releaseFollowNamespace('ns');
 
       // A status cached across a write is the "follow reverts after navigating
       // away and back" bug the legacy path had to fix with explicit

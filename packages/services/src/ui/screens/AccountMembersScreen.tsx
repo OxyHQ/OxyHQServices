@@ -15,7 +15,7 @@ import { Button } from '@oxyhq/bloom/button';
 import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { Divider } from '@oxyhq/bloom/divider';
 import type { AccountMember, AccountRole } from '@oxyhq/core';
-import { getNormalizedUserHandle } from '@oxyhq/core';
+import { accountRoleLabel, getNormalizedUserHandle } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
@@ -42,7 +42,7 @@ const isUserNotFound = (error: unknown): boolean => {
 const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, accountId }) => {
   const bloomTheme = useTheme();
   const colors = bloomTheme.colors;
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   useSurfaceHeader({
     title: t('accounts.members.title') || 'Members',
@@ -53,9 +53,10 @@ const AccountMembersScreen: React.FC<BaseScreenProps> = ({ onClose, goBack, acco
 
   const id = typeof accountId === 'string' ? accountId : '';
 
-  const roleLabel = useCallback((role: AccountRole): string => {
-    return t(`accounts.roles.${role}.label`) || role.charAt(0).toUpperCase() + role.slice(1);
-  }, [t]);
+  const roleLabel = useCallback(
+    (role: AccountRole): string => accountRoleLabel(locale, role),
+    [locale],
+  );
 
   const accountQuery = useQuery({
     queryKey: ['accounts', 'detail', id],

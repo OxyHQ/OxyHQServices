@@ -152,6 +152,33 @@ export const signedRecords = pgTable(
     index('signed_records_user_id_nsid_rkey_created_at_idx')
       .on(t.userId, t.nsid, t.rkey, t.createdAt.desc())
       .where(sql`${t.nsid} is not null`),
+    // The multi-author projection scan (`oxyRecordStore.listRecordsByAuthors`):
+    // "records by ANY of these authors, in these collections, after this
+    // cursor".
+    //
+    // MEASURED, not assumed (60k rows, 2000 authors, 300 asked for, PG17): the
+    // planner takes a Bitmap Index Scan on this index for the author set and
+    // then top-N heapsorts the matches — it does NOT merge one ordered scan per
+    // author, and no `IN`-list plan in this version does. So the index buys the
+    // author RESTRICTION; the ordering is still a sort, bounded by how many rows
+    // the cursor leaves in range.
+    //
+    // That is the right trade for an INCREMENTAL puller, which is the only
+    // caller: past the first poll the surviving set is small. The shape that
+    // would bound the first poll too is a LATERAL top-N per author
+    // (`unnest(authors) … LATERAL (… ORDER BY created_at, id LIMIT n)`), which
+    // does use the ordering — worth reaching for when a far-behind cursor
+    // actually hurts, and not before.
+    //
+    // `nsid` is deliberately NOT a leading column: it stays an IN-list filter so
+    // the index serves any lexicon mix rather than one, and `created_at` keeps
+    // its place directly after `user_id` for the LATERAL shape above.
+    //
+    // Partial on the same rows the query selects: a v1 row has no lexicon to
+    // filter on, and an unverified row never reaches a feed.
+    index('signed_records_authors_created_at_id_idx')
+      .on(t.userId, t.createdAt, t.id)
+      .where(sql`${t.nsid} is not null and ${t.verified}`),
 
     check('signed_records_type_check', sql`${t.type} in (${sql.raw(inList(OXY_SIGNED_RECORD_TYPES))})`),
     // `signedRecordEnvelopeSchema` requires `seq` to be a non-negative integer
