@@ -387,6 +387,24 @@ class OxyRecordStoreImpl implements RecordStore {
    * Only `verified` rows with an `nsid` are returned: an unverified row has no
    * business in anyone's feed, and a v1 row has no lexicon to filter on.
    *
+   * ## `collections` is a POLICY, and here it is a privacy boundary
+   *
+   * The store has no notion of a public collection — `getPublicLogSince` takes
+   * its allowlist for the same reason, and `repoLog.service`'s
+   * `PUBLIC_LOG_COLLECTIONS` is where that policy is written down. It matters
+   * more on THIS read: that one serves one subject's bootstrap log under a
+   * constant, while this one spans subjects and serves app records, and a
+   * person's chain interleaves an app's PUBLIC and PRIVATE collections in one
+   * log. Mention's `app.mention.feed.bookmark` is declared in
+   * `@mention/shared-types` as "a private bookmark (excluded from any public
+   * log)" — a fact Oxy cannot derive, because which of an app's collections are
+   * publishable is the APP's knowledge and no registry carries it yet.
+   *
+   * So a read surface built on this MUST pass an allowlist it owns, in the shape
+   * `PUBLIC_LOG_COLLECTIONS` already has. Passing a request-supplied list
+   * straight through hands every caller everyone's saved posts, and nothing
+   * below this line would notice.
+   *
    * THROWS rather than truncating when a cap is exceeded. A silently shortened
    * author list reads as "these people published nothing".
    */
