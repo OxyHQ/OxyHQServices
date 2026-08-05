@@ -3,6 +3,7 @@ import { View, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Dialog } from '@oxyhq/bloom/dialog';
 import type { PublicCard, CardTrustTier, RealLifeAttestationResult } from '@oxyhq/contracts';
+import { trustTierLabel } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { PrimaryButton, SecondaryButton, CenteredState } from '@/components/ui';
@@ -65,7 +66,7 @@ export function AttestReviewSheet({
   onClose,
 }: AttestReviewSheetProps) {
   const colors = useColors();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   const initial = useMemo(() => (card?.name?.trim()?.[0] ?? '?').toUpperCase(), [card?.name]);
 
@@ -162,7 +163,7 @@ export function AttestReviewSheet({
               <CivicBadge
                 tone={getTrustTierMeta(card.trustTier).tone}
                 icon={TIER_ICON[card.trustTier]}
-                label={t(`civic.trustTier.${card.trustTier}`)}
+                label={trustTierLabel(locale, card.trustTier)}
               />
               {!verified && (
                 <CivicBadge tone="caution" icon="shield-alert-outline" label={t('civic.attest.review.unverified')} />
