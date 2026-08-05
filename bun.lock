@@ -65,6 +65,7 @@
         "expo-splash-screen": "catalog:",
         "expo-status-bar": "catalog:",
         "expo-system-ui": "catalog:",
+        "expo-updates": "~57.0.11",
         "expo-web-browser": "catalog:",
         "jszip": "catalog:",
         "lottie-react-native": "~7.3.8",

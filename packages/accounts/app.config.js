@@ -8,6 +8,19 @@ const IS_DEV_VARIANT = process.env.APP_VARIANT === 'development';
 const APP_ID = IS_DEV_VARIANT ? 'so.oxy.accounts.dev' : 'so.oxy.accounts';
 const APP_NAME = IS_DEV_VARIANT ? 'Accounts (Dev)' : 'Accounts by Oxy';
 
+// Registered ApplicationCredential publicKey, used at BUILD time to bake this
+// app's Oxy Updates manifest URL into the binary. It must equal the runtime
+// value in `constants/oxy.ts` (that file cannot be required from here: it is
+// TypeScript and app.config.js is plain CommonJS), so
+// `__tests__/updates/app-config-client-id.test.ts` asserts the two agree.
+const OXY_CLIENT_ID =
+  process.env.EXPO_PUBLIC_OXY_CLIENT_ID ??
+  'oxy_dk_00f0e5d5a2e4697740a476d3cfc54f4490f01245d0d2dd05';
+
+// OTA release channel this binary polls. `oxy-ship publish --channel <name>`
+// writes to the matching channel.
+const OXY_UPDATES_CHANNEL = process.env.EXPO_PUBLIC_OXY_UPDATES_CHANNEL ?? 'production';
+
 module.exports = {
   expo: {
     name: APP_NAME,
@@ -101,6 +114,21 @@ module.exports = {
       // module now ships inside @oxyhq/services). Reader-only: it never hosts
       // the provider.
       '@oxyhq/services/plugins/withSharedIdentityReader',
+      // Oxy Updates (OTA). Points expo-updates at this app's manifest endpoint on
+      // the self-hosted update server in oxy-api, sets the runtimeVersion policy
+      // and wires the ecosystem code-signing certificate. `expo-updates` itself
+      // needs no entry here: prebuild applies its config plugin automatically for
+      // every installed versioned Expo SDK package.
+      [
+        '@oxyhq/app-preset/plugin/withOxyUpdates',
+        {
+          clientId: OXY_CLIENT_ID,
+          channel: OXY_UPDATES_CHANNEL,
+          ...(process.env.EXPO_PUBLIC_API_URL
+            ? { apiOrigin: process.env.EXPO_PUBLIC_API_URL }
+            : {}),
+        },
+      ],
     ],
     experiments: {
       typedRoutes: true,
