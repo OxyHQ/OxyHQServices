@@ -43,6 +43,30 @@ import { materializeJournalPrefix, runMigrations } from '../migrate/runner';
 
 const noopLogger = { info: () => {}, debug: () => {} };
 
+// Directories created FRESH inside a single `it()` — via `migrationsFixtureTracked`
+// or `materializeJournalPrefixTracked` — are tracked here and removed in the
+// top-level `afterEach`, so no single test's fixture needs to survive past
+// that test. `materializeJournalPrefix` itself documents "the caller owns it
+// and must remove it" (`runner.ts`); an `it()` block calling it IS that
+// caller, so leaving the return value untracked is not a gap this file's
+// tests are exempt from, it is exactly the leak the function's own contract
+// assigns to them.
+//
+// A directory created ONCE at a `describe()` body's top level and reused by
+// EVERY sibling test — the shared source folder in `describe('materializeJournalPrefix', ...)`
+// below — must NOT go through this array: this `afterEach` runs after every
+// individual test, so tracking a describe-scoped fixture here would delete
+// it after the FIRST sibling test and break every test after it with an
+// ENOENT reading a journal that this suite itself removed. That case gets
+// its own `afterAll` instead, scoped to the describe block that created it.
+const createdFolders: string[] = [];
+
+afterEach(() => {
+  for (const folder of createdFolders.splice(0)) {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
 function migrationsFixture(entries: Array<{ tag: string; when: number; sql: string }>): string {
   const folder = mkdtempSync(join(tmpdir(), 'oxydb-runner-'));
   mkdirSync(join(folder, 'meta'), { recursive: true });
@@ -60,7 +84,35 @@ function migrationsFixture(entries: Array<{ tag: string; when: number; sql: stri
   return folder;
 }
 
+/**
+ * `migrationsFixture`, plus tracking its return value for per-test cleanup.
+ * Only call this from INSIDE an `it()` — a fixture meant to be shared across
+ * multiple sibling tests (created at a `describe()` body's top level) must be
+ * cleaned up in its own `afterAll` instead, or the file-level `afterEach`
+ * deletes it after the first test that runs.
+ */
+function migrationsFixtureTracked(
+  entries: Array<{ tag: string; when: number; sql: string }>
+): string {
+  const folder = migrationsFixture(entries);
+  createdFolders.push(folder);
+  return folder;
+}
+
+/** `materializeJournalPrefix`, plus tracking its return value for cleanup. */
+function materializeJournalPrefixTracked(
+  entries: readonly JournalEntry[],
+  count: number,
+  sourceFolder: string
+): string {
+  const prefixFolder = materializeJournalPrefix(entries, count, sourceFolder);
+  createdFolders.push(prefixFolder);
+  return prefixFolder;
+}
+
 describe('materializeJournalPrefix', () => {
+  // Created ONCE and read by every `it()` below — cleaned up in `afterAll`,
+  // deliberately NOT through `createdFolders` (see the comment on that array).
   const folder = migrationsFixture([
     { tag: '0000_a', when: 1000, sql: '-- oxy:deploy-phase=pre\nselect 1;\n' },
     { tag: '0001_b', when: 2000, sql: '-- oxy:deploy-phase=post\nselect 2;\n' },
@@ -70,8 +122,12 @@ describe('materializeJournalPrefix', () => {
     readFileSync(join(folder, 'meta', '_journal.json'), 'utf8')
   ).entries;
 
+  afterAll(() => {
+    rmSync(folder, { recursive: true, force: true });
+  });
+
   it('keeps only the first `count` journal entries', () => {
-    const prefixFolder = materializeJournalPrefix(entries, 2, folder);
+    const prefixFolder = materializeJournalPrefixTracked(entries, 2, folder);
     const prefixJournal = JSON.parse(readFileSync(join(prefixFolder, 'meta', '_journal.json'), 'utf8'));
     expect(prefixJournal.entries.map((entry: JournalEntry) => entry.tag)).toEqual([
       '0000_a',
@@ -80,28 +136,28 @@ describe('materializeJournalPrefix', () => {
   });
 
   it('copies only the retained `.sql` files, and leaves the excluded ones out entirely', () => {
-    const prefixFolder = materializeJournalPrefix(entries, 2, folder);
+    const prefixFolder = materializeJournalPrefixTracked(entries, 2, folder);
     expect(existsSync(join(prefixFolder, '0000_a.sql'))).toBe(true);
     expect(existsSync(join(prefixFolder, '0001_b.sql'))).toBe(true);
     expect(existsSync(join(prefixFolder, '0002_c.sql'))).toBe(false);
   });
 
   it('copies each `.sql` file byte for byte, so drizzle records the same hash a full-folder run would', () => {
-    const prefixFolder = materializeJournalPrefix(entries, 1, folder);
+    const prefixFolder = materializeJournalPrefixTracked(entries, 1, folder);
     expect(readFileSync(join(prefixFolder, '0000_a.sql'), 'utf8')).toBe(
       readFileSync(join(folder, '0000_a.sql'), 'utf8')
     );
   });
 
   it('preserves the journal file\'s other top-level fields', () => {
-    const prefixFolder = materializeJournalPrefix(entries, 1, folder);
+    const prefixFolder = materializeJournalPrefixTracked(entries, 1, folder);
     const prefixJournal = JSON.parse(readFileSync(join(prefixFolder, 'meta', '_journal.json'), 'utf8'));
     expect(prefixJournal.version).toBe('7');
     expect(prefixJournal.dialect).toBe('postgresql');
   });
 
   it('takes a PREFIX, not an arbitrary subset — count=0 keeps nothing', () => {
-    const prefixFolder = materializeJournalPrefix(entries, 0, folder);
+    const prefixFolder = materializeJournalPrefixTracked(entries, 0, folder);
     const prefixJournal = JSON.parse(readFileSync(join(prefixFolder, 'meta', '_journal.json'), 'utf8'));
     expect(prefixJournal.entries).toEqual([]);
     expect(existsSync(join(prefixFolder, '0000_a.sql'))).toBe(false);
@@ -129,7 +185,7 @@ describe('runMigrations — filesystem preconditions run before any connection i
   });
 
   it('refuses a pending migration with no deploy-phase marker', async () => {
-    const folder = migrationsFixture([{ tag: '0000_a', when: 1000, sql: 'select 1;\n' }]);
+    const folder = migrationsFixtureTracked([{ tag: '0000_a', when: 1000, sql: 'select 1;\n' }]);
 
     await expect(
       runMigrations({
@@ -145,7 +201,7 @@ describe('runMigrations — filesystem preconditions run before any connection i
   });
 
   it('names the offending tag, not just the count', async () => {
-    const folder = migrationsFixture([
+    const folder = migrationsFixtureTracked([
       { tag: '0000_a', when: 1000, sql: '-- oxy:deploy-phase=pre\nselect 1;\n' },
       { tag: '0001_bad', when: 2000, sql: 'select 2;\n' },
     ]);
@@ -166,7 +222,13 @@ describe('runMigrations — filesystem preconditions run before any connection i
 
 describe('runMigrations — cleans up the materialized prefix folder even when migrate() throws', () => {
   const EXPECTED_DATABASE = 'expected_db';
-  let scratchRoot: string;
+  // Empty rather than unset: if `beforeEach`'s `mkdtempSync` below ever threw
+  // before assigning it, `afterEach` would otherwise call `rmSync` on an
+  // unassigned variable. The guard on the `afterEach` call below is what
+  // actually prevents that; the empty-string default just keeps the
+  // declared type `string` rather than `string | undefined` everywhere else
+  // it's used.
+  let scratchRoot = '';
 
   beforeEach(() => {
     // A directory this ONE test exclusively owns — `mkdtemp`'s random suffix
@@ -185,7 +247,7 @@ describe('runMigrations — cleans up the materialized prefix folder even when m
   afterEach(() => {
     jest.resetModules();
     jest.restoreAllMocks();
-    rmSync(scratchRoot, { recursive: true, force: true });
+    if (scratchRoot) rmSync(scratchRoot, { recursive: true, force: true });
   });
 
   it('removes the temp directory in `finally`, not only on the happy path', async () => {
@@ -235,7 +297,7 @@ describe('runMigrations — cleans up the materialized prefix folder even when m
     // `pre` with a `post` migration behind it: this is what makes
     // `plan.deferred.length > 0` and forces `runMigrations` down the
     // `materializeJournalPrefix` branch instead of using the folder as-is.
-    const folder = migrationsFixture([
+    const folder = migrationsFixtureTracked([
       { tag: '0000_a', when: 1000, sql: '-- oxy:deploy-phase=pre\nselect 1;\n' },
       { tag: '0001_b', when: 2000, sql: '-- oxy:deploy-phase=post\nselect 2;\n' },
     ]);
