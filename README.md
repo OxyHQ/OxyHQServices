@@ -3,6 +3,12 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/OxyHQ"><img alt="Oxy" src=".github/assets/badge-oxy.svg" height="34"></a>
+  <a href="https://github.com/FairCoinOfficial"><img alt="FairCoin" src=".github/assets/badge-faircoin.svg" height="34"></a>
+  <a href="https://mention.earth/@oxy"><img alt="@oxy on Mention" src=".github/assets/badge-mention.svg" height="34"></a>
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/@oxyhq/services"><img alt="@oxyhq/services" src="https://img.shields.io/npm/v/@oxyhq/services?style=flat-square&label=%40oxyhq%2Fservices&labelColor=440151&color=D26AE7"></a>
   <a href="https://www.npmjs.com/package/@oxyhq/core"><img alt="@oxyhq/core" src="https://img.shields.io/npm/v/@oxyhq/core?style=flat-square&label=%40oxyhq%2Fcore&labelColor=440151&color=D26AE7"></a>
   <a href="LICENSE"><img alt="AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-440151?style=flat-square"></a>
