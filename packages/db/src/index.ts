@@ -15,6 +15,12 @@ export {
 } from './columns';
 export { isLiveEntityId } from './ids';
 export {
+  createDatabase,
+  type CreateDatabaseOptions,
+  type OxyDatabase,
+  type SqlExecutor,
+} from './database';
+export {
   CHECK_VIOLATION,
   DEADLOCK_DETECTED,
   FOREIGN_KEY_VIOLATION,
