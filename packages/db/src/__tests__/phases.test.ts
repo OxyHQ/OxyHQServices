@@ -37,7 +37,10 @@ afterAll(() => {
 
 /** A throwaway drizzle folder holding `<tag>.sql` for each entry given. */
 function migrationFolder(files: Record<string, string>): string {
-  const folder = mkdtempSync(join(tmpdir(), 'oxy-db-phases-'));
+  // `oxydb-`, matching every other throwaway directory this package creates —
+  // so a `oxydb-*` sweep of `tmpdir()` is complete by construction rather than
+  // by nobody having introduced an outlier yet.
+  const folder = mkdtempSync(join(tmpdir(), 'oxydb-phases-'));
   throwawayFolders.push(folder);
   mkdirSync(folder, { recursive: true });
   for (const [tag, body] of Object.entries(files)) {

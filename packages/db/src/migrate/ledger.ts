@@ -187,9 +187,12 @@ export function unreachableEntries(
   // and cannot be tested apart from it: `highWater` is `Math.max(appliedMillis)`
   // and is therefore always a member of `appliedMillis`, so `entry.when ===
   // highWater` implies `applied.has(entry.when)` and the second clause rejects
-  // it either way — see `src/__tests__/ledger.test.ts` for the random-input
-  // check that confirms the two never disagree. Kept as `<=` because it says
-  // what the rule is; do not "fix" either direction expecting a behaviour
+  // it either way. That is an argument, not a test result, and it cannot be
+  // made into one: an assertion that the two operators agree passes for every
+  // possible input, so it would prove nothing about this function — which is
+  // why `src/__tests__/ledger.test.ts` checks THIS implementation against a
+  // hand-written reference on random input instead. Kept as `<=` because it
+  // says what the rule is; do not "fix" either direction expecting a behaviour
   // change.
   return entries.filter((entry) => entry.when <= highWater && !applied.has(entry.when));
 }
@@ -228,6 +231,11 @@ export function planLedgerRun(
  * drift: `readLastAppliedMillis` reduces to `toAppliedMillis(rows)[0] ?? null`
  * on the same query shape, and reusing the array version there means there is
  * only one place a future edit could get the NULL handling below wrong.
+ *
+ * Exported for direct unit testing, but NOT part of `@oxyhq/db/migrate`'s
+ * public surface — `migrate/index.ts` does not re-export it, and the package
+ * has no wildcard `exports` entry a consumer could reach it through. Its two
+ * callers are in this file.
  *
  * Two things this collapses on purpose:
  *
@@ -298,6 +306,35 @@ export async function readLastAppliedMillis(client: postgres.Sql): Promise<numbe
 }
 
 /**
+ * Raised by {@link assertPostgresMigrationsCurrent} when the database is behind
+ * the migrations shipped in this image.
+ *
+ * A named class rather than a bare `Error` because of WHERE this one is
+ * thrown. Its two siblings here — {@link UnreachableMigrationError} and
+ * `WrongMigrationTargetError` — abort a migration run, where any throw is
+ * fatal and the message is read by a human. This one lands on a BOOT path that
+ * has to decide something: refuse to listen, retry while the one-shot
+ * finishes, report unhealthy but stay up. A caller distinguishing "schema is
+ * behind" from any other startup failure could otherwise only match on the
+ * message text, which is not a contract anything guarantees.
+ */
+export class MigrationsNotCurrentError extends Error {
+  /** The journal entries with no ledger row, in journal order. */
+  readonly pending: readonly JournalEntry[];
+
+  constructor(pending: readonly JournalEntry[]) {
+    super(
+      `Postgres schema is not current: ${pending.length} migration(s) shipped in \
+this image have not been applied: ${pending.map((entry) => entry.tag).join(', ')}. \
+Apply them with the deployment migration one-shot before this task can \
+serve traffic.`
+    );
+    this.name = 'MigrationsNotCurrentError';
+    this.pending = pending;
+  }
+}
+
+/**
  * Refuse to serve when the database is BEHIND the migrations in this image.
  *
  * The failure this exists to prevent lands after the point of no return. A
@@ -323,7 +360,7 @@ export async function readLastAppliedMillis(client: postgres.Sql): Promise<numbe
  * @param entries The journal entries shipped in this image, typically
  *   `readJournal(folder)` for the caller's own migrations directory. Required,
  *   not defaulted: this package has no folder of its own to fall back to.
- * @throws {Error} When any journal entry has no ledger row.
+ * @throws {MigrationsNotCurrentError} When any journal entry has no ledger row.
  */
 export async function assertPostgresMigrationsCurrent(
   client: postgres.Sql,
@@ -332,10 +369,5 @@ export async function assertPostgresMigrationsCurrent(
   const pending = pendingEntries(entries, await readLastAppliedMillis(client));
   if (pending.length === 0) return;
 
-  throw new Error(
-    `Postgres schema is not current: ${pending.length} migration(s) shipped in \
-this image have not been applied: ${pending.map((entry) => entry.tag).join(', ')}. \
-Apply them with the deployment migration one-shot before this task can \
-serve traffic.`
-  );
+  throw new MigrationsNotCurrentError(pending);
 }

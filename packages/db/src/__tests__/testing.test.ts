@@ -285,8 +285,11 @@ describe('dropTestDatabase', () => {
     await expect(
       dropTestDatabase('postgres://unreachable.invalid/oxydb_test_shorthex')
     ).rejects.toThrow(/Refusing to drop/);
+    // Correctly-shaped hex behind a DIFFERENT application's own throwaway
+    // prefix — the case that proves the guard keys on the whole pattern and
+    // not just on the hex tail.
     await expect(
-      dropTestDatabase('postgres://unreachable.invalid/mention_test_0123456789abcdef')
+      dropTestDatabase('postgres://unreachable.invalid/otherapp_test_0123456789abcdef')
     ).rejects.toThrow(/Refusing to drop/);
   });
 

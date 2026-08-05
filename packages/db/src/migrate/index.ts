@@ -1,6 +1,7 @@
 export {
   MIGRATIONS_SCHEMA,
   MIGRATIONS_TABLE,
+  MigrationsNotCurrentError,
   UnreachableMigrationError,
   assertPostgresMigrationsCurrent,
   highWaterMillis,

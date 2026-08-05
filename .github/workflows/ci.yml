@@ -105,11 +105,22 @@ jobs:
       # needs) in topological order so the import resolves.
       # `@oxyhq/contracts`/`@oxyhq/core/server` are still mapped to source in
       # jest.config.js; this only provides the bare `@oxyhq/core` dist.
-      - name: Build core SDK (for @oxyhq/core resolution in api tests)
+      #
+      # `@oxyhq/db` is here for a DIFFERENT reason, and a mapper entry cannot
+      # replace it. `jest.globalSetup.ts` provisions each worker's database by
+      # SPAWNING `bun run db:migrate` — a separate process, which jest's
+      # `moduleNameMapper` does not reach — and `src/db/migrate.ts` imports
+      # `@oxyhq/db/migrate`. Every entry point in that package resolves into
+      # `dist/`, which is gitignored and produced by no install hook, so
+      # without this build the job dies in global setup with
+      # `Cannot find module '@oxyhq/db/migrate'` before a single test file
+      # loads. Verified by deleting `packages/db/dist` and running the suite.
+      - name: Build core SDK + db (for resolution in api tests)
         run: |
           bun run --filter @oxyhq/contracts build
           bun run --filter @oxyhq/protocol build
           bun run --filter @oxyhq/core build
+          bun run --filter @oxyhq/db build
 
       - name: Run linter
         run: bun run lint
@@ -205,11 +216,15 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build core SDK (for @oxyhq/core resolution in api tests)
+      # `@oxyhq/db` for the same reason as in `api-test`: this job runs the same
+      # `jest.globalSetup.ts`, which spawns `bun run db:migrate` in a separate
+      # process that resolves `@oxyhq/db/migrate` from `dist/`.
+      - name: Build core SDK + db (for resolution in api tests)
         run: |
           bun run --filter @oxyhq/contracts build
           bun run --filter @oxyhq/protocol build
           bun run --filter @oxyhq/core build
+          bun run --filter @oxyhq/db build
 
       - name: Run backfill integration tests
         run: bun run test:backfill-integration

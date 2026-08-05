@@ -14,6 +14,20 @@ import { DATABASE_CASING } from './casing';
  * `PostgresJsDatabase` and the `tx` handle inside `db.transaction(cb)` type-check
  * as `SqlExecutor` (see `__tests__/database.test.ts`).
  *
+ * ## Why `migrate/*` does NOT take one of these
+ *
+ * Everything under `migrate/` takes a raw `postgres.Sql` instead, and that is a
+ * decision rather than an oversight — do not "unify" the two. Migration-time
+ * code needs capabilities this interface deliberately does not carry:
+ * `readAppliedMillis` builds its query with tagged templates and identifier
+ * interpolation (`client(MIGRATIONS_SCHEMA)`), and `ensureExtensions` needs
+ * `unsafe()` for DDL that cannot take a bound parameter. Narrowing those to
+ * `execute(query: SQL)` would mean rewriting them through drizzle for no gain,
+ * on the one code path that must work before a drizzle handle over the
+ * caller's schema is meaningful at all. `SqlExecutor` exists so a sweep or a
+ * gate can run inside a caller's TRANSACTION; a migrator owns its own
+ * single-use connection and has no such requirement.
+ *
  * `execute` is deliberately NOT generic on this method. drizzle's own
  * `PgDatabase.execute<TRow>()` returns `PgRaw<PgQueryResultKind<...>>` — a
  * concrete class with private fields, not a plain `Promise<TRow[]>` — so no
@@ -65,7 +79,15 @@ export type OxyDatabase<TSchema extends Record<string, unknown>> = PostgresJsDat
 };
 
 export interface CreateDatabaseOptions<TSchema extends Record<string, unknown>> {
-  readonly url: string;
+  /**
+   * Connection string for the database this handle talks to.
+   *
+   * Named `databaseUrl` to match `RunMigrationsOptions.databaseUrl`, so one
+   * concept has one name across the package. (`CreateTestDatabaseOptions.adminUrl`
+   * is genuinely a different thing — a MAINTENANCE-database URL a throwaway
+   * database is created on — and keeps its own name for that reason.)
+   */
+  readonly databaseUrl: string;
   readonly schema: TSchema;
   /** postgres.js pool options. The caller owns pool sizing and timeouts. */
   readonly client?: postgres.Options<Record<string, never>>;
@@ -79,11 +101,23 @@ export interface CreateDatabaseOptions<TSchema extends Record<string, unknown>> 
  * guarantees is the part that must NOT differ — that the handle is built with
  * `DATABASE_CASING`, so the SQL queries reference matches the SQL migrations
  * created.
+ *
+ * ## No consumer calls this yet, and that is not an oversight
+ *
+ * It is here for a consumer that has not landed. The application already on
+ * this package builds its handle inline, in a `connectPostgres()` that also
+ * owns a boot round-trip, pool sizing from its own configuration, and shutdown
+ * ordering — it shares the load-bearing part (`DATABASE_CASING`, imported from
+ * here) and adopting this would be a refactor of that function rather than a
+ * fix to anything. Do not delete this as dead code, and do not read its
+ * unused-ness as evidence the guarantee above is unwanted; the guarantee is
+ * exactly what a NEW consumer, wiring up drizzle for the first time, is most
+ * likely to get wrong.
  */
 export function createDatabase<TSchema extends Record<string, unknown>>(
   options: CreateDatabaseOptions<TSchema>
 ): { db: OxyDatabase<TSchema>; client: postgres.Sql } {
-  const client = postgres(options.url, options.client);
+  const client = postgres(options.databaseUrl, options.client);
   return {
     db: drizzle(client, { schema: options.schema, casing: DATABASE_CASING }),
     client,

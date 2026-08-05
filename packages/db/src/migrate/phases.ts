@@ -60,7 +60,11 @@ export const DEPLOY_PHASES: readonly DeployPhase[] = ['pre', 'post'];
 /** What a migration run is allowed to apply. */
 export type MigrationRun = 'pre' | 'post' | 'all';
 
-/** Every accepted `--phase` value. */
+/**
+ * Every accepted {@link MigrationRun} value. How a caller spells this on its
+ * own command line is the caller's business — this package takes a `run`
+ * option, not a flag.
+ */
 export const MIGRATION_RUNS: readonly MigrationRun[] = ['pre', 'post', 'all'];
 
 /** The one accepted spelling of a phase marker. */

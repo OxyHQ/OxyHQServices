@@ -36,7 +36,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import postgres from 'postgres';
-import { assertPostgresMigrationsCurrent, readAppliedMillis, readLastAppliedMillis, type JournalEntry } from '../migrate/ledger';
+import { MigrationsNotCurrentError, assertPostgresMigrationsCurrent, readAppliedMillis, readLastAppliedMillis, type JournalEntry } from '../migrate/ledger';
 import { runMigrations } from '../migrate/runner';
 import { WrongMigrationTargetError, assertMigrationTarget } from '../migrate/targetDatabase';
 import { createTestDatabase, dropTestDatabase } from '../testing';
@@ -240,6 +240,26 @@ describeLive('migration-ledger functions against a real Postgres', () => {
       await expect(assertPostgresMigrationsCurrent(client, aheadEntries)).rejects.toThrow(
         /0002_third/
       );
+    });
+
+    // The message text is what a human reads; the CLASS is what a boot path
+    // branches on to tell "schema is behind" from any other startup failure.
+    // Asserting only the message would leave the class an untested claim — and
+    // a later edit could quietly go back to a bare `Error` with this suite
+    // still green.
+    it('rejects with MigrationsNotCurrentError, carrying the pending entries', async () => {
+      const client = assertAssigned(migratedClient, 'migratedClient');
+      const aheadEntries: JournalEntry[] = [...FIXTURE_ENTRIES, { tag: '0002_third', when: 3_000 }];
+      await expect(assertPostgresMigrationsCurrent(client, aheadEntries)).rejects.toBeInstanceOf(
+        MigrationsNotCurrentError
+      );
+      const error = await assertPostgresMigrationsCurrent(client, aheadEntries).catch(
+        (thrown: unknown) => thrown
+      );
+      expect(error).toBeInstanceOf(MigrationsNotCurrentError);
+      expect((error as MigrationsNotCurrentError).pending.map((entry) => entry.tag)).toEqual([
+        '0002_third',
+      ]);
     });
   });
 });

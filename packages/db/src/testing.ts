@@ -7,10 +7,10 @@
  * against a real schema instead of a fake one. `dropTestDatabase` removes it
  * again.
  *
- * `migrate` is a callback, not a built-in migration mechanism. Mention's
- * original version of this harness (the source this module was ported from)
- * shelled out to its own `bun run db:migrate`, because at the time nothing in
- * this codebase applied migrations generically. `@oxyhq/db/migrate`'s
+ * `migrate` is a callback, not a built-in migration mechanism. The original
+ * version of this harness (the caller-side code this module was ported from)
+ * shelled out to that application's own `bun run db:migrate`, because at the
+ * time nothing applied migrations generically. `@oxyhq/db/migrate`'s
  * `runMigrations` now does exactly that, driven entirely by caller-supplied
  * options (its own migrations folder, its own extensions, its own deploy
  * phase) — so a caller passes `(url) => runMigrations({ databaseUrl: url, ... })`

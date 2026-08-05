@@ -47,9 +47,7 @@ export function sqlColumnName(column: Column): string {
  * `where "parent_id" = "id"`: both names then resolve against the SUBQUERY's
  * own table, so the predicate compares two of ITS columns to each other,
  * matches nothing, and returns an empty array with **no error at all**. This
- * shipped in a production consumer: a correlated subquery rendered both names
- * bare, so the predicate compared two of the subquery's own columns and
- * returned `[]` with no error.
+ * shipped in a production consumer.
  *
  * Qualify every correlated reference, and treat "a correlated subquery returned
  * nothing" as a bug in the SQL until proven otherwise.

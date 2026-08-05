@@ -36,7 +36,7 @@
     },
     "./package.json": "./package.json"
   },
-  "files": ["dist", "src"],
+  "files": ["dist", "src", "!src/__tests__", "!src/**/*.typetest.ts"],
   "keywords": ["oxyhq", "postgres", "drizzle", "migrations", "schema"],
   "repository": {
     "type": "git",

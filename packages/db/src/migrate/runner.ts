@@ -136,6 +136,11 @@ export interface RunMigrationsOptions {
  * identical to the one a full-folder run would have recorded — a later full
  * run cannot tell the difference.
  *
+ * Deliberately NOT `db.dialect.migrate(subset, ...)`, which would reach past
+ * the public `migrate()` helper: drizzle marks `dialect` and `session`
+ * `@internal` and does not declare them on `PgDatabase`, so reaching them needs
+ * a cast this repository does not permit.
+ *
  * Exported for direct unit testing (it needs no database), but NOT part of
  * `@oxyhq/db/migrate`'s public surface — `migrate/index.ts` does not
  * re-export it. It has exactly one caller, {@link runMigrations}.

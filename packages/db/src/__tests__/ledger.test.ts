@@ -144,13 +144,21 @@ describe('unreachableEntries', () => {
     expect(unreachableEntries(simple, [1000, 3000])).toEqual([{ tag: '0001_b', when: 2000 }]);
   });
 
-  // The docblock on `unreachableEntries` claims the `<=`/`<` boundary is
-  // provably equivalent — `highWater` is always `Math.max(appliedMillis)`, so
-  // it is always itself a member of `appliedMillis`, and the `applied.has`
-  // clause rejects it regardless of which comparison is used. A random check
-  // makes that an empirically tested claim in THIS suite rather than an
-  // inherited assertion nobody here re-verified.
-  it('the <= boundary is equivalent to < on this invariant — random check', () => {
+  // `unreachableEntries` is filtered `when <= highWater && !applied.has(when)`.
+  // A reader eventually asks whether the `<=` could be `<`, and the docblock
+  // answers that it could — `highWater` is `Math.max(appliedMillis)` and is
+  // therefore always a member of `appliedMillis`, so `when === highWater`
+  // implies `applied.has(when)` and the second clause rejects it either way.
+  //
+  // What is checked here is the REAL implementation against a hand-written
+  // reference, on random input. What is deliberately NOT checked is
+  // `withLte(...) === withLt(...)`: two local copies of the filter differing
+  // only in that operator cannot disagree FOR ANY INPUT, by the argument
+  // above, so that assertion passes on every possible run and would pass just
+  // as readily against a broken `unreachableEntries` it never calls. A check
+  // that cannot fail is worse than no check — it reads as coverage of the
+  // boundary while covering nothing.
+  it('agrees with a hand-written reference filter on random input', () => {
     function randomEntries(): JournalEntry[] {
       const count = 1 + Math.floor(Math.random() * 8);
       return Array.from({ length: count }, (_, index) => ({
@@ -158,26 +166,18 @@ describe('unreachableEntries', () => {
         when: Math.floor(Math.random() * 10000),
       }));
     }
-    function withLte(list: JournalEntry[], appliedMillis: readonly number[]): JournalEntry[] {
+    function reference(list: JournalEntry[], appliedMillis: readonly number[]): JournalEntry[] {
       const highWater = highWaterMillis(appliedMillis);
       if (highWater === null) return [];
       const applied = new Set(appliedMillis);
       return list.filter((entry) => entry.when <= highWater && !applied.has(entry.when));
-    }
-    function withLt(list: JournalEntry[], appliedMillis: readonly number[]): JournalEntry[] {
-      const highWater = highWaterMillis(appliedMillis);
-      if (highWater === null) return [];
-      const applied = new Set(appliedMillis);
-      return list.filter((entry) => entry.when < highWater && !applied.has(entry.when));
     }
     for (let trial = 0; trial < 2000; trial += 1) {
       const list = randomEntries();
       const appliedMillis = list
         .filter(() => Math.random() < 0.5)
         .map((entry) => entry.when);
-      expect(withLte(list, appliedMillis)).toEqual(withLt(list, appliedMillis));
-      // And both agree with the real implementation.
-      expect(unreachableEntries(list, appliedMillis)).toEqual(withLte(list, appliedMillis));
+      expect(unreachableEntries(list, appliedMillis)).toEqual(reference(list, appliedMillis));
     }
   });
 });

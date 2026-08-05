@@ -33,24 +33,35 @@ export class WrongMigrationTargetError extends Error {
     readonly actual: string
   ) {
     super(
-      `Refusing to migrate: --target-database=${JSON.stringify(expected)} but \
-DATABASE_URL is connected to ${JSON.stringify(actual)}.
-One of those two is wrong, and this tool cannot tell which. Fix the \
-flag if you named the wrong target; fix the DATABASE_URL secret on the \
-task definition if you are pointed somewhere unintended. No DDL has \
-been applied and the migration ledger has not been touched.`
+      `Refusing to migrate: the run expects ${JSON.stringify(expected)} but the \
+connection string this process was given reaches ${JSON.stringify(actual)}.
+One of those two is wrong, and this tool cannot tell which. Correct the \
+expected name if the run named the wrong target; correct the connection \
+string if this is pointed somewhere unintended. No DDL has been applied and \
+the migration ledger has not been touched.`
     );
     this.name = 'WrongMigrationTargetError';
   }
 }
 
-/** Raised when a run did not say where it believes it is pointing. */
+/**
+ * Raised when an argument list {@link readTargetDatabase} was asked to parse
+ * names no target.
+ *
+ * Naming the flag here is not the deployment-specific knowledge this package
+ * otherwise keeps out of its messages: `readTargetDatabase` PARSES
+ * `--target-database=`, so the spelling is this module's own. Whether a caller
+ * calls it at all — and therefore whether a target is required — is the
+ * caller's decision; {@link assertMigrationTarget} is reached through an
+ * OPTIONAL `expectedDatabase`, so this is not a claim that every run must
+ * state one.
+ */
 export class MissingMigrationTargetError extends Error {
   constructor() {
     super(
-      'Refusing to migrate: --target-database=<name> is REQUIRED, including ' +
-        'for DRY_RUN. The database this connects to is decided entirely by the ' +
-        'DATABASE_URL secret, so a run that does not state its intended target ' +
+      'Refusing to read a migration target: no --target-database=<name> in the ' +
+        'arguments. Which database a run reaches is decided entirely by its ' +
+        'connection string, so a run that does not state its intended target ' +
         'cannot be checked against it — and a migration aimed at the wrong ' +
         'database does not fail, it reports success over an untouched one. ' +
         'Example: `--target-database=my_app_audit_probe` for a rehearsal, ' +

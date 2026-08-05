@@ -24,10 +24,10 @@ describe('ensureExtensions', () => {
   });
 
   it('does nothing at all for an empty list', async () => {
-    // Syra requires no extensions, and its database may not exist yet when
-    // this runs — an unreachable host stands in for exactly that: if this
-    // implementation opened a connection unconditionally, the promise would
-    // reject (or hang) instead of resolving.
+    // A caller may require no extensions at all, and its database may not
+    // exist yet when this runs — an unreachable host stands in for exactly
+    // that: if this implementation opened a connection unconditionally, the
+    // promise would reject (or hang) instead of resolving.
     await expect(
       ensureExtensions('postgres://unreachable.invalid/db', [])
     ).resolves.toBeUndefined();

@@ -68,7 +68,7 @@ describe('createDatabase', () => {
 
   function build(clientOptions?: postgres.Options<Record<string, never>>) {
     return createDatabase({
-      url: 'postgres://user:pass@127.0.0.1:5432/oxy_test',
+      databaseUrl: 'postgres://user:pass@127.0.0.1:5432/oxy_test',
       schema,
       client: clientOptions,
     });
