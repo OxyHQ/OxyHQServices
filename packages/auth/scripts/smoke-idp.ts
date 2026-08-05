@@ -12,6 +12,7 @@
  *
  * What it catches:
  *   - SPA renders blank / build totally broken   → `/`, `/login`, `/signup`, `/authorize` lose the SPA root marker.
+ *   - PKCE authorize lane broken (#784)          → `/authorize` with `code_challenge` loses the SPA root marker.
  *   - FedCM manifest NOT removed                  → `/.well-known/web-identity` still serves the FedCM config JSON.
  *
  * Usage:
@@ -107,6 +108,21 @@ async function checkSpaPage(hostBase: string, path: string): Promise<void> {
   record(`SPA ${path}`, true, '200 + root marker present');
 }
 
+/** PKCE-bound authorize must render the Commons OAuth lane, not a blank page (#784). */
+async function checkAuthorizeWithPkce(hostBase: string): Promise<void> {
+  const params = new URLSearchParams({
+    client_id: 'oxy_dk_smoke_client',
+    redirect_uri: 'https://app.example.com/callback',
+    response_type: 'code',
+    scope: 'openid profile',
+    state: 'smoke-state',
+    code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+    code_challenge_method: 'S256',
+  });
+  const path = `/authorize?${params.toString()}`;
+  await checkSpaPage(hostBase, path);
+}
+
 /**
  * The FedCM manifest MUST be GONE. `GET /.well-known/web-identity` no longer has
  * a handler, so it falls through to the SPA (or 404) — anything EXCEPT a valid
@@ -159,6 +175,7 @@ async function run(): Promise<void> {
   await checkSpaPage(PRIMARY_TARGET, '/login');
   await checkSpaPage(PRIMARY_TARGET, '/signup');
   await checkSpaPage(PRIMARY_TARGET, '/authorize');
+  await checkAuthorizeWithPkce(PRIMARY_TARGET);
   await checkWebIdentityGone(PRIMARY_TARGET);
   await checkSecurityHeaders(PRIMARY_TARGET);
 
