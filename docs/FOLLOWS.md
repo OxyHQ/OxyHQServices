@@ -131,6 +131,16 @@ a refusal becomes error state so the button can render it — so a caller that
 awaits them without reading the result would mirror failures as successes into
 whatever it is keeping in step.
 
+**A namespace you claimed by mistake can be given back, while it is empty.**
+`DELETE /v2/follow-targets/namespaces/<namespace>`, holder only, refused once
+any kind is registered inside it. This exists because registration is
+client-side and a claim is first-come, so the first person to open a screen on
+*any* build triggers it — including a development build using a fallback client
+id, which would otherwise bind the name to the wrong application permanently.
+Note the asymmetry: a squatted namespace is recoverable, a squatted **target
+URI** is not, because `ensureTarget` returns the existing row with its existing
+kind and silently ignores the one you passed.
+
 **Deleting your application does not delete anyone's follows.** The
 `origin_application_id` on a relationship is provenance, not ownership — it
 records where the user was, and `SET NULL` is what keeps the user's choice when

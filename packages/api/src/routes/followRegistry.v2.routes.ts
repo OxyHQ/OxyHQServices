@@ -25,6 +25,7 @@ import {
   getKindCapabilities,
   listKindsForApplication,
   registerKind,
+  releaseNamespace,
   type RegistryFailure,
 } from '../services/followRegistry.service';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
@@ -80,6 +81,10 @@ function raise(reason: RegistryFailure): never {
       // Distinct from the above because claiming anything would not help: the
       // kind row itself belongs to another application.
       throw new ForbiddenError('That kind was registered by another application');
+    case 'namespace_in_use':
+      throw new ConflictError(
+        'That namespace still has kinds registered in it, so it cannot be released'
+      );
     case 'unknown_kind':
       throw new BadRequestError('That kind has not been registered');
     case 'invalid_namespace':
@@ -111,6 +116,26 @@ router.post(
     if (typeof namespace !== 'string') throw new BadRequestError('namespace is required');
 
     const result = await claimNamespace({ capability, namespace });
+    if (!result.ok) raise(result.reason);
+    sendSuccess(res, result.value);
+  })
+);
+
+/**
+ * DELETE /v2/follow-targets/namespaces/:namespace
+ *
+ * Give a namespace back, if you hold it and nothing is registered inside it.
+ *
+ * Exists because a claim is first-come and registration is client-side, so the
+ * first person to open a screen on any build triggers it — including a
+ * development build using a fallback client id, which would otherwise bind the
+ * name to the wrong application permanently.
+ */
+router.delete(
+  '/namespaces/:namespace',
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const capability = await requireRegistrar(req);
+    const result = await releaseNamespace({ capability, namespace: req.params.namespace });
     if (!result.ok) raise(result.reason);
     sendSuccess(res, result.value);
   })
