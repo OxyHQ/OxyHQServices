@@ -10,16 +10,24 @@
  *   connection-avoidance claim: point `databaseUrl` at a host `.invalid`
  *   guarantees can never resolve (RFC 2606) and assert the rejection carries
  *   the filesystem check's own message, not a network error.
+ * - That `runMigrations` removes the temporary prefix folder in its
+ *   `finally`, not only when everything succeeds. This is a claim about OUR
+ *   OWN control flow, not about Postgres, so the last describe block below
+ *   fakes `postgres`, `drizzle-orm/postgres-js` and its migrator just deeply
+ *   enough to reach the `migrate()` call and make it throw — it asserts
+ *   nothing about real database semantics (`current_database()`, the real
+ *   ledger table, a real migration actually applying) and would not be valid
+ *   evidence for any of that.
  *
- * Everything past that point — `assertMigrationTarget` actually comparing
- * against a real `current_database()`, the ledger read, `ensureExtensions`,
- * `migrate()` itself, and the post-apply re-verification — needs a real
+ * Everything else — `assertMigrationTarget` actually comparing against a
+ * real `current_database()`, the ledger read, `ensureExtensions`, `migrate()`
+ * itself succeeding, and the post-apply re-verification — needs a real
  * Postgres and is left for the ephemeral-database harness landing in a later
  * task, the same boundary `targetDatabase.test.ts` already draws for
  * `assertMigrationTarget`.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { JournalEntry } from '../migrate/ledger';
@@ -145,5 +153,81 @@ describe('runMigrations — filesystem preconditions run before any connection i
         logger: noopLogger,
       })
     ).rejects.toThrow(/0001_bad/);
+  });
+});
+
+describe('runMigrations — cleans up the materialized prefix folder even when migrate() throws', () => {
+  const EXPECTED_DATABASE = 'expected_db';
+
+  afterEach(() => {
+    jest.resetModules();
+    jest.restoreAllMocks();
+  });
+
+  it('removes the temp directory in `finally`, not only on the happy path', async () => {
+    // `jest.resetModules()` FIRST: `runner.ts`, and the `postgres` /
+    // `drizzle-orm/postgres-js` / migrator modules it imports, are already
+    // cached from the static import at the top of this file (unmocked). A
+    // `jest.doMock` registered after that point only takes effect for a
+    // module required AFTER the registry forgets the cached copy.
+    jest.resetModules();
+
+    jest.doMock('postgres', () => {
+      const respond = (queryText: string): unknown[] => {
+        if (queryText.includes('current_database')) {
+          return [{ current_database: EXPECTED_DATABASE }];
+        }
+        // Ledger table absent — `readAppliedMillis` returns `[]` without a
+        // second query, so every migration in this test's fixture is pending.
+        if (queryText.includes('to_regclass')) return [{ present: false }];
+        return [];
+      };
+      const client = Object.assign(
+        jest.fn((strings: TemplateStringsArray) => Promise.resolve(respond(strings.join('')))),
+        { end: jest.fn(() => Promise.resolve(undefined)) }
+      );
+      return { __esModule: true, default: jest.fn(() => client) };
+    });
+    // Stubbed rather than exercised: this test is about `runMigrations`'s own
+    // `finally`, not about what a real drizzle handle or migrator does.
+    jest.doMock('drizzle-orm/postgres-js', () => ({ drizzle: jest.fn(() => ({})) }));
+    jest.doMock('drizzle-orm/postgres-js/migrator', () => ({
+      migrate: jest.fn(() => Promise.reject(new Error('simulated migrate failure'))),
+    }));
+
+    const { runMigrations: runMigrationsUnderMock } = await import('../migrate/runner');
+
+    // `pre` with a `post` migration behind it: this is what makes
+    // `plan.deferred.length > 0` and forces `runMigrations` down the
+    // `materializeJournalPrefix` branch instead of using the folder as-is.
+    const folder = migrationsFixture([
+      { tag: '0000_a', when: 1000, sql: '-- oxy:deploy-phase=pre\nselect 1;\n' },
+      { tag: '0001_b', when: 2000, sql: '-- oxy:deploy-phase=post\nselect 2;\n' },
+    ]);
+
+    // `mkdtempSync` names are random suffixes of this prefix and nothing else
+    // in this package's runtime code creates a directory under it, so a
+    // before/after diff of `tmpdir()` is a direct, unmocked observation of
+    // whether the directory `materializeJournalPrefix` created is still
+    // there — not an inference from whether a mock was called.
+    const prefix = 'oxydb-migrate-prefix-';
+    const before = new Set(readdirSync(tmpdir()).filter((name) => name.startsWith(prefix)));
+
+    await expect(
+      runMigrationsUnderMock({
+        databaseUrl: 'postgres://mocked/db',
+        migrationsFolder: folder,
+        extensions: [],
+        run: 'pre',
+        expectedDatabase: EXPECTED_DATABASE,
+        dryRun: false,
+        logger: noopLogger,
+      })
+    ).rejects.toThrow('simulated migrate failure');
+
+    const leaked = readdirSync(tmpdir()).filter(
+      (name) => name.startsWith(prefix) && !before.has(name)
+    );
+    expect(leaked).toEqual([]);
   });
 });
