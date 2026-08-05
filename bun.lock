@@ -107,7 +107,7 @@
         "@aws-sdk/s3-request-presigner": "^3.1087.0",
         "@oxyhq/contracts": "workspace:*",
         "@oxyhq/core": "workspace:*",
-        "@oxyhq/db": "workspace:^",
+        "@oxyhq/db": "workspace:*",
         "@oxyhq/federation": "workspace:*",
         "@oxyhq/protocol": "workspace:*",
         "@simplewebauthn/server": "13.3.2",
