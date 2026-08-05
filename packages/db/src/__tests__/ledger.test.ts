@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -12,8 +12,15 @@ import {
   type JournalEntry,
 } from '../migrate/ledger';
 
+// Every directory `journalFixture` (or the one inline `mkdtempSync` call
+// below) has created during the current test, removed in `afterEach` — a
+// suite that never cleans these up leaves one behind per invocation, on
+// every run, forever.
+const createdFolders: string[] = [];
+
 function journalFixture(entries: Array<{ tag: string; when: number }>): string {
   const folder = mkdtempSync(join(tmpdir(), 'oxydb-'));
+  createdFolders.push(folder);
   mkdirSync(join(folder, 'meta'), { recursive: true });
   writeFileSync(
     join(folder, 'meta', '_journal.json'),
@@ -21,6 +28,12 @@ function journalFixture(entries: Array<{ tag: string; when: number }>): string {
   );
   return folder;
 }
+
+afterEach(() => {
+  for (const folder of createdFolders.splice(0)) {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
 
 describe('migration ledger', () => {
   it('reads the journal in order', () => {
@@ -60,6 +73,7 @@ describe('migration ledger', () => {
 
   it('refuses a journal entry missing `tag` or `when`', () => {
     const folder = mkdtempSync(join(tmpdir(), 'oxydb-'));
+    createdFolders.push(folder);
     mkdirSync(join(folder, 'meta'), { recursive: true });
     writeFileSync(
       join(folder, 'meta', '_journal.json'),

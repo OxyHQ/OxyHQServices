@@ -27,7 +27,15 @@
  * `assertMigrationTarget`.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { JournalEntry } from '../migrate/ledger';
@@ -158,19 +166,46 @@ describe('runMigrations — filesystem preconditions run before any connection i
 
 describe('runMigrations — cleans up the materialized prefix folder even when migrate() throws', () => {
   const EXPECTED_DATABASE = 'expected_db';
+  let scratchRoot: string;
+
+  beforeEach(() => {
+    // A directory this ONE test exclusively owns — `mkdtemp`'s random suffix
+    // guarantees uniqueness, so nothing but this test's own
+    // `materializeJournalPrefix` call can ever create anything inside it.
+    // That is what makes "is it empty afterward" a deterministic assertion
+    // rather than a heuristic over shared OS temp space: a before/after diff
+    // of the real `tmpdir()` would also flag a same-prefixed directory a
+    // concurrent process (another worktree, a parallel CI shard) happened to
+    // create during this test's window, for a reason unrelated to
+    // `runMigrations` — a check that can invent a failure it didn't cause is
+    // the "cries wolf" shape, not a fix.
+    scratchRoot = mkdtempSync(join(tmpdir(), 'oxydb-runner-cleanup-scratch-'));
+  });
 
   afterEach(() => {
     jest.resetModules();
     jest.restoreAllMocks();
+    rmSync(scratchRoot, { recursive: true, force: true });
   });
 
   it('removes the temp directory in `finally`, not only on the happy path', async () => {
     // `jest.resetModules()` FIRST: `runner.ts`, and the `postgres` /
-    // `drizzle-orm/postgres-js` / migrator modules it imports, are already
-    // cached from the static import at the top of this file (unmocked). A
-    // `jest.doMock` registered after that point only takes effect for a
-    // module required AFTER the registry forgets the cached copy.
+    // `drizzle-orm/postgres-js` / migrator / `node:os` modules it imports,
+    // are already cached from the static import at the top of this file
+    // (unmocked). A `jest.doMock` registered after that point only takes
+    // effect for a module required AFTER the registry forgets the cached
+    // copy.
     jest.resetModules();
+
+    jest.doMock('node:os', () => {
+      const actual = jest.requireActual('node:os');
+      // Redirects ONLY the freshly re-imported `runner.ts`'s own
+      // `tmpdir()` call (inside `materializeJournalPrefix`) at `scratchRoot`.
+      // This test file's OWN top-level `tmpdir` import — used by
+      // `migrationsFixture` below to build the SOURCE migrations folder —
+      // was already resolved before this call runs and is unaffected.
+      return { ...actual, tmpdir: () => scratchRoot };
+    });
 
     jest.doMock('postgres', () => {
       const respond = (queryText: string): unknown[] => {
@@ -205,14 +240,6 @@ describe('runMigrations — cleans up the materialized prefix folder even when m
       { tag: '0001_b', when: 2000, sql: '-- oxy:deploy-phase=post\nselect 2;\n' },
     ]);
 
-    // `mkdtempSync` names are random suffixes of this prefix and nothing else
-    // in this package's runtime code creates a directory under it, so a
-    // before/after diff of `tmpdir()` is a direct, unmocked observation of
-    // whether the directory `materializeJournalPrefix` created is still
-    // there — not an inference from whether a mock was called.
-    const prefix = 'oxydb-migrate-prefix-';
-    const before = new Set(readdirSync(tmpdir()).filter((name) => name.startsWith(prefix)));
-
     await expect(
       runMigrationsUnderMock({
         databaseUrl: 'postgres://mocked/db',
@@ -225,9 +252,11 @@ describe('runMigrations — cleans up the materialized prefix folder even when m
       })
     ).rejects.toThrow('simulated migrate failure');
 
-    const leaked = readdirSync(tmpdir()).filter(
-      (name) => name.startsWith(prefix) && !before.has(name)
-    );
-    expect(leaked).toEqual([]);
+    // `materializeJournalPrefix`'s own `mkdtempSync` call is the only thing
+    // that can ever put anything inside `scratchRoot` (via the mocked
+    // `tmpdir()` above), so this is a direct, unmocked read of real disk
+    // state — not an inference from whether a spy was called, and not
+    // subject to interference from any other process on the machine.
+    expect(readdirSync(scratchRoot)).toEqual([]);
   });
 });
