@@ -43,7 +43,7 @@ import { canonicalize, verifyEnvelopeSignature } from '@oxyhq/protocol';
 import { validationVerdictRecordSchema, type ValidationVerdict } from '@oxyhq/contracts';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { getDb } from '../../config/postgres';
-import { isUniqueViolation } from '../../db/pgErrors';
+import { isUniqueViolation } from '@oxyhq/db';
 import { reputationBalances } from '../../db/schema/reputationBalances';
 import {
   validationRequestValidators,

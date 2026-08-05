@@ -194,7 +194,7 @@ export async function optionalUserOrServiceAuth(
  * ## Why a shape check SURVIVES the Postgres port here, when its siblings did not
  *
  * The `Types.ObjectId.isValid` guard this replaces rejected the **uuid v7 every
- * account created after the cutover carries** (`schema/columns.ts`
+ * account created after the cutover carries** (`@oxyhq/db`'s
  * `generatedId()`), so a post-cutover viewer id arriving in this header resolved
  * to `undefined` and the request SILENTLY DEGRADED TO ANONYMOUS — viewer-scoped
  * visibility filtering (blocks, restricts, private accounts, follow-gated

@@ -3,7 +3,8 @@
  *
  * The migration lands table by table, so some foreign keys cannot be declared
  * yet — their parent table does not exist. `deferredForeignKeys.ts` records each
- * one as data; this file turns that record into a gate with two properties:
+ * one as data; `findIdColumnViolations` (`@oxyhq/db/assert`) turns that record
+ * into a gate with two properties:
  *
  *   1. A deferred foreign key becomes MANDATORY the moment its parent table
  *      appears in the schema barrel. Whoever lands `users` gets a red test
@@ -12,13 +13,15 @@
  *   2. A NEW id-shaped column cannot arrive unclassified. It must have a real
  *      constraint, or be in one of the two ledgers with a reason.
  *
- * These assertions read the drizzle schema objects, not the database, so they
- * hold even before a migration is applied.
+ * This reads the drizzle schema objects, not the database, so it holds even
+ * before a migration is applied. The floors and the registries stay here —
+ * they are this schema's own data, not the package's.
  */
 
 import { is, type Column } from 'drizzle-orm';
 import { PgTable, getTableConfig } from 'drizzle-orm/pg-core';
-import { sqlColumnName } from '../../casing';
+import { findIdColumnViolations } from '@oxyhq/db/assert';
+import { sqlColumnName } from '@oxyhq/db';
 import * as schema from '../index';
 import {
   DEFERRED_FOREIGN_KEYS,
@@ -47,91 +50,29 @@ function describeColumn(table: PgTable, column: Column): string {
 }
 
 describe('schema foreign keys', () => {
-  it('finds the schema barrel (guards against a vacuous pass)', () => {
-    expect(tables.length).toBeGreaterThanOrEqual(MINIMUM_TABLES);
+  it('classifies every id-shaped column, with no deferred FK left un-owed and no unresolved gap', () => {
+    const violations = findIdColumnViolations({
+      tables,
+      deferred: DEFERRED_FOREIGN_KEYS,
+      withoutForeignKey: ID_COLUMNS_WITHOUT_FOREIGN_KEY.map((entry) => ({
+        column: describeColumn(entry.table, entry.column),
+        reason: entry.reason,
+      })),
+      minimumTables: MINIMUM_TABLES,
+    });
+
+    // Reads as: a `deferred_foreign_key_now_owed` violation means "the parent
+    // table has landed — declare .references() and delete the deferred entry";
+    // `unclassified_id_column` means "nobody decided about this one"; the rest
+    // are ledger hygiene (`stale_ledger_entry`, `incomplete_deferred_foreign_key`).
+    expect(violations).toEqual([]);
   });
 
-  it('declares a real foreign key as soon as the parent table exists', () => {
-    const present = new Set(tables.map((table) => getTableConfig(table).name));
-
-    const owed = DEFERRED_FOREIGN_KEYS.filter((fk) => present.has(fk.parentTable)).map(
-      (fk) =>
-        `${describeColumn(fk.table, fk.column)} -> ${fk.parentTable}.${fk.parentColumn} ` +
-        `(on delete ${fk.onDelete})`
-    );
-
-    // Reads as: "`users` is in the schema now, so these columns must reference
-    // it — declare them with .references(), then delete their DEFERRED entries."
-    expect(owed).toEqual([]);
-  });
-
-  it('classifies every id-shaped column', () => {
-    const declared = new Set<string>();
-    for (const table of tables) {
-      for (const fk of getTableConfig(table).foreignKeys) {
-        for (const column of fk.reference().columns) {
-          declared.add(describeColumn(table, column));
-        }
-      }
-    }
-
-    const deferred = new Set(
-      DEFERRED_FOREIGN_KEYS.map((fk) => describeColumn(fk.table, fk.column))
-    );
-    const exempt = new Set(
-      ID_COLUMNS_WITHOUT_FOREIGN_KEY.map((entry) =>
-        describeColumn(entry.table, entry.column)
-      )
-    );
-
-    const unclassified: string[] = [];
-    for (const table of tables) {
-      for (const column of getTableConfig(table).columns) {
-        if (column.primary || !sqlColumnName(column).endsWith('_id')) continue;
-        const id = describeColumn(table, column);
-        if (declared.has(id) || deferred.has(id) || exempt.has(id)) continue;
-        unclassified.push(id);
-      }
-    }
-
-    // Reads as: "this column looks like a relation and nobody decided about it —
-    // give it .references(), or add it to DEFERRED_FOREIGN_KEYS /
-    // ID_COLUMNS_WITHOUT_FOREIGN_KEY with a reason."
-    expect(unclassified).toEqual([]);
-  });
-
-  it('does not carry a stale ledger entry', () => {
-    const columns = new Set<string>();
-    for (const table of tables) {
-      for (const column of getTableConfig(table).columns) {
-        columns.add(describeColumn(table, column));
-      }
-    }
-
-    const ledger = [
-      ...DEFERRED_FOREIGN_KEYS.map((fk) => describeColumn(fk.table, fk.column)),
-      ...ID_COLUMNS_WITHOUT_FOREIGN_KEY.map((entry) =>
-        describeColumn(entry.table, entry.column)
-      ),
-    ];
-
-    expect(ledger.filter((id) => !columns.has(id))).toEqual([]);
-  });
-
-  it('states an ON DELETE and a reason for every deferred foreign key', () => {
-    const incomplete = DEFERRED_FOREIGN_KEYS.filter(
-      (fk) => fk.reason.trim() === '' || fk.parentColumn.trim() === ''
-    ).map((fk) => describeColumn(fk.table, fk.column));
-
-    expect(incomplete).toEqual([]);
-    // `onDelete` is a closed union, so tsc already refuses an unset one.
-    //
-    // The vacuity floor sits on the PERMANENT list, not on
-    // `DEFERRED_FOREIGN_KEYS` being non-empty: an empty deferred ledger is the
-    // finish line the module's own doc comment describes, so asserting it stays
-    // populated would turn the goal into a failure. (It is non-empty today —
-    // three entries owed to `reputation_transactions` — but that is a fact about
-    // where the port has got to, not something to hold in place.)
+  it('keeps at least one permanent id-without-foreign-key exemption', () => {
+    // Vacuity floor on the PERMANENT list, not on `DEFERRED_FOREIGN_KEYS` being
+    // non-empty: an empty deferred ledger is the finish line the module's own
+    // doc comment describes, so asserting it stays populated would turn the
+    // goal into a failure.
     expect(ID_COLUMNS_WITHOUT_FOREIGN_KEY.length).toBeGreaterThan(0);
   });
 });

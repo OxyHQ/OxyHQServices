@@ -15,8 +15,9 @@
 import { randomUUID } from 'node:crypto';
 import { eq, getTableColumns, getTableName, sql } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../../../config/postgres';
-import { sqlColumnName } from '../../casing';
-import { EXPIRY_SWEEP_TARGETS, sweepExpiredRows } from '../../expiry';
+import { sqlColumnName } from '@oxyhq/db';
+import { sweepExpiredRows } from '@oxyhq/db/expiry';
+import { EXPIRY_SWEEP_TARGETS } from '../../expiry';
 import {
   ACCOUNT_CREDENTIAL_ENVIRONMENTS as MONGOOSE_ACCOUNT_CREDENTIAL_ENVIRONMENTS,
   ACCOUNT_CREDENTIAL_STATUSES as MONGOOSE_ACCOUNT_CREDENTIAL_STATUSES,

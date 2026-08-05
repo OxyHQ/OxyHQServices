@@ -49,7 +49,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { Database } from '../../config/postgres';
-import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from '../migrationLedger';
+import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from '@oxyhq/db/migrate';
 import { POSTGRES_NATIVE_TABLES } from './collectionMap';
 import { planTables, tableName, type CollectionPlan } from './plan';
 

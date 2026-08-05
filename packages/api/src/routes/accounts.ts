@@ -26,8 +26,9 @@ import {
   type AccountRow,
   type EffectiveAccess,
 } from '../services/account.service';
+import { publicColumns } from '@oxyhq/db/assert';
 import { getDb } from '../config/postgres';
-import { publicColumns } from '../db/schema/protectedColumns';
+import { PROTECTED_COLUMNS_BY_TABLE } from '../db/schema/protectedColumns';
 import { users } from '../db/schema/users';
 import sessionService from '../services/session.service';
 import deviceSessionService from '../services/deviceSession.service';
@@ -143,7 +144,7 @@ function requireServiceScope(req: ServiceAuthRequest, scope: ApplicationScope): 
  */
 async function loadChannelAccount(accountId: string): Promise<AccountRow> {
   const [account] = await getDb()
-    .select(publicColumns(users))
+    .select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE))
     .from(users)
     .where(eq(users.id, accountId))
     .limit(1);
@@ -178,7 +179,7 @@ router.post(
     };
 
     const [owner] = await getDb()
-      .select(publicColumns(users))
+      .select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE))
       .from(users)
       .where(eq(users.id, body.ownerUserId))
       .limit(1);
@@ -559,7 +560,7 @@ async function loadAccountContext(req: AccountContextRequest): Promise<{
   // The `isValidObjectId` guard is gone: it only ever prevented a Mongoose
   // `CastError`, and a Postgres text id that matches no row is already the 404
   // this endpoint documents.
-  const [account] = await getDb().select(publicColumns(users)).from(users).where(eq(users.id, id)).limit(1);
+  const [account] = await getDb().select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE)).from(users).where(eq(users.id, id)).limit(1);
   if (!account || account.accountStatus === 'archived') {
     throw new NotFoundError('Account not found');
   }
@@ -659,7 +660,7 @@ router.post(
       throw new ForbiddenError('You are not authorized to switch into this account');
     }
 
-    const [account] = await getDb().select(publicColumns(users)).from(users).where(eq(users.id, id)).limit(1);
+    const [account] = await getDb().select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE)).from(users).where(eq(users.id, id)).limit(1);
     if (!account || account.accountStatus === 'archived') {
       throw new NotFoundError('Account not found');
     }

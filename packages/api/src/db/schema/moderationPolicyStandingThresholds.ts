@@ -17,7 +17,7 @@
 import { sql } from 'drizzle-orm';
 import { check, doublePrecision, foreignKey, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { CONDUCT_STANDINGS, type ConductStanding } from '@oxyhq/contracts';
-import { generatedId } from './columns';
+import { generatedId } from '@oxyhq/db';
 import { moderationPolicies } from './moderationPolicies';
 
 /**

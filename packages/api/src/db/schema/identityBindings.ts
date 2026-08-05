@@ -26,7 +26,7 @@ import { check, index, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 import { IDENTITY_BINDING_STATUSES, IDENTITY_BINDING_TYPES } from '@oxyhq/contracts';
 import { applicationCredentials } from './applicationCredentials';
 import { applications } from './applications';
-import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, timestamptz, updatedAt } from '@oxyhq/db';
 import { users } from './users';
 
 export const identityBindings = pgTable(

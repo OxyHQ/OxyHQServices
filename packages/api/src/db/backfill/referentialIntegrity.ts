@@ -137,7 +137,7 @@
 
 import { is } from 'drizzle-orm';
 import { getTableConfig, PgTable, type PgColumn, type UpdateDeleteAction } from 'drizzle-orm/pg-core';
-import { sqlColumnName } from '../casing';
+import { sqlColumnName } from '@oxyhq/db';
 import type { AuditFinding } from './audit';
 import { streamCollection, type MongoSource } from './mongoSource';
 import { planLevels } from './order';
@@ -663,7 +663,7 @@ function toRelationColumn(column: PgColumn): RelationColumn {
   return {
     // `column.name` on a drizzle column is the TypeScript PROPERTY name — the
     // key an emitted row uses. `sqlColumnName` is the other half. Confusing the
-    // two is the trap `db/casing.ts` exists to close.
+    // two is the trap `@oxyhq/db`'s casing module exists to close.
     property: column.name,
     sqlName: sqlColumnName(column),
     notNull: column.notNull,

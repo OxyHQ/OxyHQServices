@@ -92,7 +92,7 @@ import {
   type AccountKind as ContractAccountKind,
   type TrustTier,
 } from '@oxyhq/contracts';
-import { createdAt, generatedId, textArrayLiteral, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, textArrayLiteral, timestamptz, updatedAt } from '@oxyhq/db';
 
 /**
  * Named color presets a user may pick. `oxy` is premium-gated at the service

@@ -56,7 +56,7 @@ import {
   PERSONHOOD_STATUSES as CONTRACT_PERSONHOOD_STATUSES,
 } from '@oxyhq/contracts';
 import type { ConductStanding, ContributionTier, PersonhoodStatusValue } from '@oxyhq/contracts';
-import { createdAt, generatedId, inList, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, inList, timestamptz, updatedAt } from '@oxyhq/db';
 import { reputationTransactions } from './reputationTransactions';
 // The trust ladder is declared ONCE, on `users`, where the denormalized mirror
 // column needed it first. Importing it rather than deriving a second tuple from

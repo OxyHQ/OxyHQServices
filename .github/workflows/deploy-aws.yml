@@ -11,6 +11,7 @@ on:
       - 'packages/contracts/**'
       - 'packages/protocol/**'
       - 'packages/federation/**'
+      - 'packages/db/**'
       - 'Dockerfile'
       - 'bun.lock'
       - 'package.json'

@@ -1,9 +1,10 @@
 import type { Request, Response } from 'express';
 import { and, asc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
+import { publicColumns } from '@oxyhq/db/assert';
 import { getDb } from '../config/postgres';
 import { authChallenges } from '../db/schema/authChallenges';
 import { notifications } from '../db/schema/notifications';
-import { publicColumns } from '../db/schema/protectedColumns';
+import { PROTECTED_COLUMNS_BY_TABLE } from '../db/schema/protectedColumns';
 import { sessions } from '../db/schema/sessions';
 import { userAuthMethods } from '../db/schema/userAuthMethods';
 import { userLinkMetadata } from '../db/schema/userLinkMetadata';
@@ -217,7 +218,7 @@ export class SessionController {
             ...(normalizedEmail ? { email: normalizedEmail } : {}),
             ...(normalizedUsername ? { username: normalizedUsername } : {}),
           })
-          .returning(publicColumns(users));
+          .returning(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE));
         await tx.insert(userAuthMethods).values({
           userId: created.id,
           type: 'identity',
@@ -404,7 +405,7 @@ export class SessionController {
 
       // Find user by public key
       const [user] = await db
-        .select(publicColumns(users))
+        .select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE))
         .from(users)
         .where(sql`lower(btrim(${users.publicKey})) = lower(btrim(${publicKey}))`)
         .limit(1);

@@ -24,7 +24,7 @@
 
 import { sql } from 'drizzle-orm';
 import { bigint, check, index, integer, jsonb, pgTable, text } from 'drizzle-orm/pg-core';
-import { generatedId, timestamptz } from './columns';
+import { generatedId, timestamptz } from '@oxyhq/db';
 import { files } from './files';
 
 export const fileVariants = pgTable(

@@ -22,7 +22,7 @@ import {
   unique,
 } from 'drizzle-orm/pg-core';
 import { MODERATION_SEVERITIES } from '@oxyhq/contracts';
-import { generatedId } from './columns';
+import { generatedId } from '@oxyhq/db';
 import { moderationPolicies } from './moderationPolicies';
 
 export const moderationPolicySeverityRules = pgTable(

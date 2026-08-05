@@ -36,7 +36,7 @@
 import { sql } from 'drizzle-orm';
 import { check, doublePrecision, index, integer, pgTable, text } from 'drizzle-orm/pg-core';
 import { applications } from './applications';
-import { createdAt, generatedId } from './columns';
+import { createdAt, generatedId } from '@oxyhq/db';
 import { developerApiKeys } from './developerApiKeys';
 import { users } from './users';
 

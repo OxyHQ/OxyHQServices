@@ -140,7 +140,7 @@
  */
 
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
-import { sqlColumnName } from '../casing';
+import { sqlColumnName } from '@oxyhq/db';
 import { appUserSignals } from '../schema/appUserSignals';
 import { bundles } from '../schema/bundles';
 import { deviceSessionAccounts } from '../schema/deviceSessionAccounts';
@@ -438,7 +438,7 @@ function orphanResolution(input: OrphanResolutionInput): OrphanRelation {
     column,
     // `column.name` on a drizzle column is the TypeScript PROPERTY name — the
     // key an emitted row uses. `sqlColumnName` is the other half. Confusing the
-    // two is the trap `db/casing.ts` exists to close.
+    // two is the trap `@oxyhq/db`'s casing module exists to close.
     property: column.name,
     columnName,
     targetTable,

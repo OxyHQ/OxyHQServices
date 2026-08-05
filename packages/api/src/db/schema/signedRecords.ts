@@ -68,7 +68,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { oxySignedRecordTypeSchema } from '@oxyhq/contracts';
 import type { OxySignedRecordType, SignedRecordEnvelope } from '@oxyhq/contracts';
-import { createdAt, generatedId, inList } from './columns';
+import { createdAt, generatedId, inList } from '@oxyhq/db';
 import { users } from './users';
 
 /**

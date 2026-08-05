@@ -3,11 +3,11 @@
  *
  * Schema modules declare columns in camelCase and let drizzle derive the
  * snake_case SQL name. That derivation happens in THREE places that must agree
- * or queries reference columns the migrations never created: `drizzle()` in
- * `config/postgres.ts` (what queries reference), `drizzle-kit` in
- * `drizzle.config.ts` (what the DDL creates), and any code that needs the SQL
- * name for a catalogue lookup. All three read `DATABASE_CASING` from here, so
- * there is one setting rather than three copies to keep in lockstep.
+ * or queries reference columns the migrations never created: `drizzle()` at
+ * runtime (what queries reference), `drizzle-kit` in `drizzle.config.ts` (what
+ * the DDL creates), and any code that needs the SQL name for a catalogue
+ * lookup. All three read `DATABASE_CASING` from here, so there is one setting
+ * rather than three copies to keep in lockstep.
  *
  * The trap this exists to close: `column.name` on a drizzle column is the
  * TypeScript PROPERTY name (`expiresAt`), not the SQL name (`expires_at`) —
@@ -41,14 +41,13 @@ export function sqlColumnName(column: Column): string {
  * `sql` — the second guise of the trap above, and the one that costs DATA
  * rather than raising an error.
  *
- * Interpolating a drizzle column into `sql` renders it BARE (`"user_id"`) when
- * its table is not in that statement's `FROM`, which is exactly the case inside
- * a correlated subquery. `where ${userLinkMetadata.userId} = ${users.id}`
- * renders `where "user_id" = "id"`: both names then resolve against the
- * SUBQUERY's own table, so the predicate compares two of ITS columns to each
- * other, matches nothing, and returns an empty array with **no error at all**.
- * That shipped — `linksMetadata` and both follow counts read empty/zero on
- * every public profile until an assertion on real rows caught it.
+ * Interpolating a drizzle column into `sql` renders it BARE (`"column_name"`)
+ * when its table is not in that statement's `FROM`, which is exactly the case
+ * inside a correlated subquery. `where ${child.parentId} = ${parent.id}` renders
+ * `where "parent_id" = "id"`: both names then resolve against the SUBQUERY's
+ * own table, so the predicate compares two of ITS columns to each other,
+ * matches nothing, and returns an empty array with **no error at all**. This
+ * shipped in a production consumer.
  *
  * Qualify every correlated reference, and treat "a correlated subquery returned
  * nothing" as a bug in the SQL until proven otherwise.

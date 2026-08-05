@@ -25,7 +25,7 @@ import { and, count, eq, inArray, sql } from 'drizzle-orm';
 import { verifyEnvelopeSignature, type RejectionReason } from '@oxyhq/protocol';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
 import { getDb } from '../../config/postgres';
-import { isUniqueViolation } from '../../db/pgErrors';
+import { isUniqueViolation } from '@oxyhq/db';
 import { personhoodStatuses } from '../../db/schema/personhoodStatuses';
 import { personhoodVouches } from '../../db/schema/personhoodVouches';
 import { reputationBalances } from '../../db/schema/reputationBalances';

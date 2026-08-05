@@ -32,7 +32,7 @@
 
 import { sql } from 'drizzle-orm';
 import { check, index, integer, pgTable, text, unique } from 'drizzle-orm/pg-core';
-import { generatedId, timestamptz } from './columns';
+import { generatedId, timestamptz } from '@oxyhq/db';
 import { deviceSessions } from './deviceSessions';
 import { users } from './users';
 

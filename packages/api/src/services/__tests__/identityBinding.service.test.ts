@@ -17,7 +17,7 @@
  * ```
  *
  * Every row created since the cutover carries a **uuid v7** id
- * (`schema/columns.ts` `generatedId()`), which that regex rejects — so for a
+ * (`@oxyhq/db`'s `generatedId()`), which that regex rejects — so for a
  * post-cutover binding the answer was `no_binding_proof` BEFORE ANY QUERY RAN,
  * and `applyModerationDecision` could apply nothing at all, however real the
  * stored binding. It fails silently by construction: `no_binding_proof` is a

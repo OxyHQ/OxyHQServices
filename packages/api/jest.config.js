@@ -64,6 +64,22 @@ module.exports = {
     '^@oxyhq/core$': '<rootDir>/../core/src/index.ts',
     '^@oxyhq/federation$': '<rootDir>/../federation/src/index.ts',
     '^@oxyhq/federation/node$': '<rootDir>/../federation/src/node/index.ts',
+    // @oxyhq/db is mapped to source for the same consistency reason — the
+    // schema gates and every schema module reach it, and a failure should
+    // point at the source under review rather than a build artefact.
+    //
+    // It is NOT, however, the same guarantee: unlike the four above, these
+    // entries do not make the suite runnable without a build. `jest.globalSetup.ts`
+    // provisions each worker's database by SPAWNING `bun run db:migrate`, a
+    // separate process no `moduleNameMapper` reaches, and `src/db/migrate.ts`
+    // imports `@oxyhq/db/migrate` — which resolves into `dist/`. So `ci.yml`'s
+    // api-test and api-backfill-test jobs build the package explicitly; see the
+    // comment on that step. Do not delete the build believing this covers it.
+    '^@oxyhq/db$': '<rootDir>/../db/src/index.ts',
+    '^@oxyhq/db/migrate$': '<rootDir>/../db/src/migrate/index.ts',
+    '^@oxyhq/db/expiry$': '<rootDir>/../db/src/expiry.ts',
+    '^@oxyhq/db/testing$': '<rootDir>/../db/src/testing.ts',
+    '^@oxyhq/db/assert$': '<rootDir>/../db/src/assert/index.ts',
     // NodeNext source uses `.js` extensions on relative imports of TS files
     // (e.g. `import { Topic } from '../models/Topic.js'`). ts-jest resolves
     // these inside source, but jest's own resolver (used by `jest.mock(...)`

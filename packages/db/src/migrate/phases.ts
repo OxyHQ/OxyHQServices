@@ -3,15 +3,15 @@
  *
  * THE BUG THIS EXISTS FOR
  *
- * `0013_users_account_categories` added `users.account_categories`, and the same
- * pull request added code that selects that column by name. The image reached
- * production; the column did not. `POST /users/by-ids` returned 500
- * ecosystem-wide until `Run PostgreSQL migrations` was dispatched by hand.
+ * A migration added a column, and the same pull request added code that
+ * selected that column by name. The image reached production; the column did
+ * not. Every request that read the new column returned 500 ecosystem-wide
+ * until the migration was dispatched by hand.
  *
- * The migration itself was additive, defaulted, dropped nothing and documented
- * its own ordering requirement. None of that helped, because the ordering
- * depended on a human performing two dispatches in the right order while a
- * deploy raced them.
+ * The migration itself was additive, defaulted, dropped nothing and
+ * documented its own ordering requirement. None of that helped, because the
+ * ordering depended on a human performing two dispatches in the right order
+ * while a deploy raced them.
  *
  * So a migration now DECLARES its side, in its own file, on one line:
  *
@@ -24,29 +24,28 @@
  *
  * `post` is every change that takes something away — a DROP, a RENAME, a
  * narrowed constraint. Applied early it is an outage on the image still
- * serving: drizzle selects columns by name, so dropping one 500s every read the
- * previous image performs. That is the second half of the same pull request,
- * and it is exactly why "always migrate first" is wrong as a blanket rule.
+ * serving: drizzle selects columns by name, so dropping one 500s every read
+ * the previous image performs. That is the second half of the same pull
+ * request, and it is exactly why "always migrate first" is wrong as a blanket
+ * rule.
  *
  * THERE IS NO DEFAULT, and that is the point. A migration with no marker, with
- * two, or with an unrecognised value is a hard failure both in CI
- * (`scripts/check-migration-phases.mjs`) and at migration time. A default would
- * quietly pick a side for a migration whose author never considered the
- * question — the same class of failure as the incident above, moved one step
- * later and made harder to see.
+ * two, or with an unrecognised value is a hard failure both in a CI gate and
+ * at migration time. A default would quietly pick a side for a migration
+ * whose author never considered the question — the same class of failure as
+ * the incident above, moved one step later and made harder to see.
  *
  * WHY THIS MODULE IMPORTS NOTHING BUT NODE BUILTINS
  *
- * The CI gate runs under `bun` with no `node_modules` installed, exactly like
- * the two gates beside it (`check-lockfile-sync.mjs`,
- * `check-deploy-secrets-sync.mjs`). Keeping this module dependency-free is what
- * lets the gate import the REAL marker reader instead of carrying a second copy
- * of the regex — so the gate and the migrator can never disagree about what a
- * marker says.
+ * A CI gate that checks every migration file for a marker typically has to
+ * run before the rest of a project's dependencies are installed. Keeping this
+ * module dependency-free is what lets such a gate import the REAL marker
+ * reader instead of carrying a second copy of the regex — so the gate and the
+ * migrator can never disagree about what a marker says.
  *
  * Nothing here throws. Problems are RETURNED, because the same list has to
- * become a CI failure message in one caller and a migration-time
- * `ConfigurationError` in the other.
+ * become a CI failure message in one caller and a migration-time refusal in
+ * another.
  */
 
 import { readFileSync } from 'node:fs';
@@ -61,7 +60,11 @@ export const DEPLOY_PHASES: readonly DeployPhase[] = ['pre', 'post'];
 /** What a migration run is allowed to apply. */
 export type MigrationRun = 'pre' | 'post' | 'all';
 
-/** Every accepted `--phase` value. */
+/**
+ * Every accepted {@link MigrationRun} value. How a caller spells this on its
+ * own command line is the caller's business — this package takes a `run`
+ * option, not a flag.
+ */
 export const MIGRATION_RUNS: readonly MigrationRun[] = ['pre', 'post', 'all'];
 
 /** The one accepted spelling of a phase marker. */
@@ -70,15 +73,15 @@ export function phaseMarkerLine(phase: DeployPhase): string {
 }
 
 /**
- * The POSIX ERE `.github/workflows/deploy-aws.yml` greps the migration files
- * with, to decide whether this release needs a post-rollout migration task at
- * all. Exported so the workflow cannot drift from the marker syntax this module
- * accepts: the CI gate asserts the workflow contains this exact string.
+ * The POSIX ERE a deploy workflow can grep the migration files with, to
+ * decide whether a release needs a post-rollout migration task at all.
+ * Exported so a workflow cannot drift from the marker syntax this module
+ * accepts: a CI gate can assert the workflow contains this exact string.
  *
- * A grep is sound here ONLY because the gate separately proves every migration
- * carries exactly one well-formed marker line. Without that, a typo'd marker
- * would read as "no post migration in this release" and the drop would never be
- * applied by anything.
+ * A grep is sound here ONLY because the gate separately proves every
+ * migration carries exactly one well-formed marker line. Without that, a
+ * typo'd marker would read as "no post migration in this release" and the
+ * drop would never be applied by anything.
  */
 export const POST_PHASE_GREP_PATTERN = '^-- oxy:deploy-phase=post$';
 
@@ -144,8 +147,8 @@ export function readMigrationPhases(
 
     if (values.length > 1) {
       problems.push(
-        `${tag}: ${values.length} deploy-phase markers (${values.join(', ')}). ` +
-        'Exactly one, or the file does not say which side of the deploy it belongs on.'
+        `${tag}: ${values.length} deploy-phase markers (${values.join(', ')}). \
+Exactly one, or the file does not say which side of the deploy it belongs on.`
       );
       continue;
     }
@@ -184,21 +187,21 @@ export interface MigrationRunPlan<T> {
 /**
  * Decide what a run applies.
  *
- * `all` applies everything pending. This is a developer's database, the jest
- * harness, and the manual `Run PostgreSQL migrations` escape hatch — none of
- * which has a previous image to protect.
+ * `all` applies everything pending. This is a developer's database, a test
+ * harness, and a manual escape hatch that dispatches every pending migration
+ * at once — none of which has a previous image to protect.
  *
  * `pre` runs while the PREVIOUS image is still serving, so it applies the
  * longest run of `pre` migrations at the front of the pending list and stops at
  * the first `post` one.
  *
  * The stop has to be a PREFIX, because the ledger records progress as "the
- * newest `created_at` applied" (see `pendingEntries`) — there is no way to
- * express a hole. So a `pre` migration sitting BEHIND an unapplied `post` one
- * cannot be applied without also applying the `post` one, and applying that
- * breaks the image currently serving. Neither half is acceptable, so the run is
- * BLOCKED and names both. It is the one case a human must resolve, and it is
- * loud rather than silent, which is the whole point.
+ * newest `created_at` applied" (see `pendingEntries` in `./ledger`) — there is
+ * no way to express a hole. So a `pre` migration sitting BEHIND an unapplied
+ * `post` one cannot be applied without also applying the `post` one, and
+ * applying that breaks the image currently serving. Neither half is
+ * acceptable, so the run is BLOCKED and names both. It is the one case a human
+ * must resolve, and it is loud rather than silent, which is the whole point.
  *
  * `post` runs once the new image is live and applies everything still pending.
  * It BLOCKS if a `pre` migration is pending, because at that point the pre
@@ -218,9 +221,9 @@ export function planMigrationRun<T extends { tag: string }>(
       apply: [],
       deferred: [],
       blocked:
-        `${undeclared.length} pending migration(s) do not declare a deploy phase: ` +
-        `${undeclared.map((entry) => entry.tag).join(', ')}. ` +
-        'Refusing to guess which side of a deploy they belong on.',
+        `${undeclared.length} pending migration(s) do not declare a deploy phase: \
+${undeclared.map((entry) => entry.tag).join(', ')}. \
+Refusing to guess which side of a deploy they belong on.`,
     };
   }
 
@@ -235,11 +238,11 @@ export function planMigrationRun<T extends { tag: string }>(
         apply: [],
         deferred: [],
         blocked:
-          `${stranded.map((entry) => entry.tag).join(', ')} ` +
-          `${stranded.length === 1 ? 'is a pre-deploy migration that is' : 'are pre-deploy migrations that are'} ` +
-          'still pending after the rollout. The pre-deploy migration step did not apply ' +
-          'it, so the image now serving is reading a schema this database does not have. ' +
-          'Failing so the deployment rolls back to the image that matches.',
+          `${stranded.map((entry) => entry.tag).join(', ')} \
+${stranded.length === 1 ? 'is a pre-deploy migration that is' : 'are pre-deploy migrations that are'} \
+still pending after the rollout. The pre-deploy migration step did not apply \
+it, so the image now serving is reading a schema this database does not have. \
+Failing so the deployment rolls back to the image that matches.`,
       };
     }
     return { apply: [...pending], deferred: [], blocked: null };
@@ -257,13 +260,13 @@ export function planMigrationRun<T extends { tag: string }>(
       apply: [],
       deferred: [],
       blocked:
-        `${stranded.tag} is a pre-deploy migration queued behind the post-deploy migration ` +
-        `${pending[firstPost].tag}, which is not applied yet. Applying ${stranded.tag} would ` +
-        `require applying ${pending[firstPost].tag} first — the ledger records progress as a ` +
-        'high-water mark and cannot skip one — and that would break the image currently ' +
-        `serving. Leaving ${stranded.tag} unapplied would break the image about to serve. ` +
-        'Deploy them in separate releases, or dispatch `Run PostgreSQL migrations` with ' +
-        'phase=all and accept that the previous image 500s until this rollout completes.',
+        `${stranded.tag} is a pre-deploy migration queued behind the post-deploy migration \
+${pending[firstPost].tag}, which is not applied yet. Applying ${stranded.tag} would \
+require applying ${pending[firstPost].tag} first — the ledger records progress as a \
+high-water mark and cannot skip one — and that would break the image currently \
+serving. Leaving ${stranded.tag} unapplied would break the image about to serve. \
+Deploy them in separate releases, or run this migration with \`all\` and accept that \
+the image currently serving 500s until this rollout completes.`,
     };
   }
 

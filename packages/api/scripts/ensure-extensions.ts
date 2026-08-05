@@ -21,7 +21,8 @@
  *                 drizzle-kit migrates against).
  */
 
-import { ensureExtensions } from '../src/db/extensions';
+import { ensureExtensions } from '@oxyhq/db/migrate';
+import { REQUIRED_EXTENSIONS } from '../src/db/extensions';
 import { ConfigurationError } from '../src/config/env';
 
 async function main(): Promise<void> {
@@ -33,7 +34,7 @@ async function main(): Promise<void> {
       'then set DATABASE_URL in packages/api/.env (see .env.example).'
     );
   }
-  await ensureExtensions(url);
+  await ensureExtensions(url, REQUIRED_EXTENSIONS);
 }
 
 main().catch((error: unknown) => {

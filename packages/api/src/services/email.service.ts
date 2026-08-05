@@ -24,6 +24,7 @@ import {
   type SQLWrapper,
 } from 'drizzle-orm';
 import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
+import { publicColumns } from '@oxyhq/db/assert';
 import { getDb, type Database } from '../config/postgres';
 import { bundles } from '../db/schema/bundles';
 import { contacts } from '../db/schema/contacts';
@@ -40,7 +41,7 @@ import { mailboxes } from '../db/schema/mailboxes';
 import { messageAttachments, type MessageAttachment } from '../db/schema/messageAttachments';
 import { messageRecipients } from '../db/schema/messageRecipients';
 import { messages, type EmailAddress, type MessageHighlight } from '../db/schema/messages';
-import { MESSAGES_PROTECTED_COLUMNS, publicColumns } from '../db/schema/protectedColumns';
+import { MESSAGES_PROTECTED_COLUMNS, PROTECTED_COLUMNS_BY_TABLE } from '../db/schema/protectedColumns';
 import { reminders } from '../db/schema/reminders';
 import { billingSubscriptions } from '../db/schema/billingSubscriptions';
 import { users } from '../db/schema/users';
@@ -380,7 +381,7 @@ export interface SubscriptionSenderDto {
  * `headers`, `encrypted_body`, `search_vector`) are absent AT THE TYPE LEVEL —
  * see `db/schema/protectedColumns.ts`.
  */
-const PUBLIC_MESSAGE_COLUMNS = publicColumns(messages);
+const PUBLIC_MESSAGE_COLUMNS = publicColumns(messages, PROTECTED_COLUMNS_BY_TABLE);
 
 /**
  * The public columns plus the three bodies a single-message read legitimately

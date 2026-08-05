@@ -16,8 +16,10 @@ import { randomUUID } from 'node:crypto';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { getTableName } from 'drizzle-orm';
 import { closePostgres, connectPostgres, getDb } from '../../../config/postgres';
-import { sqlColumnName } from '../../casing';
-import { EXPIRY_SWEEP_TARGETS, sweepExpiredRows } from '../../expiry';
+import { sqlColumnName } from '@oxyhq/db';
+import { publicColumns } from '@oxyhq/db/assert';
+import { sweepExpiredRows } from '@oxyhq/db/expiry';
+import { EXPIRY_SWEEP_TARGETS } from '../../expiry';
 import { applications } from '../applications';
 import { authCodes } from '../authCodes';
 import { authSessions } from '../authSessions';
@@ -28,7 +30,7 @@ import { deviceSessions } from '../deviceSessions';
 import { domainVerifications } from '../domainVerifications';
 import { identityBackups } from '../identityBackups';
 import { identityBindings } from '../identityBindings';
-import { PROTECTED_COLUMNS_BY_TABLE, publicColumns } from '../protectedColumns';
+import { PROTECTED_COLUMNS_BY_TABLE } from '../protectedColumns';
 import {
   SECURITY_ACTIVITY_RETENTION_SECONDS,
   SECURITY_EVENT_SEVERITIES,
@@ -640,7 +642,7 @@ describe('sessions', () => {
 
 describe('protected columns — the credentials this batch adds', () => {
   it('withholds every live bearer credential from the sanctioned read', async () => {
-    const sessionColumns = Object.keys(publicColumns(sessions));
+    const sessionColumns = Object.keys(publicColumns(sessions, PROTECTED_COLUMNS_BY_TABLE));
     expect(sessionColumns).not.toContain('accessToken');
     expect(sessionColumns).not.toContain('refreshToken');
     expect(sessionColumns).not.toContain('previousRefreshToken');
@@ -648,7 +650,7 @@ describe('protected columns — the credentials this batch adds', () => {
     expect(sessionColumns).toContain('deviceName');
     expect(sessionColumns).toContain('lastActiveAt');
 
-    const requestColumns = Object.keys(publicColumns(authSessions));
+    const requestColumns = Object.keys(publicColumns(authSessions, PROTECTED_COLUMNS_BY_TABLE));
     expect(requestColumns).not.toContain('sessionToken');
     // The PUBLIC handle stays selectable — it is what travels in the QR.
     expect(requestColumns).toContain('authorizeCode');

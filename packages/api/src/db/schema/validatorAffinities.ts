@@ -26,7 +26,7 @@
 
 import { sql } from 'drizzle-orm';
 import { check, integer, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
-import { generatedId, timestamptz } from './columns';
+import { generatedId, timestamptz } from '@oxyhq/db';
 import { users } from './users';
 
 export const validatorAffinities = pgTable(

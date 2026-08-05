@@ -76,7 +76,7 @@
 
 import { sql } from 'drizzle-orm';
 import { check, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
-import { createdAt, generatedId, updatedAt } from './columns';
+import { createdAt, generatedId, updatedAt } from '@oxyhq/db';
 import { users } from './users';
 
 export const userFollows = pgTable(

@@ -45,7 +45,7 @@
 import { getTableColumns } from 'drizzle-orm';
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import type { Sql } from 'postgres';
-import { sqlColumnName } from '../casing';
+import { sqlColumnName } from '@oxyhq/db';
 
 /** A row as a transform produced it: column PROPERTY name → value. */
 export type BuiltRow = Record<string, unknown>;
@@ -165,7 +165,7 @@ function columnMeta(table: PgTable): Map<string, { sqlName: string; sqlType: str
  * Fill in the columns drizzle would default in APPLICATION code, which `COPY`
  * knows nothing about.
  *
- * `generatedId()` (`schema/columns.ts`) is a `$defaultFn`, not a database
+ * `generatedId()` (`@oxyhq/db`) is a `$defaultFn`, not a database
  * `DEFAULT` — deliberately, because Postgres 17 has no native `uuidv7()`. So
  * `db.insert(t).values({…})` gets an id and `COPY t (…) FROM STDIN` does not:
  * the column is simply absent from the copy and the row fails `not-null`. That

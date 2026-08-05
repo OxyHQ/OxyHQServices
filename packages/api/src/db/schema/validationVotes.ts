@@ -18,7 +18,7 @@
 import { sql } from 'drizzle-orm';
 import { check, doublePrecision, index, jsonb, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 import type { SignedRecordEnvelope } from '@oxyhq/contracts';
-import { createdAt, generatedId, inList } from './columns';
+import { createdAt, generatedId, inList } from '@oxyhq/db';
 import { signedRecords } from './signedRecords';
 import { users } from './users';
 import { validationRequests } from './validationRequests';

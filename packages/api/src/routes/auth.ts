@@ -13,12 +13,13 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { SessionController } from '../controllers/session.controller';
+import { publicColumns } from '@oxyhq/db/assert';
 import { getDb } from '../config/postgres';
 import { appGrants } from '../db/schema/appGrants';
 import { applicationCredentials } from '../db/schema/applicationCredentials';
 import { applications } from '../db/schema/applications';
 import { authSessions } from '../db/schema/authSessions';
-import { publicColumns } from '../db/schema/protectedColumns';
+import { PROTECTED_COLUMNS_BY_TABLE } from '../db/schema/protectedColumns';
 import { sessions as sessionsTable } from '../db/schema/sessions';
 import { users } from '../db/schema/users';
 import { intersectScopes, isPaymentsScope } from '../utils/applicationScopes';
@@ -1447,7 +1448,7 @@ router.post(
     // contact-discovery hashes and `refresh_token` AT THE TYPE LEVEL, so the
     // serializer below cannot carry any of them into the response.
     const [user] = await getDb()
-      .select(publicColumns(users))
+      .select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE))
       .from(users)
       .where(eq(users.id, authSession.authorizedUserId))
       .limit(1);
@@ -3062,7 +3063,7 @@ router.post(
     // `user` field of the token response below.
     const userId = String(exchange.code.userId);
     const [user] = await getDb()
-      .select(publicColumns(users))
+      .select(publicColumns(users, PROTECTED_COLUMNS_BY_TABLE))
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);

@@ -12,6 +12,7 @@
       "packages/contracts",
       "packages/protocol",
       "packages/federation",
+      "packages/db",
       "packages/core",
       "packages/services",
       "packages/expo-splash",

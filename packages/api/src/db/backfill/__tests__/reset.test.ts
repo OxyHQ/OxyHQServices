@@ -48,7 +48,7 @@ import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { closePostgres, connectPostgres, type Database } from '../../../config/postgres';
 import { createTestDatabase, dropTestDatabase } from '../../testDatabase';
-import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from '../../migrationLedger';
+import { MIGRATIONS_SCHEMA, MIGRATIONS_TABLE } from '@oxyhq/db/migrate';
 import { reputationRules, users } from '../../schema';
 import { cleanFixtures, type FixtureSet } from '../backfillFixtures';
 import { COLLECTION_PLANS } from '../collectionMap';

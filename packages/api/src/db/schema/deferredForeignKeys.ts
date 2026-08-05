@@ -18,9 +18,17 @@
  * two lists plus the real constraints, every id-shaped column in the schema is
  * classified — which is what lets `foreignKeys.test.ts` fail on a NEW one
  * nobody decided about.
+ *
+ * Both lists are this schema's own DATA — they name this schema's tables and
+ * columns, so they have no home in `@oxyhq/db`. The `DeferredForeignKey` shape
+ * itself is no longer declared here, though: it is identical to
+ * `@oxyhq/db/assert`'s own export of the same name (the gate that walks this
+ * list, `findIdColumnViolations`, now lives there too), so this file imports
+ * the type rather than keeping a second copy that could drift from it.
  */
 
-import type { PgColumn, PgTable, UpdateDeleteAction } from 'drizzle-orm/pg-core';
+import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
+import type { DeferredForeignKey } from '@oxyhq/db/assert';
 import { appAffinitySeenEvents } from './appAffinitySeenEvents';
 import { appEndorsementEdges } from './appEndorsementEdges';
 import { appUpdates } from './appUpdates';
@@ -54,20 +62,6 @@ import { userLocations } from './userLocations';
 import { users } from './users';
 import { validationRequests } from './validationRequests';
 import { webauthnCredentials } from './webauthnCredentials';
-
-/** A foreign key that is decided but not yet expressible. */
-export interface DeferredForeignKey {
-  readonly table: PgTable;
-  readonly column: PgColumn;
-  /** SQL name of the parent table, e.g. `users`. */
-  readonly parentTable: string;
-  /** Column on the parent, e.g. `id`. */
-  readonly parentColumn: string;
-  /** Decided per relation — never left to default. */
-  readonly onDelete: UpdateDeleteAction;
-  /** Why that `ON DELETE`, in one line. */
-  readonly reason: string;
-}
 
 /** An id-shaped column that will never carry a foreign key. */
 export interface IdColumnWithoutForeignKey {

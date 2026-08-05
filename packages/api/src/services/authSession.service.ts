@@ -28,7 +28,7 @@
  * `auth_sessions.session_token` is a PROTECTED column (`db/schema/protectedColumns.ts`):
  * possession of it alone exchanges an approved request for an access token, and
  * `POST /auth/session/claim` takes no bearer. Every read here therefore goes
- * through `publicColumns(authSessions)`, and the two approval paths name the
+ * through `publicColumns(authSessions, ...)`, and the two approval paths name the
  * column explicitly — they must return it so the route can notify the waiting
  * originator on its own secret channel.
  */
@@ -37,12 +37,13 @@ import type { Request } from 'express';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import { isActAsEligibleKind } from '@oxyhq/contracts';
 import { v7 as uuidv7 } from 'uuid';
+import { publicColumns } from '@oxyhq/db/assert';
 import { getDb } from '../config/postgres';
 import { appGrants } from '../db/schema/appGrants';
 import { applications } from '../db/schema/applications';
 import { authChallenges } from '../db/schema/authChallenges';
 import { authSessions } from '../db/schema/authSessions';
-import { publicColumns } from '../db/schema/protectedColumns';
+import { PROTECTED_COLUMNS_BY_TABLE } from '../db/schema/protectedColumns';
 import { users } from '../db/schema/users';
 import SignatureService from './signature.service';
 import sessionService from './session.service';
@@ -262,7 +263,7 @@ export async function claimAuthSession(
   // The peek does NOT leak existence to the network: the caller maps
   // multiple outcomes to the same 401 status code per RFC 6749 §5.2.
   const [existing] = await db
-    .select(publicColumns(authSessions))
+    .select(publicColumns(authSessions, PROTECTED_COLUMNS_BY_TABLE))
     .from(authSessions)
     .where(eq(authSessions.sessionToken, sessionToken))
     .limit(1);
@@ -295,7 +296,7 @@ export async function claimAuthSession(
     .update(authSessions)
     .set({ status: 'consumed', consumedAt: new Date() })
     .where(and(eq(authSessions.id, existing.id), eq(authSessions.status, 'authorized')))
-    .returning(publicColumns(authSessions));
+    .returning(publicColumns(authSessions, PROTECTED_COLUMNS_BY_TABLE));
 
   if (!claimed) {
     // Lost the race to a concurrent claim, or another transition fired.
@@ -394,7 +395,7 @@ export async function authorizeSessionWithSignedChallenge(
 
   // 2. Resolve the pending, unexpired session bound to this authorizeCode.
   const [authSession] = await db
-    .select(publicColumns(authSessions))
+    .select(publicColumns(authSessions, PROTECTED_COLUMNS_BY_TABLE))
     .from(authSessions)
     .where(and(eq(authSessions.authorizeCode, authorizeCode), eq(authSessions.status, 'pending')))
     .limit(1);
@@ -533,7 +534,7 @@ export async function authorizeSessionWithBearer(
   // Peek first for a precise reason (mirrors claimAuthSession) — the atomic
   // update below is the actual source of truth for the claim.
   const [existing] = await db
-    .select(publicColumns(authSessions))
+    .select(publicColumns(authSessions, PROTECTED_COLUMNS_BY_TABLE))
     .from(authSessions)
     .where(eq(authSessions.authorizeCode, authorizeCode))
     .limit(1);
@@ -575,7 +576,7 @@ export async function authorizeSessionWithBearer(
       )
     )
     .returning({
-      ...publicColumns(authSessions),
+      ...publicColumns(authSessions, PROTECTED_COLUMNS_BY_TABLE),
       sessionToken: authSessions.sessionToken,
     });
   if (!claimed) {
@@ -674,7 +675,7 @@ export async function finalizeOAuthAuthorization(
   const db = getDb();
 
   const [existing] = await db
-    .select(publicColumns(authSessions))
+    .select(publicColumns(authSessions, PROTECTED_COLUMNS_BY_TABLE))
     .from(authSessions)
     .where(eq(authSessions.sessionToken, sessionToken))
     .limit(1);

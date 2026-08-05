@@ -15,7 +15,7 @@
 
 import { sql } from 'drizzle-orm';
 import { check, index, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
-import { createdAt, generatedId, timestamptz } from './columns';
+import { createdAt, generatedId, timestamptz } from '@oxyhq/db';
 import { users } from './users';
 
 /** How ownership was proven. */

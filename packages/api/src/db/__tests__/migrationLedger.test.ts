@@ -14,15 +14,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import postgres from 'postgres';
-import { ConfigurationError } from '../../config/env';
 import {
-  MIGRATIONS_FOLDER,
   MIGRATIONS_SCHEMA,
   MIGRATIONS_TABLE,
   pendingEntries,
   readJournal,
   readLastAppliedMillis,
-} from '../migrationLedger';
+} from '@oxyhq/db/migrate';
+import { MIGRATIONS_FOLDER } from '../migrationsFolder';
 
 /** Write a `drizzle/meta/_journal.json` into a throwaway directory. */
 function journalFolder(contents: string): string {
@@ -49,7 +48,7 @@ describe('readJournal', () => {
   });
 
   it('throws when the journal is missing — never reports "nothing to do"', () => {
-    expect(() => readJournal(join(tmpdir(), 'oxy-journal-does-not-exist'))).toThrow(ConfigurationError);
+    expect(() => readJournal(join(tmpdir(), 'oxy-journal-does-not-exist'))).toThrow(/Cannot read/);
   });
 
   it('throws on a journal with no entries', () => {
@@ -67,7 +66,7 @@ describe('readJournal', () => {
   it('throws on an unparseable journal rather than treating it as empty', () => {
     const folder = journalFolder('{ not json');
     throwawayFolders.push(folder);
-    expect(() => readJournal(folder)).toThrow(ConfigurationError);
+    expect(() => readJournal(folder)).toThrow(/Cannot read/);
   });
 });
 

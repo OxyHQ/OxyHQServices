@@ -19,7 +19,7 @@
 import { sql } from 'drizzle-orm';
 import { check, foreignKey, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { APPLICATION_SCOPES } from '../../utils/applicationScopes';
-import { createdAt, generatedId, textArrayLiteral, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, textArrayLiteral, timestamptz, updatedAt } from '@oxyhq/db';
 import { users } from './users';
 
 /**

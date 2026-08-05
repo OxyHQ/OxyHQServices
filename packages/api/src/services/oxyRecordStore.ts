@@ -42,7 +42,7 @@ import { and, asc, desc, eq, gt, inArray, isNotNull, sql, type SQL } from 'drizz
 import { oxySignedRecordTypeSchema, type SignedRecordEnvelope } from '@oxyhq/contracts';
 import type { AppendOutcome, ChainHead, RecordStore } from '@oxyhq/protocol';
 import { getDb } from '../config/postgres';
-import { isUniqueViolation } from '../db/pgErrors';
+import { isUniqueViolation } from '@oxyhq/db';
 import { repoHeads } from '../db/schema/repoHeads';
 import { signedRecords } from '../db/schema/signedRecords';
 import { buildUserDid, parseUserDid } from './did.service';

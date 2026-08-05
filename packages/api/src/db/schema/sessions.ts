@@ -59,7 +59,7 @@
 
 import { sql } from 'drizzle-orm';
 import { boolean, index, pgTable, text, unique } from 'drizzle-orm/pg-core';
-import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, timestamptz, updatedAt } from '@oxyhq/db';
 import { users } from './users';
 
 export const sessions = pgTable(

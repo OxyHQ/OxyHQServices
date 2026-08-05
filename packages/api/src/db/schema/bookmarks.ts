@@ -11,7 +11,7 @@
  */
 
 import { index, pgTable, text } from 'drizzle-orm/pg-core';
-import { createdAt, generatedId, updatedAt } from './columns';
+import { createdAt, generatedId, updatedAt } from '@oxyhq/db';
 import { users } from './users';
 
 export const bookmarks = pgTable(

@@ -19,7 +19,7 @@
 
 import { index, pgTable, text, unique } from 'drizzle-orm/pg-core';
 import { applications } from './applications';
-import { createdAt, generatedId } from './columns';
+import { createdAt, generatedId } from '@oxyhq/db';
 
 export const appAffinitySeenEvents = pgTable(
   'app_affinity_seen_events',

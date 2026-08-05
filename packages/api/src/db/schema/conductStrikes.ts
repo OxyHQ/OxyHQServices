@@ -42,7 +42,7 @@ import {
   MODERATION_SEVERITIES,
 } from '@oxyhq/contracts';
 import { applications } from './applications';
-import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, timestamptz, updatedAt } from '@oxyhq/db';
 import { moderationPolicies } from './moderationPolicies';
 import { reputationTransactions } from './reputationTransactions';
 import { users } from './users';

@@ -97,7 +97,7 @@ import {
   text,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { createdAt, generatedId, timestamptz, updatedAt } from './columns';
+import { createdAt, generatedId, timestamptz, updatedAt } from '@oxyhq/db';
 import { DEFAULT_BILLING_CURRENCY } from './billingSubscriptions';
 import { users } from './users';
 
