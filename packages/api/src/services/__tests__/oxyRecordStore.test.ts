@@ -296,10 +296,11 @@ describe('latestIssuedAtForKey — the frontier is scoped to the logical record 
     const subject = subjectKeyForUser(userId);
     await seedRows(userId, [{ type: 'identity', issuedAt: T0 + 10_000 }]);
 
-    // No stored row can carry `app_record` — the column's CHECK forbids it — so
-    // there is no frontier, and certainly not the account's newest record.
+    // A PER-APP type, not `app_record`: the set admits the one shared app
+    // category, so no stored row can carry THIS — the column's CHECK forbids it
+    // — and there is no frontier, certainly not the account's newest record.
     expect(
-      await oxyRecordStore.latestIssuedAtForKey(subject, v1Envelope(subject, 'app_record', T0))
+      await oxyRecordStore.latestIssuedAtForKey(subject, v1Envelope(subject, 'app.syra.listen', T0))
     ).toBeNull();
   });
 
@@ -391,7 +392,9 @@ describe('the subject DID gates every read and the append', () => {
   it('refuses to append a record type outside the Oxy store set', async () => {
     const userId = await account();
     const subject = subjectKeyForUser(userId);
-    const envelope = v2Envelope(subject, { type: 'app_record' });
+    // A PER-APP type. `app_record` is IN the set — see the case below — so an
+    // app that invents its own category is what this still refuses.
+    const envelope = v2Envelope(subject, { type: 'app.syra.listen' });
 
     // The re-narrowing carries `oxyStorePolicy`'s guarantee into the INSERT, so
     // the store stays correct even when driven by another caller.
@@ -400,6 +403,39 @@ describe('the subject DID gates every read and the append', () => {
       reason: 'invalid_envelope',
     });
     expect(await countRecords(userId)).toBe(0);
+  });
+
+  /**
+   * The append that the whole shared-chain idea rests on: an app's record lands
+   * on the SUBJECT'S OWN chain, under the shared `app_record` category, with the
+   * lexicon carried by `collection` and denormalized to `nsid`.
+   *
+   * This is the positive control for the case above — without it, a mutation
+   * that re-closed the set against `app_record` would leave every other
+   * assertion in this file green.
+   */
+  it('appends an app record under the subject’s own chain', async () => {
+    const userId = await account();
+    const subject = subjectKeyForUser(userId);
+    const envelope = v2Envelope(subject, {
+      type: 'app_record',
+      collection: 'app.mention.feed.post',
+      rkey: 'post_1',
+    });
+    const recordId = await computeRecordId(envelope);
+
+    expect(await oxyRecordStore.append(subject, envelope, recordId)).toEqual({
+      ok: true,
+      recordId,
+      seq: 0,
+    });
+
+    // Stored under the lexicon, which is what the multi-author read filters on.
+    const [row] = await getDb()
+      .select({ nsid: signedRecords.nsid, type: signedRecords.type })
+      .from(signedRecords)
+      .where(eq(signedRecords.recordId, recordId));
+    expect(row).toEqual({ nsid: 'app.mention.feed.post', type: 'app_record' });
   });
 });
 

@@ -328,9 +328,21 @@ describe('verifyEnvelope answers a verdict and writes nothing', () => {
 
   it('rejects a record type outside the closed Oxy store set', async () => {
     const subject = await signer();
-    expect(await verifyEnvelope(v1Envelope(subject, { type: 'app_record' }), subject.userId)).toEqual(
-      { ok: false, reason: 'invalid_envelope' }
-    );
+    // A PER-APP type. `app_record` is inside the set now, and a v1 one would
+    // still be refused — by the CHAIN gate, not this one — so using it here
+    // would leave the type gate untested while the case stayed green.
+    expect(
+      await verifyEnvelope(v1Envelope(subject, { type: 'app.syra.listen' }), subject.userId)
+    ).toEqual({ ok: false, reason: 'invalid_envelope' });
+  });
+
+  it('rejects an UNCHAINED app record — the chain gate, not the type gate', async () => {
+    const subject = await signer();
+    // `app_record` passes the type gate and is not a v1 legacy singleton, so it
+    // must arrive chained. This is the case that tells the two gates apart.
+    expect(
+      await verifyEnvelope(v1Envelope(subject, { type: 'app_record' }), subject.userId)
+    ).toEqual({ ok: false, reason: 'invalid_envelope' });
   });
 
   it('rejects a third-party issuer that is neither the subject nor Oxy', async () => {
@@ -468,9 +480,11 @@ describe('verifyAndStoreRecord — what lands in the ledger', () => {
   const rejections: Array<[string, string, (subject: Signer) => Promise<SignedRecordEnvelope>]> = [
     ['a subject that is another account', 'subject_mismatch', async () => v1Envelope(await signer())],
     [
+      // A PER-APP type: `app_record` is inside the set, so it would exercise the
+      // chain gate here rather than the type gate this row names.
       'a record type outside the Oxy set',
       'invalid_envelope',
-      async (subject) => v1Envelope(subject, { type: 'app_record' }),
+      async (subject) => v1Envelope(subject, { type: 'app.syra.listen' }),
     ],
     [
       'a tampered record',

@@ -409,10 +409,14 @@ describe('signed_records — the chain constraints', () => {
   it('rejects a record type outside the contract set, from a raw write', async () => {
     // Raw SQL on purpose: the typed column refuses this at compile time, so only
     // a hand-written statement can reach the constraint — which is who it is for.
+    //
+    // A PER-APP type, not `app_record`: the set admits the one shared app
+    // category, so using that here would assert the opposite of what holds. An
+    // app distinguishes its records by `nsid`, never by inventing a type.
     const error = await rejection(
       getDb().execute(sql`
         insert into signed_records (id, subject_did, user_id, type, envelope, public_key)
-        values (${randomUUID()}, 'did:web:oxy.so:u:x', ${await owner()}, 'app_record', '{}'::jsonb, 'pk')
+        values (${randomUUID()}, 'did:web:oxy.so:u:x', ${await owner()}, 'app.syra.listen', '{}'::jsonb, 'pk')
       `)
     );
 
