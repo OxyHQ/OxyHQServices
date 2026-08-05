@@ -19,12 +19,17 @@
  *   ledger table, a real migration actually applying) and would not be valid
  *   evidence for any of that.
  *
- * Everything else — `assertMigrationTarget` actually comparing against a
- * real `current_database()`, the ledger read, `ensureExtensions`, `migrate()`
- * itself succeeding, and the post-apply re-verification — needs a real
- * Postgres and is left for the ephemeral-database harness landing in a later
- * task, the same boundary `targetDatabase.test.ts` already draws for
- * `assertMigrationTarget`.
+ * Everything else needs a real Postgres. `assertMigrationTarget` actually
+ * comparing against a real `current_database()`, and the ledger read
+ * (`readAppliedMillis`/`readLastAppliedMillis`), are now covered in
+ * `liveDatabase.test.ts` against the ephemeral-database harness `testing.ts`
+ * provides — whose `beforeAll` also applies a real migration through THIS
+ * `runMigrations`, so `migrate()` itself succeeding is exercised there too
+ * (indirectly: its `beforeAll` would throw otherwise). `ensureExtensions`
+ * against a real server and a deliberately-broken post-apply
+ * re-verification remain uncovered — closing every live-Postgres gap in this
+ * package was not the harness task's scope, only the four functions Task 5
+ * shipped with zero coverage.
  */
 
 import {

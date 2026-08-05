@@ -5,9 +5,11 @@
  * point at an unreachable host to prove it: a name-validation failure and an
  * empty extension list must both resolve/reject WITHOUT ever opening a
  * connection. `client.unsafe(...)` succeeding or failing against a real
- * server is integration coverage this package has no live-Postgres harness
- * for yet (see `targetDatabase.test.ts`'s header) — that lands in a later
- * task.
+ * server is integration coverage this package's ephemeral-database harness
+ * (`testing.ts`, `liveDatabase.test.ts`) could now provide, but does not yet:
+ * that harness's own task closed the four functions Task 5 shipped with zero
+ * coverage, not every live-Postgres gap in the package — this one is still
+ * open.
  */
 
 import { ensureExtensions } from '../migrate/extensions';
