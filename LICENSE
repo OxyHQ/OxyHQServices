@@ -1,19 +1,18 @@
 Licensing for this repository
-=============================================================================
+============================================================================
 
 Copyright (c) 2025-present The Oxy Collective, Inc.
 
 This repository is not licensed as a single work. It is a monorepo holding
 three different situations, and one repository level license file cannot
-express that. Each package under `packages/` carries its own LICENSE file, and
+express that. Each package under packages/ carries its own LICENSE file, and
 that file is what governs the package it sits in.
 
-GitHub will report this repository's licence as "Other". That is correct, not a
-misdetection.
-
+GitHub will report this repository's licence as "Other". That is correct,
+not a misdetection.
 
 1. The SDK and client layer: Apache License 2.0
------------------------------------------------------------------------------
+----------------------------------------------------------------------------
 
   packages/contracts        @oxyhq/contracts
   packages/protocol         @oxyhq/protocol
@@ -25,24 +24,23 @@ misdetection.
   packages/federation       @oxyhq/federation
   packages/ship             @oxyhq/ship
 
-Each of those directories holds a verbatim copy of the Apache License 2.0 and a
-NOTICE file. Use, modification and redistribution of those packages are
-governed by that license alone. No fee, no source obligation, and no
+Each of those directories holds a verbatim copy of the Apache License 2.0
+and a NOTICE file. Use, modification and redistribution of those packages
+are governed by that license alone. No fee, no source obligation, and no
 attribution requirement beyond the one Apache-2.0 itself states.
 
-These are the packages a third party has to depend on in order to build on Oxy,
-so they are licensed permissively on purpose: if integrating Oxy login cost
-money, nobody would integrate it.
-
+These are the packages a third party has to depend on in order to build on
+Oxy, so they are licensed permissively on purpose: if integrating Oxy login
+cost money, nobody would integrate it.
 
 2. The server layer: The Breathe License 1.0
------------------------------------------------------------------------------
+----------------------------------------------------------------------------
 
   packages/api              @oxyhq/api
   packages/db               @oxyhq/db
   packages/node             @oxyhq/node
 
-License identifier `LicenseRef-Breathe-1.0`. Each of those directories holds
+License identifier LicenseRef-Breathe-1.0. Each of those directories holds
 the full license text with its Parameters filled in, plus a NOTICE file.
 
 In short, and the license itself governs rather than this summary:
@@ -50,8 +48,9 @@ In short, and the license itself governs rather than this summary:
   - Free for any purpose that is not commercial, perpetually and irrevocably
     while you comply.
   - If you deploy it, or a modified version, whether you ship it or serve it
-    over a network, you publish the corresponding source. That binds everyone,
-    including paying commercial licensees. It cannot be bought out of.
+    over a network, you publish the corresponding source. That binds
+    everyone, including paying commercial licensees. It cannot be bought out
+    of.
   - Attribution is required of everyone and cannot be waived.
   - Commercial use requires a paid license. The trigger is revenue, and it
     includes purely internal use by a business that earns revenue.
@@ -59,27 +58,26 @@ In short, and the license itself governs rather than this summary:
     worker owned businesses pay no fee. They publish source and give credit
     like everyone else.
 
-This is **source available, not open source**, and it is worth stating plainly
+This is source available, not open source, and it is worth stating plainly
 rather than hoping nobody checks. It fails clause 6 of the Open Source
-Definition, no discrimination against fields of endeavour, because commercial
-use is conditional on payment. It is not the copyleft that does that; the AGPL
-is copyleft and is OSI approved. Do not describe these packages as open source.
+Definition, no discrimination against fields of endeavour, because
+commercial use is conditional on payment. It is not the copyleft that does
+that; the AGPL is copyleft and is OSI approved. Do not describe these
+packages as open source.
 
-**Nothing here is retroactive.** Every version of these packages already
-published under an earlier license stays under that license, permanently, for
-anyone who has it. `@oxyhq/api` up to and including `1.0.3` was published as MIT
-and remains MIT in those versions, forever. These terms bind the versions
-released from here on, and nothing else.
+Nothing here is retroactive. Every version of these packages already
+published under an earlier license stays under that license, permanently,
+for anyone who has it. @oxyhq/api up to and including 1.0.3 was published as
+MIT and remains MIT in those versions, forever. These terms bind the
+versions released from here on, and nothing else.
 
 Commercial Terms:
-<https://github.com/OxyHQ/.github/blob/main/LICENSE-COMMERCIAL.md>
-Exemption Policy:
-<https://github.com/OxyHQ/.github/blob/main/licensing/EXEMPTIONS.md>
+https://github.com/OxyHQ/.github/blob/main/LICENSE-COMMERCIAL.md Exemption
+Policy: https://github.com/OxyHQ/.github/blob/main/licensing/EXEMPTIONS.md
 Commercial licensing contact: licensing@oxy.so
 
-
 3. Private workspace packages: GNU Affero General Public License v3.0 only
------------------------------------------------------------------------------
+----------------------------------------------------------------------------
 
   packages/accounts         packages/auth           packages/commons
   packages/console          packages/inbox          packages/test-app-expo
@@ -88,36 +86,34 @@ Commercial licensing contact: licensing@oxy.so
   and every other file in this repository that is not inside one of the
   package directories listed in sections 1 and 2.
 
-These are `"private": true` workspace packages. They are never published to a
-registry and are not offered as products, but they sit in a public repository,
-so they need a licence, and they keep the one they already had.
+These are "private": true workspace packages. They are never published to a
+registry and are not offered as products, but they sit in a public
+repository, so they need a licence, and they keep the one they already had.
 
-The full text is in `LICENSE-AGPL-3.0.txt` in this directory.
+The full text is in LICENSE-AGPL-3.0.txt in this directory.
 
 Nothing in this file narrows what was previously granted for any of them.
 Moving them to the Breathe License is a separate decision that has not been
 made.
 
-
 Third party components
------------------------------------------------------------------------------
+----------------------------------------------------------------------------
 
-Dependencies are resolved and installed by the package manager and stay under
-their own licenses. Attribution obligations and dual license elections are
-recorded in each package's NOTICE file. `packages/api/NOTICE` is the one with
-real content: a GPL ffmpeg binary shipped as a separate executable, an LGPL
-native imaging library, and three dual license elections.
-
+Dependencies are resolved and installed by the package manager and stay
+under their own licenses. Attribution obligations and dual license elections
+are recorded in each package's NOTICE file. packages/api/NOTICE is the one
+with real content: a GPL ffmpeg binary shipped as a separate executable, an
+LGPL native imaging library, and three dual license elections.
 
 The layer boundary
------------------------------------------------------------------------------
+----------------------------------------------------------------------------
 
 An Apache-2.0 package in section 1 must never depend on a Breathe package in
 section 2. The reverse is fine, and is what section 2 does.
 
 A Breathe package must never take a GPL or AGPL dependency that is linked in
 process, because those licences are mutually incompatible with these terms.
-That constraint is why `@oxyhq/db` is in section 2 rather than staying where it
-was: `@oxyhq/api` imports it directly, so leaving it AGPL while `@oxyhq/api`
+That constraint is why @oxyhq/db is in section 2 rather than staying where
+it was: @oxyhq/api imports it directly, so leaving it AGPL while @oxyhq/api
 moved to Breathe would have made the combination distributable under neither
 licence.
