@@ -59,3 +59,29 @@ export const appendChainRecordSchema = z.object({
 });
 
 export type AppendChainRecordBody = z.infer<typeof appendChainRecordSchema>;
+
+/** Comma-separated list in a query string → a trimmed, non-empty array. */
+const commaList = z
+  .string()
+  .trim()
+  .min(1)
+  .transform((raw) => raw.split(',').map((part) => part.trim()).filter((part) => part.length > 0));
+
+/**
+ * `GET /chains/records` — the multi-subject read.
+ *
+ * The caps are the store's own (`MAX_RECORD_AUTHORS` / `MAX_RECORD_COLLECTIONS`)
+ * restated as a 400 rather than left to throw: an oversized request is the
+ * caller's mistake and should say so, and the store refuses to truncate
+ * precisely because a silently shortened author list reads as "these people
+ * published nothing".
+ */
+export const readChainRecordsQuerySchema = z.object({
+  authors: commaList.pipe(z.array(z.string().min(1)).min(1).max(300)),
+  collections: commaList.pipe(z.array(z.string().min(1)).min(1).max(32)),
+  /** Opaque cursor from a previous page. Never constructed by the caller. */
+  since: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+
+export type ReadChainRecordsQuery = z.infer<typeof readChainRecordsQuerySchema>;

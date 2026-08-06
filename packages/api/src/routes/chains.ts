@@ -20,8 +20,14 @@ import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, ForbiddenError } from '../utils/error';
 import { logger } from '../utils/logger';
-import { appendChainRecordSchema, type AppendChainRecordBody } from '../schemas/chains.schemas';
+import {
+  appendChainRecordSchema,
+  readChainRecordsQuerySchema,
+  type AppendChainRecordBody,
+  type ReadChainRecordsQuery,
+} from '../schemas/chains.schemas';
 import { appendAppRecord, CHAINS_WRITE_SCOPE } from '../services/appChainWrite.service';
+import { readPublicChainRecords, CHAINS_READ_SCOPE } from '../services/appChainRead.service';
 
 const router = Router();
 
@@ -93,6 +99,43 @@ router.post(
       envelope: result.record.envelope,
       verified: result.record.verified,
     });
+  }),
+);
+
+/**
+ * GET /chains/records?authors=&collections=&since=&limit= — records from MANY
+ * subjects, oldest first. This is what an app projects a cross-app feed from:
+ * "records of these people, of these lexicons, since this cursor".
+ *
+ * Requires `chains:read`. What it can return is narrowed SERVER-SIDE to the
+ * collections `chainCollectionPolicy` declares public — a request naming a
+ * private collection gets an empty page, not an error, because "you may not read
+ * that" and "there is nothing there" should look the same from outside.
+ *
+ * `nextCursor` is opaque. Callers hand it back rather than building one, and
+ * MUST re-poll from slightly before their last position and dedupe by
+ * `recordId`: `created_at` is a transaction-start time, so a row can commit
+ * behind a cursor that already passed it (see `listRecordsByAuthors`).
+ */
+router.get(
+  '/records',
+  serviceAuthMiddleware,
+  validate({ query: readChainRecordsQuerySchema }),
+  asyncHandler(async (req: ServiceAuthRequest, res: Response) => {
+    const scopes = req.serviceApp?.scopes ?? [];
+    if (!scopes.includes(CHAINS_READ_SCOPE)) {
+      throw new ForbiddenError(`Missing required scope: ${CHAINS_READ_SCOPE}`);
+    }
+
+    const query = req.query as unknown as ReadChainRecordsQuery;
+    const page = await readPublicChainRecords({
+      oxyUserIds: query.authors,
+      collections: query.collections,
+      since: query.since ?? null,
+      limit: query.limit,
+    });
+
+    res.json(page);
   }),
 );
 
