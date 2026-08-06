@@ -162,6 +162,20 @@
       "when": 1785965355279,
       "tag": "0023_timestamp_millisecond_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785991962923,
+      "tag": "0024_applications_chain_namespaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785992496055,
+      "tag": "0025_chains_write_scope",
+      "breakpoints": true
     }
   ]
 }
