@@ -121,6 +121,34 @@ export const applications = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
 
+    /**
+     * Lexicon namespace PREFIXES this application may append records under, on
+     * any person's chain — e.g. `app.mention.` for Mention.
+     *
+     * This is the write-side counterpart of `redirectUris`, which is what
+     * `routes/federation.ts` already reads to decide the domains a credential
+     * may sign for. The same reasoning applies and is why the claim lives on the
+     * Application rather than in a committed file: an application id is
+     * environment-specific, so a checked-in map could not name one portably.
+     *
+     * Empty by default, and an empty list authorizes NOTHING. An app that has
+     * not been granted a namespace cannot write to anybody's chain, which is the
+     * safe direction: the failure of a missing grant is a refused write, never a
+     * record appearing under a namespace its owner never claimed.
+     *
+     * A prefix, not an exact NSID, because an app adds collections over its own
+     * lifetime (`app.mention.feed.post`, `app.mention.feed.like`, …) and should
+     * not need a grant edit for each. The boundary that matters is between APPS,
+     * and a prefix expresses exactly that. Whether a collection may then be
+     * READ by others is a separate decision that lives in
+     * `config/chainCollectionPolicy.ts` — writing under your namespace does not
+     * make a collection publishable.
+     */
+    chainNamespaces: text()
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+
     // ---- webhooks ----------------------------------------------------------
     webhookUrl: text(),
     webhookSecret: text(),
