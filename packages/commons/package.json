@@ -51,6 +51,7 @@
     "expo-status-bar": "catalog:",
     "expo-symbols": "catalog:",
     "expo-system-ui": "catalog:",
+    "expo-updates": "~57.0.11",
     "expo-web-browser": "catalog:",
     "lottie-react-native": "~7.3.8",
     "nativewind": "catalog:",
