@@ -47,6 +47,20 @@ jobs:
           echo '{"name":"coa-runner","private":true}' > package.json
           bun add "$RUNNER_TEMP"/create-oxy-app-*.tgz
 
+      - name: Pack @oxyhq/app-preset from the monorepo
+        run: |
+          # @oxyhq/app-preset may be unpublished at HEAD, so the generated app has
+          # to take it from this checkout. Install it from a PACKED TARBALL rather
+          # than pointing a `file:` override at the source directory: bun
+          # materializes a `file:` DIRECTORY dependency as a tree of symlinks back
+          # to that directory, and node resolves a symlinked module to its realpath.
+          # Every `require` inside the preset (expo/metro-config, metro-config,
+          # nativewind/metro) would then resolve from THIS checkout's node_modules
+          # instead of the generated app's. A tarball is extracted as real files,
+          # which is exactly what a `bun add @oxyhq/app-preset` from the registry
+          # produces, and it also exercises the package's `files` list.
+          bun pm pack --cwd packages/app-preset --destination "$RUNNER_TEMP"
+
       - name: Scaffold a test app (from the packed tarball)
         run: |
           node "$RUNNER_TEMP/cli/node_modules/create-oxy-app/dist/index.js" "$RUNNER_TEMP/smoke-app" \
@@ -64,22 +78,45 @@ jobs:
       - name: Install the generated app (+ local @oxyhq/app-preset)
         working-directory: ${{ runner.temp }}/smoke-app
         run: |
-          # @oxyhq/app-preset may be unpublished at HEAD. Point the override at
-          # the monorepo copy so resolution passes, then materialize it into
-          # node_modules (bun does not always link a `file:` dir override).
+          # Override @oxyhq/app-preset with the tarball packed above, so the app
+          # installs the HEAD preset the same way a real consumer installs the
+          # published one. See the pack step for why a tarball and not a dir.
           node -e '
             const fs = require("fs");
+            const path = require("path");
+            const dir = process.env.RUNNER_TEMP;
+            const tarball = fs.readdirSync(dir).find((f) => /^oxyhq-app-preset-.*\.tgz$/.test(f));
+            if (!tarball) throw new Error("packed @oxyhq/app-preset tarball not found in " + dir);
+            const local = "file:" + path.join(dir, tarball);
             const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
-            const local = "file:" + process.env.GITHUB_WORKSPACE + "/packages/app-preset";
             p.overrides["@oxyhq/app-preset"] = local;
             p.resolutions["@oxyhq/app-preset"] = local;
             fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
           '
           bun install --ignore-scripts
-          rm -rf node_modules/@oxyhq/app-preset
-          cp -r "$GITHUB_WORKSPACE/packages/app-preset" node_modules/@oxyhq/app-preset
-          rm -rf node_modules/@oxyhq/app-preset/node_modules
           bun run build:shared-types
+
+      - name: Assert the app's Metro config stays inside the generated app
+        working-directory: ${{ runner.temp }}/smoke-app/packages/frontend
+        run: |
+          # Every absolute path the preset bakes into the Metro config must point
+          # inside the generated app. Metro can only resolve files under
+          # projectRoot + watchFolders, so a path that escapes to this checkout
+          # fails the bundle 30s in with an opaque "Unable to resolve module
+          # <abs path>". emptyModulePath is the canonical victim: metro-config
+          # computes it with require.resolve at config-build time, so it lands
+          # wherever the preset's own require chain was rooted.
+          node -e '
+            const path = require("path");
+            const appRoot = path.resolve("../..") + path.sep;
+            const assertInsideApp = (label, target) => {
+              if (!target.startsWith(appRoot)) {
+                throw new Error(label + " escaped the generated app: " + target);
+              }
+            };
+            assertInsideApp("@oxyhq/app-preset", require.resolve("@oxyhq/app-preset/metro"));
+            assertInsideApp("resolver.emptyModulePath", require("./metro.config.js").resolver.emptyModulePath);
+          '
 
       - name: Lockfile is stable (no churn on re-install)
         working-directory: ${{ runner.temp }}/smoke-app
