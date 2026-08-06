@@ -529,8 +529,14 @@ describe('listRecordsByAuthors', () => {
       after: first.nextCursor,
     });
 
+    // SORTED on both sides: the property under test is "each record exactly
+    // once, none skipped and none repeated", and the traversal ORDER between two
+    // records sharing a timestamp is not something this API promises. The
+    // tiebreaker is `id`, a uuid v7 whose random bits decide the order of two
+    // rows generated inside the same millisecond — so asserting the sequence
+    // made the case depend on which uuid happened to sort first.
     const seen = [...first.records, ...second.records].map((r) => r.recordId);
-    expect(seen).toEqual([`${userId}-0`, `${userId}-1`].sort());
+    expect([...seen].sort()).toEqual([`${userId}-0`, `${userId}-1`].sort());
     expect(new Set(seen).size).toBe(2);
   });
 
