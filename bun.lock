@@ -486,7 +486,7 @@
     },
     "packages/db": {
       "name": "@oxyhq/db",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
         "@biomejs/biome": "catalog:",
         "@types/jest": "^30.0.0",

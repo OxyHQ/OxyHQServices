@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/db",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Oxy Postgres substrate — drizzle column and naming helpers, driver-error predicates, the migration ledger and deploy-phase planner, the TTL-replacement sweep, an ephemeral-database harness, and the schema-convention gates every Oxy backend is held to.",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -35,6 +35,14 @@
       "default": "./dist/esm/assert/index.js"
     },
     "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "migrate": ["dist/types/migrate/index.d.ts"],
+      "expiry": ["dist/types/expiry.d.ts"],
+      "testing": ["dist/types/testing.d.ts"],
+      "assert": ["dist/types/assert/index.d.ts"]
+    }
   },
   "files": ["dist", "src", "!src/__tests__", "!src/**/*.typetest.ts"],
   "keywords": ["oxyhq", "postgres", "drizzle", "migrations", "schema"],
