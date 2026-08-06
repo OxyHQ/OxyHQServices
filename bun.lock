@@ -185,7 +185,7 @@
     },
     "packages/app-preset": {
       "name": "@oxyhq/app-preset",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "peerDependencies": {
         "@oxyhq/bloom": "*",
         "@oxyhq/services": "*",
