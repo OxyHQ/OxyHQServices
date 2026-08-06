@@ -311,4 +311,6 @@ Response:
 
 ## License
 
-This project is part of the OxyServices ecosystem and is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only), (c) The Oxy Foundation, Inc. See the [LICENSE](../../LICENSE) file for details.
+This package is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only), (c) The Oxy Collective Inc. See the [LICENSE](LICENSE) file in this directory for details.
+
+The SDK packages in this monorepo are Apache-2.0, not AGPL. The repository root [LICENSE](../../LICENSE) states which package is under which.

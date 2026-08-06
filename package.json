@@ -163,7 +163,7 @@
     "services"
   ],
   "author": "OxyHQ",
-  "license": "AGPL-3.0-only",
+  "license": "SEE LICENSE IN LICENSE",
   "overrides": {
     "ioredis": "5.11.1",
     "send": "0.19.1",

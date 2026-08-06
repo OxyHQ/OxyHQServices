@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/protocol",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "description": "Oxy Protocol — the app-agnostic base substrate: signed-record envelope, canonical JSON, signature/verification, and platform crypto. Reused by any Oxy app to decentralize its own content.",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -48,6 +48,7 @@
     "./dist/cjs/platform/crypto.js": "./dist/cjs/platform/crypto.native.js"
   },
   "files": [
+    "NOTICE",
     "dist",
     "src"
   ],
@@ -65,7 +66,7 @@
     "directory": "packages/protocol"
   },
   "author": "OxyHQ",
-  "license": "AGPL-3.0-only",
+  "license": "Apache-2.0",
   "homepage": "https://oxy.so",
   "engines": {
     "node": ">=18.0.0"
