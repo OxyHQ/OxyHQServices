@@ -28,6 +28,7 @@ import { OxyServicesContactsMixin } from './OxyServices.contacts';
 import { OxyServicesNotificationsMixin } from './OxyServices.notifications';
 import { OxyServicesAppDataMixin } from './OxyServices.appData';
 import { OxyServicesCivicMixin } from './OxyServices.civic';
+import { OxyServicesChainsMixin } from './OxyServices.chains';
 import { OxyServicesNodesMixin } from './OxyServices.nodes';
 import { OxyServicesLinksMixin } from './OxyServices.links';
 import { OxyServicesFollowGraphMixin } from './OxyServices.followGraph';
@@ -65,6 +66,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesNotificationsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAppDataMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesCivicMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesChainsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesNodesMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLinksMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesFollowGraphMixin<typeof OxyServicesBase>>>
@@ -137,6 +139,7 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesAppDataMixin,
     // Civic / Commons "Oxy ID" (public signed cards, Oxy ID QR payload)
     OxyServicesCivicMixin,
+    OxyServicesChainsMixin,
     // User nodes / decentralization (Fase 5): register/read/revoke/manage the
     // caller's personal data node + ingest hint.
     OxyServicesNodesMixin,
