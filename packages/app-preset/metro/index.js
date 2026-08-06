@@ -155,22 +155,13 @@ function createOxyMetroConfig(projectRoot, options = {}) {
  * React Context objects, so `<BloomThemeProvider>` (services) does not satisfy
  * `useTheme()` (app code) and the app crashes.
  */
-function resolveMetroEmptyModule() {
-  // Metro's `{ type: 'empty' }` ws shim resolves `metro-runtime/.../empty-module.js`
-  // from wherever Metro itself was loaded. In scaffold-smoke that is the CI
-  // checkout's node_modules, not the generated app's — the absolute path 404s.
-  // Ship the same one-line stub alongside app-preset instead.
-  return path.join(__dirname, 'empty-module.js');
-}
-
 function withBloomSingleInstance(nativeWindConfig, projectRoot) {
   const parentResolveRequest = nativeWindConfig.resolver.resolveRequest;
   const bloomOrigin = path.join(projectRoot, 'package.json');
-  const webSocketShimPath = resolveMetroEmptyModule();
 
   nativeWindConfig.resolver.resolveRequest = (context, moduleName, platform) => {
     if (platform === 'web' && (moduleName === 'ws' || moduleName === 'node:ws')) {
-      return { type: 'sourceFile', filePath: webSocketShimPath };
+      return { type: 'empty' };
     }
 
     const resolveContext =

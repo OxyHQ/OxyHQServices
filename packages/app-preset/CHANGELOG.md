@@ -1,5 +1,25 @@
 # Changelog: `@oxyhq/app-preset`
 
+## 0.3.1
+
+### Fixed
+
+The web `ws` shim resolves through Metro's own empty module again
+(`{ type: 'empty' }`), and the `metro/empty-module.js` stub that briefly stood in
+for it is gone.
+
+The stub was added to fix a `scaffold-smoke` CI failure. It did not fix it: the
+failing path was `resolver.emptyModulePath`, which `metro-config` computes with
+`require.resolve` when the config is built, so it never went through the shim at
+all. The real fault was in the workflow, which installed the preset by pointing a
+`file:` override at a directory outside the generated app. Bun materializes that
+as a tree of symlinks, node resolves each one to its realpath, and the preset's
+whole `require` graph landed in the wrong checkout. That is fixed in the
+workflow.
+
+No behaviour changes for apps installing this package from the registry, where
+the preset has always been real files inside the app's own `node_modules`.
+
 ## 0.2.0
 
 ### Licence: MIT becomes Apache-2.0
