@@ -785,4 +785,6 @@ Comprehensive documentation is available in the `/docs` directory:
 
 ## License
 
-This project is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only), (c) The Oxy Foundation, Inc. See the [LICENSE](LICENSE) file for details.
+This package is licensed under the Apache License, Version 2.0, (c) The Oxy Collective Inc. See the [LICENSE](LICENSE) and [NOTICE](NOTICE) files for details.
+
+Versions published before `28.0.0` were AGPL-3.0-only and stay that way; a licence change binds future versions only.

@@ -1,5 +1,31 @@
 # Changelog — `@oxyhq/core`
 
+## 20.0.0
+
+### Licence: AGPL-3.0-only becomes Apache-2.0
+
+**Breaking for anyone who tracks the licence, and for nobody else.**
+`@oxyhq/core` is now Apache-2.0. The code, the API surface and the behaviour are
+unchanged in this release. It exists to carry the licence change.
+
+This is a widening. Every right the AGPL granted you, Apache-2.0 grants too,
+and Apache-2.0 additionally drops the network copyleft and adds an express
+patent grant. Nobody has to do anything, and no existing use of this package
+becomes non-compliant.
+
+Versions published before this one keep the licence they were published under,
+permanently. `19.1.2` stays AGPL-3.0-only for anyone who already has it. A licence
+change binds future versions only.
+
+The major is bumped rather than the change being slipped into a patch, so that
+nobody on `^19.0.0` is moved to a new licence by a routine install. That is
+exactly what happened at `12.5.4`, and it is not happening again.
+
+### Added
+
+- A `NOTICE` file, which Apache-2.0 section 4(d) requires downstream
+  redistributors to reproduce, and a verbatim `LICENSE`.
+
 ## 17.0.2
 
 ### Fixes `17.0.0`, which could not be imported at all

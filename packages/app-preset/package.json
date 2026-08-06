@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/app-preset",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The Oxy distro of Expo — centralized Expo config plugin, Metro/Babel/ESLint factories, Tailwind base CSS and TypeScript bases shared by every Oxy app (Mention, Homiio, Allo, accounts, …). A zero-build package: apps replace copy-pasted config with a single dependency bump.",
   "main": "./app.plugin.js",
   "publishConfig": {
@@ -26,6 +26,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "NOTICE",
     "app.plugin.js",
     "plugin",
     "metro",
@@ -51,7 +52,7 @@
     "directory": "packages/app-preset"
   },
   "author": "OxyHQ",
-  "license": "AGPL-3.0-only",
+  "license": "Apache-2.0",
   "homepage": "https://oxy.so",
   "engines": {
     "node": ">=18.0.0"

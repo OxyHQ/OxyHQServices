@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [28.0.0] - 2026-08-06
+
+### Licence: AGPL-3.0-only becomes Apache-2.0
+
+**Breaking for anyone who tracks the licence, and for nobody else.**
+`@oxyhq/services` is now Apache-2.0. The code, the API surface and the
+behaviour are unchanged in this release. It exists to carry the licence change.
+
+This is a widening. Every right the AGPL granted you, Apache-2.0 grants too,
+and Apache-2.0 additionally drops the network copyleft and adds an express
+patent grant. Nobody has to do anything, and no existing use of this package
+becomes non-compliant.
+
+Versions published before this one keep the licence they were published under,
+permanently. `27.1.3` stays AGPL-3.0-only for anyone who already has it. A licence
+change binds future versions only.
+
+The major is bumped rather than the change being slipped into a patch, so that
+nobody on `^27.0.0` is moved to a new licence by a routine install. That is
+exactly what happened at `22.5.0`, and it is not happening again.
+
+### Also breaking: the `@oxyhq/core` peer range moves to `^20.0.0`
+
+Core's own relicensing bumped it to `20.0.0`, so the declared peer range has to
+follow. Bump `@oxyhq/core` alongside this package. Nothing in the services API
+surface changed.
+
+### Added
+
+- A `NOTICE` file, which Apache-2.0 section 4(d) requires downstream
+  redistributors to reproduce, and a verbatim `LICENSE`.
+
 ## [25.0.0] - 2026-07-30
 
 ### Changed
