@@ -176,6 +176,13 @@
       "when": 1785992496055,
       "tag": "0025_chains_write_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785994401863,
+      "tag": "0026_chains_read_scope",
+      "breakpoints": true
     }
   ]
 }

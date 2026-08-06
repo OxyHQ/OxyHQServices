@@ -42,6 +42,15 @@
  *   sufficient on its own: the collection must also fall under one of the
  *   application's own `chainNamespaces`, which is what keeps one app out of
  *   another's namespace, and an app with no grant can write nothing.
+ * - `chains:read` permits a service credential to read records from MANY
+ *   subjects' chains in one call, which is how an app projects a cross-app feed.
+ *   Deliberately NOT privileged: it can only ever return collections
+ *   `config/chainCollectionPolicy.ts` declares public, and the server takes the
+ *   intersection itself rather than trusting the request. Its risk is bulk
+ *   access to already-public records, which is a rate-limit question, not an
+ *   authority one — so it does not need staff to grant it, and it is a separate
+ *   scope from `chains:write` because reading everyone's public records and
+ *   writing into someone's chain are not the same permission.
  * - The `follows:*` family and `follow-targets:register` let an application act
  *   on the user's OWN follow graph. They are deliberately NOT privileged: the
  *   authority comes from the subject user's explicit grant, never from what the
@@ -74,6 +83,7 @@ export const APPLICATION_SCOPES = [
   'follows:events',
   'follow-targets:register',
   'chains:write',
+  'chains:read',
 ] as const;
 
 export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
