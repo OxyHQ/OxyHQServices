@@ -230,6 +230,13 @@ export type {
 } from './mixins/OxyServices.civic';
 export type { UserNodeStatus, UserNodeMode, UserNodeController, UserNodeLivenessStatus, RegisterNodeInput, RemoveNodeResult } from './mixins/OxyServices.nodes';
 
+/**
+ * Chains — the shared per-person record log. `ChainRecord` is generic over the
+ * app's own lexicon payload, so a consumer types its records without Oxy
+ * knowing any app's schema.
+ */
+export type { ChainRecord, ChainRecordPage, AppendedChainRecord } from './mixins/OxyServices.chains';
+
 // ---------------------------------------------------------------------------
 // Auth helpers (token refresh, error normalisation, retry policies)
 // ---------------------------------------------------------------------------
