@@ -36,6 +36,12 @@
  *   that an Oxy user was present in it as a named local principal, PROVING it
  *   with that user's own access token. PRIVILEGED — only Oxy platform staff may
  *   grant it.
+ * - `chains:write` permits a service credential to append records to the signed
+ *   chain of an arbitrary Oxy user, issued and signed by Oxy on the app's
+ *   behalf. PRIVILEGED — see {@link PRIVILEGED_APPLICATION_SCOPES}. It is not
+ *   sufficient on its own: the collection must also fall under one of the
+ *   application's own `chainNamespaces`, which is what keeps one app out of
+ *   another's namespace, and an app with no grant can write nothing.
  * - The `follows:*` family and `follow-targets:register` let an application act
  *   on the user's OWN follow graph. They are deliberately NOT privileged: the
  *   authority comes from the subject user's explicit grant, never from what the
@@ -67,6 +73,7 @@ export const APPLICATION_SCOPES = [
   'follows:manage',
   'follows:events',
   'follow-targets:register',
+  'chains:write',
 ] as const;
 
 export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
@@ -105,6 +112,12 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
  *   ledger-write authority, and so the apps that hold ledger-write authority do
  *   not inherit the ability to penalise conduct. Neither implies the other, and
  *   holding both is a decision someone has to make explicitly.
+ * - `chains:write` lets a service credential append to the signed chain of
+ *   ARBITRARY Oxy users. A chain is append-only and its records are what other
+ *   apps project their feeds from, so a self-granting owner could otherwise
+ *   write records into any account it can name — and nothing can be unwritten.
+ *   The namespace grant narrows WHAT it may write; only staff decide whether it
+ *   may write at all.
  * - `accounts:provision` lets a service credential MINT a `channel` account
  *   under an arbitrary user and grant membership on one. It creates no session
  *   and writes no auth method — a channel cannot be acted as at all, which is
@@ -128,6 +141,7 @@ export const PRIVILEGED_APPLICATION_SCOPES = [
   'signals:write',
   'notifications:write',
   'accounts:provision',
+  'chains:write',
 ] as const satisfies readonly ApplicationScope[];
 
 /**

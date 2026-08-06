@@ -59,6 +59,7 @@ import contactsRouter from './routes/contacts';
 import userDataRouter from './routes/userData';
 import appSignalsRouter from './routes/appSignals';
 import identityRoutes from './routes/identity';
+import chainsRoutes from './routes/chains';
 import identityBackupRoutes from './routes/identityBackup';
 import deviceTransferRoutes from './routes/deviceTransfer';
 import civicRoutes from './routes/civic';
@@ -664,6 +665,11 @@ app.use('/identity/device-transfer', deviceTransferRoutes);
 app.use('/identity', identityRoutes);
 // Civic / Commons layer: public signed DNI card (more routes in Fase 2/3).
 // Public read (each route gates its own auth); no csrfProtection (public GET).
+// App-authored chain writes: a SERVICE credential appending to a person's chain
+// on behalf of an Oxy app. Service-token authenticated (no ambient cookie, so no
+// csrfProtection). Deliberately NOT under /identity — that router binds a record's
+// subject to the authenticated user, which is the opposite of what this does.
+app.use('/chains', chainsRoutes);
 app.use('/civic', civicRoutes);
 // User nodes (F5a decentralization): the caller's node status + revoke. Bearer-
 // authenticated (each route gates its own auth); no csrfProtection (bearer-write
