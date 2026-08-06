@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/api",
-  "version": "1.0.9",
+  "version": "2.0.0",
   "description": "OxyHQ API server with authentication, user management, and real-time features",
   "main": "dist/server.js",
   "scripts": {
@@ -48,7 +48,7 @@
     "oxyhq"
   ],
   "author": "OxyHQ",
-  "license": "AGPL-3.0-only",
+  "license": "SEE LICENSE IN LICENSE",
   "engines": {
     "node": ">=18.0.0"
   },

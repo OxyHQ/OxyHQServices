@@ -92,7 +92,7 @@ Fill these in for each work. Terms in **bold** are defined in Section 15.
 | Parameter | Value |
 | --- | --- |
 | **Licensor** | The Oxy Collective, Inc., incorporated in `<JURISDICTION OF INCORPORATION: NOT YET SUPPLIED>` under registration number `<REGISTRATION NUMBER: NOT YET SUPPLIED>` |
-| **The Software** | `@oxyhq/db`, and each version of it the Licensor makes available under these terms |
+| **The Software** | `@oxyhq/node`, and each version of it the Licensor makes available under these terms |
 | Copyright notice | Copyright (c) 2025-present The Oxy Collective, Inc. |
 | License identifier | `LicenseRef-Breathe-1.0` |
 | **Commercial Terms** | <https://github.com/OxyHQ/.github/blob/main/LICENSE-COMMERCIAL.md> |
@@ -198,7 +198,7 @@ Attribution means preserving the copyright notice and a copy of these terms in
 the source you Convey, and presenting the following line in at least one place
 your users can reach:
 
-> Built on `@oxyhq/db` by The Oxy Collective, Inc., <https://oxy.so>. Licensed under the Breathe License 1.0.
+> Built on `@oxyhq/node` by The Oxy Collective, Inc., <https://oxy.so>. Licensed under the Breathe License 1.0.
 
 A reachable "About", "Credits", "Licenses", or "Open source" screen satisfies
 this. So does the documentation, or a `NOTICE` file shipped with the work, if
