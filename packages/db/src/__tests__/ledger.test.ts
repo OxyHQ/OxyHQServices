@@ -61,25 +61,56 @@ describe('migration ledger', () => {
   });
 
   it('refuses a journal that does not exist, rather than reporting no entries', () => {
-    // The failure mode this whole module exists to prevent: an empty read
-    // must never be mistaken for "nothing to do".
+    // The failure mode this whole module exists to prevent: a journal that
+    // could not be read at all must never be mistaken for "nothing to do".
     expect(() => readJournal(join(tmpdir(), 'oxydb-does-not-exist'))).toThrow(/Cannot read/);
   });
 
-  it('refuses a journal with an empty entries array', () => {
+  it('returns [] for a journal that parses with a genuinely empty entries array', () => {
+    // This is NOT the failure the guard above exists to catch: the file
+    // exists, parses, and says unambiguously "zero migrations" — the correct
+    // state for a project that has wired its migrator before writing its
+    // first schema. Conflating this with an unreadable journal is the exact
+    // defect this test pins.
     const folder = journalFixture([]);
-    expect(() => readJournal(folder)).toThrow(/no usable entries/);
+    expect(readJournal(folder)).toEqual([]);
   });
 
-  it('refuses a journal entry missing `tag` or `when`', () => {
+  it('refuses a journal whose entries field is missing entirely', () => {
     const folder = mkdtempSync(join(tmpdir(), 'oxydb-'));
     createdFolders.push(folder);
     mkdirSync(join(folder, 'meta'), { recursive: true });
     writeFileSync(
       join(folder, 'meta', '_journal.json'),
-      JSON.stringify({ version: '7', dialect: 'postgresql', entries: [{ tag: '0000_init' }] })
+      JSON.stringify({ version: '7', dialect: 'postgresql' })
     );
-    expect(() => readJournal(folder)).toThrow(/no usable entries/);
+    expect(() => readJournal(folder)).toThrow(/no `entries` field/);
+  });
+
+  it('refuses a journal whose entries field is not an array', () => {
+    const folder = mkdtempSync(join(tmpdir(), 'oxydb-'));
+    createdFolders.push(folder);
+    mkdirSync(join(folder, 'meta'), { recursive: true });
+    writeFileSync(
+      join(folder, 'meta', '_journal.json'),
+      JSON.stringify({ version: '7', dialect: 'postgresql', entries: 'not-an-array' })
+    );
+    expect(() => readJournal(folder)).toThrow(/entries` is a string, not an array/);
+  });
+
+  it('refuses a journal entry missing `tag` or `when`, naming the bad index', () => {
+    const folder = mkdtempSync(join(tmpdir(), 'oxydb-'));
+    createdFolders.push(folder);
+    mkdirSync(join(folder, 'meta'), { recursive: true });
+    writeFileSync(
+      join(folder, 'meta', '_journal.json'),
+      JSON.stringify({
+        version: '7',
+        dialect: 'postgresql',
+        entries: [{ tag: '0000_init', when: 1000 }, { tag: '0001_bad' }],
+      })
+    );
+    expect(() => readJournal(folder)).toThrow(/entries\[1\] is missing/);
   });
 });
 

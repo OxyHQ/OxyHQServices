@@ -36,7 +36,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import postgres from 'postgres';
-import { MigrationsNotCurrentError, assertPostgresMigrationsCurrent, readAppliedMillis, readLastAppliedMillis, type JournalEntry } from '../migrate/ledger';
+import { MigrationsNotCurrentError, assertPostgresMigrationsCurrent, readAppliedMillis, readJournal, readLastAppliedMillis, type JournalEntry } from '../migrate/ledger';
 import { runMigrations } from '../migrate/runner';
 import { WrongMigrationTargetError, assertMigrationTarget } from '../migrate/targetDatabase';
 import { createTestDatabase, dropTestDatabase } from '../testing';
@@ -261,6 +261,105 @@ describeLive('migration-ledger functions against a real Postgres', () => {
         '0002_third',
       ]);
     });
+  });
+});
+
+/**
+ * A throwaway `drizzle/` directory holding a journal that parses to a
+ * genuinely empty `entries` array — the shape a project has on disk after
+ * wiring its migrator but before writing its first schema migration. No
+ * `.sql` files: there is nothing for the journal to reference.
+ */
+function emptyMigrationsFixture(): string {
+  const folder = mkdtempSync(join(tmpdir(), 'oxydb-live-empty-'));
+  mkdirSync(join(folder, 'meta'), { recursive: true });
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'postgresql', entries: [] })
+  );
+  return folder;
+}
+
+describeLive('runMigrations — an empty journal applies nothing and succeeds', () => {
+  // The exact shape Syra's third-consumer report reproduced: a project whose
+  // migrator is wired before its first schema migration exists. Before the
+  // fix, `readJournal` refused this journal outright — a database that never
+  // ran a single migration is indistinguishable from one whose migrator is
+  // genuinely broken only if the guard conflates "parsed with zero entries"
+  // with "could not be read". This proves the fixed behaviour against a real
+  // server end to end, not just the pure functions in ledger.test.ts.
+  it('applies nothing, resolves, and leaves the ledger table absent', async () => {
+    const folder = emptyMigrationsFixture();
+    let url: string | undefined;
+    try {
+      // readJournal itself must not throw — the first filesystem precondition
+      // runMigrations checks, before any connection is opened.
+      expect(readJournal(folder)).toEqual([]);
+
+      url = await createTestDatabase({
+        adminUrl: ADMIN_URL,
+        migrate: (databaseUrl) =>
+          runMigrations({
+            databaseUrl,
+            migrationsFolder: folder,
+            extensions: [],
+            run: 'all',
+            expectedDatabase: bareDatabaseName(databaseUrl),
+            dryRun: false,
+            logger: noopLogger,
+          }),
+      });
+
+      // "Applies nothing" means exactly that: no migration ever ran, so
+      // drizzle's migrator never created its own ledger table at all. This is
+      // the "left consistent" claim — not an empty table, an ABSENT one,
+      // which is what readAppliedMillis/readLastAppliedMillis already treat
+      // as "nothing recorded" (see their own doc comments in ledger.ts).
+      const client = postgres(url, { max: 1 });
+      try {
+        await expect(readAppliedMillis(client)).resolves.toEqual([]);
+        await expect(readLastAppliedMillis(client)).resolves.toBeNull();
+        const [ledger] = await client<{ present: boolean }[]>`
+          select to_regclass('drizzle.__drizzle_migrations') is not null as present
+        `;
+        expect(ledger?.present).toBe(false);
+      } finally {
+        await client.end({ timeout: 5 });
+      }
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+      if (url) await dropTestDatabase(url);
+    }
+  });
+
+  it('the deploy-phase runs (`pre`, `post`) agree: an empty journal applies nothing under either', async () => {
+    // runMigrations's `run` option changes which pending migrations are safe
+    // to apply, not whether an empty journal is readable at all — pinned for
+    // both non-`all` phases so a future change to phases.ts cannot silently
+    // reintroduce a refusal on one of them while ledger.test.ts only ever
+    // exercises `readJournal` in isolation.
+    for (const run of ['pre', 'post'] as const) {
+      const folder = emptyMigrationsFixture();
+      let url: string | undefined;
+      try {
+        url = await createTestDatabase({
+          adminUrl: ADMIN_URL,
+          migrate: (databaseUrl) =>
+            runMigrations({
+              databaseUrl,
+              migrationsFolder: folder,
+              extensions: [],
+              run,
+              expectedDatabase: bareDatabaseName(databaseUrl),
+              dryRun: false,
+              logger: noopLogger,
+            }),
+        });
+      } finally {
+        rmSync(folder, { recursive: true, force: true });
+        if (url) await dropTestDatabase(url);
+      }
+    }
   });
 });
 

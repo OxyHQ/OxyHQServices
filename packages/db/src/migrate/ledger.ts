@@ -33,6 +33,27 @@ function isJournalEntry(value: unknown): value is JournalEntry {
 }
 
 /**
+ * What is structurally wrong with a parsed journal that failed validation —
+ * named precisely enough that the thrown message says what was actually
+ * wrong, rather than a single catch-all phrase covering every shape of
+ * failure.
+ */
+function describeJournalStructureProblem(parsed: unknown): string {
+  if (typeof parsed !== 'object' || parsed === null) {
+    return `the parsed JSON is ${parsed === null ? 'null' : `a ${typeof parsed}`}, not an object`;
+  }
+  const entries = (parsed as Record<string, unknown>).entries;
+  if (entries === undefined) {
+    return 'the parsed JSON has no `entries` field';
+  }
+  if (!Array.isArray(entries)) {
+    return `\`entries\` is a ${typeof entries}, not an array`;
+  }
+  const badIndex = entries.findIndex((entry) => !isJournalEntry(entry));
+  return `entries[${badIndex}] is missing a string \`tag\` or a numeric \`when\``;
+}
+
+/**
  * The migration journal, in generation order.
  *
  * `folder` is a required argument rather than a discovered default: this
@@ -43,10 +64,19 @@ function isJournalEntry(value: unknown): value is JournalEntry {
  * inside `node_modules`, not the caller's `drizzle/` directory). The caller
  * states where its own migrations directory is.
  *
- * @throws {Error} When the journal is missing, unparseable, or holds no entries.
- *   An empty read must never be mistaken for "nothing to do": that is exactly
- *   how a migrator pointed at the wrong (or missing) migrations directory
- *   would report a clean no-op run while applying nothing.
+ * A successfully parsed journal whose `entries` array is EMPTY is not one of
+ * the failures below — it is answered `[]`. That is the correct report for a
+ * project that has wired its migrator before writing its first schema: the
+ * file exists, parses, and says unambiguously "zero migrations." Refusing
+ * that case would conflate it with the failure this function actually exists
+ * to catch — a journal that is missing, unparseable, or structurally wrong,
+ * where reporting "nothing to do" would be a silent lie about a migrator
+ * pointed at the wrong (or missing) migrations directory.
+ *
+ * @throws {Error} When the journal file is missing or unparseable, or when it
+ *   parses but its `entries` field is absent, not an array, or contains an
+ *   entry without a readable `tag`/`when`. The message names which of these
+ *   it was.
  */
 export function readJournal(folder: string): JournalEntry[] {
   const path = join(folder, 'meta', '_journal.json');
@@ -68,13 +98,18 @@ and its path passed to readJournal explicitly.`
       ? (parsed as Record<string, unknown>).entries
       : undefined;
 
-  if (!Array.isArray(entries) || entries.length === 0 || !entries.every(isJournalEntry)) {
+  if (!Array.isArray(entries) || !entries.every(isJournalEntry)) {
     throw new Error(
-      `The migration journal at ${path} holds no usable entries. Refusing to \
-report a clean run against a journal that could not be read.`
+      `The migration journal at ${path} does not have a usable \`entries\` \
+array: ${describeJournalStructureProblem(parsed)}. The migrations directory \
+must be shipped next to the compiled migrator and its path passed to \
+readJournal explicitly.`
     );
   }
 
+  // Reached only once `entries` is confirmed to be an array where every
+  // element is a valid JournalEntry — including the zero-length case, which
+  // is a genuine answer, not a read failure. See the doc comment above.
   return entries;
 }
 

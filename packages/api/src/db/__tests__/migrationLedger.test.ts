@@ -51,16 +51,21 @@ describe('readJournal', () => {
     expect(() => readJournal(join(tmpdir(), 'oxy-journal-does-not-exist'))).toThrow(/Cannot read/);
   });
 
-  it('throws on a journal with no entries', () => {
+  it('returns [] for a journal that parses with a genuinely empty entries array', () => {
+    // A parsed journal saying "zero entries" is a successful read, not the
+    // failure this module's guard exists to catch — that failure is a
+    // journal that is missing, unparseable, or structurally wrong (see the
+    // cases below). Conflating the two would refuse a legitimate run for a
+    // project with no migrations yet.
     const folder = journalFolder(JSON.stringify({ version: '7', dialect: 'postgresql', entries: [] }));
     throwawayFolders.push(folder);
-    expect(() => readJournal(folder)).toThrow(/no usable entries/);
+    expect(readJournal(folder)).toEqual([]);
   });
 
   it('throws on entries missing the fields the pending calculation needs', () => {
     const folder = journalFolder(JSON.stringify({ entries: [{ tag: '0000_x' }] }));
     throwawayFolders.push(folder);
-    expect(() => readJournal(folder)).toThrow(/no usable entries/);
+    expect(() => readJournal(folder)).toThrow(/entries\[0\] is missing/);
   });
 
   it('throws on an unparseable journal rather than treating it as empty', () => {
