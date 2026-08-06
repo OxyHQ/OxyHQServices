@@ -100,7 +100,7 @@
     },
     "packages/api": {
       "name": "@oxyhq/api",
-      "version": "1.0.9",
+      "version": "2.0.0",
       "dependencies": {
         "@aws-sdk/client-s3": "^3.1087.0",
         "@aws-sdk/lib-storage": "3.1076.0",
@@ -486,7 +486,7 @@
     },
     "packages/db": {
       "name": "@oxyhq/db",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "devDependencies": {
         "@biomejs/biome": "catalog:",
         "@types/jest": "^30.0.0",
@@ -649,7 +649,7 @@
     },
     "packages/node": {
       "name": "@oxyhq/node",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@oxyhq/contracts": "workspace:*",
         "@oxyhq/core": "workspace:*",
