@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@oxyhq/services"><img alt="@oxyhq/services" src="https://img.shields.io/npm/v/@oxyhq/services?style=flat-square&label=%40oxyhq%2Fservices&labelColor=440151&color=D26AE7"></a>
   <a href="https://www.npmjs.com/package/@oxyhq/core"><img alt="@oxyhq/core" src="https://img.shields.io/npm/v/@oxyhq/core?style=flat-square&label=%40oxyhq%2Fcore&labelColor=440151&color=D26AE7"></a>
-  <a href="LICENSE"><img alt="Apache-2.0 SDK, AGPL-3.0 server" src="https://img.shields.io/badge/license-Apache--2.0%20SDK%20%C2%B7%20AGPL--3.0%20server-440151?style=flat-square"></a>
+  <a href="LICENSE"><img alt="Apache-2.0 SDK, Breathe server" src="https://img.shields.io/badge/license-Apache--2.0%20SDK%20%C2%B7%20Breathe%20server-440151?style=flat-square"></a>
   <img alt="Bun" src="https://img.shields.io/badge/bun-1.3+-440151?style=flat-square&logo=bun&logoColor=white">
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-440151?style=flat-square&logo=typescript&logoColor=white">
 </p>
@@ -196,5 +196,5 @@ Issues and pull requests are welcome, especially from people who will tell us wh
 <br>
 
 <div align="center">
-<sub>Apache-2.0 for the SDK packages · AGPL-3.0-only for everything else · The Oxy Collective Inc · <a href="LICENSE">LICENSE</a></sub>
+<sub>Apache-2.0 for the SDK packages · Breathe License 1.0 for the server layer · The Oxy Collective, Inc. · <a href="LICENSE">LICENSE</a></sub>
 </div>
