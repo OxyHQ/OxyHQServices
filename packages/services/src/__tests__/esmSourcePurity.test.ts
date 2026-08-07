@@ -1,19 +1,14 @@
 /**
  * `@oxyhq/services` ships an ESM build, and ESM has no `require`.
  *
- * This is not a style rule. A `require()` that survives into `lib/module`
- * forces web bundlers into CommonJS interop: rolldown-vite defers every module
- * in the required subgraph behind a lazy initializer, and a consumer that
- * statically imports one of those modules can be handed the binding before that
- * initializer has run. It reads as `undefined` — no build error, no warning.
+ * This is not a style rule: a surviving `require()` puts web bundlers into
+ * CommonJS interop, which hands consumers `undefined` bindings with no build
+ * error and no warning. It blanked auth.oxy.so/authorize once — see the note on
+ * `screenComponents` in `../ui/navigation/routes` for the mechanism, and
+ * `README.md` for the incident.
  *
- * That is exactly how `OxySignInRequestSurface` reached auth.oxy.so/authorize
- * as `undefined` and blanked the page with React error #130: the screen
- * registry in `ui/navigation/routes.ts` pulled `OxyAccountDialogScreen` (and
- * with it the whole sign-in surface subgraph) through `require()`.
- *
- * Deferring a read is still legitimate — do it with a thunk over a statically
- * imported binding, which is what `routes.ts` and `surfaces.ts` now use.
+ * Deferring is still legitimate: a thunk over a static import defers a READ,
+ * `import()` defers a LOAD. Neither needs `require()`.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -24,7 +19,7 @@ const SRC_ROOT = join(__dirname, '..');
 const SOURCE_EXTENSIONS = ['.ts', '.tsx'];
 
 /** Tests are compiled to CommonJS by ts-jest and never ship, so they are exempt. */
-const EXEMPT_SEGMENTS = ['__tests__', '__mocks__'];
+const EXEMPT_SEGMENTS = ['__tests__'];
 
 function collectSourceFiles(dir: string): string[] {
   const found: string[] = [];

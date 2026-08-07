@@ -89,8 +89,10 @@ registers screens as `lazy(() => import(...))` rather than `require()`, so the
 registry no longer drags all 40 screens into the context's component; the two
 remaining `require()` sites became static imports read at call time. Measured on
 the built ESM output, the largest strongly connected component went from **67
-modules to 5** (`OxyContext` + four of its own helpers), and
-`OxySignInRequestSurface` is no longer inside any cycle.
+modules to 2**, and `OxySignInRequestSurface` is no longer inside any cycle.
+What is left is two mutual pairs — `surfaces` ↔ `SurfaceScreen` and
+`OxyContext` ↔ `useFollow` — each of which only ever reads the other at call or
+render time.
 
 Cycles still exist, so do not re-add `sideEffects` in any form. A narrowed,
 truthful list would leave every component still in a cycle exactly as exposed,

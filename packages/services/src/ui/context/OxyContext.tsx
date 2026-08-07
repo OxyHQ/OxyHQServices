@@ -78,7 +78,11 @@ import type {
   OxyContextProviderProps,
   CommitInput,
 } from './oxyContextTypes';
-import { DEFAULT_SESSION_VALIDITY_MS, loadUseFollowHook } from './oxyContextHelpers';
+import { DEFAULT_SESSION_VALIDITY_MS } from './oxyContextHelpers';
+// `useFollow` imports this module back, so the binding must only be READ inside
+// the provider body — at render time, once every module has evaluated. It is
+// never dereferenced at module scope here.
+import { useFollow } from '../hooks/useFollow';
 import { commitDeviceSetAndResolve } from './commitSessionFlow';
 import { runPasskeyLogin, runPasskeyRegister, runPasskeyAdd } from './passkeyFlow';
 import {
@@ -543,7 +547,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logger,
   });
 
-  const useFollowHook = loadUseFollowHook();
 
   // Token-change side effects: an invalidated bearer (HttpService clears tokens
   // on an unrecoverable 401 and emits `null`) must locally sign out an
@@ -1255,7 +1258,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       clientId,
       oxyServices,
       sessionClient,
-      useFollow: useFollowHook,
+      useFollow,
       showBottomSheet: showBottomSheetForContext,
       openAvatarPicker,
       accountDialogController,
@@ -1311,7 +1314,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       clientId,
       oxyServices,
       sessionClient,
-      useFollowHook,
       showBottomSheetForContext,
       openAvatarPicker,
       accountDialogController,

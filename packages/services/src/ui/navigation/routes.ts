@@ -117,19 +117,21 @@ const screenComponents: Record<RouteName, ComponentType<never>> = {
 };
 
 /**
- * Resolve the component for a route, or `undefined` for an unknown one.
+ * Resolve the component for a route.
+ *
+ * The map is total over {@link RouteName} — the compiler enforces that at its
+ * declaration — so this returns `undefined` only for a caller that reached here
+ * with an unchecked string; {@link isValidRoute} is how such a caller narrows.
  *
  * The surface host renders the result with {@link BaseScreenProps} merged with
  * the route's own props bag, so that is the type it is handed back as. This one
  * widening is where the gap documented on {@link screenComponents} lives: the map
  * dispatches on a string key, so a screen's extra prop requirements are met at
  * `present(route, props)` call sites, not provable here. No caching is needed —
- * React owns the lazy components.
+ * React memoizes each `lazy()` component's module after its first load.
  */
-export const getScreenComponent = (routeName: RouteName): ComponentType<BaseScreenProps> | undefined => {
-    const screen = screenComponents[routeName];
-    return screen ? (screen as ComponentType<BaseScreenProps>) : undefined;
-};
+export const getScreenComponent = (routeName: RouteName): ComponentType<BaseScreenProps> | undefined =>
+    screenComponents[routeName] as ComponentType<BaseScreenProps>;
 
 // Helper function to check if a route exists
 // Uses the screenComponents map to check existence without loading the screen
