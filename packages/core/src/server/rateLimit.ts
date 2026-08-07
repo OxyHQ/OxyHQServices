@@ -3,6 +3,7 @@ import { isIPv4, isIPv6 } from 'node:net';
 import type { Request, RequestHandler } from 'express';
 import rateLimit, { type Store } from 'express-rate-limit';
 import type { OxyServices } from '../OxyServices';
+import { createOptionalOxyAuth, getOxyUserId } from './auth';
 
 /**
  * Server-only rate limiting for Oxy backends.
@@ -25,8 +26,8 @@ import type { OxyServices } from '../OxyServices';
  * WHAT IT PROVIDES
  * ----------------
  * `createOxyRateLimit(oxy, options)` returns a SINGLE composed middleware that:
- *   1. Resolves the user via `oxy.auth({ optional: true })` (idempotent — it
- *      skips re-verification if a prior middleware already set `req.user`).
+ *   1. Resolves the user via `createOptionalOxyAuth` (idempotent — it skips
+ *      resolution entirely if a prior middleware already resolved a user).
  *   2. Applies an `express-rate-limit` limiter keyed PER USER when
  *      authenticated, falling back to the (IPv6-safe) IP otherwise, with
  *      generous, media-app-realistic defaults and sensible exemptions.
@@ -37,6 +38,11 @@ import type { OxyServices } from '../OxyServices';
  * app.use(oxy.rateLimit({ store }));   // resolves session + limits per user
  * app.use('/api', apiRouter);
  * ```
+ *
+ * Because step 1 is idempotent, an application running a SECOND authentication
+ * scheme of its own can mount it either side of the limiter. Mounted first, its
+ * identity survives and gets a per-user bucket; mounted after, the limiter
+ * simply finds no Oxy session and buckets the request by IP.
  */
 
 /** Minimal shape of the request after Oxy session resolution. */
@@ -203,15 +209,26 @@ function hashAnonymousIp(ip: string): string {
 /**
  * Resolve the trusted authenticated rate-limit key.
  *
- * `oxy.auth({ optional: true })` preserves legacy non-session user tokens by
- * decoding their JWT claims locally. Those claims are not cryptographically
- * verified and therefore MUST NOT influence abuse-control buckets. Only use
- * identities that came from a server-validated session or a verified service
- * token/delegation.
+ * Every `req.userId` reaching this point is trustworthy, and that is a
+ * property of the middleware that set it rather than of anything checked here:
+ *
+ *   - `oxy.auth()` sets it only from a session it validated against the Oxy
+ *     API, or from a verified service token holding an explicit delegation
+ *     grant. It used to also accept a session-less user token on decoded
+ *     claims alone, which is why this function once demanded `req.sessionId`
+ *     as a proxy for "server-validated"; that path no longer exists.
+ *   - Any other identity was resolved by a middleware the application
+ *     deliberately mounted ahead of the limiter (e.g. a second bearer scheme).
+ *     The app already trusts it for authorization, so trusting it to pick a
+ *     rate-limit bucket is strictly weaker.
+ *
+ * Dropping the `sessionId` requirement is what lets those other schemes get a
+ * per-user bucket instead of sharing the anonymous per-IP one behind a load
+ * balancer.
  */
 function resolveTrustedAuthenticatedKey(req: OxyAuthedRequest): string | null {
-  const userId = req.userId ?? req.user?.id ?? req.user?._id;
-  if (userId && req.sessionId) {
+  const userId = getOxyUserId(req);
+  if (userId) {
     return `user:${userId}`;
   }
 
@@ -260,7 +277,13 @@ export function createOxyRateLimit(
 
   // Idempotent optional-auth resolver. Reuses the SAME session resolution as
   // every protected route, so the limiter keys by the real user identity.
-  const resolveSession = oxy.auth({ ...auth, optional: true });
+  //
+  // `createOptionalOxyAuth` — not the raw `oxy.auth({ optional: true })` —
+  // because only the former skips resolution when a preceding middleware has
+  // already resolved a user. The raw middleware unconditionally writes
+  // `req.userId = null` on a request carrying no `Bearer` header, which would
+  // erase that identity and drop the request into the anonymous bucket.
+  const resolveSession = createOptionalOxyAuth(oxy, { auth });
 
   const skip = (req: Request): boolean =>
     isBuiltInExempt(req) || (exempt ? exempt(req) : false);

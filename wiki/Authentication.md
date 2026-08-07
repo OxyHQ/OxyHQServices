@@ -71,11 +71,28 @@ const userId = getRequiredOxyUserId(req);
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `req.userId` | `string \| null` | User ID from token |
+| `req.userId` | `string \| null` | User ID, read off the server-validated session (NOT off the token) |
 | `req.user` | `User \| null` | User object (minimal unless full profile requested) |
 | `req.accessToken` | `string` | The validated access token |
-| `req.sessionId` | `string \| undefined` | Session ID (if session-based token) |
+| `req.sessionId` | `string \| undefined` | Session ID (always set for user tokens; absent for service tokens) |
 | `req.serviceApp` | `ServiceApp \| undefined` | Service app metadata (if service token) |
+
+### A user token must be bound to a session
+
+The middleware decodes the bearer JWT without verifying its signature — a
+third-party backend does not hold the Oxy signing secret — so **no claim in a
+user token is trusted**. A user token must carry a `sessionId`; that session is
+validated against the Oxy API on every request, and `req.userId` comes from the
+validated session. Two consequences:
+
+- A token with no `sessionId` is rejected with `SESSION_REQUIRED`. Every user
+  access token the Oxy API issues has one, so this only ever rejects a forgery
+  or a pre-authentication token (the 2FA challenge, account recovery).
+- A token whose `userId` claim disagrees with the session's owner is rejected
+  with `SESSION_USER_MISMATCH`.
+
+Under `optional: true` both cases resolve to anonymous (`req.userId = null`)
+rather than to the claimed user.
 
 ## Socket.IO authentication
 

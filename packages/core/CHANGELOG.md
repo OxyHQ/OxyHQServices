@@ -1,5 +1,74 @@
 # Changelog — `@oxyhq/core`
 
+## 21.0.0
+
+### Security: `oxy.auth()` accepted forged user tokens
+
+**Every backend mounting `oxy.auth()`, `oxy.serviceAuth()`,
+`createOxyAuthMiddleware()`, `createOptionalOxyAuth()` or `createOxyRateLimit()`
+should upgrade. Sockets (`oxy.authSocket()`) were never affected.**
+
+`oxy.auth()` decoded the bearer JWT with `jwtDecode`, which does not verify a
+signature, and then trusted what it found. Two paths were wrong:
+
+1. **A user token with no `sessionId` was accepted on its claims alone.** No
+   network call happened at all: `req.userId` was set from the decoded `userId`
+   claim. Anyone could authenticate as any user on any Oxy backend by
+   hand-rolling a JWT with a `userId` claim, a future `exp`, and an invented
+   signature.
+2. **A user token WITH a `sessionId` had its session validated, but `req.userId`
+   still came from the token.** `GET /session/validate/:sessionId` is
+   unauthenticated and does not bind the bearer token, so anyone holding a live
+   session id — their own, for instance — could pair it with a forged `userId`
+   claim and be trusted as that user.
+
+Both are fixed. A user token must now carry a `sessionId`, that session is
+validated server-side, and the identity is read **off the validated session**:
+
+- No `sessionId` → `401 SESSION_REQUIRED`.
+- Session's owner ≠ the token's `userId` claim → `401 SESSION_USER_MISMATCH`.
+- A session that validates but resolves to no usable user → `401 INVALID_SESSION`.
+
+Under `optional: true` all three resolve to anonymous (`req.userId = null`)
+instead of to the claimed user.
+
+`authSocket()` has always enforced exactly this; the HTTP middleware now matches
+it.
+
+#### Who this breaks
+
+Nothing legitimate. Every user access token the Oxy API issues carries a
+`sessionId` (`generateSessionTokens`). The only session-less user JWTs it mints
+are the **2FA challenge token** and the **account-recovery token**, both of
+which are pre-authentication and were previously accepted as a full logged-in
+identity — that was part of the vulnerability, not a feature.
+
+There is deliberately no flag and no "verify it with a shared secret" escape
+hatch: both of those tokens are signed with `ACCESS_TOKEN_SECRET`, so a
+secret-verified session-less path would re-admit precisely them.
+
+The major is bumped because the middleware now refuses input it used to accept.
+
+### `createOxyRateLimit` no longer clobbers a pre-resolved identity
+
+The limiter's module doc claimed its session resolution was "idempotent — it
+skips re-verification if a prior middleware already set `req.user`". It was not:
+it built its resolver from the raw `oxy.auth({ ...auth, optional: true })`,
+which on a request carrying no `Bearer` header unconditionally writes
+`req.userId = null`, erasing an identity a preceding middleware had resolved.
+
+It now uses `createOptionalOxyAuth`, which has the guard, so the claim is true.
+
+`resolveTrustedAuthenticatedKey` no longer additionally requires `req.sessionId`
+before keying per user. That requirement existed as a proxy for
+"server-validated", because `oxy.auth()` could produce an unverified
+claims-only identity; it cannot any more. Dropping it means an application
+running a second authentication scheme of its own (Allo authenticates Matrix
+Authentication Service tokens under an `Authorization: MatrixBearer …` scheme)
+can mount it **ahead of** the limiter and get a per-user bucket, instead of
+being forced behind it and sharing the anonymous per-IP bucket with everyone
+else behind the load balancer.
+
 ## 20.0.0
 
 ### Licence: AGPL-3.0-only becomes Apache-2.0

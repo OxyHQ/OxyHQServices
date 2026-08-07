@@ -45,6 +45,17 @@ function makeRequest(overrides: Partial<RateLimitTestRequest> = {}): RateLimitTe
   } as RateLimitTestRequest;
 }
 
+/**
+ * Stand-in for the real `oxy.auth({ optional: true })` on a request carrying no
+ * `Bearer` header: it writes nulls unconditionally. That write is what used to
+ * erase an identity resolved by a preceding middleware.
+ */
+function anonymousResolver(req: RateLimitTestRequest, _res: Response, next: NextFunction): void {
+  req.userId = null;
+  req.user = null;
+  next();
+}
+
 /** Run the anonymous limiter for a bare IP and return the store key it produced. */
 function keyForIp(ip: string): string {
   const oxy = makeOxy((_req: Request, _res: Response, next: NextFunction) => next());
@@ -83,12 +94,8 @@ describe('@oxyhq/core/server rate limiter', () => {
     else process.env.DEVICE_ID_SALT = originalEnv.DEVICE_ID_SALT;
   });
 
-  it('does not trust locally decoded non-session JWT identities for quota or bucket keys', () => {
-    const oxy = makeOxy((req: RateLimitTestRequest, _res: Response, next: NextFunction) => {
-      req.userId = 'attacker-controlled-user';
-      req.user = { id: 'attacker-controlled-user' };
-      next();
-    });
+  it('buckets an unauthenticated request by hashed IP on the anonymous quota', () => {
+    const oxy = makeOxy(anonymousResolver);
     const req = makeRequest();
     const next = jest.fn();
 
@@ -142,6 +149,120 @@ describe('@oxyhq/core/server rate limiter', () => {
     expect(req.observedKey).toMatch(HEX24);
     expect(req.observedKey).not.toContain('203.0.113.9');
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // Idempotency. An application may run a SECOND authentication scheme of its
+  // own (Allo authenticates Matrix Authentication Service tokens under an
+  // `Authorization: MatrixBearer …` scheme). Mounted ahead of the limiter, the
+  // identity it resolves must survive: the limiter previously re-ran the raw
+  // `oxy.auth({ optional: true })`, which found no `Bearer` header and wrote
+  // `req.userId = null` over it, dropping the request into the shared
+  // anonymous per-IP bucket behind the load balancer.
+  // -------------------------------------------------------------------------
+
+  describe('idempotent session resolution', () => {
+    it('keeps an identity a preceding middleware already resolved', () => {
+      const resolver = jest.fn(anonymousResolver);
+      const oxy = makeOxy(resolver);
+      const req = makeRequest({ userId: 'mas-user', user: { id: 'mas-user' } });
+
+      createOxyRateLimit(oxy, { authenticatedMax: 5000, anonymousMax: 600 })(
+        req,
+        {} as Response,
+        jest.fn(),
+      );
+
+      expect(resolver).not.toHaveBeenCalled();
+      expect(req.userId).toBe('mas-user');
+      expect(req.observedMax).toBe(5000);
+      expect(req.observedKey).toBe('user:mas-user');
+    });
+
+    it('keeps a preceding identity carried only on user._id', () => {
+      const resolver = jest.fn(anonymousResolver);
+      const oxy = makeOxy(resolver);
+      const req = makeRequest({ user: { _id: 'mongo-user' } });
+
+      createOxyRateLimit(oxy, { authenticatedMax: 5000, anonymousMax: 600 })(
+        req,
+        {} as Response,
+        jest.fn(),
+      );
+
+      expect(resolver).not.toHaveBeenCalled();
+      expect(req.observedKey).toBe('user:mongo-user');
+    });
+
+    it('still resolves the session when no preceding middleware set one', () => {
+      const resolver = jest.fn((req: RateLimitTestRequest, _res: Response, next: NextFunction) => {
+        req.userId = 'validated-user';
+        req.user = { id: 'validated-user' };
+        req.sessionId = 'validated-session';
+        next();
+      });
+      const oxy = makeOxy(resolver as unknown as RequestHandler);
+      const req = makeRequest();
+
+      createOxyRateLimit(oxy)(req, {} as Response, jest.fn());
+
+      expect(resolver).toHaveBeenCalledTimes(1);
+      expect(req.observedKey).toBe('user:validated-user');
+    });
+
+    it('skips both session resolution and limiting on exempt paths', () => {
+      const resolver = jest.fn(anonymousResolver);
+      const oxy = makeOxy(resolver);
+      const req = makeRequest({ path: '/health' });
+      const next = jest.fn();
+
+      createOxyRateLimit(oxy)(req, {} as Response, next);
+
+      expect(resolver).not.toHaveBeenCalled();
+      expect(req.observedKey).toBeUndefined();
+      expect(next).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('service tokens', () => {
+    it('buckets a service token acting as itself under the app', () => {
+      const oxy = makeOxy((req: RateLimitTestRequest, _res: Response, next: NextFunction) => {
+        req.userId = null;
+        req.user = null;
+        req.serviceApp = { appId: 'app-1' };
+        next();
+      });
+      const req = makeRequest();
+
+      createOxyRateLimit(oxy, { authenticatedMax: 5000, anonymousMax: 600 })(
+        req,
+        {} as Response,
+        jest.fn(),
+      );
+
+      expect(req.observedMax).toBe(5000);
+      expect(req.observedKey).toBe('service:app-1');
+    });
+
+    it('buckets a delegated service request under the delegated user', () => {
+      const oxy = makeOxy((req: RateLimitTestRequest, _res: Response, next: NextFunction) => {
+        req.userId = 'delegated-user';
+        req.user = { id: 'delegated-user' };
+        req.serviceApp = { appId: 'app-1' };
+        req.serviceActingAs = { userId: 'delegated-user' };
+        next();
+      });
+      const req = makeRequest();
+
+      createOxyRateLimit(oxy, { authenticatedMax: 5000, anonymousMax: 600 })(
+        req,
+        {} as Response,
+        jest.fn(),
+      );
+
+      expect(req.observedMax).toBe(5000);
+      expect(req.observedKey).toBe('user:delegated-user');
+    });
   });
 
   describe('anonymous key hashing', () => {
