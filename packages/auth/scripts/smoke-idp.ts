@@ -12,8 +12,11 @@
  *
  * What it catches:
  *   - SPA renders blank / build totally broken   → `/`, `/login`, `/signup`, `/authorize` lose the SPA root marker.
- *   - PKCE authorize lane broken (#784)          → `/authorize` with `code_challenge` loses the SPA root marker.
+ *   - `/authorize` not routed at all             → a PKCE-bound authorize URL stops answering 200 with the SPA shell.
  *   - FedCM manifest NOT removed                  → `/.well-known/web-identity` still serves the FedCM config JSON.
+ *
+ * What it CANNOT catch, despite an earlier comment here claiming otherwise: a
+ * client-side render failure such as #784. See {@link checkAuthorizeWithPkce}.
  *
  * Usage:
  *   bun run packages/auth/scripts/smoke-idp.ts
@@ -108,7 +111,22 @@ async function checkSpaPage(hostBase: string, path: string): Promise<void> {
   record(`SPA ${path}`, true, '200 + root marker present');
 }
 
-/** PKCE-bound authorize must render the Commons OAuth lane, not a blank page (#784). */
+/**
+ * A PKCE-bound authorize URL must still be SERVED. That is all this proves, and
+ * it is worth being precise about, because this check was once believed to cover
+ * the blank-page bug in #784 and covers none of it:
+ *
+ *  - the marker it looks for lives in `index.html`, which the static host
+ *    returns for every route whether or not React then dies on the client;
+ *  - `oxy_dk_smoke_client` is not a registered application, and the authorize
+ *    page redirects an unresolvable client to `/login` well before it reaches
+ *    the Commons lane. Using a REAL client id here would not help either — it
+ *    would create a live authorization request against production on every
+ *    deploy — so the substitution is deliberate, not an oversight.
+ *
+ * The render itself is covered where it can actually be observed, against a real
+ * production bundle: `lib/__tests__/authorize-surface-bundle.test.ts`.
+ */
 async function checkAuthorizeWithPkce(hostBase: string): Promise<void> {
   const params = new URLSearchParams({
     client_id: 'oxy_dk_smoke_client',

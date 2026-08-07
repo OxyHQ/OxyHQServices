@@ -50,6 +50,54 @@ This package (`@oxyhq/services`) is the **single UI SDK** for every React surfac
 
 See [PLATFORM_GUIDE.md](./PLATFORM_GUIDE.md) for the complete architecture guide.
 
+### This package does not declare `sideEffects: false`
+
+It used to, and the declaration was **wrong**. Three modules in the build have
+top-level side effects, one of them the entry itself:
+
+| Module | Effect |
+|---|---|
+| `lib/module/index.js` | `setPlatformOS(Platform.OS)` — configures `@oxyhq/core` |
+| `lib/module/ui/navigation/surfaceBackBridge.js` | `installEscapeHandler()` — installs a global key handler |
+| `lib/module/ui/components/SettingsIcon.js` | assigns `displayName` |
+
+Removing a false declaration would be worth doing on its own. It also fixed a
+production outage, and that is the part worth remembering, because the symptom
+looked nothing like a `package.json` field.
+
+`auth.oxy.so/authorize` rendered a blank page with React error #130 ("element
+type is undefined") for every request that reached `OxySignInRequestSurface`,
+which blocked every OIDC login into Allo ([#784]). Source and dev server were
+fine; only the production bundle was broken. Two facts combined:
+
+1. **The UI graph is one large import cycle.** `ui/context/OxyContext` reaches
+   `ui/navigation/bottomSheetManager` → `navigation/routes`, `routes` reaches
+   every screen (through `require()` calls it makes for Metro's benefit), and
+   every screen reaches back into the context — a 67-module strongly connected
+   component that includes `OxySignInRequestSurface`. A bundler cannot
+   concatenate a cycle, so it emits each member as a lazily-initialized wrapper
+   whose exported bindings are `undefined` until the initializer runs. Modules
+   outside the cycle, `OxyConsentScreen` among them, are emitted inline and were
+   never affected — which is exactly why only some screens broke.
+2. **`sideEffects: false` told the bundler that running those initializers was
+   unobservable**, so rolldown-vite omitted the initializer call at the
+   consuming import site in `packages/auth` while still emitting the reference.
+   The binding was therefore never assigned, and React was handed `undefined`.
+
+The cycle is the deeper defect and is still there. Until it is gone, do not
+re-add `sideEffects` in any form: a narrowed, truthful list would leave every
+component in the cycle exactly as exposed, because none of *them* has a
+top-level side effect either. The cost of not declaring it was measured at the
+time on the IdP's own production bundle, which is the heaviest consumer of this
+package on the web: **5,483.86 kB → 5,489.99 kB raw (+0.11%)** and
+**1,457.31 kB → 1,458.66 kB gzip (+0.09%)**.
+
+`packages/auth/lib/__tests__/authorize-surface-bundle.test.ts` builds the IdP's
+real production bundle and renders the surface out of it, so a regression fails
+in CI with React's own message instead of on auth.oxy.so.
+
+[#784]: https://github.com/OxyHQ/OxyHQServices/issues/784
+
 ## Installation
 
 ```bash
