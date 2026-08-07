@@ -70,11 +70,11 @@ type is undefined") for every request that reached `OxySignInRequestSurface`,
 which blocked every OIDC login into Allo ([#784]). Source and dev server were
 fine; only the production bundle was broken. Two facts combined:
 
-1. **The UI graph is one large import cycle.** `ui/context/OxyContext` reaches
-   `ui/navigation/bottomSheetManager` → `navigation/routes`, `routes` reaches
-   every screen (through `require()` calls it makes for Metro's benefit), and
+1. **The UI graph was one large import cycle.** `ui/context/OxyContext` reaches
+   `ui/navigation/bottomSheetManager` → `navigation/routes`, `routes` reached
+   every screen (through `require()` calls it made for Metro's benefit), and
    every screen reaches back into the context — a 67-module strongly connected
-   component that includes `OxySignInRequestSurface`. A bundler cannot
+   component that included `OxySignInRequestSurface`. A bundler cannot
    concatenate a cycle, so it emits each member as a lazily-initialized wrapper
    whose exported bindings are `undefined` until the initializer runs. Modules
    outside the cycle, `OxyConsentScreen` among them, are emitted inline and were
@@ -84,13 +84,26 @@ fine; only the production bundle was broken. Two facts combined:
    consuming import site in `packages/auth` while still emitting the reference.
    The binding was therefore never assigned, and React was handed `undefined`.
 
-The cycle is the deeper defect and is still there. Until it is gone, do not
-re-add `sideEffects` in any form: a narrowed, truthful list would leave every
-component in the cycle exactly as exposed, because none of *them* has a
-top-level side effect either. The cost of not declaring it was measured at the
-time on the IdP's own production bundle, which is the heaviest consumer of this
-package on the web: **5,483.86 kB → 5,489.99 kB raw (+0.11%)** and
-**1,457.31 kB → 1,458.66 kB gzip (+0.09%)**.
+That cycle was the deeper defect, and it has since been cut down. `routes.ts`
+registers screens as `lazy(() => import(...))` rather than `require()`, so the
+registry no longer drags all 40 screens into the context's component; the two
+remaining `require()` sites became static imports read at call time. Measured on
+the built ESM output, the largest strongly connected component went from **67
+modules to 5** (`OxyContext` + four of its own helpers), and
+`OxySignInRequestSurface` is no longer inside any cycle.
+
+Cycles still exist, so do not re-add `sideEffects` in any form. A narrowed,
+truthful list would leave every component still in a cycle exactly as exposed,
+because none of *them* has a top-level side effect either. The cost of not
+declaring it was measured at the time on the IdP's own production bundle, which
+is the heaviest consumer of this package on the web: **5,483.86 kB → 5,489.99 kB
+raw (+0.11%)** and **1,457.31 kB → 1,458.66 kB gzip (+0.09%)**.
+
+**No module in this package's source may call `require()`.** The build is ESM,
+and a surviving `require()` puts bundlers back into CommonJS interop — the same
+lazily-initialized wrappers, reachable the same silent way. To defer a read, use
+a thunk over a static import; to defer a *load*, use `import()`.
+`src/__tests__/esmSourcePurity.test.ts` enforces this.
 
 `packages/auth/lib/__tests__/authorize-surface-bundle.test.ts` builds the IdP's
 real production bundle and renders the surface out of it, so a regression fails
