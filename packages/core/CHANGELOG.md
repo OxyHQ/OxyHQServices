@@ -1,5 +1,64 @@
 # Changelog — `@oxyhq/core`
 
+## Unreleased
+
+### Security: `oxy.auth()` authenticated forged tokens as any account
+
+**Every backend mounting `oxy.auth()` could be authenticated as any user by an
+unauthenticated attacker.** Upgrade as soon as a version carrying this ships.
+
+`oxy.auth()` decodes the bearer JWT with `jwtDecode`, which does not verify a
+signature — by design, since third-party backends do not hold the Oxy signing
+secret. Two claims were nevertheless trusted:
+
+1. **A token carrying no `sessionId` was accepted on its claims alone.** The
+   middleware skipped the network entirely and set `req.userId` straight from
+   the token's `userId`. Forging a JWT with a victim's id, a future `exp` and a
+   garbage signature was enough. Victim ids are public — `GET
+   /profiles/username/:handle` returns one without authentication.
+
+2. **On the session path, the identity came from the token, not the session.**
+   `GET /session/validate/:sessionId` is unauthenticated and returns whoever
+   owns the session id it is handed; it does not bind the bearer token. A caller
+   holding any live session id — their own, for instance — could pair it with a
+   forged `userId` claim and be trusted as that user.
+
+Both are closed. A user token must now carry a `sessionId`, that session is
+validated server-side, and `req.userId` is taken from the validated session and
+must match the token's claim.
+
+`authSocket()` already required a session and already cross-checked the claimed
+user, and is unaffected. Service tokens are unaffected: they are HMAC-verified
+with `aud` / `iss` / `type` checked, and that path is unchanged.
+
+#### New refusals
+
+| Code | When |
+| --- | --- |
+| `SESSION_REQUIRED` | A user token carries no usable `sessionId`. |
+| `SESSION_USER_MISMATCH` | The token's `userId` is not the user the validated session belongs to. |
+
+`INVALID_SESSION` additionally now covers a validation that returns no user, or
+a user with no usable id.
+
+Under `optional: true` all of these resolve to anonymous (`req.userId = null`)
+rather than to the claimed user.
+
+#### Compatibility
+
+Every user access token the Oxy API issues already carries a `sessionId`, so no
+legitimate caller is affected. Anything that relied on a session-less user token
+resolving to an identity was relying on the vulnerability.
+
+### Fixed
+
+- `oxy.rateLimit()` no longer erases an identity that a preceding middleware
+  resolved. It resolves the session through `createOptionalOxyAuth`, which skips
+  when a user is already present, instead of `oxy.auth({ optional: true })`,
+  which writes `req.userId = null` on every request it cannot authenticate — a
+  mutation of the shared `req` that was visible to every handler downstream of
+  the limiter, not just to the bucket calculation.
+
 ## 20.0.0
 
 ### Licence: AGPL-3.0-only becomes Apache-2.0
