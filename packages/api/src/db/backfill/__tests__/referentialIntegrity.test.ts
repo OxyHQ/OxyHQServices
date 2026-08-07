@@ -217,12 +217,15 @@ describe('the relations are DERIVED, and they are the database\'s own', () => {
     // the count is pinned below so the exclusion cannot quietly widen.
     const nativeTables = new Set(POSTGRES_NATIVE_TABLES.map((entry) => entry.table));
     const outOfScope = catalogue.filter((entry) => nativeTables.has(entry.source_table));
-    // 16: one on `follow_namespaces`, two on `follow_target_kinds`, three on
-    // `follow_targets`, four on `follow_relationships`, two on
-    // `follow_application_overrides`, four on `follow_events`. Counted from the
-    // schema rather than copied from a failure message, so the number means
-    // something when it changes.
-    expect(outOfScope.length).toBe(16);
+    // 24: the follow graph's 16 — one on `follow_namespaces`, two on
+    // `follow_target_kinds`, three on `follow_targets`, four on
+    // `follow_relationships`, two on `follow_application_overrides`, four on
+    // `follow_events` — plus the app store's 8: two each on `app_listings`
+    // (application, category), `app_listing_screenshots` (listing, file),
+    // `app_reviews` (application, user) and `app_review_replies` (review,
+    // author). Counted from the schema rather than copied from a failure
+    // message, so the number means something when it changes.
+    expect(outOfScope.length).toBe(24);
 
     const enforced = new Set(
       catalogue.filter((entry) => !nativeTables.has(entry.source_table)).map(catalogueSignature)

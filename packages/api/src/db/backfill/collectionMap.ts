@@ -84,6 +84,37 @@ export const COLLECTION_PLANS: readonly CollectionPlan[] = [
  */
 export const POSTGRES_NATIVE_TABLES: readonly { table: string; reason: string }[] = [
   {
+    table: 'app_categories',
+    reason:
+      'The app store was designed in Postgres. A store category is a shelf ' +
+      'with a label and a running order, and Mongo held no such thing — an ' +
+      'application there had a type and a status, never a place in a catalogue.',
+  },
+  {
+    table: 'app_listings',
+    reason:
+      'What the store shows about an application: slug, copy, shelf and ' +
+      'publication state. Mongo\'s `Application` is an OAuth client and ' +
+      'carries none of it, which is exactly why the listing is a separate ' +
+      'table rather than more columns on `applications`.',
+  },
+  {
+    table: 'app_listing_screenshots',
+    reason:
+      'Store-page pictures, in the author\'s order, each referencing a file. ' +
+      'No Mongo collection ever held a screenshot for an application.',
+  },
+  {
+    table: 'app_reviews',
+    reason:
+      'Ratings and reviews are new: nobody could leave one before there was a ' +
+      'store to leave it in.',
+  },
+  {
+    table: 'app_review_replies',
+    reason: 'The publisher\'s answer to a review, and so as new as the review.',
+  },
+  {
     table: 'follow_namespaces',
     reason:
       'The follow graph (#809) was designed in Postgres. A namespace is an ' +
