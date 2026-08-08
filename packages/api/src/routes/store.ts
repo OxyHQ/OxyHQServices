@@ -25,6 +25,9 @@ import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
 import { NotFoundError, UnauthorizedError } from '../utils/error';
 import {
+  storeCategoryBody,
+  storeCategoryParams,
+  storeCategoryPatch,
   storeListingsQuery,
   storeModerationParams,
   storeModerationQuery,
@@ -36,6 +39,8 @@ import {
 } from '../schemas/store.schemas';
 import {
   approveListing,
+  createCategory,
+  deleteCategory,
   deleteOwnReview,
   deleteReply,
   getOwnReview,
@@ -45,6 +50,7 @@ import {
   listPublishedListings,
   listReviews,
   rejectListing,
+  updateCategory,
   upsertReply,
   upsertReview,
 } from '../services/store.service';
@@ -282,6 +288,66 @@ router.post(
   validate({ params: storeModerationParams }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     sendSuccess(res, await rejectListing(req.params.applicationId));
+  })
+);
+
+/**
+ * The shelves are curated, not migrated.
+ *
+ * `app_categories` is a table rather than a CHECK-constrained column exactly so
+ * a curator can rename a shelf or reorder the storefront without a deploy —
+ * these three routes are what make that claim true. Same `requireStaff` gate as
+ * the review queue: a shelf is a decision about the store's shape.
+ */
+
+/** POST /store/moderation/categories — add a shelf. */
+router.post(
+  '/moderation/categories',
+  writeLimiter,
+  authMiddleware,
+  requireStaff,
+  csrfProtection,
+  validate({ body: storeCategoryBody }),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const body = req.body as {
+      slug: string;
+      label: string;
+      description?: string | null;
+      order?: number;
+    };
+    sendSuccess(res, await createCategory(body), 201);
+  })
+);
+
+/** PATCH /store/moderation/categories/:slug — rename, re-word, or reorder it. */
+router.patch(
+  '/moderation/categories/:slug',
+  writeLimiter,
+  authMiddleware,
+  requireStaff,
+  csrfProtection,
+  validate({ params: storeCategoryParams, body: storeCategoryPatch }),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const patch = req.body as { label?: string; description?: string | null; order?: number };
+    sendSuccess(res, await updateCategory(req.params.slug, patch));
+  })
+);
+
+/**
+ * DELETE /store/moderation/categories/:slug — retire it.
+ *
+ * Answers with how many listings just became uncategorised rather than 204,
+ * because a curator tidying the taxonomy should be told what they moved.
+ */
+router.delete(
+  '/moderation/categories/:slug',
+  writeLimiter,
+  authMiddleware,
+  requireStaff,
+  csrfProtection,
+  validate({ params: storeCategoryParams }),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    sendSuccess(res, await deleteCategory(req.params.slug));
   })
 );
 

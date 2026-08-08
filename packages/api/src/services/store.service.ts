@@ -335,10 +335,31 @@ export async function listReviews(options: {
   };
 }
 
+/**
+ * A shelf as everyone sees it.
+ *
+ * `order` is included: the storefront does not need it, but a curator moving a
+ * shelf has to be able to see where it currently sits, and one shape for one
+ * row is better than two that differ by a field.
+ */
+export interface StoreCategoryRow {
+  slug: string;
+  label: string;
+  description: string | null;
+  order: number;
+}
+
+const CATEGORY_COLUMNS = {
+  slug: appCategories.slug,
+  label: appCategories.label,
+  description: appCategories.description,
+  order: appCategories.order,
+} as const;
+
 /** The shelves, in their curated order. */
-export async function listCategories(): Promise<{ slug: string; label: string; description: string | null }[]> {
+export async function listCategories(): Promise<StoreCategoryRow[]> {
   return getDb()
-    .select({ slug: appCategories.slug, label: appCategories.label, description: appCategories.description })
+    .select(CATEGORY_COLUMNS)
     .from(appCategories)
     .orderBy(asc(appCategories.order), asc(appCategories.id));
 }
@@ -1003,4 +1024,101 @@ export async function reorderScreenshots(options: {
   });
 
   return listScreenshots(options.applicationId);
+}
+
+// ============================================================================
+// Curating the shelves
+//
+// `app_categories` is a table rather than a CHECK-constrained column precisely
+// so the vocabulary can be edited by whoever curates the store instead of by a
+// migration — see the schema. These are the calls that make that true; without
+// them a typo in a shelf name could only be fixed with SQL.
+//
+// Staff only, like the review queue: a shelf is a decision about the store's
+// shape, not about any one publisher's app.
+// ============================================================================
+
+export interface WriteCategoryInput {
+  slug: string;
+  label: string;
+  description?: string | null;
+  order?: number;
+}
+
+/** Add a shelf. */
+export async function createCategory(input: WriteCategoryInput): Promise<StoreCategoryRow> {
+  try {
+    const [row] = await getDb()
+      .insert(appCategories)
+      .values({
+        slug: input.slug,
+        label: input.label,
+        description: input.description?.trim() || null,
+        order: input.order ?? 0,
+      })
+      .returning(CATEGORY_COLUMNS);
+    return row;
+  } catch (error) {
+    if (isUniqueViolation(error, 'app_categories_slug_unique')) {
+      throw new ConflictError(`A category with the slug "${input.slug}" already exists`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Rename a shelf, re-word it, or move it in the running order.
+ *
+ * The SLUG is not editable. It is what every link to a category page carries,
+ * and a store that silently breaks its own URLs to fix a spelling is worse than
+ * one with a misspelled slug — retiring the shelf and adding a new one is the
+ * honest way to change it, and leaves the listings recoverable.
+ */
+export async function updateCategory(
+  slug: string,
+  patch: { label?: string; description?: string | null; order?: number }
+): Promise<StoreCategoryRow> {
+  const [row] = await getDb()
+    .update(appCategories)
+    .set({
+      ...(patch.label === undefined ? {} : { label: patch.label }),
+      ...(patch.description === undefined ? {} : { description: patch.description?.trim() || null }),
+      ...(patch.order === undefined ? {} : { order: patch.order }),
+      updatedAt: new Date(),
+    })
+    .where(eq(appCategories.slug, slug))
+    .returning(CATEGORY_COLUMNS);
+
+  if (!row) throw new NotFoundError('No such category');
+  return row;
+}
+
+/**
+ * Retire a shelf.
+ *
+ * The listings on it are NOT deleted: the foreign key is `SET NULL`, so they
+ * fall back to uncategorised and someone re-files them. That is the whole
+ * reason the reference is nullable — `CASCADE` here would delete a publisher's
+ * page because a curator tidied the taxonomy.
+ */
+export async function deleteCategory(slug: string): Promise<{ listingsUncategorised: number }> {
+  const db = getDb();
+
+  const [category] = await db
+    .select({ id: appCategories.id })
+    .from(appCategories)
+    .where(eq(appCategories.slug, slug))
+    .limit(1);
+  if (!category) throw new NotFoundError('No such category');
+
+  // Counted BEFORE the delete, because afterwards there is nothing to count
+  // against — and a curator deserves to be told how many pages they just moved.
+  const [affected] = await db
+    .select({ value: count() })
+    .from(appListings)
+    .where(eq(appListings.categoryId, category.id));
+
+  await db.delete(appCategories).where(eq(appCategories.id, category.id));
+
+  return { listingsUncategorised: Number(affected?.value ?? 0) };
 }

@@ -142,3 +142,43 @@ export const storeScreenshotParams = z.object({
 export const storeScreenshotOrderBody = z.object({
   screenshotIds: z.array(z.string().trim().min(1).max(64)).min(1).max(50),
 });
+
+/** A category slug in the path, for the curator's routes. */
+export const storeCategoryParams = z.object({
+  slug: z.string().trim().min(1).max(120),
+});
+
+/**
+ * POST /store/moderation/categories
+ *
+ * The slug follows the same rule a listing's does, and for the same reason: it
+ * is what a link to the category page carries.
+ */
+export const storeCategoryBody = z.object({
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(2)
+    .max(120)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lowercase letters, digits and single hyphens'),
+  label: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(300).nullish(),
+  /** Running order on the storefront. Ties break by id, so duplicates are fine. */
+  order: z.coerce.number().int().min(0).max(10000).optional(),
+});
+
+/**
+ * PATCH /store/moderation/categories/:slug
+ *
+ * The slug itself is absent: it is what every link carries, and a store that
+ * silently breaks its own URLs to fix a spelling is worse than one with a
+ * misspelled slug.
+ */
+export const storeCategoryPatch = z
+  .object({
+    label: z.string().trim().min(1).max(120).optional(),
+    description: z.string().trim().max(300).nullish(),
+    order: z.coerce.number().int().min(0).max(10000).optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, { message: 'Nothing to change' });
