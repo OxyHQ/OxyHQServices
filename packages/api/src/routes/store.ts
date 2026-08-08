@@ -20,11 +20,14 @@ import { Router, type Request, type Response } from 'express';
 import { asyncHandler, sendPaginated, sendSuccess } from '../utils/asyncHandler';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { csrfProtection } from '../middleware/csrf';
+import { requireStaff } from '../middleware/requireStaff';
 import { validate } from '../middleware/validate';
 import { rateLimit } from '../middleware/rateLimiter';
 import { NotFoundError, UnauthorizedError } from '../utils/error';
 import {
   storeListingsQuery,
+  storeModerationParams,
+  storeModerationQuery,
   storeReplyBody,
   storeReviewBody,
   storeReviewParams,
@@ -32,13 +35,16 @@ import {
   storeSlugParams,
 } from '../schemas/store.schemas';
 import {
+  approveListing,
   deleteOwnReview,
   deleteReply,
   getOwnReview,
   getPublishedListing,
   listCategories,
+  listListingsAwaitingReview,
   listPublishedListings,
   listReviews,
+  rejectListing,
   upsertReply,
   upsertReview,
 } from '../services/store.service';
@@ -226,6 +232,56 @@ router.delete(
   asyncHandler(async (req: AuthRequest, res: Response) => {
     await deleteReply({ reviewId: req.params.reviewId, authorUserId: requireUserId(req) });
     res.status(204).end();
+  })
+);
+
+// ============================================================================
+// Moderation
+//
+// Staff only. A publisher edits their page and hands it in — those routes hang
+// off `/applications/:appId/listing`, beside the credentials and webhooks the
+// same permission guards. Granting the review is the STORE's judgement, and a
+// publisher who could grant it would make the queue decorative, so it lives
+// here and behind `requireStaff`.
+// ============================================================================
+
+/** GET /store/moderation/listings — the queue, oldest submission first. */
+router.get(
+  '/moderation/listings',
+  readLimiter,
+  authMiddleware,
+  requireStaff,
+  validate({ query: storeModerationQuery }),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { limit, offset } = req.query as unknown as { limit: number; offset: number };
+    const { items, total } = await listListingsAwaitingReview({ limit, offset });
+    sendPaginated(res, items, total, limit, offset);
+  })
+);
+
+/** POST /store/moderation/listings/:applicationId/approve — publish it. */
+router.post(
+  '/moderation/listings/:applicationId/approve',
+  writeLimiter,
+  authMiddleware,
+  requireStaff,
+  csrfProtection,
+  validate({ params: storeModerationParams }),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    sendSuccess(res, await approveListing(req.params.applicationId));
+  })
+);
+
+/** POST /store/moderation/listings/:applicationId/reject — send it back. */
+router.post(
+  '/moderation/listings/:applicationId/reject',
+  writeLimiter,
+  authMiddleware,
+  requireStaff,
+  csrfProtection,
+  validate({ params: storeModerationParams }),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    sendSuccess(res, await rejectListing(req.params.applicationId));
   })
 );
 

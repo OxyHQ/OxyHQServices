@@ -59,3 +59,46 @@ export const storeReviewParams = z.object({
 export const storeReplyBody = z.object({
   body: z.string().trim().min(1).max(REVIEW_BODY_MAX),
 });
+
+/**
+ * PUT /applications/:appId/listing
+ *
+ * A whole page, not a patch: the console edits one form, and a partial update
+ * would make "clear the tagline" and "leave the tagline alone" the same
+ * request.
+ *
+ * `status` is deliberately absent. Moving a page through review is a
+ * transition with its own route and its own guard, so a publisher cannot
+ * publish themselves by putting a field in a body.
+ */
+export const storeListingBody = z.object({
+  /**
+   * The public URL segment. Lowercase, digits and hyphens, because it is what
+   * every link to the page carries and a slug that needs escaping is a slug
+   * that will be copied wrong.
+   */
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(2)
+    .max(120)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lowercase letters, digits and single hyphens'),
+  tagline: z.string().trim().max(160).nullish(),
+  description: z.string().trim().max(20000).nullish(),
+  /** A category SLUG, never its id: an id in a form is an id in a bug report. */
+  categorySlug: z.string().trim().min(1).max(120).nullish(),
+  supportUrl: z.string().trim().url().max(2048).nullish(),
+  supportEmail: z.string().trim().email().max(320).nullish(),
+});
+
+/** GET /store/moderation/listings — the review queue. */
+export const storeModerationQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+/** An application id in the path, for the moderation decisions. */
+export const storeModerationParams = z.object({
+  applicationId: z.string().trim().min(1).max(64),
+});
