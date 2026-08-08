@@ -19,12 +19,16 @@
 import { and, asc, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '../config/postgres';
 import { appCategories } from '../db/schema/appCategories';
+import { appGrants } from '../db/schema/appGrants';
 import { appListingScreenshots } from '../db/schema/appListingScreenshots';
 import { appListings } from '../db/schema/appListings';
 import { appReviewReplies } from '../db/schema/appReviewReplies';
-import { appReviews } from '../db/schema/appReviews';
+import { appReviews, type AppReviewStatus } from '../db/schema/appReviews';
 import { applications } from '../db/schema/applications';
 import { users } from '../db/schema/users';
+import { accountService } from './account.service';
+import { appPermissionsForAccountRole } from '../utils/accountRoles';
+import { ForbiddenError, NotFoundError } from '../utils/error';
 
 /** What a card needs, and nothing more. */
 export interface StoreListingSummary {
@@ -213,6 +217,17 @@ export interface StoreReview {
   createdAt: Date;
   author: { id: string; username: string | null };
   reply: { body: string; createdAt: Date } | null;
+  /**
+   * Whether this author has ever authorized the application — read from
+   * `app_grants` at request time rather than stored on the review, which is the
+   * whole reason `app_reviews` carries no such column: a flag written at insert
+   * would be true then and wrong from the next revocation onwards.
+   *
+   * It is not a claim that they still use it, and it is false for a first-party
+   * app nobody has to consent to, so a client should render its absence as
+   * nothing at all rather than as a demotion.
+   */
+  authorUsesApp: boolean;
 }
 
 /**
@@ -264,30 +279,47 @@ export async function listReviews(options: {
     db.select({ value: count() }).from(appReviews).where(where),
   ]);
 
-  const replies = rows.length
-    ? await db
-        .select({
-          reviewId: appReviewReplies.reviewId,
-          body: appReviewReplies.body,
-          createdAt: appReviewReplies.createdAt,
-        })
-        .from(appReviewReplies)
-        .where(inArray(appReviewReplies.reviewId, rows.map((row) => row.id)))
-    : [];
+  // Both are per-PAGE lookups keyed on the rows just read, so neither grows
+  // with the number of reviews the app has.
+  const [replies, grants] = rows.length
+    ? await Promise.all([
+        db
+          .select({
+            reviewId: appReviewReplies.reviewId,
+            body: appReviewReplies.body,
+            createdAt: appReviewReplies.createdAt,
+          })
+          .from(appReviewReplies)
+          .where(inArray(appReviewReplies.reviewId, rows.map((row) => row.id))),
+        db
+          .select({ userId: appGrants.userId })
+          .from(appGrants)
+          .where(
+            and(
+              eq(appGrants.applicationId, listing.applicationId),
+              inArray(appGrants.userId, rows.map((row) => row.authorId))
+            )
+          ),
+      ])
+    : [[], []];
+
   const replyByReview = new Map(replies.map((reply) => [reply.reviewId, reply]));
+  const authorsWithGrant = new Set(grants.map((grant) => grant.userId));
 
   return {
-    items: rows.map((row) => ({
-      id: row.id,
-      rating: row.rating,
-      title: row.title,
-      body: row.body,
-      createdAt: row.createdAt,
-      author: { id: row.authorId, username: row.authorUsername },
-      reply: replyByReview.get(row.id)
-        ? { body: replyByReview.get(row.id)!.body, createdAt: replyByReview.get(row.id)!.createdAt }
-        : null,
-    })),
+    items: rows.map((row) => {
+      const reply = replyByReview.get(row.id);
+      return {
+        id: row.id,
+        rating: row.rating,
+        title: row.title,
+        body: row.body,
+        createdAt: row.createdAt,
+        author: { id: row.authorId, username: row.authorUsername },
+        reply: reply ? { body: reply.body, createdAt: reply.createdAt } : null,
+        authorUsesApp: authorsWithGrant.has(row.authorId),
+      };
+    }),
     total: Number(totals?.value ?? 0),
   };
 }
@@ -298,4 +330,204 @@ export async function listCategories(): Promise<{ slug: string; label: string; d
     .select({ slug: appCategories.slug, label: appCategories.label, description: appCategories.description })
     .from(appCategories)
     .orderBy(asc(appCategories.order), asc(appCategories.id));
+}
+
+// ============================================================================
+// Writes
+//
+// The reads above answer `null` because "this slug is not a published listing"
+// is the only way they fail. A write has several distinct outcomes — no such
+// page, nothing of yours to delete, not yours to answer — and one sentinel
+// cannot say which, so these throw the error that names the outcome and the
+// routes stay free of translation.
+// ============================================================================
+
+/** A review as its own author sees it, whatever its moderation state. */
+export interface StoreOwnReview {
+  id: string;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  /** Its own author is told when their review is hidden; the public list is not. */
+  status: AppReviewStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** The columns an author is served for their own review. */
+const OWN_REVIEW_COLUMNS = {
+  id: appReviews.id,
+  rating: appReviews.rating,
+  title: appReviews.title,
+  body: appReviews.body,
+  status: appReviews.status,
+  createdAt: appReviews.createdAt,
+  updatedAt: appReviews.updatedAt,
+} as const;
+
+/** The application behind a published listing, or a 404. */
+async function requirePublishedApplicationId(slug: string): Promise<string> {
+  const [listing] = await getDb()
+    .select({ applicationId: appListings.applicationId })
+    .from(appListings)
+    .where(and(eq(appListings.slug, slug), eq(appListings.status, 'published')))
+    .limit(1);
+  // The same answer a read gives: whether an unpublished page exists under this
+  // slug is not something a write attempt gets to reveal either.
+  if (!listing) throw new NotFoundError('App not found');
+  return listing.applicationId;
+}
+
+/**
+ * Write the caller's review of an app, creating it or replacing what they said
+ * before.
+ *
+ * One statement, because `unique(application_id, user_id)` is what actually
+ * enforces one-review-per-person: a read-then-insert passes its own check
+ * twice under concurrency and the second insert is the one that raises. The
+ * conflict clause turns that race into the edit the person asked for.
+ *
+ * Editing does NOT reset moderation — a hidden review stays hidden when its
+ * author rewrites it, or hiding one would be undone by whoever wrote it.
+ */
+export async function upsertReview(options: {
+  slug: string;
+  userId: string;
+  rating: number;
+  title?: string | null;
+  body?: string | null;
+}): Promise<StoreOwnReview> {
+  const applicationId = await requirePublishedApplicationId(options.slug);
+
+  // Absent stays absent and blank becomes absent: an empty string is a value,
+  // and `app_reviews` keeps "wrote no title" as NULL rather than as `''`.
+  const title = options.title?.trim() || null;
+  const body = options.body?.trim() || null;
+
+  const [row] = await getDb()
+    .insert(appReviews)
+    .values({ applicationId, userId: options.userId, rating: options.rating, title, body })
+    .onConflictDoUpdate({
+      target: [appReviews.applicationId, appReviews.userId],
+      set: { rating: options.rating, title, body, updatedAt: new Date() },
+    })
+    .returning(OWN_REVIEW_COLUMNS);
+
+  return row;
+}
+
+/** The caller's own review of an app, or null if they have not written one. */
+export async function getOwnReview(options: {
+  slug: string;
+  userId: string;
+}): Promise<StoreOwnReview | null> {
+  const applicationId = await requirePublishedApplicationId(options.slug);
+
+  const [row] = await getDb()
+    .select(OWN_REVIEW_COLUMNS)
+    .from(appReviews)
+    .where(and(eq(appReviews.applicationId, applicationId), eq(appReviews.userId, options.userId)))
+    .limit(1);
+
+  return row ?? null;
+}
+
+/**
+ * Withdraw the caller's own review.
+ *
+ * A real delete, not a status change: `removed` is a moderator's verdict about
+ * someone's words, and an author taking their own words back is not that.
+ */
+export async function deleteOwnReview(options: { slug: string; userId: string }): Promise<void> {
+  const applicationId = await requirePublishedApplicationId(options.slug);
+
+  const deleted = await getDb()
+    .delete(appReviews)
+    .where(and(eq(appReviews.applicationId, applicationId), eq(appReviews.userId, options.userId)))
+    .returning({ id: appReviews.id });
+
+  if (deleted.length === 0) throw new NotFoundError('You have not reviewed this app');
+}
+
+/**
+ * Authorise `userId` to answer `reviewId` on the publisher's behalf.
+ *
+ * The right to reply is not a store concept: it is `app:update` over the
+ * application's owning account, resolved through the same
+ * `AccountMember` graph — with inheritance, per-member revokes and all — that
+ * governs every other write to that application. So a store listing cannot
+ * become a second, weaker way to act as somebody's app.
+ */
+async function requirePublisherAccess(reviewId: string, userId: string): Promise<void> {
+  const [review] = await getDb()
+    .select({ ownerAccountId: applications.ownerAccountId })
+    .from(appReviews)
+    .innerJoin(applications, eq(applications.id, appReviews.applicationId))
+    .where(eq(appReviews.id, reviewId))
+    .limit(1);
+
+  if (!review) throw new NotFoundError('Review not found');
+
+  const access = await accountService.resolveEffectiveAccess(userId, review.ownerAccountId);
+  if (!access || !appPermissionsForAccountRole(access.role).includes('app:update')) {
+    throw new ForbiddenError('You cannot reply on behalf of this app');
+  }
+}
+
+export interface StoreReply {
+  id: string;
+  reviewId: string;
+  body: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Post or rewrite the publisher's answer to a review.
+ *
+ * `unique(review_id)` is why this is an upsert rather than an insert: one
+ * answer per review is the shape the table declares, and two people holding
+ * `app:update` pressing reply at once must not produce two.
+ *
+ * `author_user_id` is overwritten with whoever wrote the current text, because
+ * attribution that survived an edit by a colleague would name the wrong person.
+ */
+export async function upsertReply(options: {
+  reviewId: string;
+  authorUserId: string;
+  body: string;
+}): Promise<StoreReply> {
+  await requirePublisherAccess(options.reviewId, options.authorUserId);
+
+  const [row] = await getDb()
+    .insert(appReviewReplies)
+    .values({ reviewId: options.reviewId, authorUserId: options.authorUserId, body: options.body })
+    .onConflictDoUpdate({
+      target: appReviewReplies.reviewId,
+      set: { body: options.body, authorUserId: options.authorUserId, updatedAt: new Date() },
+    })
+    .returning({
+      id: appReviewReplies.id,
+      reviewId: appReviewReplies.reviewId,
+      body: appReviewReplies.body,
+      createdAt: appReviewReplies.createdAt,
+      updatedAt: appReviewReplies.updatedAt,
+    });
+
+  return row;
+}
+
+/** Withdraw the publisher's answer. Same gate as writing it. */
+export async function deleteReply(options: {
+  reviewId: string;
+  authorUserId: string;
+}): Promise<void> {
+  await requirePublisherAccess(options.reviewId, options.authorUserId);
+
+  const deleted = await getDb()
+    .delete(appReviewReplies)
+    .where(eq(appReviewReplies.reviewId, options.reviewId))
+    .returning({ id: appReviewReplies.id });
+
+  if (deleted.length === 0) throw new NotFoundError('This review has no reply');
 }

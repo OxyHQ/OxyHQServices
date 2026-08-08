@@ -616,9 +616,10 @@ app.use('/link-metadata', userRateLimiter, linkMetadataRoutes);
 // Ecosystem link-preview (URL unfurl) service. Bearer/service-token reads (no
 // cookie writes → no CSRF); the route applies its own per-principal limiter.
 app.use('/links', linksRoutes);
-// The app store's public reads. No auth and no CSRF: every row served is
-// already public, and a storefront is what somebody looks at before they have
-// an account. Writes (reviews, replies) will arrive as their own mount.
+// The app store. Mounted bare because the router serves both a public
+// storefront and authenticated writes, so auth and CSRF are declared per route
+// inside it — a blanket middleware here would lock the storefront or leave the
+// reviews open.
 app.use('/store', storeRoutes);
 app.use('/location-search', locationSearchRoutes);
 app.use('/applications', csrfProtection, applicationRoutes);
