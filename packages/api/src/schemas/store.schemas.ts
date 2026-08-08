@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { APP_SCREENSHOT_PLATFORMS } from '../db/schema/appListingScreenshots';
 
 /** A store URL segment: the listing's own `slug`, never an application id. */
 export const storeSlugParams = z.object({
@@ -101,4 +102,43 @@ export const storeModerationQuery = z.object({
 /** An application id in the path, for the moderation decisions. */
 export const storeModerationParams = z.object({
   applicationId: z.string().trim().min(1).max(64),
+});
+
+/** POST /applications/:appId/listing/screenshots — attach an uploaded image. */
+export const storeScreenshotBody = z.object({
+  /** An already-uploaded asset. The service checks it is an image, live, and the caller's. */
+  fileId: z.string().trim().min(1).max(64),
+  platform: z.enum(APP_SCREENSHOT_PLATFORMS).optional(),
+  caption: z.string().trim().max(300).nullish(),
+});
+
+/**
+ * PATCH /applications/:appId/listing/screenshots/:screenshotId
+ *
+ * A patch, unlike the listing's `PUT`, because there is nothing to clear
+ * wholesale: a picture is its file, and only its words and its frame are
+ * editable. Position is not here — ordering is the whole-list `PUT` below, so
+ * there is exactly one way to move a picture.
+ */
+export const storeScreenshotPatch = z
+  .object({
+    platform: z.enum(APP_SCREENSHOT_PLATFORMS).optional(),
+    caption: z.string().trim().max(300).nullish(),
+  })
+  .refine((body) => Object.keys(body).length > 0, { message: 'Nothing to change' });
+
+export const storeScreenshotParams = z.object({
+  appId: z.string().trim().min(1).max(64),
+  screenshotId: z.string().trim().min(1).max(64),
+});
+
+/**
+ * PUT /applications/:appId/listing/screenshots/order
+ *
+ * Every id on the listing, exactly once, in the order they should appear. A
+ * partial list would leave the omitted pictures at their old positions,
+ * interleaved with the new ones.
+ */
+export const storeScreenshotOrderBody = z.object({
+  screenshotIds: z.array(z.string().trim().min(1).max(64)).min(1).max(50),
 });

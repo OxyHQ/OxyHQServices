@@ -39,11 +39,23 @@ import {
   updateApplicationSchema,
   createCredentialSchema,
 } from '../schemas/application.schemas';
-import { storeListingBody } from '../schemas/store.schemas';
 import {
+  storeListingBody,
+  storeScreenshotBody,
+  storeScreenshotOrderBody,
+  storeScreenshotParams,
+  storeScreenshotPatch,
+} from '../schemas/store.schemas';
+import type { AppScreenshotPlatform } from '../db/schema/appListingScreenshots';
+import {
+  addScreenshot,
+  deleteScreenshot,
   getListingForApplication,
+  listScreenshots,
+  reorderScreenshots,
   submitListing,
   unpublishListing,
+  updateScreenshot,
   upsertListing,
 } from '../services/store.service';
 
@@ -1199,6 +1211,89 @@ router.post(
   requireAppPermission('app:update'),
   asyncHandler(async (req: AppContextRequest, res) => {
     res.json(await unpublishListing(requireApplication(req).id));
+  })
+);
+
+/** Every picture on the listing, in the author's order. */
+router.get(
+  '/:appId/listing/screenshots',
+  validate({ params: appIdRouteParams }),
+  requireAppPermission('app:read'),
+  asyncHandler(async (req: AppContextRequest, res) => {
+    res.json(await listScreenshots(requireApplication(req).id));
+  })
+);
+
+/**
+ * Attach an already-uploaded image. Appended to the end; `…/order` moves it.
+ *
+ * The upload itself is `/files`, unchanged: the store stores a reference, not a
+ * second copy of the asset pipeline.
+ */
+router.post(
+  '/:appId/listing/screenshots',
+  validate({ params: appIdRouteParams, body: storeScreenshotBody }),
+  requireAppPermission('app:update'),
+  asyncHandler(async (req: AppContextRequest, res) => {
+    const body = req.body as {
+      fileId: string;
+      platform?: AppScreenshotPlatform;
+      caption?: string | null;
+    };
+    res.status(201).json(
+      await addScreenshot({
+        applicationId: requireApplication(req).id,
+        callerUserId: requireUserId(req),
+        ...body,
+      })
+    );
+  })
+);
+
+/**
+ * Set the order of every picture at once.
+ *
+ * Declared before `/:screenshotId` so `order` is read as the route it is, not
+ * as a screenshot with that id — Express matches in declaration order.
+ */
+router.put(
+  '/:appId/listing/screenshots/order',
+  validate({ params: appIdRouteParams, body: storeScreenshotOrderBody }),
+  requireAppPermission('app:update'),
+  asyncHandler(async (req: AppContextRequest, res) => {
+    const { screenshotIds } = req.body as { screenshotIds: string[] };
+    res.json(await reorderScreenshots({ applicationId: requireApplication(req).id, screenshotIds }));
+  })
+);
+
+/** Edit a picture's caption or the frame it was taken in. */
+router.patch(
+  '/:appId/listing/screenshots/:screenshotId',
+  validate({ params: storeScreenshotParams, body: storeScreenshotPatch }),
+  requireAppPermission('app:update'),
+  asyncHandler(async (req: AppContextRequest, res) => {
+    const body = req.body as { platform?: AppScreenshotPlatform; caption?: string | null };
+    res.json(
+      await updateScreenshot({
+        applicationId: requireApplication(req).id,
+        screenshotId: req.params.screenshotId,
+        ...body,
+      })
+    );
+  })
+);
+
+/** Remove a picture. The file itself stays — it may be in use elsewhere. */
+router.delete(
+  '/:appId/listing/screenshots/:screenshotId',
+  validate({ params: storeScreenshotParams }),
+  requireAppPermission('app:update'),
+  asyncHandler(async (req: AppContextRequest, res) => {
+    await deleteScreenshot({
+      applicationId: requireApplication(req).id,
+      screenshotId: req.params.screenshotId,
+    });
+    res.status(204).end();
   })
 );
 
