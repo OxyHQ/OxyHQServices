@@ -18,6 +18,7 @@ import reputationRoutes from './routes/reputation.routes';
 import moderationReputationRoutes from './routes/moderationReputation.routes';
 import linkMetadataRoutes from './routes/linkMetadata';
 import linksRoutes from './routes/links';
+import storeRoutes from './routes/store';
 import locationSearchRoutes from './routes/locationSearch';
 import authRoutes from './routes/auth';
 import assetRoutes from './routes/assets';
@@ -615,6 +616,10 @@ app.use('/link-metadata', userRateLimiter, linkMetadataRoutes);
 // Ecosystem link-preview (URL unfurl) service. Bearer/service-token reads (no
 // cookie writes → no CSRF); the route applies its own per-principal limiter.
 app.use('/links', linksRoutes);
+// The app store's public reads. No auth and no CSRF: every row served is
+// already public, and a storefront is what somebody looks at before they have
+// an account. Writes (reviews, replies) will arrive as their own mount.
+app.use('/store', storeRoutes);
 app.use('/location-search', locationSearchRoutes);
 app.use('/applications', csrfProtection, applicationRoutes);
 // Unified Account graph (tree + membership + service credentials). Per-route
