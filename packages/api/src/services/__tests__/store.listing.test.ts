@@ -22,12 +22,16 @@ import { users } from '../../db/schema/users';
 import { BadRequestError, ConflictError, NotFoundError } from '../../utils/error';
 import {
   approveListing,
+  createCategory,
+  deleteCategory,
   getListingForApplication,
   getPublishedListing,
+  listCategories,
   listListingsAwaitingReview,
   rejectListing,
   submitListing,
   unpublishListing,
+  updateCategory,
   upsertListing,
 } from '../store.service';
 
@@ -254,5 +258,61 @@ describe('taking a page down', () => {
     await upsertListing({ applicationId, slug: freshSlug() });
 
     await expect(unpublishListing(applicationId)).rejects.toThrow(ConflictError);
+  });
+});
+
+describe('curating the shelves', () => {
+  it('adds one, and the storefront lists it in the curated order', async () => {
+    const prefix = randomUUID().slice(0, 8);
+    await createCategory({ slug: `${prefix}-late`, label: 'Late', order: 9000 });
+    await createCategory({ slug: `${prefix}-early`, label: 'Early', order: 8000 });
+
+    const ours = (await listCategories()).filter((row) => row.slug.startsWith(prefix));
+
+    expect(ours.map((row) => row.label)).toEqual(['Early', 'Late']);
+  });
+
+  it('refuses a slug that is taken', async () => {
+    const slug = `cat-${randomUUID().slice(0, 8)}`;
+    await createCategory({ slug, label: 'First' });
+
+    await expect(createCategory({ slug, label: 'Second' })).rejects.toThrow(ConflictError);
+  });
+
+  it('renames and reorders without touching the slug', async () => {
+    const slug = `cat-${randomUUID().slice(0, 8)}`;
+    await createCategory({ slug, label: 'Housing', description: 'Homes', order: 10 });
+
+    const updated = await updateCategory(slug, { label: 'Homes', order: 15 });
+
+    expect(updated).toMatchObject({ slug, label: 'Homes', order: 15 });
+    // Untouched, because the patch did not name it.
+    expect(updated.description).toBe('Homes');
+  });
+
+  it('says so when there is no such shelf', async () => {
+    await expect(updateCategory(`missing-${randomUUID()}`, { label: 'x' })).rejects.toThrow(
+      NotFoundError
+    );
+    await expect(deleteCategory(`missing-${randomUUID()}`)).rejects.toThrow(NotFoundError);
+  });
+
+  it('retiring a shelf uncategorises its listings rather than deleting them', async () => {
+    const slug = `cat-${randomUUID().slice(0, 8)}`;
+    await createCategory({ slug, label: 'Doomed' });
+    const applicationId = await unlistedApp();
+    const listingSlug = freshSlug();
+    await upsertListing({ applicationId, slug: listingSlug, categorySlug: slug, tagline: 'Alive' });
+    await submitListing(applicationId);
+    await approveListing(applicationId);
+
+    const { listingsUncategorised } = await deleteCategory(slug);
+
+    expect(listingsUncategorised).toBe(1);
+    // The page is still published and still says what it said — only its shelf
+    // is gone. `CASCADE` here would have deleted somebody's listing because a
+    // curator tidied the taxonomy.
+    const page = await getPublishedListing(listingSlug);
+    expect(page).toMatchObject({ slug: listingSlug, tagline: 'Alive', category: null });
   });
 });
