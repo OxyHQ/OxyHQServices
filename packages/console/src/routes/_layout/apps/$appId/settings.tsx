@@ -42,7 +42,7 @@ function AppSettingsPage() {
   }
 
   const showCredentialsTab = access.can('credentials:read');
-  const showUsageTab = access.can('apps:read');
+  const showUsageTab = access.can('usage:read');
 
   return (
     <ScrollArea className="flex-1 bg-background">

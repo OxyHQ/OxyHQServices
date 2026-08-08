@@ -17,7 +17,6 @@ import type {
   CreateApplicationInput,
   UpdateApplicationInput,
 } from '@oxyhq/core';
-import type { AccountPermission } from '@/hooks/use-account';
 import { useAccount } from '@/hooks/use-account';
 
 // ===========================================================================
@@ -288,13 +287,47 @@ export function useApplicationUsage(appId: string, period: string = '7d', enable
 // inheritance), so there is no per-application member list to resolve against.
 // ===========================================================================
 
+/**
+ * What an application's `callerMembership.permissions` actually contains.
+ *
+ * NOT `AccountPermission`. The two vocabularies overlap enough to look
+ * interchangeable and are not: an account grants `apps:read` / `apps:update` /
+ * `apps:delete` over the apps it owns, while an APPLICATION grants `app:read` /
+ * `app:update` / `app:delete` over itself. The API derives the second from the
+ * first (`appPermissionsForAccountRole`) and serialises only the second here,
+ * on every path that returns an application.
+ *
+ * Typing this as `AccountPermission` let `access.can('apps:update')` compile and
+ * silently answer false forever, which disabled the whole Settings form for its
+ * owner. The union below is what makes the wrong string a build error instead.
+ */
+export type ApplicationPermission =
+  | 'app:read'
+  | 'app:update'
+  | 'app:delete'
+  | 'members:read'
+  | 'members:invite'
+  | 'members:update'
+  | 'members:remove'
+  | 'credentials:read'
+  | 'credentials:create'
+  | 'credentials:rotate'
+  | 'credentials:revoke'
+  | 'webhooks:read'
+  | 'webhooks:update'
+  | 'usage:read'
+  | 'billing:read'
+  | 'billing:manage'
+  | 'ownership:transfer'
+  | 'updates:manage';
+
 export interface CallerAccess {
   /** The caller's membership in the application's owning account, if any. */
   membership: AccountMember | undefined;
   /** The caller's role in the owning account, if a member. */
   role: AccountRole | undefined;
-  /** Returns true if the caller holds the given permission. */
-  can: (permission: AccountPermission) => boolean;
+  /** Returns true if the caller holds the given permission over THIS application. */
+  can: (permission: ApplicationPermission) => boolean;
   /** True once the application (and its embedded membership) has loaded. */
   isResolved: boolean;
 }
