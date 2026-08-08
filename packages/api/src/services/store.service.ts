@@ -21,14 +21,21 @@ import { getDb } from '../config/postgres';
 import { appCategories } from '../db/schema/appCategories';
 import { appGrants } from '../db/schema/appGrants';
 import { appListingScreenshots } from '../db/schema/appListingScreenshots';
-import { appListings } from '../db/schema/appListings';
+import { appListings, type AppListingStatus } from '../db/schema/appListings';
 import { appReviewReplies } from '../db/schema/appReviewReplies';
 import { appReviews, type AppReviewStatus } from '../db/schema/appReviews';
 import { applications } from '../db/schema/applications';
 import { users } from '../db/schema/users';
+import { isUniqueViolation } from '@oxyhq/db';
 import { accountService } from './account.service';
 import { appPermissionsForAccountRole } from '../utils/accountRoles';
-import { ForbiddenError, NotFoundError } from '../utils/error';
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+  InternalServerError,
+  NotFoundError,
+} from '../utils/error';
 
 /** What a card needs, and nothing more. */
 export interface StoreListingSummary {
@@ -530,4 +537,264 @@ export async function deleteReply(options: {
     .returning({ id: appReviewReplies.id });
 
   if (deleted.length === 0) throw new NotFoundError('This review has no reply');
+}
+
+// ============================================================================
+// The publisher's side of a listing
+//
+// Everything above is read by, or written by, whoever is looking at the store.
+// What follows is written by whoever OWNS the app, and the split it respects is
+// the one `app_listings` documents: the publisher writes the words and the
+// pictures; the STATUS is not theirs to set. Editing content and moving a page
+// through review are therefore different calls, not one call with a `status`
+// field somebody could pass `published` to.
+//
+// Authorisation lives in the routes, on `requireAppPermission('app:update')` —
+// the same middleware that guards credentials and webhooks. This module never
+// re-derives who may act for an application.
+// ============================================================================
+
+/** A listing as its owner sees it: whatever state it is in, with its shelf. */
+export interface PublisherListing {
+  id: string;
+  applicationId: string;
+  slug: string;
+  tagline: string | null;
+  description: string | null;
+  category: { slug: string; label: string } | null;
+  supportUrl: string | null;
+  supportEmail: string | null;
+  status: AppListingStatus;
+  publishedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Read one listing back with its category resolved, by application. */
+async function publisherListingFor(applicationId: string): Promise<PublisherListing | null> {
+  const [row] = await getDb()
+    .select({
+      id: appListings.id,
+      applicationId: appListings.applicationId,
+      slug: appListings.slug,
+      tagline: appListings.tagline,
+      description: appListings.description,
+      supportUrl: appListings.supportUrl,
+      supportEmail: appListings.supportEmail,
+      status: appListings.status,
+      publishedAt: appListings.publishedAt,
+      createdAt: appListings.createdAt,
+      updatedAt: appListings.updatedAt,
+      categorySlug: appCategories.slug,
+      categoryLabel: appCategories.label,
+    })
+    .from(appListings)
+    .leftJoin(appCategories, eq(appCategories.id, appListings.categoryId))
+    .where(eq(appListings.applicationId, applicationId))
+    .limit(1);
+
+  if (!row) return null;
+
+  const { categorySlug, categoryLabel, ...listing } = row;
+  return {
+    ...listing,
+    category: categorySlug ? { slug: categorySlug, label: categoryLabel! } : null,
+  };
+}
+
+/** The listing for an application, in whatever state, or null if it has none. */
+export async function getListingForApplication(
+  applicationId: string
+): Promise<PublisherListing | null> {
+  return publisherListingFor(applicationId);
+}
+
+/**
+ * Create or replace the CONTENT of an application's listing.
+ *
+ * A `PUT` of the whole page rather than a patch of some of it: the console
+ * edits one form, and a partial update would make "the tagline is absent" and
+ * "leave the tagline alone" the same request.
+ *
+ * The status is untouched — a new page starts as a `draft` by the column's
+ * default, and an existing page keeps whatever review state it is in. So
+ * correcting a typo on a live page does not silently unpublish it, and editing
+ * a rejected one does not re-submit it.
+ */
+export async function upsertListing(options: {
+  applicationId: string;
+  slug: string;
+  tagline?: string | null;
+  description?: string | null;
+  categorySlug?: string | null;
+  supportUrl?: string | null;
+  supportEmail?: string | null;
+}): Promise<PublisherListing> {
+  const db = getDb();
+
+  let categoryId: string | null = null;
+  if (options.categorySlug) {
+    const [category] = await db
+      .select({ id: appCategories.id })
+      .from(appCategories)
+      .where(eq(appCategories.slug, options.categorySlug))
+      .limit(1);
+    // Named, not ignored: silently filing a page under "uncategorised" because
+    // a shelf was misspelled is the kind of thing nobody notices until a
+    // publisher asks why their app is nowhere.
+    if (!category) throw new BadRequestError(`No such category: ${options.categorySlug}`);
+    categoryId = category.id;
+  }
+
+  const content = {
+    slug: options.slug,
+    tagline: options.tagline?.trim() || null,
+    description: options.description?.trim() || null,
+    categoryId,
+    supportUrl: options.supportUrl?.trim() || null,
+    supportEmail: options.supportEmail?.trim() || null,
+  };
+
+  try {
+    await db
+      .insert(appListings)
+      .values({ applicationId: options.applicationId, ...content })
+      .onConflictDoUpdate({
+        target: appListings.applicationId,
+        set: { ...content, updatedAt: new Date() },
+      });
+  } catch (error) {
+    // Named, not bare: `app_listings` carries TWO unique constraints, and a
+    // bare check would report "the slug is taken" for whichever of them fired.
+    // `application_id` is the conflict target here so it cannot raise today —
+    // pinning the name is what keeps the message honest if that ever changes.
+    if (isUniqueViolation(error, 'app_listings_slug_unique')) {
+      throw new ConflictError(`The slug "${options.slug}" is already taken`);
+    }
+    throw error;
+  }
+
+  // Re-read rather than `returning()`: the caller needs the category resolved
+  // to its slug and label, which an insert cannot join.
+  const listing = await publisherListingFor(options.applicationId);
+  if (!listing) throw new InternalServerError('The listing vanished as it was written');
+  return listing;
+}
+
+/**
+ * Move a listing between states, checking what it is moving FROM.
+ *
+ * The guard is the point: a transition that did not check would let a rejected
+ * page be published by replaying a request, and would let a submission
+ * "succeed" against a page already live.
+ */
+async function transitionListing(options: {
+  applicationId: string;
+  from: readonly AppListingStatus[];
+  to: AppListingStatus;
+  publishedAt?: Date | null;
+}): Promise<PublisherListing> {
+  const [current] = await getDb()
+    .select({ status: appListings.status, publishedAt: appListings.publishedAt })
+    .from(appListings)
+    .where(eq(appListings.applicationId, options.applicationId))
+    .limit(1);
+
+  if (!current) throw new NotFoundError('This application has no listing');
+  if (!options.from.includes(current.status)) {
+    throw new ConflictError(`A ${current.status} listing cannot become ${options.to}`);
+  }
+
+  await getDb()
+    .update(appListings)
+    .set({
+      status: options.to,
+      // `publishedAt` is only ever written on the first publish: a page taken
+      // down and put back up has one publication date and many edits.
+      ...(options.publishedAt !== undefined && current.publishedAt === null
+        ? { publishedAt: options.publishedAt }
+        : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(appListings.applicationId, options.applicationId));
+
+  const listing = await publisherListingFor(options.applicationId);
+  if (!listing) throw new NotFoundError('This application has no listing');
+  return listing;
+}
+
+/** Hand a draft — or a rejected page, once fixed — to the store for review. */
+export async function submitListing(applicationId: string): Promise<PublisherListing> {
+  return transitionListing({
+    applicationId,
+    from: ['draft', 'rejected'],
+    to: 'pending_review',
+  });
+}
+
+/**
+ * Take a page down, or withdraw it from the queue.
+ *
+ * Back to `draft` rather than deleted: the slug, the words and the screenshots
+ * are the publisher's work, and unlisting an app should not destroy them. It
+ * also keeps the reviews, which hang off the application and were never the
+ * listing's to take with it.
+ */
+export async function unpublishListing(applicationId: string): Promise<PublisherListing> {
+  return transitionListing({
+    applicationId,
+    from: ['published', 'pending_review'],
+    to: 'draft',
+  });
+}
+
+// ============================================================================
+// Store moderation
+//
+// Staff-only, and separate from the publisher's calls above for the reason the
+// two states exist: `pending_review` is the store's judgement of a page, and a
+// publisher who could grant it would make the queue decorative.
+// ============================================================================
+
+/** The review queue, oldest first — a submission should not wait behind newer ones. */
+export async function listListingsAwaitingReview(options: {
+  limit: number;
+  offset: number;
+}): Promise<{ items: PublisherListing[]; total: number }> {
+  const db = getDb();
+  const where = eq(appListings.status, 'pending_review');
+
+  const [rows, [totals]] = await Promise.all([
+    db
+      .select({ applicationId: appListings.applicationId })
+      .from(appListings)
+      .where(where)
+      .orderBy(asc(appListings.updatedAt), asc(appListings.id))
+      .limit(options.limit)
+      .offset(options.offset),
+    db.select({ value: count() }).from(appListings).where(where),
+  ]);
+
+  const listings = await Promise.all(rows.map((row) => publisherListingFor(row.applicationId)));
+
+  return { items: listings.filter((listing): listing is PublisherListing => listing !== null), total: Number(totals?.value ?? 0) };
+}
+
+/** Publish a page that was submitted for review. */
+export async function approveListing(applicationId: string): Promise<PublisherListing> {
+  return transitionListing({
+    applicationId,
+    from: ['pending_review'],
+    to: 'published',
+    publishedAt: new Date(),
+  });
+}
+
+/** Send a page back. It returns to the publisher, who may fix it and re-submit. */
+export async function rejectListing(applicationId: string): Promise<PublisherListing> {
+  return transitionListing({
+    applicationId,
+    from: ['pending_review'],
+    to: 'rejected',
+  });
 }

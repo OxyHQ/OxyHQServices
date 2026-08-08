@@ -39,6 +39,13 @@ import {
   updateApplicationSchema,
   createCredentialSchema,
 } from '../schemas/application.schemas';
+import { storeListingBody } from '../schemas/store.schemas';
+import {
+  getListingForApplication,
+  submitListing,
+  unpublishListing,
+  upsertListing,
+} from '../services/store.service';
 
 /** A stored application row. */
 type ApplicationRow = typeof applications.$inferSelect;
@@ -144,6 +151,21 @@ function requireUserId(req: AuthRequest): string {
     throw new UnauthorizedError('Authentication required');
   }
   return userId;
+}
+
+/**
+ * The application `requireAppPermission` already loaded, narrowed.
+ *
+ * The middleware has thrown 404 if it is absent, so this cannot fire; it
+ * exists because `req.application` is optional on the request type and the
+ * alternative is a non-null assertion, which the house rules forbid for good
+ * reason.
+ */
+function requireApplication(req: AppContextRequest): ApplicationRow {
+  if (!req.application) {
+    throw new NotFoundError('Application not found');
+  }
+  return req.application;
 }
 
 /** Compute the window start date for a usage period. */
@@ -1113,6 +1135,70 @@ router.get(
 
     const period = (req.query.period as string) || '7d';
     res.json(await getUsageStats(application.id, getStartDate(period)));
+  })
+);
+
+// ============================================================================
+// Store listing
+//
+// The publisher's side of the app store hangs off the application, beside
+// credentials, webhooks and usage, because that is what it is: one more thing
+// an app has, edited by whoever may edit the app. It reuses
+// `requireAppPermission` wholesale — a store page must not become a second,
+// weaker way to act for somebody's application.
+//
+// The storefront that READS these pages is `/store`, and knows nothing about
+// applications the caller may administer.
+// ============================================================================
+
+/** The application's listing in whatever state, or null when it has none. */
+router.get(
+  '/:appId/listing',
+  validate({ params: appIdRouteParams }),
+  requireAppPermission('app:read'),
+  asyncHandler(async (req: AppContextRequest, res) => {
+    res.json(await getListingForApplication(requireApplication(req).id));
+  })
+);
+
+/**
+ * Create the listing or replace its content. Never its status: publishing is
+ * the store's decision and has its own routes.
+ */
+router.put(
+  '/:appId/listing',
+  validate({ params: appIdRouteParams, body: storeListingBody }),
+  requireAppPermission('app:update'),
+  asyncHandler(async (req: AppContextRequest, res) => {
+    const body = req.body as {
+      slug: string;
+      tagline?: string | null;
+      description?: string | null;
+      categorySlug?: string | null;
+      supportUrl?: string | null;
+      supportEmail?: string | null;
+    };
+    res.json(await upsertListing({ applicationId: requireApplication(req).id, ...body }));
+  })
+);
+
+/** Hand the page to the store for review. */
+router.post(
+  '/:appId/listing/submit',
+  validate({ params: appIdRouteParams }),
+  requireAppPermission('app:update'),
+  asyncHandler(async (req: AppContextRequest, res) => {
+    res.json(await submitListing(requireApplication(req).id));
+  })
+);
+
+/** Take it down, or withdraw it from the queue. Back to a draft, never deleted. */
+router.post(
+  '/:appId/listing/unpublish',
+  validate({ params: appIdRouteParams }),
+  requireAppPermission('app:update'),
+  asyncHandler(async (req: AppContextRequest, res) => {
+    res.json(await unpublishListing(requireApplication(req).id));
   })
 );
 
