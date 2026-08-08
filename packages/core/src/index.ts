@@ -117,6 +117,29 @@ export type {
 } from './mixins/OxyServices.connectedApps';
 
 // ---------------------------------------------------------------------------
+// App store (public storefront + reviews + the listing a publisher edits)
+// ---------------------------------------------------------------------------
+export type {
+    StoreCategory,
+    StoreRating,
+    StoreListingSummary,
+    StoreListingDetail,
+    StoreScreenshot,
+    StoreScreenshotPlatform,
+    StoreReview,
+    StoreOwnReview,
+    WriteStoreReviewInput,
+    StoreListingStatus,
+    PublisherListing,
+    WriteListingInput,
+    AddScreenshotInput,
+    UpdateScreenshotInput,
+    StorePage,
+    StorePageOptions,
+    StoreReviewsOptions,
+} from './mixins/OxyServices.store';
+
+// ---------------------------------------------------------------------------
 // Accounts (unified account graph: tree, membership, roles, bot credentials)
 // plus the applications owned within it (Application = OAuth client).
 // ---------------------------------------------------------------------------
