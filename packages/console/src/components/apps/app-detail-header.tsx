@@ -1,14 +1,19 @@
 import { Link } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowLeft01Icon, RocketIcon, Settings01Icon } from '@hugeicons/core-free-icons';
+import {
+  ArrowLeft01Icon,
+  RocketIcon,
+  Settings01Icon,
+  ShopSignIcon,
+} from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@oxyhq/services';
 import { resolveStoredImageUrl } from '@/lib/image-upload';
 import type { Application, CallerAccess } from '@/hooks/use-applications';
 
-/** The two top-level sections of an application. */
-export type AppSection = 'settings' | 'updates';
+/** The top-level sections of an application. */
+export type AppSection = 'settings' | 'store' | 'updates';
 
 interface AppDetailHeaderProps {
   application: Application;
@@ -18,13 +23,16 @@ interface AppDetailHeaderProps {
 
 /**
  * Shared header for an application's detail pages: back link, identity, and the
- * top-level section navigation (Settings / Updates). The Updates section is only
- * offered to callers who hold `updates:manage` — the same permission the API
- * enforces on every `/updates/v1` endpoint — so viewers never see a tab that
- * would only 403.
+ * top-level section navigation.
+ *
+ * Each section is offered only to callers holding the permission the API
+ * enforces behind it, so nobody sees a tab that would only 403: `updates:manage`
+ * for Updates, `app:read` for Store — reading a listing needs no more than
+ * reading the app, and the form inside gates its own writes on `app:update`.
  */
 export function AppDetailHeader({ application, access, active }: AppDetailHeaderProps) {
   const { oxyServices } = useAuth();
+  const showStore = access.can('app:read');
   const showUpdates = access.can('updates:manage');
 
   return (
@@ -65,6 +73,15 @@ export function AppDetailHeader({ application, access, active }: AppDetailHeader
           label="Settings"
           isActive={active === 'settings'}
         />
+        {showStore && (
+          <SectionTab
+            to="/apps/$appId/store"
+            appId={application._id}
+            icon={ShopSignIcon}
+            label="Store"
+            isActive={active === 'store'}
+          />
+        )}
         {showUpdates && (
           <SectionTab
             to="/apps/$appId/updates"
@@ -80,7 +97,7 @@ export function AppDetailHeader({ application, access, active }: AppDetailHeader
 }
 
 interface SectionTabProps {
-  to: '/apps/$appId/settings' | '/apps/$appId/updates';
+  to: '/apps/$appId/settings' | '/apps/$appId/store' | '/apps/$appId/updates';
   appId: string;
   icon: typeof Settings01Icon;
   label: string;

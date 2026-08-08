@@ -45,8 +45,8 @@ interface GeneralSectionProps {
 export function GeneralSection({ application, access }: GeneralSectionProps) {
   const navigate = useNavigate();
   const { oxyServices } = useAuth();
-  const canEdit = access.can('apps:update');
-  const canDelete = access.can('apps:delete');
+  const canEdit = access.can('app:update');
+  const canDelete = access.can('app:delete');
   const updateApplication = useUpdateApplication();
   const deleteApplication = useDeleteApplication();
 
