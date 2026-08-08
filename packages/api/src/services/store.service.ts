@@ -16,15 +16,19 @@
  * is next repaired.
  */
 
-import { and, asc, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { getDb } from '../config/postgres';
 import { appCategories } from '../db/schema/appCategories';
 import { appGrants } from '../db/schema/appGrants';
-import { appListingScreenshots } from '../db/schema/appListingScreenshots';
+import {
+  appListingScreenshots,
+  type AppScreenshotPlatform,
+} from '../db/schema/appListingScreenshots';
 import { appListings, type AppListingStatus } from '../db/schema/appListings';
 import { appReviewReplies } from '../db/schema/appReviewReplies';
 import { appReviews, type AppReviewStatus } from '../db/schema/appReviews';
 import { applications } from '../db/schema/applications';
+import { files } from '../db/schema/files';
 import { users } from '../db/schema/users';
 import { isUniqueViolation } from '@oxyhq/db';
 import { accountService } from './account.service';
@@ -571,8 +575,11 @@ export interface PublisherListing {
 }
 
 /** Read one listing back with its category resolved, by application. */
-async function publisherListingFor(applicationId: string): Promise<PublisherListing | null> {
-  const [row] = await getDb()
+async function publisherListings(
+  where: SQL | undefined,
+  order?: { limit: number; offset: number }
+): Promise<PublisherListing[]> {
+  const query = getDb()
     .select({
       id: appListings.id,
       applicationId: appListings.applicationId,
@@ -590,16 +597,21 @@ async function publisherListingFor(applicationId: string): Promise<PublisherList
     })
     .from(appListings)
     .leftJoin(appCategories, eq(appCategories.id, appListings.categoryId))
-    .where(eq(appListings.applicationId, applicationId))
-    .limit(1);
+    .where(where)
+    .orderBy(asc(appListings.updatedAt), asc(appListings.id));
 
-  if (!row) return null;
+  const rows = await (order ? query.limit(order.limit).offset(order.offset) : query);
 
-  const { categorySlug, categoryLabel, ...listing } = row;
-  return {
+  return rows.map(({ categorySlug, categoryLabel, ...listing }) => ({
     ...listing,
     category: categorySlug ? { slug: categorySlug, label: categoryLabel! } : null,
-  };
+  }));
+}
+
+/** Read one listing back with its category resolved, by application. */
+async function publisherListingFor(applicationId: string): Promise<PublisherListing | null> {
+  const [listing] = await publisherListings(eq(appListings.applicationId, applicationId));
+  return listing ?? null;
 }
 
 /** The listing for an application, in whatever state, or null if it has none. */
@@ -761,23 +773,14 @@ export async function listListingsAwaitingReview(options: {
   limit: number;
   offset: number;
 }): Promise<{ items: PublisherListing[]; total: number }> {
-  const db = getDb();
   const where = eq(appListings.status, 'pending_review');
 
-  const [rows, [totals]] = await Promise.all([
-    db
-      .select({ applicationId: appListings.applicationId })
-      .from(appListings)
-      .where(where)
-      .orderBy(asc(appListings.updatedAt), asc(appListings.id))
-      .limit(options.limit)
-      .offset(options.offset),
-    db.select({ value: count() }).from(appListings).where(where),
+  const [items, [totals]] = await Promise.all([
+    publisherListings(where, options),
+    getDb().select({ value: count() }).from(appListings).where(where),
   ]);
 
-  const listings = await Promise.all(rows.map((row) => publisherListingFor(row.applicationId)));
-
-  return { items: listings.filter((listing): listing is PublisherListing => listing !== null), total: Number(totals?.value ?? 0) };
+  return { items, total: Number(totals?.value ?? 0) };
 }
 
 /** Publish a page that was submitted for review. */
@@ -797,4 +800,207 @@ export async function rejectListing(applicationId: string): Promise<PublisherLis
     from: ['pending_review'],
     to: 'rejected',
   });
+}
+
+// ============================================================================
+// Screenshots
+//
+// A picture on a store page is a row rather than an entry in a `text[]`, and
+// `app_listing_screenshots` says why: each carries a caption, a platform and a
+// position, and `file_id` is a real foreign key, so a purged asset cannot leave
+// a hole on a published page.
+//
+// Every write below is scoped to the listing as well as to the screenshot id.
+// An id alone would let anyone holding `app:update` on THEIR app edit a picture
+// on somebody else's, which is the shape of every id-guessing bug ever filed.
+// ============================================================================
+
+export interface ListingScreenshot {
+  id: string;
+  fileId: string;
+  platform: AppScreenshotPlatform;
+  caption: string | null;
+  position: number;
+}
+
+const SCREENSHOT_COLUMNS = {
+  id: appListingScreenshots.id,
+  fileId: appListingScreenshots.fileId,
+  platform: appListingScreenshots.platform,
+  caption: appListingScreenshots.caption,
+  position: appListingScreenshots.position,
+} as const;
+
+/** The listing an application must already have before it can hold pictures. */
+async function requireListingId(applicationId: string): Promise<string> {
+  const [listing] = await getDb()
+    .select({ id: appListings.id })
+    .from(appListings)
+    .where(eq(appListings.applicationId, applicationId))
+    .limit(1);
+
+  if (!listing) throw new NotFoundError('This application has no listing');
+  return listing.id;
+}
+
+/** Every picture on a listing, in the author's order. */
+export async function listScreenshots(applicationId: string): Promise<ListingScreenshot[]> {
+  const listingId = await requireListingId(applicationId);
+
+  return getDb()
+    .select(SCREENSHOT_COLUMNS)
+    .from(appListingScreenshots)
+    .where(eq(appListingScreenshots.listingId, listingId))
+    .orderBy(asc(appListingScreenshots.position), asc(appListingScreenshots.id));
+}
+
+/**
+ * Attach an already-uploaded image to the listing.
+ *
+ * The file is checked here rather than left to the foreign key, because the FK
+ * only proves the row exists. Three things have to hold, and each has its own
+ * answer: the asset must not be in the trash, it must be an image, and the
+ * caller must be entitled to it — which is the account graph's question again,
+ * asked of the file's owner, so a colleague can attach an asset the account
+ * owns and nobody can attach a stranger's.
+ */
+export async function addScreenshot(options: {
+  applicationId: string;
+  callerUserId: string;
+  fileId: string;
+  platform?: AppScreenshotPlatform;
+  caption?: string | null;
+}): Promise<ListingScreenshot> {
+  const listingId = await requireListingId(options.applicationId);
+
+  // Three columns rather than the file repository's full record: this asks
+  // "may I attach this?", not "give me the asset", and the repository's read
+  // pulls the variant rows a screenshot has no use for.
+  const [file] = await getDb()
+    .select({ ownerUserId: files.ownerUserId, status: files.status, mime: files.mime })
+    .from(files)
+    .where(eq(files.id, options.fileId))
+    .limit(1);
+
+  if (!file || file.status !== 'active') throw new NotFoundError('No such file');
+  if (!file.mime.startsWith('image/')) throw new BadRequestError('A screenshot must be an image');
+
+  const entitled =
+    file.ownerUserId !== null &&
+    (await accountService.resolveEffectiveAccess(options.callerUserId, file.ownerUserId)) !== null;
+  if (!entitled) throw new ForbiddenError('That file is not yours to publish');
+
+  // Appended, and ties are fine: `position` is deliberately not unique, so two
+  // concurrent adds landing on the same number order by `id` between them
+  // rather than one of them failing.
+  const [{ next } = { next: 0 }] = await getDb()
+    .select({ next: sql<number>`coalesce(max(${appListingScreenshots.position}), -1) + 1` })
+    .from(appListingScreenshots)
+    .where(eq(appListingScreenshots.listingId, listingId));
+
+  const [row] = await getDb()
+    .insert(appListingScreenshots)
+    .values({
+      listingId,
+      fileId: options.fileId,
+      platform: options.platform ?? 'desktop',
+      caption: options.caption?.trim() || null,
+      position: Number(next),
+    })
+    .returning(SCREENSHOT_COLUMNS);
+
+  return row;
+}
+
+/** Edit a picture's caption or the frame it was taken in. Order is `reorderScreenshots`. */
+export async function updateScreenshot(options: {
+  applicationId: string;
+  screenshotId: string;
+  platform?: AppScreenshotPlatform;
+  caption?: string | null;
+}): Promise<ListingScreenshot> {
+  const listingId = await requireListingId(options.applicationId);
+
+  const [row] = await getDb()
+    .update(appListingScreenshots)
+    .set({
+      ...(options.platform === undefined ? {} : { platform: options.platform }),
+      ...(options.caption === undefined ? {} : { caption: options.caption?.trim() || null }),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(appListingScreenshots.id, options.screenshotId),
+        eq(appListingScreenshots.listingId, listingId)
+      )
+    )
+    .returning(SCREENSHOT_COLUMNS);
+
+  if (!row) throw new NotFoundError('No such screenshot on this listing');
+  return row;
+}
+
+/** Remove a picture. The file itself is untouched — it may be in use elsewhere. */
+export async function deleteScreenshot(options: {
+  applicationId: string;
+  screenshotId: string;
+}): Promise<void> {
+  const listingId = await requireListingId(options.applicationId);
+
+  const deleted = await getDb()
+    .delete(appListingScreenshots)
+    .where(
+      and(
+        eq(appListingScreenshots.id, options.screenshotId),
+        eq(appListingScreenshots.listingId, listingId)
+      )
+    )
+    .returning({ id: appListingScreenshots.id });
+
+  if (deleted.length === 0) throw new NotFoundError('No such screenshot on this listing');
+}
+
+/**
+ * Set the order of every picture at once.
+ *
+ * The WHOLE set, not a move: a partial list would leave the pictures it omits
+ * at their old positions, interleaved with the new ones, and the result is an
+ * order nobody asked for. Sending every id makes the request say exactly what
+ * the page should look like, and makes a client that lost a picture along the
+ * way fail loudly instead of scrambling the rest.
+ *
+ * One transaction, because a reorder that stopped halfway is worse than one
+ * that did not happen.
+ */
+export async function reorderScreenshots(options: {
+  applicationId: string;
+  screenshotIds: string[];
+}): Promise<ListingScreenshot[]> {
+  const listingId = await requireListingId(options.applicationId);
+
+  const existing = await getDb()
+    .select({ id: appListingScreenshots.id })
+    .from(appListingScreenshots)
+    .where(eq(appListingScreenshots.listingId, listingId));
+
+  const known = new Set(existing.map((row) => row.id));
+  const asked = new Set(options.screenshotIds);
+  if (
+    asked.size !== options.screenshotIds.length ||
+    asked.size !== known.size ||
+    options.screenshotIds.some((id) => !known.has(id))
+  ) {
+    throw new BadRequestError('Send every screenshot on the listing, exactly once');
+  }
+
+  await getDb().transaction(async (tx) => {
+    for (const [position, id] of options.screenshotIds.entries()) {
+      await tx
+        .update(appListingScreenshots)
+        .set({ position, updatedAt: new Date() })
+        .where(eq(appListingScreenshots.id, id));
+    }
+  });
+
+  return listScreenshots(options.applicationId);
 }
