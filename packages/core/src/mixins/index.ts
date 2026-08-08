@@ -17,6 +17,7 @@ import { OxyServicesReputationMixin } from './OxyServices.reputation';
 import { OxyServicesAssetsMixin } from './OxyServices.assets';
 import { OxyServicesAccountsMixin } from './OxyServices.accounts';
 import { OxyServicesConnectedAppsMixin } from './OxyServices.connectedApps';
+import { OxyServicesStoreMixin } from './OxyServices.store';
 import { OxyServicesLocationMixin } from './OxyServices.location';
 import { OxyServicesAnalyticsMixin } from './OxyServices.analytics';
 import { OxyServicesDevicesMixin } from './OxyServices.devices';
@@ -56,6 +57,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesAssetsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAccountsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesConnectedAppsMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesStoreMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLocationMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAnalyticsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesDevicesMixin<typeof OxyServicesBase>>>
@@ -125,6 +127,10 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     // OAuth-consent surface (public app identity + connected-app grants). Kept
     // separate from account ownership.
     OxyServicesConnectedAppsMixin,
+    // The app store: the public storefront, the reviews on it, and the listing a
+    // publisher edits. A module OVER the platform — turn it off and OAuth still
+    // works — so it is its own surface rather than more of `accounts`.
+    OxyServicesStoreMixin,
     OxyServicesLocationMixin,
     OxyServicesAnalyticsMixin,
     OxyServicesDevicesMixin,
